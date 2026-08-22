@@ -1,0 +1,1349 @@
+{
+	"name": "git-graph-rs",
+	"displayName": "%displayName%",
+	"description": "%extension.description%",
+	"version": "0.1.0",
+	"license": "MIT",
+	"private": true,
+	"publisher": "aucneon",
+	"engines": {
+		"vscode": "^1.38.0",
+		"node": ">=18"
+	},
+	"extensionKind": [
+		"workspace"
+	],
+	"categories": [
+		"Other"
+	],
+	"icon": "resources/icon.png",
+	"activationEvents": [
+		"onCommand:git-graph-rs.view",
+		"onCommand:git-graph-rs.filterByFile",
+		"onCommand:git-graph-rs.version",
+		"onCommand:git-graph-rs.searchCommits",
+		"workspaceContains:.git"
+	],
+	"main": "./out/extension.js",
+	"scripts": {
+		"build": "npm run build:native && npm run build:ts",
+		"build:native": "node scripts/build-addon.mjs",
+		"build:native:release": "node scripts/build-addon.mjs --release",
+		"build:native:all": "node scripts/build-addon.mjs --all --release",
+		"build:ts": "tsc -p tsconfig.json",
+		"compile-src": "tsc -p ./src && node scripts/package-src.js",
+		"compile-web": "tsc -p ./web && node scripts/package-web.js",
+		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug",
+		"clean": "node scripts/clean.js",
+		"compile": "npm run clean && npm run compile-src && npm run compile-web",
+		"package": "vsce package --allow-missing-repository --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid",
+		"test": "npm run test:rust && npm run test:node",
+		"test:rust": "cargo test --workspace",
+		"test:node": "node --test \"tests/**/*.test.mjs\"",
+		"bench": "node scripts/bench.mjs",
+		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+	},
+	"dependencies": {
+		"iconv-lite": "0.5.0"
+	},
+	"devDependencies": {
+		"@types/iconv-lite": "^0.0.1",
+		"@types/node": "^8.10.66",
+		"@types/vscode": "1.38.0",
+		"@vscode/vsce": "^2.19.0",
+		"sharp": "^0.35.3",
+		"typescript": "^5.4.0",
+		"uglify-js": "^3.19.3"
+	},
+	"contributes": {
+		"commands": [
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.view",
+				"title": "%command.git-graph-rs.view.title%",
+				"icon": {
+					"light": "resources/git-graph-rs-cmd-icon-light.svg",
+					"dark": "resources/git-graph-rs-cmd-icon-dark.svg"
+				}
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.addGitRepository",
+				"title": "%command.git-graph-rs.addGitRepository.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.clearAvatarCache",
+				"title": "%command.git-graph-rs.clearAvatarCache.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.endAllWorkspaceCodeReviews",
+				"title": "%command.git-graph-rs.endAllWorkspaceCodeReviews.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.endSpecificWorkspaceCodeReview",
+				"title": "%command.git-graph-rs.endSpecificWorkspaceCodeReview.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.fetch",
+				"title": "%command.git-graph-rs.fetch.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.removeGitRepository",
+				"title": "%command.git-graph-rs.removeGitRepository.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.resumeWorkspaceCodeReview",
+				"title": "%command.git-graph-rs.resumeWorkspaceCodeReview.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.version",
+				"title": "%command.git-graph-rs.version.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.searchCommits",
+				"title": "%command.git-graph-rs.searchCommits.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.filterByFile",
+				"title": "%command.git-graph-rs.filterByFile.title%"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.openFile",
+				"title": "%command.git-graph-rs.openFile.title%",
+				"icon": "$(go-to-file)",
+				"enablement": "isInDiffEditor && resourceScheme == git-graph-rs && git-graph-rs:codiconsSupported"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.amendLastCommit",
+				"title": "%command.git-graph-rs.amendLastCommit.title%",
+				"icon": "$(edit)"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.resetCurrentBranchToRemote",
+				"title": "%command.git-graph-rs.resetCurrentBranchToRemote.title%",
+				"icon": "$(discard)"
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "%config.title%",
+			"properties": {
+				"git-graph-rs.commitDetailsView.autoCenter": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.commitDetailsView.autoCenter.description%"
+				},
+				"git-graph-rs.commitDetailsView.fileView.fileTree.compactFolders": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.commitDetailsView.fileView.fileTree.compactFolders.description%"
+				},
+				"git-graph-rs.commitDetailsView.fileView.type": {
+					"type": "string",
+					"enum": [
+						"File Tree",
+						"File List"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.commitDetailsView.fileView.type.enumDescription0%",
+						"%config.git-graph-rs.commitDetailsView.fileView.type.enumDescription1%"
+					],
+					"default": "File Tree",
+					"description": "%config.git-graph-rs.commitDetailsView.fileView.type.description%"
+				},
+				"git-graph-rs.commitDetailsView.location": {
+					"type": "string",
+					"enum": [
+						"Inline",
+						"Docked to Bottom"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.commitDetailsView.location.enumDescription0%",
+						"%config.git-graph-rs.commitDetailsView.location.enumDescription1%"
+					],
+					"default": "Inline",
+					"description": "%config.git-graph-rs.commitDetailsView.location.description%"
+				},
+				"git-graph-rs.contextMenuActionsVisibility": {
+					"type": "object",
+					"default": {},
+					"properties": {
+						"branch": {
+							"type": "object",
+							"properties": {
+								"checkout": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.checkout.title%"
+								},
+								"rename": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.rename.title%"
+								},
+								"createBranch": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.createBranch.title%"
+								},
+								"delete": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.delete.title%"
+								},
+								"merge": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.merge.title%"
+								},
+								"rebase": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.rebase.title%"
+								},
+								"push": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.push.title%"
+								},
+								"pull": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.pull.title%"
+								},
+								"viewIssue": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.viewIssue.title%"
+								},
+								"createPullRequest": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.createPullRequest.title%"
+								},
+								"createArchive": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.createArchive.title%"
+								},
+								"selectInBranchesDropdown": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.selectInBranchesDropdown.title%"
+								},
+								"unselectInBranchesDropdown": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.unselectInBranchesDropdown.title%"
+								},
+								"copyName": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.branch.copyName.title%"
+								}
+							}
+						},
+						"commit": {
+							"type": "object",
+							"properties": {
+								"addTag": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.addTag.title%"
+								},
+								"createBranch": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.createBranch.title%"
+								},
+								"checkout": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.checkout.title%"
+								},
+								"cherrypick": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.cherrypick.title%"
+								},
+								"revert": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.revert.title%"
+								},
+								"drop": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.drop.title%"
+								},
+								"merge": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.merge.title%"
+								},
+								"rebase": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.rebase.title%"
+								},
+								"reset": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.reset.title%"
+								},
+								"copyHash": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.copyHash.title%"
+								},
+								"copySubject": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.copySubject.title%"
+								}
+							}
+						},
+						"commitDetailsViewFile": {
+							"type": "object",
+							"properties": {
+								"viewDiff": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.viewDiff.title%"
+								},
+								"viewFileAtThisRevision": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.viewFileAtThisRevision.title%"
+								},
+								"viewDiffWithWorkingFile": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.viewDiffWithWorkingFile.title%"
+								},
+								"openFile": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.openFile.title%"
+								},
+								"markAsReviewed": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.markAsReviewed.title%"
+								},
+								"markAsNotReviewed": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.markAsNotReviewed.title%"
+								},
+								"resetFileToThisRevision": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.resetFileToThisRevision.title%"
+								},
+								"copyAbsoluteFilePath": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.copyAbsoluteFilePath.title%"
+								},
+								"copyRelativeFilePath": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commitDetailsViewFile.copyRelativeFilePath.title%"
+								}
+							}
+						},
+						"remoteBranch": {
+							"type": "object",
+							"properties": {
+								"checkout": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.checkout.title%"
+								},
+								"delete": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.delete.title%"
+								},
+								"fetch": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.fetch.title%"
+								},
+								"merge": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.merge.title%"
+								},
+								"pull": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.pull.title%"
+								},
+								"createBranch": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.createBranch.title%"
+								},
+								"viewIssue": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.viewIssue.title%"
+								},
+								"createPullRequest": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.createPullRequest.title%"
+								},
+								"createArchive": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.createArchive.title%"
+								},
+								"selectInBranchesDropdown": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.selectInBranchesDropdown.title%"
+								},
+								"unselectInBranchesDropdown": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.unselectInBranchesDropdown.title%"
+								},
+								"copyName": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.remoteBranch.copyName.title%"
+								}
+							}
+						},
+						"stash": {
+							"type": "object",
+							"properties": {
+								"apply": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.apply.title%"
+								},
+								"createBranch": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.createBranch.title%"
+								},
+								"pop": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.pop.title%"
+								},
+								"drop": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.drop.title%"
+								},
+								"copyName": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.copyName.title%"
+								},
+								"copyHash": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.stash.copyHash.title%"
+								}
+							}
+						},
+						"tag": {
+							"type": "object",
+							"properties": {
+								"viewDetails": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.tag.viewDetails.title%"
+								},
+								"delete": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.tag.delete.title%"
+								},
+								"push": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.tag.push.title%"
+								},
+								"createArchive": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.tag.createArchive.title%"
+								},
+								"copyName": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.tag.copyName.title%"
+								}
+							}
+						},
+						"uncommittedChanges": {
+							"type": "object",
+							"properties": {
+								"stash": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.uncommittedChanges.stash.title%"
+								},
+								"reset": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.uncommittedChanges.reset.title%"
+								},
+								"clean": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.uncommittedChanges.clean.title%"
+								},
+								"openSourceControlView": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.uncommittedChanges.openSourceControlView.title%"
+								}
+							}
+						}
+					},
+					"markdownDescription": "%config.git-graph-rs.contextMenuActionsVisibility.markdownDescription%"
+				},
+				"git-graph-rs.customBranchGlobPatterns": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"title": "%config.git-graph-rs.customBranchGlobPatterns.items.title%",
+						"required": [
+							"name",
+							"glob"
+						],
+						"properties": {
+							"name": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customBranchGlobPatterns.items.name.title%",
+								"description": "%config.git-graph-rs.customBranchGlobPatterns.items.name.description%"
+							},
+							"glob": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customBranchGlobPatterns.items.glob.title%",
+								"description": "%config.git-graph-rs.customBranchGlobPatterns.items.glob.description%"
+							}
+						}
+					},
+					"default": [],
+					"description": "%config.git-graph-rs.customBranchGlobPatterns.description%"
+				},
+				"git-graph-rs.customEmojiShortcodeMappings": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"title": "%config.git-graph-rs.customEmojiShortcodeMappings.items.title%",
+						"required": [
+							"shortcode",
+							"emoji"
+						],
+						"properties": {
+							"shortcode": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customEmojiShortcodeMappings.items.shortcode.title%",
+								"description": "%config.git-graph-rs.customEmojiShortcodeMappings.items.shortcode.description%"
+							},
+							"emoji": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customEmojiShortcodeMappings.items.emoji.title%",
+								"description": "%config.git-graph-rs.customEmojiShortcodeMappings.items.emoji.description%"
+							}
+						}
+					},
+					"default": [],
+					"description": "%config.git-graph-rs.customEmojiShortcodeMappings.description%"
+				},
+				"git-graph-rs.customPullRequestProviders": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"title": "%config.git-graph-rs.customPullRequestProviders.items.title%",
+						"required": [
+							"name",
+							"templateUrl"
+						],
+						"properties": {
+							"name": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customPullRequestProviders.items.name.title%",
+								"description": "%config.git-graph-rs.customPullRequestProviders.items.name.description%"
+							},
+							"templateUrl": {
+								"type": "string",
+								"title": "%config.git-graph-rs.customPullRequestProviders.items.templateUrl.title%",
+								"markdownDescription": "%config.git-graph-rs.customPullRequestProviders.items.templateUrl.markdownDescription%"
+							}
+						}
+					},
+					"default": [],
+					"markdownDescription": "%config.git-graph-rs.customPullRequestProviders.markdownDescription%"
+				},
+				"git-graph-rs.avatars.gitlabToken": {
+					"type": "string",
+					"default": "",
+					"description": "%config.git-graph-rs.avatars.gitlabToken.description%"
+				},
+				"git-graph-rs.date.format": {
+					"type": "string",
+					"enum": [
+						"Date & Time",
+						"Date Only",
+						"ISO Date & Time",
+						"ISO Date Only",
+						"Relative"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.date.format.enumDescription0%",
+						"%config.git-graph-rs.date.format.enumDescription1%",
+						"%config.git-graph-rs.date.format.enumDescription2%",
+						"%config.git-graph-rs.date.format.enumDescription3%",
+						"%config.git-graph-rs.date.format.enumDescription4%"
+					],
+					"default": "Date & Time",
+					"description": "%config.git-graph-rs.date.format.description%"
+				},
+				"git-graph-rs.date.type": {
+					"type": "string",
+					"enum": [
+						"Author Date",
+						"Commit Date"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.date.type.enumDescription0%",
+						"%config.git-graph-rs.date.type.enumDescription1%"
+					],
+					"default": "Author Date",
+					"description": "%config.git-graph-rs.date.type.description%"
+				},
+				"git-graph-rs.defaultColumnVisibility": {
+					"type": "object",
+					"properties": {
+						"Date": {
+							"type": "boolean",
+							"title": "%config.git-graph-rs.defaultColumnVisibility.Date.title%"
+						},
+						"Author": {
+							"type": "boolean",
+							"title": "%config.git-graph-rs.defaultColumnVisibility.Author.title%"
+						},
+						"Commit": {
+							"type": "boolean",
+							"title": "%config.git-graph-rs.defaultColumnVisibility.Commit.title%"
+						}
+					},
+					"default": {
+						"Date": true,
+						"Author": true,
+						"Commit": true
+					},
+					"description": "%config.git-graph-rs.defaultColumnVisibility.description%"
+				},
+				"git-graph-rs.dialog.addTag.pushToRemote": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.addTag.pushToRemote.description%"
+				},
+				"git-graph-rs.dialog.addTag.type": {
+					"type": "string",
+					"enum": [
+						"Annotated",
+						"Lightweight"
+					],
+					"default": "Annotated",
+					"description": "%config.git-graph-rs.dialog.addTag.type.description%"
+				},
+				"git-graph-rs.dialog.applyStash.reinstateIndex": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.applyStash.reinstateIndex.description%"
+				},
+				"git-graph-rs.dialog.cherryPick.noCommit": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.cherryPick.noCommit.description%"
+				},
+				"git-graph-rs.dialog.cherryPick.recordOrigin": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.cherryPick.recordOrigin.description%"
+				},
+				"git-graph-rs.dialog.createBranch.checkOut": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.createBranch.checkOut.description%"
+				},
+				"git-graph-rs.dialog.deleteBranch.forceDelete": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.deleteBranch.forceDelete.description%"
+				},
+				"git-graph-rs.dialog.fetchIntoLocalBranch.forceFetch": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.fetchIntoLocalBranch.forceFetch.description%"
+				},
+				"git-graph-rs.dialog.fetchRemote.prune": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.fetchRemote.prune.description%"
+				},
+				"git-graph-rs.dialog.fetchRemote.pruneTags": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.fetchRemote.pruneTags.description%"
+				},
+				"git-graph-rs.dialog.general.referenceInputSpaceSubstitution": {
+					"type": "string",
+					"enum": [
+						"None",
+						"Hyphen",
+						"Underscore"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.dialog.general.referenceInputSpaceSubstitution.enumDescription0%",
+						"%config.git-graph-rs.dialog.general.referenceInputSpaceSubstitution.enumDescription1%",
+						"%config.git-graph-rs.dialog.general.referenceInputSpaceSubstitution.enumDescription2%"
+					],
+					"default": "None",
+					"description": "%config.git-graph-rs.dialog.general.referenceInputSpaceSubstitution.description%"
+				},
+				"git-graph-rs.dialog.merge.noCommit": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.merge.noCommit.description%"
+				},
+				"git-graph-rs.dialog.merge.noFastForward": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.dialog.merge.noFastForward.description%"
+				},
+				"git-graph-rs.dialog.merge.squashCommits": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.merge.squashCommits.description%"
+				},
+				"git-graph-rs.dialog.merge.squashMessageFormat": {
+					"type": "string",
+					"enum": [
+						"Default",
+						"Git SQUASH_MSG"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.dialog.merge.squashMessageFormat.enumDescription0%",
+						"%config.git-graph-rs.dialog.merge.squashMessageFormat.enumDescription1%"
+					],
+					"default": "Default",
+					"description": "%config.git-graph-rs.dialog.merge.squashMessageFormat.description%"
+				},
+				"git-graph-rs.dialog.popStash.reinstateIndex": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.popStash.reinstateIndex.description%"
+				},
+				"git-graph-rs.dialog.pullBranch.noFastForward": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.pullBranch.noFastForward.description%"
+				},
+				"git-graph-rs.dialog.pullBranch.squashCommits": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.pullBranch.squashCommits.description%"
+				},
+				"git-graph-rs.dialog.pullBranch.squashMessageFormat": {
+					"type": "string",
+					"enum": [
+						"Default",
+						"Git SQUASH_MSG"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.dialog.pullBranch.squashMessageFormat.enumDescription0%",
+						"%config.git-graph-rs.dialog.pullBranch.squashMessageFormat.enumDescription1%"
+					],
+					"default": "Default",
+					"description": "%config.git-graph-rs.dialog.pullBranch.squashMessageFormat.description%"
+				},
+				"git-graph-rs.dialog.rebase.ignoreDate": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.dialog.rebase.ignoreDate.description%"
+				},
+				"git-graph-rs.dialog.rebase.launchInteractiveRebase": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.rebase.launchInteractiveRebase.description%"
+				},
+				"git-graph-rs.dialog.resetCurrentBranchToCommit.mode": {
+					"type": "string",
+					"enum": [
+						"Soft",
+						"Mixed",
+						"Hard"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.dialog.resetCurrentBranchToCommit.mode.enumDescription0%",
+						"%config.git-graph-rs.dialog.resetCurrentBranchToCommit.mode.enumDescription1%",
+						"%config.git-graph-rs.dialog.resetCurrentBranchToCommit.mode.enumDescription2%"
+					],
+					"default": "Mixed",
+					"description": "%config.git-graph-rs.dialog.resetCurrentBranchToCommit.mode.description%"
+				},
+				"git-graph-rs.dialog.resetUncommittedChanges.mode": {
+					"type": "string",
+					"enum": [
+						"Mixed",
+						"Hard"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription0%",
+						"%config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription1%"
+					],
+					"default": "Mixed",
+					"description": "%config.git-graph-rs.dialog.resetUncommittedChanges.mode.description%"
+				},
+				"git-graph-rs.dialog.stashUncommittedChanges.includeUntracked": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.dialog.stashUncommittedChanges.includeUntracked.description%"
+				},
+				"git-graph-rs.enhancedAccessibility": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.enhancedAccessibility.description%"
+				},
+				"git-graph-rs.fileEncoding": {
+					"type": "string",
+					"default": "utf8",
+					"markdownDescription": "%config.git-graph-rs.fileEncoding.markdownDescription%",
+					"scope": "resource"
+				},
+				"git-graph-rs.graph.colours": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"description": "%config.git-graph-rs.graph.colours.items.description%",
+						"pattern": "^\\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgb[a]?\\s*\\(\\d{1,3},\\s*\\d{1,3},\\s*\\d{1,3}\\))\\s*$"
+					},
+					"default": [
+						"#0085d9",
+						"#d9008f",
+						"#00d90a",
+						"#d98500",
+						"#a300d9",
+						"#ff0000",
+						"#00d9cc",
+						"#e138e8",
+						"#85d900",
+						"#dc5b23",
+						"#6f24d6",
+						"#ffcc00"
+					],
+					"description": "%config.git-graph-rs.graph.colours.description%"
+				},
+				"git-graph-rs.graph.style": {
+					"type": "string",
+					"enum": [
+						"rounded",
+						"angular"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.graph.style.enumDescription0%",
+						"%config.git-graph-rs.graph.style.enumDescription1%"
+					],
+					"default": "rounded",
+					"description": "%config.git-graph-rs.graph.style.description%"
+				},
+				"git-graph-rs.graph.fontSize": {
+					"type": "integer",
+					"minimum": 8,
+					"maximum": 24,
+					"default": 13,
+					"description": "%config.git-graph-rs.graph.fontSize.description%"
+				},
+				"git-graph-rs.graph.rowHeight": {
+					"type": "integer",
+					"minimum": 16,
+					"maximum": 48,
+					"default": 24,
+					"description": "%config.git-graph-rs.graph.rowHeight.description%"
+				},
+				"git-graph-rs.graph.uncommittedChanges": {
+					"type": "string",
+					"enum": [
+						"Open Circle at the Uncommitted Changes",
+						"Open Circle at the Checked Out Commit"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.graph.uncommittedChanges.enumDescription0%",
+						"%config.git-graph-rs.graph.uncommittedChanges.enumDescription1%"
+					],
+					"default": "Open Circle at the Uncommitted Changes",
+					"description": "%config.git-graph-rs.graph.uncommittedChanges.description%"
+				},
+				"git-graph-rs.integratedTerminalShell": {
+					"type": "string",
+					"default": "",
+					"description": "%config.git-graph-rs.integratedTerminalShell.description%",
+					"scope": "machine"
+				},
+				"git-graph-rs.interfaceLanguage": {
+					"type": "string",
+					"enum": [
+						"en",
+						"zh-cn"
+					],
+					"default": "en",
+					"description": "%config.git-graph-rs.interfaceLanguage.description%"
+				},
+				"git-graph-rs.keyboardShortcut.find": {
+					"type": "string",
+					"enum": [
+						"UNASSIGNED",
+						"CTRL/CMD + A",
+						"CTRL/CMD + B",
+						"CTRL/CMD + C",
+						"CTRL/CMD + D",
+						"CTRL/CMD + E",
+						"CTRL/CMD + F",
+						"CTRL/CMD + G",
+						"CTRL/CMD + H",
+						"CTRL/CMD + I",
+						"CTRL/CMD + J",
+						"CTRL/CMD + K",
+						"CTRL/CMD + L",
+						"CTRL/CMD + M",
+						"CTRL/CMD + N",
+						"CTRL/CMD + O",
+						"CTRL/CMD + P",
+						"CTRL/CMD + Q",
+						"CTRL/CMD + R",
+						"CTRL/CMD + S",
+						"CTRL/CMD + T",
+						"CTRL/CMD + U",
+						"CTRL/CMD + V",
+						"CTRL/CMD + W",
+						"CTRL/CMD + X",
+						"CTRL/CMD + Y",
+						"CTRL/CMD + Z"
+					],
+					"default": "CTRL/CMD + F",
+					"description": "%config.git-graph-rs.keyboardShortcut.find.description%"
+				},
+				"git-graph-rs.keyboardShortcut.refresh": {
+					"type": "string",
+					"enum": [
+						"UNASSIGNED",
+						"CTRL/CMD + A",
+						"CTRL/CMD + B",
+						"CTRL/CMD + C",
+						"CTRL/CMD + D",
+						"CTRL/CMD + E",
+						"CTRL/CMD + F",
+						"CTRL/CMD + G",
+						"CTRL/CMD + H",
+						"CTRL/CMD + I",
+						"CTRL/CMD + J",
+						"CTRL/CMD + K",
+						"CTRL/CMD + L",
+						"CTRL/CMD + M",
+						"CTRL/CMD + N",
+						"CTRL/CMD + O",
+						"CTRL/CMD + P",
+						"CTRL/CMD + Q",
+						"CTRL/CMD + R",
+						"CTRL/CMD + S",
+						"CTRL/CMD + T",
+						"CTRL/CMD + U",
+						"CTRL/CMD + V",
+						"CTRL/CMD + W",
+						"CTRL/CMD + X",
+						"CTRL/CMD + Y",
+						"CTRL/CMD + Z"
+					],
+					"default": "CTRL/CMD + R",
+					"description": "%config.git-graph-rs.keyboardShortcut.refresh.description%"
+				},
+				"git-graph-rs.keyboardShortcut.scrollToHead": {
+					"type": "string",
+					"enum": [
+						"UNASSIGNED",
+						"CTRL/CMD + A",
+						"CTRL/CMD + B",
+						"CTRL/CMD + C",
+						"CTRL/CMD + D",
+						"CTRL/CMD + E",
+						"CTRL/CMD + F",
+						"CTRL/CMD + G",
+						"CTRL/CMD + H",
+						"CTRL/CMD + I",
+						"CTRL/CMD + J",
+						"CTRL/CMD + K",
+						"CTRL/CMD + L",
+						"CTRL/CMD + M",
+						"CTRL/CMD + N",
+						"CTRL/CMD + O",
+						"CTRL/CMD + P",
+						"CTRL/CMD + Q",
+						"CTRL/CMD + R",
+						"CTRL/CMD + S",
+						"CTRL/CMD + T",
+						"CTRL/CMD + U",
+						"CTRL/CMD + V",
+						"CTRL/CMD + W",
+						"CTRL/CMD + X",
+						"CTRL/CMD + Y",
+						"CTRL/CMD + Z"
+					],
+					"default": "CTRL/CMD + H",
+					"description": "%config.git-graph-rs.keyboardShortcut.scrollToHead.description%"
+				},
+				"git-graph-rs.keyboardShortcut.scrollToStash": {
+					"type": "string",
+					"enum": [
+						"UNASSIGNED",
+						"CTRL/CMD + A",
+						"CTRL/CMD + B",
+						"CTRL/CMD + C",
+						"CTRL/CMD + D",
+						"CTRL/CMD + E",
+						"CTRL/CMD + F",
+						"CTRL/CMD + G",
+						"CTRL/CMD + H",
+						"CTRL/CMD + I",
+						"CTRL/CMD + J",
+						"CTRL/CMD + K",
+						"CTRL/CMD + L",
+						"CTRL/CMD + M",
+						"CTRL/CMD + N",
+						"CTRL/CMD + O",
+						"CTRL/CMD + P",
+						"CTRL/CMD + Q",
+						"CTRL/CMD + R",
+						"CTRL/CMD + S",
+						"CTRL/CMD + T",
+						"CTRL/CMD + U",
+						"CTRL/CMD + V",
+						"CTRL/CMD + W",
+						"CTRL/CMD + X",
+						"CTRL/CMD + Y",
+						"CTRL/CMD + Z"
+					],
+					"default": "CTRL/CMD + S",
+					"description": "%config.git-graph-rs.keyboardShortcut.scrollToStash.description%"
+				},
+				"git-graph-rs.markdown": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.markdown.description%"
+				},
+				"git-graph-rs.maxDepthOfRepoSearch": {
+					"type": "number",
+					"default": 0,
+					"description": "%config.git-graph-rs.maxDepthOfRepoSearch.description%"
+				},
+				"git-graph-rs.openNewTabEditorGroup": {
+					"type": "string",
+					"enum": [
+						"Active",
+						"Beside",
+						"One",
+						"Two",
+						"Three",
+						"Four",
+						"Five",
+						"Six",
+						"Seven",
+						"Eight",
+						"Nine"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription0%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription1%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription2%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription3%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription4%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription5%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription6%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription7%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription8%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription9%",
+						"%config.git-graph-rs.openNewTabEditorGroup.enumDescription10%"
+					],
+					"default": "Active",
+					"description": "%config.git-graph-rs.openNewTabEditorGroup.description%"
+				},
+				"git-graph-rs.openToTheRepoOfTheActiveTextEditorDocument": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.openToTheRepoOfTheActiveTextEditorDocument.description%"
+				},
+				"git-graph-rs.referenceLabels.alignment": {
+					"type": "string",
+					"enum": [
+						"Normal",
+						"Branches (on the left) & Tags (on the right)",
+						"Branches (aligned to the graph) & Tags (on the right)"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.referenceLabels.alignment.enumDescription0%",
+						"%config.git-graph-rs.referenceLabels.alignment.enumDescription1%",
+						"%config.git-graph-rs.referenceLabels.alignment.enumDescription2%"
+					],
+					"default": "Normal",
+					"description": "%config.git-graph-rs.referenceLabels.alignment.description%"
+				},
+				"git-graph-rs.referenceLabels.combineLocalAndRemoteBranchLabels": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.referenceLabels.combineLocalAndRemoteBranchLabels.description%"
+				},
+				"git-graph-rs.repository.extDiffToolArgs": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "%config.git-graph-rs.repository.extDiffToolArgs.description%"
+				},
+				"git-graph-rs.repository.commits.fetchAvatars": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.commits.fetchAvatars.description%"
+				},
+				"git-graph-rs.repository.commits.initialLoad": {
+					"type": "number",
+					"default": 300,
+					"description": "%config.git-graph-rs.repository.commits.initialLoad.description%"
+				},
+				"git-graph-rs.repository.commits.loadMore": {
+					"type": "number",
+					"default": 100,
+					"description": "%config.git-graph-rs.repository.commits.loadMore.description%"
+				},
+				"git-graph-rs.repository.commits.loadMoreAutomatically": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.commits.loadMoreAutomatically.description%"
+				},
+				"git-graph-rs.repository.commits.mute.commitsThatAreNotAncestorsOfHead": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.commits.mute.commitsThatAreNotAncestorsOfHead.description%"
+				},
+				"git-graph-rs.repository.commits.mute.mergeCommits": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.commits.mute.mergeCommits.description%"
+				},
+				"git-graph-rs.repository.commits.order": {
+					"type": "string",
+					"enum": [
+						"date",
+						"author-date",
+						"topo"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.repository.commits.order.enumDescription0%",
+						"%config.git-graph-rs.repository.commits.order.enumDescription1%",
+						"%config.git-graph-rs.repository.commits.order.enumDescription2%"
+					],
+					"default": "date",
+					"markdownDescription": "%config.git-graph-rs.repository.commits.order.markdownDescription%"
+				},
+				"git-graph-rs.repository.commits.showBodyInline": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.commits.showBodyInline.description%"
+				},
+				"git-graph-rs.repository.commits.showSignatureStatus": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.commits.showSignatureStatus.description%"
+				},
+				"git-graph-rs.repository.fetchAndPrune": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.fetchAndPrune.description%"
+				},
+				"git-graph-rs.repository.trackRemoteTags": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.trackRemoteTags.description%"
+				},
+				"git-graph-rs.repository.fetchAndPruneTags": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.fetchAndPruneTags.description%"
+				},
+				"git-graph-rs.repository.includeCommitsMentionedByReflogs": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.includeCommitsMentionedByReflogs.description%"
+				},
+				"git-graph-rs.repository.onLoad.scrollToHead": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.onLoad.scrollToHead.description%"
+				},
+				"git-graph-rs.repository.onLoad.showCheckedOutBranch": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.onLoad.showCheckedOutBranch.description%"
+				},
+				"git-graph-rs.repository.onLoad.showSpecificBranches": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"description": "%config.git-graph-rs.repository.onLoad.showSpecificBranches.items.description%"
+					},
+					"default": [],
+					"markdownDescription": "%config.git-graph-rs.repository.onLoad.showSpecificBranches.markdownDescription%"
+				},
+				"git-graph-rs.repository.onlyFollowFirstParent": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "%config.git-graph-rs.repository.onlyFollowFirstParent.markdownDescription%"
+				},
+				"git-graph-rs.repository.showCommitsOnlyReferencedByTags": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showCommitsOnlyReferencedByTags.description%"
+				},
+				"git-graph-rs.repository.showRemoteBranches": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showRemoteBranches.description%"
+				},
+				"git-graph-rs.repository.showRemoteHeads": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showRemoteHeads.description%"
+				},
+				"git-graph-rs.repository.showStashes": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showStashes.description%"
+				},
+				"git-graph-rs.repository.showTags": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showTags.description%"
+				},
+				"git-graph-rs.repository.showUncommittedChanges": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showUncommittedChanges.description%"
+				},
+				"git-graph-rs.repository.showUntrackedFiles": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.repository.showUntrackedFiles.description%"
+				},
+				"git-graph-rs.repository.sign.commits": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.sign.commits.description%"
+				},
+				"git-graph-rs.repository.sign.tags": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.repository.sign.tags.description%"
+				},
+				"git-graph-rs.repository.useMailmap": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "%config.git-graph-rs.repository.useMailmap.markdownDescription%"
+				},
+				"git-graph-rs.repositoryDropdownOrder": {
+					"type": "string",
+					"enum": [
+						"Full Path",
+						"Name",
+						"Workspace Full Path"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.repositoryDropdownOrder.enumDescription0%",
+						"%config.git-graph-rs.repositoryDropdownOrder.enumDescription1%",
+						"%config.git-graph-rs.repositoryDropdownOrder.enumDescription2%"
+					],
+					"default": "Workspace Full Path",
+					"description": "%config.git-graph-rs.repositoryDropdownOrder.description%"
+				},
+				"git-graph-rs.retainContextWhenHidden": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.retainContextWhenHidden.description%"
+				},
+				"git-graph-rs.showStatusBarItem": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.showStatusBarItem.description%"
+				},
+				"git-graph-rs.sourceCodeProviderIntegrationLocation": {
+					"type": "string",
+					"enum": [
+						"Inline",
+						"More Actions"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.sourceCodeProviderIntegrationLocation.enumDescription0%",
+						"%config.git-graph-rs.sourceCodeProviderIntegrationLocation.enumDescription1%"
+					],
+					"default": "Inline",
+					"description": "%config.git-graph-rs.sourceCodeProviderIntegrationLocation.description%"
+				},
+				"git-graph-rs.pullRequests.enabled": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.pullRequests.enabled.description%"
+				},
+				"git-graph-rs.stickyHeader": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.stickyHeader.description%"
+				},
+				"git-graph-rs.tabIconColourTheme": {
+					"type": "string",
+					"enum": [
+						"colour",
+						"grey"
+					],
+					"enumDescriptions": [
+						"%config.git-graph-rs.tabIconColourTheme.enumDescription0%",
+						"%config.git-graph-rs.tabIconColourTheme.enumDescription1%"
+					],
+					"default": "colour",
+					"description": "%config.git-graph-rs.tabIconColourTheme.description%"
+				}
+			}
+		},
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "git-graph-rs.openFile",
+					"when": "isInDiffEditor && resourceScheme == git-graph-rs && git-graph-rs:codiconsSupported"
+				},
+				{
+					"command": "git-graph-rs.filterByFile",
+					"when": "false"
+				}
+			],
+			"explorer/context": [
+				{
+					"command": "git-graph-rs.filterByFile",
+					"when": "resourceScheme == file && !listMultiSelection",
+					"group": "git-graph-rs@1"
+				}
+			],
+			"editor/context": [
+				{
+					"command": "git-graph-rs.filterByFile",
+					"when": "resourceScheme == file",
+					"group": "git-graph-rs@1"
+				}
+			],
+			"editor/title/context": [
+				{
+					"command": "git-graph-rs.filterByFile",
+					"when": "resourceScheme == file",
+					"group": "git-graph-rs@1"
+				}
+			],
+			"scm/resourceState/context": [
+				{
+					"command": "git-graph-rs.filterByFile",
+					"when": "!listMultiSelection",
+					"group": "git-graph-rs@1"
+				}
+			],
+			"editor/title": [
+				{
+					"command": "git-graph-rs.openFile",
+					"group": "navigation",
+					"when": "isInDiffEditor && resourceScheme == git-graph-rs && git-graph-rs:codiconsSupported"
+				}
+			],
+			"scm/title": [
+				{
+					"when": "scmProvider == git && config.git-graph-rs.sourceCodeProviderIntegrationLocation == 'Inline'",
+					"command": "git-graph-rs.view",
+					"group": "navigation"
+				},
+				{
+					"when": "scmProvider == git && config.git-graph-rs.sourceCodeProviderIntegrationLocation == 'More Actions'",
+					"command": "git-graph-rs.view",
+					"group": "inline"
+				},
+				{
+					"when": "scmProvider == git",
+					"command": "git-graph-rs.amendLastCommit",
+					"group": "git-graph-rs@1"
+				},
+				{
+					"when": "scmProvider == git",
+					"command": "git-graph-rs.resetCurrentBranchToRemote",
+					"group": "git-graph-rs@2"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,25 @@
+The following notice covers the "openFolder", "closedFolder" and "file" SVG
+icons in ./web/utils.ts in the source code (and ./media/out.min.js in the
+distributed code), which originate from the iOS 11 free icon pack published
+by Icons8 (https://icons8.com/icon/pack/free-icons/ios11).
+
+They are used under the Creative Commons Attribution-NoDerivatives 3.0
+Unported license (CC BY-ND 3.0), as linked from https://icons8.com/license,
+the full text of which is available at
+https://creativecommons.org/licenses/by-nd/3.0/legalcode
+
+The icons are used unmodified (their path data is byte-identical to the
+versions distributed in the upstream Git Graph extension), which is a
+requirement of the NoDerivatives term of this license.
+
+Summary of attribution requirements (per section 3 of the license):
+ - attribution of Icons8 as the source of the icons, and
+ - a link to the license (provided above).
+
+THE ICONS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE ICONS OR THE USE OR OTHER DEALINGS IN THE
+ICONS.

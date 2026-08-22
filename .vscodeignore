@@ -1,0 +1,25 @@
+ .vscode/**
+resources/upstream/**
+resources/rust-crab.svg
+resources/notification/*.svg
+.github/**
+scripts/**
+src/**
+web/**
+tests/**
+target/**
+node_modules/**
+out/**/*.ts
+native/core/**
+native/node/src/**
+native/node/build.rs
+native/node/Cargo.toml
+native/node/Cargo.lock
+Cargo.toml
+Cargo.lock
+*.vsix
+tsconfig.json
+jest.config.js
+GAPS.md
+.editorconfig
+.gitignore

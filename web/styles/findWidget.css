@@ -1,0 +1,148 @@
+.findWidget{
+	display:flex;
+	flex-wrap:wrap;
+	align-items:center;
+	position:fixed;
+	top:-42px;
+	right:28px;
+	max-width:calc(100vw - 56px);
+	height:34px;
+	padding:0 10px;
+	z-index:21;
+	background-color:var(--vscode-editorWidget-background);
+	box-shadow:0 2px 8px var(--vscode-widget-shadow);
+	font-size:13px;
+	color:var(--vscode-editorSuggestWidget-foreground);
+	fill:var(--vscode-editorSuggestWidget-foreground);
+	fill-opacity:0.7;
+	white-space:nowrap;
+}
+.findWidget.active{
+	top:0;
+}
+.findWidget.transition{
+	transition:top .2s linear;
+}
+.findWidget[data-error] #findInput, .findWidget[data-error]:after{
+	outline:1px solid var(--vscode-inputValidation-errorBorder) !important;
+}
+.findWidget[data-error]:after{
+	content:attr(data-error);
+	position:relative;
+	display:block;
+	order:99;
+	flex-basis:100%;
+	top:0;
+	left:0;
+	box-sizing:border-box;
+	max-width:100%;
+	margin-bottom:5px;
+	padding:5px;
+	font-size:12px;
+	line-height:16px;
+	background-color:var(--vscode-inputValidation-errorBackground);
+	outline-offset:-1px !important;
+	white-space:normal;
+}
+
+#findInput{
+	display:inline-block;
+	vertical-align:top;
+	flex:0 1 auto;
+	min-width:48px;
+	padding:5px 47px 5px 5px;
+	border:0;
+	height:16px;
+	width:159px;
+	background-color:var(--vscode-input-background);
+	color:var(--vscode-input-foreground);
+	font-size:13px;
+	outline-offset:-1px !important;
+}
+#findInput:focus{
+	outline:1px solid var(--vscode-focusBorder);
+}
+#findInput::placeholder{
+	color:var(--vscode-input-placeholderForeground);
+}
+
+.findModifier{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	flex:0 0 auto;
+	height:20px;
+	width:20px;
+	line-height:20px;
+	font-size:11px;
+	cursor:pointer;
+	-webkit-user-select:none;
+	user-select:none;
+	text-align:center;
+	color:var(--vscode-input-foreground);
+	opacity:0.7;
+}
+.findModifier.active, #findOpenCdv.active{
+	outline:1px solid var(--vscode-inputOption-activeBorder);
+	outline-offset:-1px;
+	background-color:var(--vscode-inputOption-activeBackground);
+}
+.findModifier:hover, .findModifier.active{
+	opacity:1;
+}
+#findCaseSensitive{
+	margin-left:-47px;
+}
+#findRegex{
+	margin-left:1px;
+	font-size:12px;
+}
+
+#findPosition, #findPrev, #findNext, #findOpenCdv, #findClose{
+	display:inline-block;
+	-webkit-user-select:none;
+	user-select:none;
+}
+#findPosition{
+	flex:0 1 auto;
+	min-width:48px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	margin-left:10px;
+}
+#findPrev, #findNext, #findOpenCdv, #findClose{
+	position:relative;
+	flex:0 0 auto;
+	width:20px;
+	height:20px;
+	margin:0 0 0 6px;
+	cursor:pointer;
+}
+#findPrev svg, #findNext svg, #findOpenCdv svg{
+	position:absolute;
+	left:3px;
+	top:3px;
+}
+#findClose svg{
+	position:absolute;
+	left:2px;
+	top:2px;
+	width:16px !important;
+	height:16px !important;
+}
+#findPrev:hover, #findNext:hover, #findOpenCdv:hover, #findOpenCdv.active, #findClose:hover{
+	fill-opacity:1;
+}
+#findPrev.disabled, #findNext.disabled{
+	fill-opacity:0.3;
+	cursor:default;
+}
+
+.findMatch{
+	background-color:var(--git-graph-findMatch, transparent);
+	outline:1px solid var(--vscode-editor-findMatchHighlightBorder, transparent);
+	outline-offset:-1px;
+}
+body.vscode-high-contrast .findMatch{
+	outline-style:dotted;
+}

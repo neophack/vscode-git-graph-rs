@@ -1,0 +1,177 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # A failed build should not also be a slow build.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # The engine's own tests, which compare it against what `git` reports for the same question.
+  # They need no Node and no addon, so they run first and fail fast.
+  engine:
+    name: Engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all --check
+
+      - name: Lint
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  # One prebuilt binary per platform the extension ships for. napi-rs resolves the Node-API
+  # symbols at load time rather than linking against them, so none of these need Node headers,
+  # node-gyp or Python — only a Rust toolchain and, for the cross-compiled Linux targets, a linker.
+  build:
+    name: ${{ matrix.directory }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            directory: win32-x64-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            directory: win32-arm64-msvc
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            directory: linux-x64-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            directory: linux-arm64-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            directory: darwin-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            directory: darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The only target that needs anything beyond the Rust toolchain.
+      - name: Install the cross-linker for arm64 Linux
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc' >> "$GITHUB_ENV"
+
+      - name: Build the addon
+        run: node scripts/build-addon.mjs --release --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.directory }}
+          path: native/${{ matrix.directory }}/git-graph.node
+          if-no-files-found: error
+
+  # The full stack, on the platforms that can run their own binary. This is where the Rust engine
+  # and the `git` CLI are checked against each other through the same interface the extension uses.
+  integration:
+    name: Integration (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            directory: linux-x64-gnu
+          - os: windows-latest
+            directory: win32-x64-msvc
+          - os: macos-latest
+            directory: darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-${{ matrix.directory }}
+          path: native/${{ matrix.directory }}
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build the TypeScript
+        run: npm run build:ts
+
+      - name: Test
+        run: npm run test:node
+
+  # Everything in one place, ready to be dropped into a VSIX.
+  package:
+    name: Package
+    needs: [engine, build, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: downloaded
+
+      # The artifacts come down one directory per platform; the extension expects them under
+      # `native/<platform>/git-graph.node`, which is where it looks at load time.
+      - name: Assemble the native directory
+        run: |
+          for artifact in downloaded/native-*; do
+            directory="${artifact#downloaded/native-}"
+            mkdir -p "native/$directory"
+            cp "$artifact/git-graph.node" "native/$directory/git-graph.node"
+          done
+          ls -lR native
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build the TypeScript
+        run: npm run build:ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: git-graph-rs
+          path: |
+            out/
+            native/*/git-graph.node
+            package.json
+          if-no-files-found: error

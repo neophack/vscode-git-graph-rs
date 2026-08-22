@@ -1,0 +1,9 @@
+node_modules/
+out/
+target/
+native/*/
+!native/core/
+!native/node/
+*.node
+*.vsix
+.zcode

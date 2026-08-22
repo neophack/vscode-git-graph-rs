@@ -1,0 +1,356 @@
+#settingsWidget{
+	display:block;
+	position:fixed;
+	top:-158px;
+	right:28px;
+	width:840px;
+	max-width:calc(100vw - 56px);
+	box-sizing:border-box;
+	min-height:146px;
+	padding:0 10px 4px 10px;
+	z-index:31;
+	background-color:var(--vscode-editorWidget-background);
+	box-shadow:0 2px 8px var(--vscode-widget-shadow);
+	line-height:17px;
+	font-size:13px;
+	color:var(--vscode-editorSuggestWidget-foreground);
+	fill:var(--vscode-editorSuggestWidget-foreground);
+	fill-opacity:0.7;
+	-webkit-user-select:none;
+	user-select:none;
+	overflow-x:hidden;
+	overflow-y:auto;
+	max-height:90vh;
+}
+#settingsWidget.active{
+	top:0;
+}
+#settingsWidget.transition{
+	transition:top .2s linear;
+}
+
+#settingsWidget h2{
+	margin:8px 10px;
+	padding:0;
+	font-size:16px;
+	line-height:24px;
+	text-align:center;
+}
+
+/* The Settings Widget is split into two independently scrollable columns:
+   the settings of the repository open in the view, and the Global (User) Settings. */
+#settingsColumns{
+	display:flex;
+	align-items:flex-start;
+	gap:10px;
+}
+.settingsColumn{
+	flex:1 1 0;
+	min-width:0;
+	max-height:calc(90vh - 60px);
+	overflow-x:hidden;
+	overflow-y:auto;
+}
+.settingsColumn + .settingsColumn{
+	border-left:1px solid var(--vscode-editorSuggestWidget-foreground);
+	border-left-color:rgba(128,128,128,0.3);
+	padding-left:10px;
+}
+.settingsColumnTitle{
+	position:sticky;
+	top:0;
+	z-index:1;
+	margin:0 0 2px 0;
+	padding:4px 0 6px 0;
+	font-size:13px;
+	line-height:18px;
+	text-align:center;
+	text-transform:uppercase;
+	letter-spacing:0.6px;
+	opacity:0.75;
+	background-color:var(--vscode-editorWidget-background);
+	cursor:default;
+}
+
+/* Stack the columns when the widget is too narrow to show them side by side */
+@media (max-width:719px){
+	#settingsColumns{
+		display:block;
+	}
+	.settingsColumn{
+		max-height:none;
+		overflow-y:visible;
+	}
+	.settingsColumn + .settingsColumn{
+		border-left:none;
+		padding-left:0;
+	}
+}
+
+/* Controls bound to a Global Setting */
+.settingsGlobalCheckbox{
+	display:inline-block;
+	margin:3px 0;
+	cursor:pointer;
+}
+.settingsGlobalSelect, .settingsGlobalNumber{
+	max-width:100%;
+	color:var(--vscode-editorSuggestWidget-foreground);
+	background-color:var(--vscode-input-background);
+	border:1px solid var(--vscode-input-border, transparent);
+	font-family:inherit;
+	font-size:12px;
+	padding:1px 2px;
+}
+.settingsGlobalNumber{
+	width:80px;
+}
+.settingsInputUnit{
+	margin-left:5px;
+	opacity:0.7;
+}
+.settingsSubLabel{
+	margin:6px 0 2px 0;
+	font-weight:bold;
+	opacity:0.85;
+}
+
+.settingsSection{
+	position:relative;
+	padding:6px;
+}
+.settingsSection.centered{
+	text-align:center;
+}
+.settingsSection.general{
+	padding-left:11px;
+	padding-right:11px;
+}
+
+.settingsSection h3{
+	position:relative;
+	margin:5px 0;
+	padding:0;
+	font-size:15px;
+	line-height:20px;
+	text-align:center;
+}
+
+.settingsSection > table{
+	width:100%;
+	border-collapse:collapse;
+}
+
+.settingsSection:before, .settingsSection > table tr.lineAbove td:before, .settingsSection > table tr.lineBelow td:after, .settingsSection .settingsSectionButtons.lineAbove:before{
+	content:'';
+	position:absolute;
+	display:block;
+	left:0;
+	right:0;
+	height:1px;
+	background-color:var(--vscode-editorSuggestWidget-foreground);
+	opacity:0.3;
+}
+.settingsSection:before, .settingsSection > table tr.lineAbove td:before, .settingsSection .settingsSectionButtons.lineAbove:before{
+	top:0;
+}
+.settingsSection > table tr.lineBelow td:after{
+	bottom:0;
+}
+.settingsSection > table tr.lineAbove td:before, .settingsSection > table tr.lineBelow td:after, .settingsSection .settingsSectionButtons.lineAbove:before{
+	opacity:0.15;
+}
+
+.settingsSection > table th, .settingsSection > table td{
+	position:relative;
+	text-align:center;
+	white-space:nowrap;
+}
+.settingsSection > table th{
+	font-weight:bold;
+	padding:3px 5px;
+}
+.settingsSection > table td{
+	padding:0 5px 3px 5px;
+}
+.settingsSection > table tr.lineAbove td{
+	padding-top:3px;
+}
+.settingsSection > table td.left{
+	text-align:left;
+}
+.settingsSection > table td.leftWithEllipsis{
+	width:100%;
+	max-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	text-align:left;
+}
+.settingsSection > table td.right{
+	text-align:right;
+}
+
+.settingsSection.general > table{
+	margin-bottom:4px;
+}
+.settingsSection.general > table td{
+	padding:5px !important;
+}
+
+.settingsSection .hideRemoteBtn{
+	position:relative;
+	display:inline-block;
+	width:13px;
+	height:13px;
+	margin-right:5px;
+	vertical-align:middle;
+	cursor:pointer;
+}
+.settingsSection .hideRemoteBtn svg{
+	position:absolute;
+	top:0;
+	left:0;
+}
+
+.settingsSection > table td.btns div{
+	display:inline-block;
+	position:relative;
+	width:17px;
+	height:17px;
+	vertical-align:top;
+	cursor:pointer;
+}
+.settingsSection > table td.btns.remoteBtns div{
+	vertical-align:middle;
+}
+.settingsSection > table #editRepoName svg, .settingsSection > table #editInitialBranches svg, .settingsSection > table .editRemote svg{
+	position:absolute;
+	left:1.5px;
+	top:1.5px;
+	width:14px !important;
+	height:14px !important;
+}
+.settingsSection > table #deleteRepoName svg, .settingsSection > table #clearInitialBranches svg, .settingsSection > table .deleteRemote svg, .settingsSection > table .fetchRemote svg, .settingsSection > table .pruneRemote svg{
+	position:absolute;
+	left:0.5px;
+	top:0.5px;
+	width:16px !important;
+	height:16px !important;
+}
+
+.settingsSectionButtons{
+	position:relative;
+	width:100%;
+	padding:2px 0;
+	text-align:center;
+}
+
+.settingsSectionButtons > div{
+	display:inline-block;
+	line-height:24px;
+	cursor:pointer;
+	padding-right:6px;
+}
+
+.settingsSection label{
+	display:inline-block;
+	margin:4px 0;
+	cursor:pointer;
+}
+
+.settingsSection .customCheckbox{
+	margin-right:6px;
+}
+
+.settingsSection label > input[type=checkbox]:checked ~ .customCheckbox:after{
+	border-color:var(--vscode-editorSuggestWidget-foreground);
+}
+
+.settingsSectionButtons > div.editBtn svg{
+	vertical-align:top;
+	margin:6px;
+	width:12px !important;
+	height:12px !important;
+}
+.settingsSectionButtons > div.addBtn svg, .settingsSectionButtons > div.removeBtn svg, #openExtensionSettings svg, #exportRepositoryConfig svg{
+	vertical-align:top;
+	width:14px !important;
+	height:14px !important;
+	margin:5px;
+}
+#openExtensionSettings svg, #exportRepositoryConfig svg{
+	margin-top:6px;
+}
+#exportRepositoryConfig svg{
+	margin-right:7px;
+}
+
+#settingsLoading{
+	display:none;
+	position:absolute;
+	top:0;
+	left:0;
+	right:0;
+	height:24px;
+	z-index:32;
+	line-height:24px;
+	text-align:center;
+}
+#settingsLoading svg{
+	display:inline-block;
+	width:15px !important;
+	height:20px !important;
+	margin-top:2px;
+	margin-right:8px;
+	vertical-align:top;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+
+#settingsClose{
+	position:absolute;
+	width:24px;
+	height:24px;
+	top:8px;
+	right:10px;
+	cursor:pointer;
+	z-index:33;
+}
+#settingsClose svg{
+	position:absolute;
+	left:4px;
+	top:4px;
+	width:16px !important;
+	height:16px !important;
+}
+
+.settingsSectionButtons > div:hover svg, .settingsSection .hideRemoteBtn:hover svg, .settingsSection > table td.btns div:hover svg, #settingsClose:hover{
+	fill-opacity:1;
+}
+#settingsWidget.loading #settingsContent{
+	opacity:0.1;
+}
+#settingsWidget.loading #settingsLoading{
+	display:block;
+}
+
+#settingsWidget .settingsWidgetInfo{
+	cursor:help;
+}
+#settingsWidget .settingsWidgetInfo > svg{
+	width:15px !important;
+	height:15px !important;
+	margin-top:-2px;
+	margin-left:5px;
+	vertical-align:middle;
+}
+
+/* Interface Language dropdown (General section of the Repository Settings) */
+#settingsContent select{
+	color:var(--vscode-dropdown-foreground, var(--vscode-foreground));
+	background:var(--vscode-dropdown-background, var(--vscode-input-background));
+	border:1px solid var(--vscode-dropdown-border, var(--vscode-input-background));
+	border-radius:2px;
+	padding:1px 4px;
+	font-family:inherit;
+	font-size:inherit;
+}

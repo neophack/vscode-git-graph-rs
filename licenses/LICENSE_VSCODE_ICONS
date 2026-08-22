@@ -1,0 +1,21 @@
+The following notice covers the "collapseAll" and "expandAll" SVG icons in
+./web/utils.ts in the source code (and ./media/out.min.js in the distributed
+code), which originate from the Visual Studio Code Icons repository
+(https://github.com/microsoft/vscode-icons), Copyright (c) Microsoft
+Corporation.
+
+They are used under the Creative Commons Attribution 4.0 International
+license (CC-BY-4.0), the full text of which is available at
+https://creativecommons.org/licenses/by/4.0/legalcode
+
+Summary of attribution requirements (per section 3(a) of the license):
+ - retention of the above copyright notice, and
+ - a link to the license (provided above).
+
+THE ICONS ARE PROVIDED BY THE COPYRIGHT HOLDERS "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE ICONS OR THE USE OR OTHER
+DEALINGS IN THE ICONS.

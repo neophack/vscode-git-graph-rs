@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"lib": [
+			"es6",
+			"dom"
+		],
+		"module": "none",
+		"moduleResolution": "node",
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitAny": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"outDir": "../media",
+		"removeComments": true,
+		"strict": true,
+		"target": "es6",
+		"skipLibCheck": true
+	}
+}

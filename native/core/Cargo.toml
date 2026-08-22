@@ -1,0 +1,24 @@
+[package]
+name = "git-graph-core"
+description = "Git engine for the Git Graph VS Code extension"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gix = { version = "0.86", default-features = true, features = [
+    "revision",
+    "blob-diff",
+    "status",
+    "dirwalk",
+    "index",
+    "parallel",
+    "mailmap",
+] }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

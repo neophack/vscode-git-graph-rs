@@ -1,0 +1,553 @@
+/**
+ * The two backends, answering the same questions about the same repository.
+ *
+ * This is the test that matters most for the rewrite. The `git` CLI backend is a faithful port of
+ * how the original extension read a repository, so anywhere the Rust engine disagrees with it, the
+ * engine is wrong — and the webview above them cannot tell which one it is talking to, so any
+ * disagreement is a user-visible behaviour change.
+ */
+
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
+
+const { CliBackend, NativeBackend } = await import('../out/backend/index.js');
+
+/* ---------- Fixture ---------- */
+
+let repoPath;
+let clock = 1_600_000_000;
+
+function git(args, options = {}) {
+	return execFileSync('git', args, {
+		cwd: repoPath,
+		encoding: 'utf8',
+		env: {
+			...process.env,
+			GIT_CONFIG_NOSYSTEM: '1',
+			HOME: repoPath,
+			GIT_AUTHOR_DATE: options.date,
+			GIT_COMMITTER_DATE: options.date
+		}
+	});
+}
+
+function write(file, contents) {
+	const full = path.join(repoPath, file);
+	fs.mkdirSync(path.dirname(full), { recursive: true });
+	fs.writeFileSync(full, contents);
+}
+
+function commit(message) {
+	clock += 60;
+	git(['add', '-A']);
+	git(['commit', '--quiet', '--allow-empty', '-m', message], { date: `${clock} +0000` });
+	return git(['rev-parse', 'HEAD']).trim();
+}
+
+/**
+ * A repository with the shapes that have historically been where the two implementations drift:
+ * a merge, both kinds of tag, a remote-tracking branch, Gerrit change refs, a stash, a rename, and
+ * an uncommitted working tree.
+ */
+function buildFixture() {
+	repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-'));
+	git(['init', '--quiet', '--initial-branch=main']);
+	git(['config', 'user.name', 'Test User']);
+	git(['config', 'user.email', 'test@example.com']);
+	git(['config', 'commit.gpgsign', 'false']);
+	git(['config', 'remote.pushdefault', 'origin']);
+	git(['config', 'diff.tool', 'gitgraph-test-tool']);
+	git(['config', 'diff.guitool', 'gitgraph-test-gui']);
+
+	write('a.txt', Array.from({ length: 40 }, (_, n) => `line ${n}\n`).join(''));
+	const first = commit('the first commit');
+	git(['tag', 'v1.0']);
+
+	git(['checkout', '--quiet', '-b', 'feature']);
+	write('feature.txt', 'feature work\n');
+	const feature = commit('the feature commit');
+
+	git(['checkout', '--quiet', 'main']);
+	write('main.txt', 'main work\n');
+	commit('the main commit');
+	git(['merge', '--quiet', '--no-ff', '-m', 'merge the feature', 'feature'], {
+		date: `${(clock += 60)} +0000`
+	});
+
+	git(['mv', 'a.txt', 'renamed.txt']);
+	const renamed = commit('rename a file');
+	git(['tag', '-a', 'v2.0', '-m', 'an annotated tag']);
+
+	// A binary file, so that the two implementations have to agree about detecting it.
+	write('blob.bin', '\u0000\u0001\u0002not text\u0000\u0003');
+	const binary = commit('add a binary file');
+
+	// A remote, without any network: the tracking refs are written directly.
+	git(['remote', 'add', 'origin', 'https://example.invalid/repo.git']);
+	git(['update-ref', 'refs/remotes/origin/main', renamed]);
+	git(['update-ref', 'refs/remotes/origin/HEAD', renamed]);
+	git(['update-ref', 'refs/remotes/origin/changes/45/12345/1', first]);
+	git(['update-ref', 'refs/remotes/origin/changes/45/12345/meta', first]);
+
+	// A stash, so that a commit no branch points at has to appear in the graph.
+	write('renamed.txt', 'stashed change\n');
+	git(['stash', 'push', '--quiet', '-m', 'the stashed work']);
+
+	// An uncommitted working tree.
+	write('renamed.txt', 'uncommitted change\n');
+	write('untracked.txt', 'not added yet\n');
+
+	return { first, feature, renamed, binary };
+}
+
+/* ---------- Comparison helpers ---------- */
+
+/** Compare the fields both backends are expected to agree on, exactly. */
+function assertSameCommits(actual, expected, context) {
+	assert.equal(actual.length, expected.length, `${context}: different number of commits`);
+	for (let i = 0; i < expected.length; i++) {
+		const a = actual[i];
+		const b = expected[i];
+		assert.equal(a.hash, b.hash, `${context}: commit ${i} hash`);
+		assert.deepEqual([...a.parents], [...b.parents], `${context}: commit ${i} parents`);
+		assert.equal(a.author, b.author, `${context}: commit ${i} author`);
+		assert.equal(a.email, b.email, `${context}: commit ${i} email`);
+		assert.equal(a.message, b.message, `${context}: commit ${i} message`);
+		assert.deepEqual([...a.heads].sort(), [...b.heads].sort(), `${context}: commit ${i} heads`);
+		assert.deepEqual(
+			[...a.tags].map((tag) => tag.name).sort(),
+			[...b.tags].map((tag) => tag.name).sort(),
+			`${context}: commit ${i} tags`
+		);
+		assert.deepEqual(
+			[...a.remotes].map((remote) => remote.name).sort(),
+			[...b.remotes].map((remote) => remote.name).sort(),
+			`${context}: commit ${i} remotes`
+		);
+		assert.deepEqual(a.stash, b.stash, `${context}: commit ${i} stash`);
+	}
+}
+
+function sortChanges(changes) {
+	return [...changes]
+		.map((change) => ({
+			oldFilePath: change.oldFilePath,
+			newFilePath: change.newFilePath,
+			type: change.type
+		}))
+		.sort((a, b) => a.newFilePath.localeCompare(b.newFilePath));
+}
+
+/* ---------- The tests ---------- */
+
+describe('the Rust engine and the git CLI agree', () => {
+	let rust;
+	let cli;
+	let fixture;
+	let root;
+
+	before(async () => {
+		fixture = buildFixture();
+		rust = new NativeBackend();
+		cli = new CliBackend();
+		root = await rust.openRepository(repoPath);
+		await cli.openRepository(repoPath);
+	});
+
+	after(() => {
+		rust?.closeAllRepositories();
+		if (repoPath) fs.rmSync(repoPath, { recursive: true, force: true });
+	});
+
+	it('resolves the same repository root', async () => {
+		const fromCli = await cli.openRepository(repoPath);
+		// The two disagree only about spelling: git prints forward slashes, and on Windows one of
+		// them may report the 8.3 short form of a directory. Both are resolved to the real path
+		// before being compared, which is what the extension has to do with them anyway.
+		const normalise = (value) => fs.realpathSync.native(value).replace(/\\/g, '/').toLowerCase();
+		assert.equal(normalise(root), normalise(fromCli));
+	});
+
+	it('reports the same repository info', async () => {
+		const options = { showRemoteBranches: true, showStashes: true };
+		const [a, b] = await Promise.all([
+			rust.getRepoInfo(root, options),
+			cli.getRepoInfo(root, options)
+		]);
+
+		assert.equal(a.error, null);
+		assert.equal(b.error, null);
+		assert.equal(a.head, b.head);
+		assert.deepEqual([...a.branches].sort(), [...b.branches].sort());
+		assert.deepEqual([...a.remotes], [...b.remotes]);
+		assert.deepEqual([...a.tags], [...b.tags]);
+		assert.deepEqual(
+			[...a.stashes].map((stash) => ({ ...stash, selector: stash.selector })),
+			[...b.stashes]
+		);
+	});
+
+	it('reports the same refs', async () => {
+		const options = { showRemoteBranches: true };
+		const [a, b] = await Promise.all([rust.getRefs(root, options), cli.getRefs(root, options)]);
+
+		assert.equal(a.head, b.head);
+		const names = (refs) => [...refs].map((ref) => `${ref.name}@${ref.hash}`).sort();
+		assert.deepEqual(names(a.heads), names(b.heads));
+		assert.deepEqual(names(a.remotes), names(b.remotes));
+		assert.deepEqual(
+			[...a.tags].map((tag) => `${tag.name}@${tag.hash}:${tag.annotated}`).sort(),
+			[...b.tags].map((tag) => `${tag.name}@${tag.hash}:${tag.annotated}`).sort()
+		);
+	});
+
+	it('builds the same graph', async () => {
+		const options = {
+			maxCommits: 100,
+			showTags: true,
+			showRemoteBranches: true,
+			showUncommittedChanges: true,
+			showUntrackedFiles: true,
+			remotes: ['origin'],
+			commitOrdering: 'date'
+		};
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+
+		assert.equal(a.error, null, `the engine failed: ${a.error}`);
+		assert.equal(b.error, null, `the CLI failed: ${b.error}`);
+		assert.equal(a.head, b.head);
+		assert.equal(a.moreCommitsAvailable, b.moreCommitsAvailable);
+		assert.deepEqual([...a.tags].sort(), [...b.tags].sort());
+		assertSameCommits(a.commits, b.commits, 'getCommits');
+	});
+
+	it('builds the same graph in every ordering', async () => {
+		for (const commitOrdering of ['date', 'author-date', 'topo']) {
+			const options = {
+				maxCommits: 100,
+				showTags: true,
+				showRemoteBranches: true,
+				remotes: ['origin'],
+				commitOrdering
+			};
+			const [a, b] = await Promise.all([
+				rust.getCommits(root, options),
+				cli.getCommits(root, options)
+			]);
+			// The set of commits must match exactly; the order within it is checked separately,
+			// because the two implementations break ties differently.
+			assert.deepEqual(
+				[...a.commits].map((commit) => commit.hash).sort(),
+				[...b.commits].map((commit) => commit.hash).sort(),
+				`${commitOrdering}: different commits`
+			);
+
+			// The invariant every ordering guarantees: a parent is never shown before its child.
+			const position = new Map([...a.commits].map((commit, index) => [commit.hash, index]));
+			for (const commit of a.commits) {
+				for (const parent of commit.parents) {
+					if (position.has(parent)) {
+						assert.ok(
+							position.get(parent) > position.get(commit.hash),
+							`${commitOrdering}: the parent ${parent} was shown before its child ${commit.hash}`
+						);
+					}
+				}
+			}
+		}
+	});
+
+	it('paginates the same way', async () => {
+		const options = { maxCommits: 2, showTags: true, showRemoteBranches: true, remotes: ['origin'] };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+
+		assert.equal(a.moreCommitsAvailable, true);
+		assert.equal(b.moreCommitsAvailable, true);
+		// A page can come back longer than it asked for: stash rows are spliced in *after* the page
+		// is trimmed, which is what the original extension does and what the view expects. What
+		// matters is that both backends do it identically.
+		assertSameCommits(a.commits, b.commits, 'pagination');
+		assert.equal(
+			a.commits.filter((commit) => commit.stash === null).length,
+			2,
+			'the page must hold the requested number of real commits'
+		);
+	});
+
+	it('shows Gerrit change refs only when asked', async () => {
+		const hidden = await rust.getRefs(root, { showRemoteBranches: true, showChangeRefs: false });
+		assert.ok(
+			[...hidden.remotes].every((ref) => !ref.name.includes('changes/')),
+			'change refs must stay out of the graph by default'
+		);
+
+		const shown = await rust.getRefs(root, { showRemoteBranches: true, showChangeRefs: true });
+		const names = [...shown.remotes].map((ref) => ref.name);
+		assert.ok(names.includes('origin/changes/45/12345/1'));
+		assert.ok(!names.some((name) => name.endsWith('/meta')), 'meta refs are never displayed');
+
+		const fromCli = await cli.getRefs(root, { showRemoteBranches: true, showChangeRefs: true });
+		assert.deepEqual(names.sort(), [...fromCli.remotes].map((ref) => ref.name).sort());
+	});
+
+	it('reports the same commit details', async () => {
+		const [a, b] = await Promise.all([
+			rust.getCommitDetails(root, fixture.renamed),
+			cli.getCommitDetails(root, fixture.renamed)
+		]);
+
+		assert.equal(a.hash, b.hash);
+		assert.deepEqual([...a.parents], [...b.parents]);
+		assert.equal(a.author, b.author);
+		assert.equal(a.authorEmail, b.authorEmail);
+		assert.equal(a.authorDate, b.authorDate);
+		assert.equal(a.committer, b.committer);
+		assert.equal(a.committerDate, b.committerDate);
+		assert.equal(a.body.trim(), b.body.trim());
+		assert.deepEqual(sortChanges(a.fileChanges), sortChanges(b.fileChanges));
+		// The rename is the point of this commit: it must be one change, not an add and a delete.
+		assert.equal(a.fileChanges.length, 1);
+		assert.equal(a.fileChanges[0].type, 'R');
+	});
+
+	it('reports the same first commit, which has no parent to diff against', async () => {
+		const [a, b] = await Promise.all([
+			rust.getCommitDetails(root, fixture.first),
+			cli.getCommitDetails(root, fixture.first)
+		]);
+		assert.deepEqual(sortChanges(a.fileChanges), sortChanges(b.fileChanges));
+		assert.equal(a.fileChanges.length, 1);
+		assert.equal(a.fileChanges[0].type, 'A');
+	});
+
+	it('counts uncommitted changes the same way', async () => {
+		for (const includeUntracked of [true, false]) {
+			const [a, b] = await Promise.all([
+				rust.getUncommittedChangeCount(root, includeUntracked),
+				cli.getUncommittedChangeCount(root, includeUntracked)
+			]);
+			assert.equal(a, b, `untracked=${includeUntracked}`);
+		}
+	});
+
+	it('lists the same uncommitted files', async () => {
+		const [a, b] = await Promise.all([
+			rust.getUncommittedDetails(root),
+			cli.getUncommittedDetails(root)
+		]);
+		const paths = (details) => [...details.fileChanges].map((change) => change.newFilePath).sort();
+		assert.deepEqual(paths(a), paths(b));
+	});
+
+	it('reports the same stashes', async () => {
+		const [a, b] = await Promise.all([rust.getStashes(root), cli.getStashes(root)]);
+		assert.deepEqual([...a], [...b]);
+		assert.equal(a.length, 1);
+		assert.match(a[0].message, /the stashed work/);
+	});
+
+	it('compares two commits the same way', async () => {
+		const [a, b] = await Promise.all([
+			rust.compareCommits(root, fixture.first, fixture.renamed),
+			cli.compareCommits(root, fixture.first, fixture.renamed)
+		]);
+		assert.deepEqual(sortChanges(a), sortChanges(b));
+	});
+
+	it('reports the same repository configuration', async () => {
+		const [a, b] = await Promise.all([rust.getConfig(root), cli.getConfig(root)]);
+		for (const key of ['userName', 'userEmail', 'pushDefault', 'diffTool', 'diffGuiTool']) {
+			assert.equal(a[key], b[key], `getConfig: ${key}`);
+		}
+		const remote = (config) => [...config.remotes].map((r) => `${r.name}|${r.url}|${r.pushUrl}`).sort();
+		assert.deepEqual(remote(a), remote(b), 'getConfig: remotes');
+
+		// The fixture sets these, so the values must come back rather than merely agreeing.
+		assert.equal(a.userName, 'Test User');
+		assert.equal(a.userEmail, 'test@example.com');
+		assert.equal(a.pushDefault, 'origin');
+		assert.equal(a.diffTool, 'gitgraph-test-tool');
+		assert.equal(a.diffGuiTool, 'gitgraph-test-gui');
+	});
+
+	it('returns the same file contents at a revision', async () => {
+		const [a, b] = await Promise.all([
+			rust.getCommitFile(root, fixture.renamed, 'renamed.txt'),
+			cli.getCommitFile(root, fixture.renamed, 'renamed.txt')
+		]);
+		assert.equal(a.binary, b.binary, 'getCommitFile: binary flag of a text file');
+		assert.equal(a.binary, false, 'getCommitFile: a text file is not binary');
+		assert.equal(a.contents, b.contents, 'getCommitFile: contents of a text file');
+
+		const [ab, bb] = await Promise.all([
+			rust.getCommitFile(root, fixture.binary, 'blob.bin'),
+			cli.getCommitFile(root, fixture.binary, 'blob.bin')
+		]);
+		assert.equal(ab.binary, bb.binary, 'getCommitFile: binary flag of a binary file');
+		assert.equal(ab.binary, true, 'getCommitFile: a binary file is detected');
+		assert.equal(ab.contents, null, 'getCommitFile: a binary file has no contents');
+	});
+
+	it('produces the same single-file diff', async () => {
+		const [a, b] = await Promise.all([
+			rust.getCommitFileDiff(root, fixture.renamed, 'renamed.txt'),
+			cli.getCommitFileDiff(root, fixture.renamed, 'renamed.txt')
+		]);
+		// Header lines the two implementations legitimately spell differently (rename similarity,
+		// blob indexes) are ignored: what must agree is the change itself.
+		const body = (diff) =>
+			diff
+				.trim()
+				.split('\n')
+				.filter((line) => !/^(index |similarity index |--- |\+\+\+ |new file mode )/.test(line))
+				.join('\n');
+		assert.equal(body(a), body(b), 'getCommitFileDiff: the unified diffs differ');
+	});
+
+	it('reads the same file at an old revision, and rejects the same missing one', async () => {
+		// a.txt only exists at the first commit: it was renamed later.
+		const [a, b] = await Promise.all([
+			rust.getCommitFile(root, fixture.first, 'a.txt'),
+			cli.getCommitFile(root, fixture.first, 'a.txt')
+		]);
+		assert.equal(a.binary, false);
+		assert.equal(a.contents, b.contents);
+		assert.equal(a.contents.split('\n').length, 41, 'the 40 fixture lines plus the trailing newline');
+
+		await assert.rejects(() => rust.getCommitFile(root, fixture.first, 'feature.txt'));
+		await assert.rejects(() => cli.getCommitFile(root, fixture.first, 'feature.txt'));
+	});
+
+	it('diffs a file added by the root commit, and agrees an untouched file has no diff', async () => {
+		const [rootA, rootB] = await Promise.all([
+			rust.getCommitFileDiff(root, fixture.first, 'a.txt'),
+			cli.getCommitFileDiff(root, fixture.first, 'a.txt')
+		]);
+		// A root commit diffs against the empty tree, and the empty side of the hunk header is
+		// spelled the way git spells it.
+		assert.ok(rootA.includes('@@ -0,0 +1,40 @@'), `the engine hunk header: ${rootA.slice(0, 120)}`);
+		assert.ok(rootB.includes('@@ -0,0 +1,40 @@'), `the CLI hunk header: ${rootB.slice(0, 120)}`);
+		const body = (diff) =>
+			diff
+				.trim()
+				.split('\n')
+				.filter((line) => !/^(index |similarity index |--- |\+\+\+ |new file mode |diff --git )/.test(line))
+				.join('\n');
+		assert.equal(body(rootA), body(rootB));
+
+		// renamed.txt was not touched by the binary commit after it.
+		const [sameA, sameB] = await Promise.all([
+			rust.getCommitFileDiff(root, fixture.binary, 'renamed.txt'),
+			cli.getCommitFileDiff(root, fixture.binary, 'renamed.txt')
+		]);
+		assert.equal(sameA, '');
+		assert.equal(sameB, '');
+	});
+
+	it('filters the graph by author the same way', async () => {
+		for (const authors of [['Test User'], ['Nobody Else <nobody@example.com>']]) {
+			const options = { maxCommits: 100, authors, showTags: true, showRemoteBranches: true };
+			const [a, b] = await Promise.all([
+				rust.getCommits(root, options),
+				cli.getCommits(root, options)
+			]);
+			assertSameCommits(a.commits, b.commits, `authors=${authors[0]}`);
+		}
+		const nobody = await rust.getCommits(root, {
+			maxCommits: 100,
+			authors: ['Nobody Else <nobody@example.com>']
+		});
+		assert.equal(nobody.commits.filter((commit) => commit.stash === null).length, 0);
+	});
+
+	it('filters the graph by path the same way', async () => {
+		const options = { maxCommits: 100, filterPaths: ['feature.txt'], showRemoteBranches: true };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'filterPaths');
+		// History simplification: the merge carries the feature branch's file in unchanged, so
+		// only the commit that created feature.txt remains.
+		const real = a.commits.filter((commit) => commit.stash === null);
+		assert.deepEqual(real.map((commit) => commit.hash), [fixture.feature]);
+	});
+
+	it('follows only the first parent the same way', async () => {
+		const options = {
+			maxCommits: 100,
+			branches: ['main'],
+			onlyFollowFirstParent: true,
+			showTags: true,
+			showRemoteBranches: true,
+			remotes: ['origin']
+		};
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'onlyFollowFirstParent');
+		const hashes = a.commits.map((commit) => commit.hash);
+		assert.ok(!hashes.includes(fixture.feature), 'the second-parent side must be excluded');
+	});
+
+	it('hides the named remotes the same way', async () => {
+		const options = { showRemoteBranches: true, hideRemotes: ['origin'] };
+		const [a, b] = await Promise.all([rust.getRefs(root, options), cli.getRefs(root, options)]);
+		assert.deepEqual([...a.remotes], [...b.remotes]);
+		assert.equal(a.remotes.length, 0, 'the only remote is origin, which is hidden here');
+	});
+
+	it('compares a commit against the working tree the same way', async () => {
+		const [a, b] = await Promise.all([
+			rust.compareCommits(root, fixture.renamed, ''),
+			cli.compareCommits(root, fixture.renamed, '')
+		]);
+		assert.deepEqual(sortChanges(a), sortChanges(b));
+		// The fixture's working tree modifies renamed.txt and adds untracked.txt on top of HEAD.
+		const paths = a.map((change) => change.newFilePath).sort();
+		assert.ok(paths.includes('renamed.txt'));
+	});
+
+	it('keeps the repository handle open across requests', async () => {
+		const before = rust.openRepositoryCount;
+		await rust.getRefs(root, { showRemoteBranches: true });
+		await rust.getRefs(root, { showRemoteBranches: true });
+		assert.equal(rust.openRepositoryCount, before, 'a second request must reuse the warm handle');
+	});
+
+	// Last in the block: this one pushes a second stash, which the earlier tests count on not
+	// being there yet.
+	it('orders multiple stashes newest first', async () => {
+		write('renamed.txt', 'a second stashed change\n');
+		git(['stash', 'push', '--quiet', '-m', 'the second stashed work']);
+
+		const [a, b] = await Promise.all([rust.getStashes(root), cli.getStashes(root)]);
+		assert.deepEqual([...a], [...b]);
+		assert.equal(a.length, 2);
+		assert.match(a[0].message, /the second stashed work/, 'the newest stash comes first');
+		assert.match(a[1].message, /the stashed work/);
+	});
+});
+
+describe('the backend selection', () => {
+	it('falls back to the CLI when the engine cannot open a path', async () => {
+		const { createBackend } = await import('../out/backend/index.js');
+		const fallbacks = [];
+		const backend = createBackend({ onFallback: (method) => fallbacks.push(method) });
+
+		// A path that is not a repository: both backends fail, but the engine's failure is the kind
+		// that is fallen back over, so the CLI is asked as well.
+		const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-empty-'));
+		try {
+			await assert.rejects(() => backend.openRepository(outside));
+			assert.deepEqual(fallbacks, ['openRepository']);
+		} finally {
+			fs.rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it('can be forced onto the CLI', async () => {
+		const { createBackend, describeBackend } = await import('../out/backend/index.js');
+		assert.equal(describeBackend({ prefer: 'git-cli' }), 'git-cli');
+		assert.equal(createBackend({ prefer: 'git-cli' }).name, 'git-cli');
+	});
+});

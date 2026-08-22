@@ -1,0 +1,157 @@
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { DataSource } from './dataSource';
+import { GitFileStatus } from './types';
+import { UNCOMMITTED, getPathFromStr } from './utils';
+import { Disposable, toDisposable } from './utils/disposable';
+
+export const enum DiffSide {
+	Old,
+	New
+}
+
+/**
+ * Manages providing a specific revision of a repository file for use in the Visual Studio Code Diff View.
+ */
+export class DiffDocProvider extends Disposable implements vscode.TextDocumentContentProvider {
+	public static scheme = 'git-graph-rs';
+	private readonly dataSource: DataSource;
+	private readonly docs = new Map<string, DiffDocument>();
+	private readonly onDidChangeEventEmitter = new vscode.EventEmitter<vscode.Uri>();
+
+	/**
+	 * Creates the Git Graph Diff Document Provider.
+	 * @param dataSource The Git Graph DataSource instance.
+	 */
+	constructor(dataSource: DataSource) {
+		super();
+		this.dataSource = dataSource;
+
+		this.registerDisposables(
+			vscode.workspace.onDidCloseTextDocument((doc) => this.docs.delete(doc.uri.toString())),
+			this.onDidChangeEventEmitter,
+			toDisposable(() => this.docs.clear())
+		);
+	}
+
+	/**
+	 * An event to signal a resource has changed.
+	 */
+	get onDidChange() {
+		return this.onDidChangeEventEmitter.event;
+	}
+
+	/**
+	 * Provides the content of a text document at a specific Git revision.
+	 * @param uri The `git-graph-rs://file.ext?encoded-data` URI.
+	 * @returns The content of the text document.
+	 */
+	public async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+		try {
+			const document = this.docs.get(uri.toString());
+			if (document) {
+				return document.value;
+			}
+
+			const request = decodeDiffDocUri(uri);
+			if (!request.exists) {
+				return '';
+			}
+
+			return await this.dataSource.getCommitFile(request.repo, request.commit, request.filePath).then(
+				(contents) => {
+					const document = new DiffDocument(contents);
+					this.docs.set(uri.toString(), document);
+					return document.value;
+				},
+				(errorMessage) => {
+					return 'Unable to retrieve file: ' + errorMessage;
+				}
+			);
+		} catch (err) {
+			return `Error inside provideTextDocumentContent: ${err instanceof Error ? err.message : err}`;
+		}
+	}
+}
+
+/**
+ * Represents the content of a Diff Document.
+ */
+class DiffDocument {
+	private readonly body: string;
+
+	/**
+	 * Creates a Diff Document with the specified content.
+	 * @param body The content of the document.
+	 */
+	constructor(body: string) {
+		this.body = body;
+	}
+
+	/**
+	 * Get the content of the Diff Document.
+	 */
+	get value() {
+		return this.body;
+	}
+}
+
+
+/* Encoding and decoding URI's */
+
+/**
+ * Represents the data passed through `git-graph-rs://file.ext?encoded-data` URI's by the DiffDocProvider.
+ */
+type DiffDocUriData = {
+	filePath: string;
+	commit: string;
+	repo: string;
+	exists: boolean;
+};
+
+/**
+ * Produce the URI of a file to be used in the Visual Studio Diff View.
+ * @param repo The repository the file is within.
+ * @param filePath The path of the file.
+ * @param commit The commit hash specifying the revision of the file.
+ * @param type The Git file status of the change.
+ * @param diffSide The side of the Diff View that this URI will be displayed on.
+ * @returns A URI of the form `git-graph-rs://file.ext?encoded-data` or `file://path/file.ext`
+ */
+export function encodeDiffDocUri(repo: string, filePath: string, commit: string, type: GitFileStatus, diffSide: DiffSide): vscode.Uri {
+	if (commit === UNCOMMITTED && type !== GitFileStatus.Deleted) {
+		return vscode.Uri.file(path.join(repo, filePath));
+	}
+
+	const fileDoesNotExist = (diffSide === DiffSide.Old && type === GitFileStatus.Added) || (diffSide === DiffSide.New && type === GitFileStatus.Deleted);
+	const data: DiffDocUriData = {
+		filePath: getPathFromStr(filePath),
+		commit: commit,
+		repo: repo,
+		exists: !fileDoesNotExist
+	};
+
+	return vscode.Uri.file(data.filePath + (fileDoesNotExist ? ' (non-existent)' : '')).with({
+		scheme: DiffDocProvider.scheme,
+		query: Buffer.from(JSON.stringify(data)).toString('base64')
+	});
+}
+
+/**
+ * Decode the data from a `git-graph-rs://file.ext?encoded-data` URI.
+ * @param uri The URI to decode data from.
+ * @returns The decoded DiffDocUriData.
+ */
+export function decodeDiffDocUri(uri: vscode.Uri): DiffDocUriData {
+	let query = uri.query;
+	// In VS Code > 1.38 (and especially 1.80+), URI query parameters may be URL encoded automatically.
+	// We must decode the URI component before decoding the base64 string to prevent padding errors.
+	if (query.includes('%')) {
+		query = decodeURIComponent(query);
+	}
+	try {
+		return JSON.parse(Buffer.from(query, 'base64').toString());
+	} catch (e) {
+		throw new Error('Unable to decode the Git Graph RS diff document URI: the data is malformed.');
+	}
+}
