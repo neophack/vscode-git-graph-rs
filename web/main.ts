@@ -2084,6 +2084,9 @@ window.addEventListener('load', () => {
 			case 'openExtensionSettings':
 				finishOrDisplayError(msg.error, 'Unable to Open Extension Settings');
 				break;
+			case 'openLogFile':
+				finishOrDisplayError(msg.error, 'Unable to Open the Session Log');
+				break;
 			case 'openExternalDirDiff':
 				finishOrDisplayError(msg.error, 'Unable to Open External Directory Diff', true);
 				break;

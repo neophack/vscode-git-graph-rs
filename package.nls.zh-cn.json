@@ -154,6 +154,7 @@
 	"config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription0": "混合重置 - 保留工作区，但重置索引",
 	"config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription1": "硬重置 - 丢弃所有更改",
 	"config.git-graph-rs.dialog.stashUncommittedChanges.includeUntracked.description": "\"包含未跟踪文件(Include Untracked)\"复选框的默认状态。",
+	"config.git-graph-rs.enableLog.description": "记录会话日志（含加载各环节耗时）到 Git Graph RS 输出频道和日志文件，每次编辑器启动时清空。可在 Git Graph 设置面板中点击\"查看会话日志\"打开。",
 	"config.git-graph-rs.enhancedAccessibility.description": "在提交详情视图中以 A|M|D|R|U 文字指示文件更改，方便色觉障碍用户。将来此设置将启用 Git Graph 其他默认未启用的辅助功能。",
 	"config.git-graph-rs.fileEncoding.markdownDescription": "获取仓库文件的特定版本时（例如在差异视图中）使用的字符集编码。所有受支持的编码列表见[此处](https://github.com/ashtuchkin/iconv-lite/wiki/Supported-Encodings)。",
 	"config.git-graph-rs.graph.colours.description": "指定图形使用的颜色。",

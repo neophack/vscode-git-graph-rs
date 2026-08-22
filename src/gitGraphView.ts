@@ -6,9 +6,10 @@ import * as vscode from 'vscode';
  * Must be bumped whenever web/ sources change, so that already-open webviews
  * don't keep serving a stale cached out.min.js / out.min.css after an update.
  */
-const MEDIA_CACHE_VERSION = '1.39.2';
+const MEDIA_CACHE_VERSION = '1.39.6';
 
 import { AvatarManager } from './avatarManager';
+import { enginePlatformTable, hasEngineForPlatform, platformKey } from './backend/addon';
 import { getConfig } from './config';
 import { CommitComparisonView } from './comparisonView';
 import { DataSource, GitCommitData, GitCommitDetailsData, GitConfigKey } from './dataSource';
@@ -54,7 +55,10 @@ const WRITABLE_GLOBAL_SETTINGS: { readonly [setting: string]: (value: any) => bo
 	'repository.showRemoteHeads': isBoolean,
 
 	/* Review Integration */
-	'pullRequests.enabled': isBoolean
+	'pullRequests.enabled': isBoolean,
+
+	/* Logging */
+	'enableLog': isBoolean
 };
 
 function isBoolean(value: any) {
@@ -533,6 +537,7 @@ export class GitGraphView extends Disposable {
 				break;
 			case 'loadCommits': {
 				this.loadCommitsRefreshId = msg.refreshId;
+				const startTime = Date.now();
 				// A forced refresh (the Refresh button) must observe fresh repository state: bypass the commit cache
 				const commitData = await this.getCommitsCached(msg, true, false);
 				this.sendMessage({
@@ -542,6 +547,7 @@ export class GitGraphView extends Disposable {
 					uncommittedPending: true,
 					...commitData
 				});
+				this.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (Date.now() - startTime) + ' ms');
 				this.sendUncommittedChangesFollowUp(msg, commitData); // runs asynchronously (never awaited)
 				break;
 			}
@@ -577,6 +583,7 @@ export class GitGraphView extends Disposable {
 				break;
 			case 'loadRepoInfo': {
 				this.loadRepoInfoRefreshId = msg.refreshId;
+				const startTime = Date.now();
 				let repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes), isRepo = true;
 				if (repoInfo.error) {
 					// If an error occurred, check to make sure the repo still exists
@@ -589,6 +596,7 @@ export class GitGraphView extends Disposable {
 					...repoInfo,
 					isRepo: isRepo
 				});
+				this.logger.log('Loaded repository info in ' + (Date.now() - startTime) + ' ms (' + repoInfo.branches.length + ' branches)');
 				if (msg.repo !== this.currentRepo) {
 					this.currentRepo = msg.repo;
 					this.extensionState.setLastActiveRepo(msg.repo);
@@ -613,6 +621,12 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({
 					command: 'openExtensionSettings',
 					error: await openExtensionSettings()
+				});
+				break;
+			case 'openLogFile':
+				this.sendMessage({
+					command: 'openLogFile',
+					error: await this.openLogFile()
 				});
 				break;
 			case 'openExternalDirDiff':
@@ -846,6 +860,7 @@ export class GitGraphView extends Disposable {
 				dateFormat: config.dateFormat,
 				dateType: config.dateType,
 				defaultColumnVisibility: config.defaultColumnVisibility,
+				enableLog: config.enableLog,
 				stickyHeader: config.stickyHeader,
 				dialogDefaults: config.dialogDefaults,
 				enhancedAccessibility: config.enhancedAccessibility,
@@ -892,7 +907,77 @@ export class GitGraphView extends Disposable {
 			colorParams += '[data-color="' + i + '"]{--git-graph-color:var(--git-graph-color' + i + ');} ';
 		}
 
-		if (this.dataSource.isGitExecutableUnknown()) {
+		// The graph view is served by the native engine, so an editor running on a platform without
+		// one — or a package that is missing one of the binaries — gets a page saying so, showing
+		// which binaries this installation actually contains, rather than a view that silently
+		// falls back to the `git` CLI.
+		const enginePresent = hasEngineForPlatform(this.extensionPath);
+		if (!enginePresent) {
+			const zh = config.interfaceLanguage === 'zh-cn';
+			const currentKey = platformKey();
+			const platforms = enginePlatformTable(this.extensionPath);
+			const currentIsSupported = platforms.some((platform) => platform.key === currentKey);
+			const title = currentIsSupported
+				? (zh ? '当前安装包缺少此架构的原生引擎' : 'This package is missing the engine for this architecture')
+				: (zh ? '不支持当前系统架构' : 'Unsupported System Architecture');
+			const intro = currentIsSupported
+				? (zh
+					? `当前编辑器运行于 <code>${currentKey}</code>，该架构需要 Rust 原生引擎支持，但安装它的这个包未包含对应的原生引擎，无法加载图形视图。`
+					: `This editor is running on <code>${currentKey}</code>, an architecture that requires the Rust native engine, but the package it was installed from does not include it, so the graph view cannot be loaded.`)
+				: (zh
+					? `当前编辑器运行于 <code>${currentKey}</code>，Git Graph RS 未为此架构构建 Rust 原生引擎，无法加载图形视图。`
+					: `This editor is running on <code>${currentKey}</code>, an architecture Git Graph RS does not build a Rust native engine for, so the graph view cannot be loaded.`);
+			const tableRows = platforms.map((platform) =>
+				`<tr><td>${platform.os}</td><td>${platform.arch}</td><td class="${platform.present ? 'engineOk' : 'engineMissing'}">${
+					platform.present ? (zh ? '&#10003; 已包含' : '&#10003; Included') : (zh ? '&#10007; 未包含' : '&#10007; Not included')
+				}</td></tr>`
+			).join('\n				');
+			const hint = currentIsSupported
+				? `<p class="engineHint">${zh
+					? '请重新安装包含全部平台二进制文件的完整版扩展。'
+					: 'Reinstall the extension from a package that includes the binaries for all platforms.'}</p>`
+				: '';
+			body = `<body class="unableToLoad engineErrorPage">
+			<div class="engineErrorCard">
+				<svg class="engineErrorIcon" viewBox="0 0 16 16" width="28" height="28" aria-hidden="true"><path fill="currentColor" d="M8 1.6 15.2 14H.8Z"></path><rect class="engineErrorMark" x="7.35" y="5.4" width="1.3" height="4.4" rx="0.65"></rect><circle class="engineErrorMark" cx="8" cy="11.9" r="0.85"></circle></svg>
+				<h2>${title}</h2>
+				<p class="unableToLoadMessage">${intro}</p>
+				<p class="engineTableCaption">${zh ? '各平台原生引擎在此安装包中的包含情况：' : 'Native engines included in this package, by platform:'}</p>
+				<table class="engineTable">
+					<thead><tr><th>${zh ? '系统' : 'System'}</th><th>${zh ? '架构' : 'Architecture'}</th><th>${zh ? '状态' : 'Status'}</th></tr></thead>
+					<tbody>
+				${tableRows}
+					</tbody>
+				</table>
+				${hint}
+			</div>
+			<style>
+				body.engineErrorPage { display: flex; margin: 0; padding: 24px; overflow: auto; }
+				.engineErrorCard { width: 100%; max-width: 640px; margin: auto; padding: 26px 34px 30px; border: 1px solid var(--vscode-panel-border, #3c3c3c); border-radius: 10px; background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.05)); text-align: center; box-sizing: border-box; }
+				.engineErrorIcon { color: var(--vscode-editorWarning-foreground, #cca700); }
+				.engineErrorIcon .engineErrorMark { fill: var(--vscode-editorWidget-background, #1e1e1e); }
+				.engineErrorCard h2 { margin: 10px 0 8px; font-size: 19px; font-weight: 600; }
+				.engineErrorCard p { margin: 0; color: var(--vscode-descriptionForeground, inherit); line-height: 1.6; }
+				.engineErrorCard code { background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.16)); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+				.engineTableCaption { margin-top: 14px !important; }
+				.engineTable { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+				.engineTable th { text-align: left; font-weight: 600; color: var(--vscode-descriptionForeground, inherit); padding: 7px 12px; border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c); white-space: nowrap; }
+				.engineTable td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c); }
+				.engineTable tbody tr:last-child td { border-bottom: none; }
+				.engineTable .engineOk { color: var(--vscode-testing-iconPassed, #73c991); font-weight: 600; white-space: nowrap; }
+				.engineTable .engineMissing { color: var(--vscode-errorForeground, #f48771); font-weight: 600; white-space: nowrap; }
+				.engineHint { margin-top: 16px !important; }
+				@media (max-width: 520px) {
+					body.engineErrorPage { padding: 12px; }
+					.engineErrorCard { padding: 18px 14px 22px; border-radius: 8px; }
+					.engineErrorCard h2 { font-size: 17px; }
+					.engineErrorCard p { font-size: 12px; }
+					.engineTable { font-size: 12px; }
+					.engineTable th, .engineTable td { padding: 6px 6px; }
+				}
+			</style>
+			</body>`;
+		} else if (this.dataSource.isGitExecutableUnknown()) {
 			body = `<body class="unableToLoad">
 			<h2>Unable to load Git Graph</h2>
 			<p class="unableToLoadMessage">${UNABLE_TO_FIND_GIT_MSG}</p>
@@ -939,7 +1024,7 @@ export class GitGraphView extends Disposable {
 			<script nonce="${nonce}">(function(){ var api = acquireVsCodeApi(); document.getElementById('rescanForReposBtn').addEventListener('click', function(){ api.postMessage({command: 'rescanForRepos'}); }); })();</script>
 			</body>`;
 		}
-		this.isGraphViewLoaded = numRepos > 0;
+		this.isGraphViewLoaded = numRepos > 0 && enginePresent;
 		this.loadViewTo = null;
 
 		return `<!DOCTYPE html>
@@ -1105,6 +1190,24 @@ export class GitGraphView extends Disposable {
 		}
 		this.commitCache.set(key, promise);
 		return promise;
+	}
+
+	/**
+	 * Open this session's log file in an editor tab. The file starts empty on every activation, so
+	 * what it shows is always the log of the current editor session.
+	 */
+	private async openLogFile(): Promise<string | null> {
+		const logFile = this.logger.getLogFile();
+		if (logFile === null) {
+			return 'No log is being recorded for this session. Enable the "git-graph-rs.enableLog" setting to record one.';
+		}
+		try {
+			const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile));
+			await vscode.window.showTextDocument(document, { preview: false });
+			return null;
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
 	}
 
 	/* URI Manipulation Methods */

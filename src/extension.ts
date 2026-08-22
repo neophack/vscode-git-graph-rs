@@ -1,5 +1,7 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
+import { enginePlatformTable, hasEngineForPlatform, platformKey } from './backend/addon';
 import { CommandManager } from './commands';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -16,8 +18,26 @@ import { EventEmitter } from './utils/event';
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
-	const logger = new Logger();
+	const logger = new Logger(path.join(context.globalStoragePath, 'git-graph-rs.log'));
+	logger.setEnabled(getConfig().enableLog);
 	logger.log('Starting Git Graph ...');
+
+	// The extension cannot serve the graph view without a native engine for this platform, which
+	// VS Code cannot know at install time (a universal VSIX has no per-architecture restriction).
+	// Activation is the first moment the user can be told, so say it here — the Git Graph view
+	// itself shows the same information as a page when it is opened.
+	if (!hasEngineForPlatform(context.extensionPath)) {
+		const zh = getConfig().interfaceLanguage === 'zh-cn';
+		const included = enginePlatformTable(context.extensionPath)
+			.filter((platform) => platform.present)
+			.map((platform) => platform.label)
+			.join(zh ? '、' : ', ');
+		const msg = zh
+			? `Git Graph RS 无法加载图形视图：当前系统架构（${platformKey()}）没有可用的原生引擎。此安装包包含的架构：${included}`
+			: `Git Graph RS cannot load the graph view: there is no native engine available for the system architecture this editor is running on (${platformKey()}). Architectures included in this package: ${included}`;
+		showErrorMessage(msg);
+		logger.logError(msg);
+	}
 
 	const gitExecutableEmitter = new EventEmitter<GitExecutable>();
 	const onDidChangeGitExecutable = gitExecutableEmitter.subscribe;
@@ -49,6 +69,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
+				logger.setEnabled(getConfig().enableLog);
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {
 				const paths = getConfig().gitPaths;

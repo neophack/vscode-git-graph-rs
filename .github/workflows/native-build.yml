@@ -39,9 +39,10 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-  # One prebuilt binary per platform the extension ships for. napi-rs resolves the Node-API
-  # symbols at load time rather than linking against them, so none of these need Node headers,
-  # node-gyp or Python — only a Rust toolchain and, for the cross-compiled Linux targets, a linker.
+  # One prebuilt binary per platform the extension ships for, built through @napi-rs/cli. napi-rs
+  # resolves the Node-API symbols at load time rather than linking against them, so none of these
+  # need Node headers, node-gyp or Python — only a Rust toolchain, `npm ci` for the CLI, and, for
+  # the cross-compiled Linux target, a linker.
   build:
     name: ${{ matrix.directory }}
     runs-on: ${{ matrix.os }}
@@ -80,6 +81,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # @napi-rs/cli, which the build script drives.
+      - name: Install dependencies
+        run: npm ci || npm install
 
       # The only target that needs anything beyond the Rust toolchain.
       - name: Install the cross-linker for arm64 Linux

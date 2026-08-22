@@ -327,7 +327,11 @@ const STRINGS_EN = {
 	settingsPullRequestsEnabledInfo: 'Uses the GITHUB_TOKEN / GITLAB_TOKEN environment variables for authentication when they are set.',
 
 	settingsSectionConfig: 'Git Graph Configuration',
+	settingsSectionLog: 'Log',
+	settingsEnableLog: 'Enable Session Log',
+	settingsEnableLogInfo: 'While enabled, Git Graph RS records a log (with timings of the load cycle) that can be opened with the "View Session Log" button below. The log starts empty on every editor start.',
 	settingsOpenExtensionSettings: 'Open Git Graph Extension Settings',
+	settingsOpenLogFile: 'View Session Log',
 	settingsExportRepoConfig: 'Export Repository Configuration',
 	settingsExportRepoConfigConfirm: 'Exporting the Git Graph Repository Configuration will generate a file that can be committed in this repository. It allows others working in this repository to use the same configuration.',
 	settingsYesExport: 'Yes, export',
@@ -672,7 +676,11 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	settingsPullRequestsEnabledInfo: '设置了 GITHUB_TOKEN / GITLAB_TOKEN 环境变量时将使用其进行认证。',
 
 	settingsSectionConfig: 'Git Graph 配置',
+	settingsSectionLog: '日志',
+	settingsEnableLog: '启用会话日志',
+	settingsEnableLogInfo: '启用后 Git Graph RS 会记录日志（含加载各环节耗时），可通过下方"查看会话日志"按钮打开。日志在每次编辑器启动时清空。',
 	settingsOpenExtensionSettings: '打开 Git Graph 扩展设置',
+	settingsOpenLogFile: '查看会话日志',
 	settingsExportRepoConfig: '导出仓库配置',
 	settingsExportRepoConfigConfirm: '导出 Git Graph 仓库配置会生成一个可以提交到此仓库的文件，使在此仓库中工作的其他人可以使用相同的配置。',
 	settingsYesExport: '是，导出',

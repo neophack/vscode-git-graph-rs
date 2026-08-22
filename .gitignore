@@ -7,3 +7,4 @@ native/*/
 *.node
 *.vsix
 .zcode
+media/

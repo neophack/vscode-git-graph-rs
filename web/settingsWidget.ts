@@ -312,6 +312,12 @@ class SettingsWidget {
 				SettingsWidget.checkbox('settingsPullRequestsEnabled', strings.settingsPullRequestsEnabled, viewConfig.pullRequests.enabled, strings.settingsPullRequestsEnabledInfo) +
 				'</div>';
 
+			globalHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionLog + '</h3>' +
+				SettingsWidget.checkbox('settingsEnableLog', strings.settingsEnableLog, viewConfig.enableLog, strings.settingsEnableLogInfo) +
+				'<div class="settingsSectionButtons">' +
+				'<div id="openLogFile">' + SVG_ICONS.file + strings.settingsOpenLogFile + '</div>' +
+				'</div></div>';
+
 			globalHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionConfig + '</h3><div class="settingsSectionButtons">' +
 				'<div id="openExtensionSettings">' + SVG_ICONS.gear + strings.settingsOpenExtensionSettings + '</div>' +
 				'</div></div>';
@@ -336,6 +342,7 @@ class SettingsWidget {
 			this.wireGlobalCheckbox('settingsCombineBranchLabels', 'referenceLabels.combineLocalAndRemoteBranchLabels');
 			this.wireGlobalCheckbox('settingsStickyHeader', 'stickyHeader');
 			this.wireGlobalCheckbox('settingsRenderMarkdown', 'markdown');
+			this.wireGlobalCheckbox('settingsEnableLog', 'enableLog');
 
 			this.wireGlobalNumber('settingsInitialLoad', 'repository.commits.initialLoad', 1, 100000, viewConfig.initialLoadCommits);
 			this.wireGlobalNumber('settingsLoadMore', 'repository.commits.loadMore', 1, 100000, viewConfig.loadMoreCommits);
@@ -636,6 +643,10 @@ class SettingsWidget {
 
 			document.getElementById('openExtensionSettings')!.addEventListener('click', () => {
 				sendMessage({ command: 'openExtensionSettings' });
+			});
+
+			document.getElementById('openLogFile')!.addEventListener('click', () => {
+				sendMessage({ command: 'openLogFile' });
 			});
 
 			document.getElementById('exportRepositoryConfig')!.addEventListener('click', () => {

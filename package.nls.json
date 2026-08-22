@@ -154,6 +154,7 @@
 	"config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription0": "Mixed - Keep working tree, but reset index",
 	"config.git-graph-rs.dialog.resetUncommittedChanges.mode.enumDescription1": "Hard - Discard all changes",
 	"config.git-graph-rs.dialog.stashUncommittedChanges.includeUntracked.description": "Default state of the \"Include Untracked\" checkbox.",
+	"config.git-graph-rs.enableLog.description": "Record a session log (with timings of the load cycle) to the Git Graph RS Output Channel and a log file, emptied on every editor start. Open it with the \"View Session Log\" button in the Git Graph settings.",
 	"config.git-graph-rs.enhancedAccessibility.description": "Visual file change A|M|D|R|U indicators in the Commit Details View for users with colour blindness. In the future, this setting will enable any additional accessibility related features of Git Graph that aren't enabled by default.",
 	"config.git-graph-rs.fileEncoding.markdownDescription": "The character set encoding used when retrieving a specific version of repository files (e.g. in the Diff View). A list of all supported encodings can be found [here](https://github.com/ashtuchkin/iconv-lite/wiki/Supported-Encodings).",
 	"config.git-graph-rs.graph.colours.description": "Specifies the colours used on the graph.",

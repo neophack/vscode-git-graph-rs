@@ -296,6 +296,13 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-graph-rs.enableLog` Extension Setting.
+	 */
+	get enableLog(): boolean {
+		return this.config.get<boolean>('enableLog', false);
+	}
+
+	/**
 	 * Get the value of the `git-graph-rs.interfaceLanguage` Extension Setting.
 	 */
 	get interfaceLanguage(): 'en' | 'zh-cn' {

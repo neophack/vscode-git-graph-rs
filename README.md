@@ -169,14 +169,15 @@ Cross-compiling for another platform:
 
 ```sh
 node scripts/build-addon.mjs --release --target aarch64-apple-darwin
-npm run build:native:all        # every x64 + arm64 target of the host OS family
 ```
 
-On an x64 Windows host, `--all` builds win32-x64 with the local MSVC toolchain and win32-arm64
-either with the Visual Studio "C++ ARM64 build tools" component, or — when that component is not
-installed — with `cargo-xwin` (`cargo install cargo-xwin`), which links with rust-lld against a
-locally splatted copy of the Windows SDK / CRT. Targets whose cross-toolchain is missing are
-skipped with a warning rather than failing the run.
+The build is delegated to [`@napi-rs/cli`](https://napi.rs) (`napi build`). A target of a foreign
+OS family goes through `--cross-compile`, which builds with `cargo-zigbuild` (Linux and macOS
+targets; `zig` must be on the PATH) or `cargo-xwin` (Windows targets), installing either
+automatically on first use. A target of the host's own OS family uses the platform's own cross
+linker instead — the Visual Studio "C++ ARM64 build tools" component on Windows,
+`gcc-aarch64-linux-gnu` on Linux. The binaries that ship are the ones CI builds on native runners
+for each platform, not local cross-builds.
 
 ## Supported platforms
 

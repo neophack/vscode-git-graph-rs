@@ -269,6 +269,7 @@ export interface GitGraphViewConfig {
 	readonly dateType: DateType;
 	readonly defaultColumnVisibility: DefaultColumnVisibility;
 	readonly dialogDefaults: DialogDefaults;
+	readonly enableLog: boolean;
 	readonly enhancedAccessibility: boolean;
 	readonly fetchAndPrune: boolean;
 	readonly fetchAndPruneTags: boolean;
@@ -1058,6 +1059,13 @@ export interface ResponseOpenExtensionSettings extends ResponseWithErrorInfo {
 	readonly command: 'openExtensionSettings';
 }
 
+export interface RequestOpenLogFile extends BaseMessage {
+	readonly command: 'openLogFile';
+}
+export interface ResponseOpenLogFile extends ResponseWithErrorInfo {
+	readonly command: 'openLogFile';
+}
+
 export interface RequestOpenExternalDirDiff extends RepoRequest {
 	readonly command: 'openExternalDirDiff';
 	readonly fromHash: string;
@@ -1417,6 +1425,7 @@ export type RequestMessage =
 	| RequestOpenExternalUrl
 	| RequestOpenCompareTab
 	| RequestOpenFile
+	| RequestOpenLogFile
 	| RequestOpenTerminal
 	| RequestPopStash
 	| RequestPruneRemote
@@ -1487,6 +1496,7 @@ export type ResponseMessage =
 	| ResponseOpenExternalDirDiff
 	| ResponseOpenExternalUrl
 	| ResponseOpenFile
+	| ResponseOpenLogFile
 	| ResponseOpenTerminal
 	| ResponsePopStash
 	| ResponsePruneRemote

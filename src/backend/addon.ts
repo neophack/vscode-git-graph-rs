@@ -32,6 +32,55 @@ interface NativeAddon {
 }
 
 /**
+ * The prebuilt engines the extension can ship, keyed by `${platform}-${arch}` of the editor.
+ */
+const ENGINE_PLATFORMS: Readonly<Record<string, { directory: string; os: string; arch: string }>> = {
+	'win32-x64': { directory: 'win32-x64-msvc', os: 'Windows', arch: 'x64' },
+	'win32-arm64': { directory: 'win32-arm64-msvc', os: 'Windows', arch: 'ARM64' },
+	'linux-x64': { directory: 'linux-x64-gnu', os: 'Linux', arch: 'x64' },
+	'linux-arm64': { directory: 'linux-arm64-gnu', os: 'Linux', arch: 'ARM64' },
+	'darwin-x64': { directory: 'darwin-x64', os: 'macOS', arch: 'x64' },
+	'darwin-arm64': { directory: 'darwin-arm64', os: 'macOS', arch: 'ARM64' }
+};
+
+/** One row of the engine-platform table the unsupported-architecture page shows. */
+export interface EnginePlatform {
+	/** The `${platform}-${arch}` key of the editor this engine serves. */
+	readonly key: string;
+	/** The engine directory, matching what the CI matrix produces and what the VSIX ships. */
+	readonly directory: string;
+	/** Display name of the operating system. */
+	readonly os: string;
+	/** Display name of the architecture. */
+	readonly arch: string;
+	/** Shorthand display label (`os arch`). */
+	readonly label: string;
+	/** Is the binary actually present in this installation? */
+	readonly present: boolean;
+}
+
+/**
+ * Every platform a native engine exists for, with whether this installation actually contains the
+ * binary. The unsupported-architecture page shows this table, so a package that is missing some of
+ * the binaries reports which ones it has instead of claiming to support all of them.
+ */
+export function enginePlatformTable(
+	root: string = path.join(__dirname, '..', '..')
+): ReadonlyArray<EnginePlatform> {
+	return Object.keys(ENGINE_PLATFORMS).map((key) => {
+		const platform = ENGINE_PLATFORMS[key];
+		return {
+			key,
+			directory: platform.directory,
+			os: platform.os,
+			arch: platform.arch,
+			label: `${platform.os} ${platform.arch}`,
+			present: fs.existsSync(path.join(root, 'native', platform.directory, 'git-graph.node'))
+		};
+	});
+}
+
+/**
  * The directory name of the prebuilt binary for this platform, matching what the CI matrix
  * produces and what the VSIX ships.
  */
@@ -40,22 +89,34 @@ export function platformDirectory(
 	arch: string = process.arch
 ): string {
 	const key = `${platform}-${arch}`;
-	switch (key) {
-		case 'win32-x64':
-			return 'win32-x64-msvc';
-		case 'win32-arm64':
-			return 'win32-arm64-msvc';
-		case 'linux-x64':
-			return 'linux-x64-gnu';
-		case 'linux-arm64':
-			return 'linux-arm64-gnu';
-		case 'darwin-x64':
-			return 'darwin-x64';
-		case 'darwin-arm64':
-			return 'darwin-arm64';
-		default:
-			throw new GitBackendError('Unsupported', `No native engine is built for ${key}`);
+	const engine = ENGINE_PLATFORMS[key];
+	if (engine === undefined) {
+		throw new GitBackendError('Unsupported', `No native engine is built for ${key}`);
 	}
+	return engine.directory;
+}
+
+/** The `${platform}-${arch}` of the editor, the key the engine directories are listed by. */
+export function platformKey(
+	platform: NodeJS.Platform = process.platform,
+	arch: string = process.arch
+): string {
+	return `${platform}-${arch}`;
+}
+
+/**
+ * Is there a native engine binary for this editor — a platform a binary is built for, with the
+ * binary actually present? An incomplete package (a known platform whose binary is missing, e.g.
+ * a VSIX built without one of the six targets) is reported the same way as an unknown platform:
+ * both get the unsupported-architecture page.
+ */
+export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '..')): boolean {
+	try {
+		platformDirectory();
+	} catch {
+		return false;
+	}
+	return candidatePaths(root).some((candidate) => fs.existsSync(candidate));
 }
 
 /** Where the addon might be: the shipped location first, then the local build outputs. */

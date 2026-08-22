@@ -23,3 +23,5 @@ jest.config.js
 GAPS.md
 .editorconfig
 .gitignore
+.zcode/**
+napi.conf.json

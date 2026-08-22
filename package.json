@@ -29,7 +29,6 @@
 		"build": "npm run build:native && npm run build:ts",
 		"build:native": "node scripts/build-addon.mjs",
 		"build:native:release": "node scripts/build-addon.mjs --release",
-		"build:native:all": "node scripts/build-addon.mjs --all --release",
 		"build:ts": "tsc -p tsconfig.json",
 		"compile-src": "tsc -p ./src && node scripts/package-src.js",
 		"compile-web": "tsc -p ./web && node scripts/package-web.js",
@@ -47,6 +46,7 @@
 		"iconv-lite": "0.5.0"
 	},
 	"devDependencies": {
+		"@napi-rs/cli": "^3.8.6",
 		"@types/iconv-lite": "^0.0.1",
 		"@types/node": "^8.10.66",
 		"@types/vscode": "1.38.0",
@@ -764,6 +764,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "%config.git-graph-rs.dialog.stashUncommittedChanges.includeUntracked.description%"
+				},
+				"git-graph-rs.enableLog": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.enableLog.description%"
 				},
 				"git-graph-rs.enhancedAccessibility": {
 					"type": "boolean",
