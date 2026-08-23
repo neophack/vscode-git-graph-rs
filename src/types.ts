@@ -275,7 +275,7 @@ export interface BackendCapability {
 	readonly area: string;
 	readonly provider: 'rust' | 'git-cli' | 'hybrid';
 	/** A stable note id explaining the split, when it needs explaining. */
-	readonly note?: 'dynamic' | 'configHybrid' | 'writesAlways';
+	readonly note?: 'dynamic' | 'writesAlways';
 }
 
 /**
@@ -287,6 +287,8 @@ export interface BackendReport {
 	readonly platform: string;
 	readonly engineAvailable: boolean;
 	readonly engineVersion: string | null;
+	/** Is a `git` executable available (for the CLI backend and the write path)? */
+	readonly gitCliAvailable: boolean;
 	readonly capabilities: ReadonlyArray<BackendCapability>;
 }
 

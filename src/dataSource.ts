@@ -29,7 +29,7 @@ export class DataSource extends Disposable {
 	private readonly logger: Logger;
 	private readonly askpassEnv: AskpassEnvironment;
 	/** The engine-backed reader: the Rust engine when available, the `git` CLI otherwise. */
-	private readonly backend: GitBackend;
+	private backend!: GitBackend;
 	private gitExecutable!: GitExecutable | null;
 	/** Cache of Git config data per repository, to avoid repeated Git spawns on every view load. */
 	private readonly configCache = new Map<string, { remotesSignature: string, promise: Promise<GitRepoConfigData> }>();
@@ -75,12 +75,7 @@ export class DataSource extends Disposable {
 		super();
 		this.logger = logger;
 		this.setGitExecutable(gitExecutable);
-		this.backend = createBackend({
-			gitPath: gitExecutable !== null ? gitExecutable.path : undefined,
-			onFallback: (method, error) => {
-				this.logger.log('The Rust engine could not answer ' + method + ' (' + error.message + '); falling back to the git CLI.');
-			}
-		});
+		this.rebuildBackend(gitExecutable);
 
 		const askpassManager = new AskpassManager();
 		this.askpassEnv = askpassManager.getEnv();
@@ -97,6 +92,7 @@ export class DataSource extends Disposable {
 			}),
 			onDidChangeGitExecutable((gitExecutable) => {
 				this.setGitExecutable(gitExecutable);
+				this.rebuildBackend(gitExecutable);
 			}),
 			askpassManager
 		);
@@ -117,6 +113,21 @@ export class DataSource extends Disposable {
 	private setGitExecutable(gitExecutable: GitExecutable | null) {
 		this.gitExecutable = gitExecutable;
 		this.generateGitCommandFormats();
+	}
+
+	/**
+	 * (Re)build the backend for the current Git situation: the engine with CLI fallback when both
+	 * exist, the engine alone when no Git executable was found (the read path is fully
+	 * engine-served, so the view works on a machine without Git at all), the CLI alone otherwise.
+	 */
+	private rebuildBackend(gitExecutable: GitExecutable | null) {
+		this.backend = createBackend({
+			gitPath: gitExecutable !== null ? gitExecutable.path : null,
+			onFallback: (method, error) => {
+				this.logger.log('The Rust engine could not answer ' + method + ' (' + error.message + '); falling back to the git CLI.');
+			}
+		});
+		this.logger.log('Using the ' + this.backend.name + ' backend.');
 	}
 
 	/**
@@ -332,52 +343,13 @@ export class DataSource extends Disposable {
 		});
 	}
 
-	private async getAuthorList(repo: string): Promise<ActionedUser[]> {
-		const args = ['shortlog', '-e', '-s', '-n', 'HEAD'];
-		const dict = new Set<string>();
-		const result = await this.spawnGit(args, repo, (authors) => {
-			return authors.split(/\r?\n/g)
-				.map(line => line.trim())
-				.filter(line => line.trim().length > 0)
-				.map(line => line.substring(line.indexOf('\t') + 1))
-				.map(line => {
-					const indexOfEmailSeparator = line.indexOf('<');
-					if (indexOfEmailSeparator === -1) {
-						return {
-							name: line.trim(),
-							email: ''
-						};
-					} else {
-						const nameParts = line.split('<');
-						const name = nameParts.shift()!.trim();
-						const email = nameParts[0].substring(0, nameParts[0].length - 1).trim();
-						return {
-							name,
-							email
-						};
-					}
-				})
-				.filter(item => {
-					if (dict.has(item.name)) {
-						return false;
-					}
-					dict.add(item.name);
-					return true;
-				})
-				.sort((a, b) => (a.name > b.name ? 1 : -1));
-		}).catch((errorMessage) => {
-			if (typeof errorMessage === 'string') {
-				const message = errorMessage.toLowerCase();
-				if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
-					// If the Git command failed due to the configuration file not existing, return an empty list instead of throwing the exception
-					return [];
-				}
-			} else {
-				errorMessage = 'An unexpected error occurred while spawning the Git child process.';
-			}
-			throw errorMessage;
-		});
-		return result;
+	private getAuthorList(repo: string): Promise<ActionedUser[]> {
+		// The backend aggregates `git shortlog` exactly as this DataSource always parsed it
+		// (per-name de-duplication keeping the most-prolific spelling, sorted by name).
+		return this.backend.getAuthors(repo).then((authors) => authors.map((author) => ({
+			name: author.name,
+			email: author.email
+		})), () => []);
 	}
 	/* Get Data Methods - Commit Details View */
 
@@ -566,7 +538,7 @@ export class DataSource extends Disposable {
 	 * @returns STRING => The root of the repository, NULL => `pathOfPotentialRepo` is not in a repository.
 	 */
 	public repoRoot(pathOfPotentialRepo: string) {
-		return this.spawnGit(['rev-parse', '--show-toplevel'], pathOfPotentialRepo, (stdout) => getPathFromUri(vscode.Uri.file(path.normalize(stdout.trim())))).then(async (pathReturnedByGit) => {
+		return this.backend.repoRoot(pathOfPotentialRepo).then((root) => getPathFromUri(vscode.Uri.file(path.normalize(root)))).then(async (pathReturnedByGit) => {
 			if (process.platform === 'win32') {
 				// On Windows Mapped Network Drives with Git >= 2.25.0, `git rev-parse --show-toplevel` returns the UNC Path for the Mapped Network Drive, instead of the Drive Letter.
 				// Attempt to replace the UNC Path with the Drive Letter.
@@ -964,7 +936,7 @@ export class DataSource extends Disposable {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['remote', remote, 'ref'], ['remoteBranch', remoteBranch, 'ref'], ['localBranch', localBranch, 'ref']);
 		if (unsafeArgs !== null) return unsafeArgs;
 
-		const currentBranch = await this.spawnGit(['symbolic-ref', '--short', 'HEAD'], repo, (stdout) => stdout.trim());
+		const currentBranch = await this.backend.currentBranchName(repo);
 
 		if (currentBranch === localBranch) {
 			if (!force) {
@@ -1539,33 +1511,7 @@ export class DataSource extends Disposable {
 	 * @returns A set of key-value pairs of Git configuration records.
 	 */
 	private getConfigList(repo: string, location?: GitConfigLocation): Promise<GitConfigSet> {
-		const args = ['--no-pager', 'config', '--list', '-z', '--includes'];
-		if (location) {
-			args.push('--' + location);
-		}
-
-		return this.spawnGit(args, repo, (stdout) => {
-			const configs: GitConfigSet = {}, keyValuePairs = stdout.split('\0');
-			const numPairs = keyValuePairs.length - 1;
-			let comps, key;
-			for (let i = 0; i < numPairs; i++) {
-				comps = keyValuePairs[i].split(EOL_REGEX);
-				key = comps.shift()!;
-				configs[key] = comps.join('\n');
-			}
-			return configs;
-		}).catch((errorMessage) => {
-			if (typeof errorMessage === 'string') {
-				const message = errorMessage.toLowerCase();
-				if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
-					// If the Git command failed due to the configuration file not existing, return an empty list instead of throwing the exception
-					return {};
-				}
-			} else {
-				errorMessage = 'An unexpected error occurred while spawning the Git child process.';
-			}
-			throw errorMessage;
-		});
+		return this.backend.getConfigList(repo, location === GitConfigLocation.Global ? 'global' : 'local');
 	}
 
 	/**
@@ -1621,11 +1567,7 @@ export class DataSource extends Disposable {
 	 * @returns An array of remote names.
 	 */
 	private getRemotes(repo: string) {
-		return this.spawnGit(['remote'], repo, (stdout) => {
-			let lines = stdout.split(EOL_REGEX);
-			lines.pop();
-			return lines;
-		});
+		return this.backend.getRemotes(repo).then((remotes) => [...remotes]);
 	}
 
 	/**

@@ -270,6 +270,14 @@ pub struct GitCommitSummary {
     pub message: String,
 }
 
+/// A distinct commit author, as the settings widget's author dropdown lists them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitAuthor {
+    pub name: String,
+    pub email: String,
+}
+
 /// One hit of a commit-message search, as the Find dialogue lists them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

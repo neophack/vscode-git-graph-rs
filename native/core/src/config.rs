@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::repository::Repo;
 use crate::types::{ConfigSnapshot, RemoteConfig};
 
@@ -54,10 +54,13 @@ pub fn read_config(repo: &Repo) -> Result<ConfigSnapshot> {
 /// The fetch URL of one remote, or `None` when the remote (or its URL) is not configured —
 /// the answer `git config --get remote.<name>.url` gives.
 pub fn remote_url(repo: &Repo, remote: &str) -> Result<Option<String>> {
-    if !is_safe_config_name(remote) {
-        return Err(Error::invalid_argument(format!(
-            "Invalid remote name was provided: {remote}"
-        )));
+    // A remote name is a config subsection, which git allows to hold spaces, dots and more; the
+    // name is only ever part of an in-process config lookup, so there is nothing to validate it
+    // against beyond "not empty".
+    if remote.is_empty() {
+        return Err(Error::invalid_argument(
+            "Invalid remote name was provided: (empty)",
+        ));
     }
     let git = repo.borrow();
     Ok(git
@@ -150,11 +153,103 @@ fn submodule_root(root: &Path, path: &str) -> Option<String> {
     Some(text.strip_prefix(r"\\?\").unwrap_or(&text).to_string())
 }
 
-/// Config subsection names are one dotted path component: no separators, no leading `-` (which
-/// could turn the name into an option), no whitespace.
-fn is_safe_config_name(name: &str) -> bool {
-    !name.is_empty()
-        && !name.starts_with('-')
-        && !name.chars().any(|c| c.is_whitespace() || c == '\0')
-        && !name.contains("..")
+/* ---------- The remaining reads the settings panel and dialogs make ---------- */
+
+/// The names of the repository's remotes, as `git remote` lists them (alphabetical).
+pub fn remote_names(repo: &Repo) -> Result<Vec<String>> {
+    Ok(repo.remote_names())
+}
+
+/// The checked-out branch's short name, or `None` when HEAD is detached — the answer
+/// `git symbolic-ref --short HEAD` gives (an unborn branch still has its name).
+pub fn current_branch_name(repo: &Repo) -> Result<Option<String>> {
+    let git = repo.borrow();
+    Ok(git.head_name().ok().flatten().and_then(|name| {
+        name.as_bstr()
+            .strip_prefix(b"refs/heads/".as_slice())
+            .map(|branch| String::from_utf8_lossy(branch).into_owned())
+    }))
+}
+
+/// One location a configuration entry can live in, matching `git config --local` / `--global`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigLocation {
+    Local,
+    Global,
+}
+
+/// The configuration entries of one location, last value per key — the shape
+/// `git config --list -z --includes --local|--global` is parsed into.
+///
+/// ### Deviation
+///
+/// A file carrying `include`/`includeIf` directives is declined (`Unsupported`) so the call
+/// reaches the `git` CLI, which resolves them: replicating git's include resolution (including
+/// conditional includes) is out of proportion to how rarely these appear in the local or the
+/// user's global file.
+pub fn config_list(
+    repo: &Repo,
+    location: ConfigLocation,
+) -> Result<std::collections::BTreeMap<String, String>> {
+    let path = match location {
+        ConfigLocation::Local => repo.git_dir().join("config"),
+        ConfigLocation::Global => global_config_path()?,
+    };
+    if !path.is_file() {
+        // `git config --list --global` on a machine without the file fails, which the caller
+        // has always treated as "no entries"; an absent local file means the same.
+        return Ok(std::collections::BTreeMap::new());
+    }
+
+    let file = gix::config::File::from_path_no_includes(path, gix::config::Source::Local)
+        .map_err(|e| Error::git(format!("Could not read the configuration: {e}")))?;
+    if file.sections_by_name("include").is_some() || file.sections_by_name("includeif").is_some() {
+        return Err(Error::unsupported(
+            "The configuration file contains include directives",
+        ));
+    }
+
+    let mut entries = std::collections::BTreeMap::new();
+    for section in file.sections() {
+        let header = section.header();
+        let name = String::from_utf8_lossy(header.name()).to_lowercase();
+        for key in section.value_names() {
+            // A repeated key keeps its last value, which is git's own resolution; a section
+            // seen later in the file overwrites an earlier one for the same full key.
+            if let Some(value) = section.values(&key).pop() {
+                let full_key = match header.subsection_name() {
+                    Some(subsection) => {
+                        format!("{name}.{}.{key}", String::from_utf8_lossy(subsection))
+                    }
+                    None => format!("{name}.{key}"),
+                };
+                entries.insert(full_key, value.to_string());
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// The file the `--global` location resolves to: `$GIT_CONFIG_GLOBAL` when set, else the user's
+/// `~/.gitconfig`, else the XDG one — git's own order.
+fn global_config_path() -> Result<std::path::PathBuf> {
+    use std::path::PathBuf;
+    if let Ok(explicit) = std::env::var("GIT_CONFIG_GLOBAL") {
+        if !explicit.is_empty() {
+            return Ok(PathBuf::from(explicit));
+        }
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| Error::new(ErrorKind::Io, "Neither HOME nor USERPROFILE is set"))?;
+    let home_config = PathBuf::from(&home).join(".gitconfig");
+    if home_config.is_file() {
+        return Ok(home_config);
+    }
+    let xdg = std::env::var("XDG_CONFIG_HOME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(home).join(".config"));
+    Ok(xdg.join("git").join("config"))
 }

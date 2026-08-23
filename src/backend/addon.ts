@@ -44,6 +44,11 @@ interface NativeAddon {
 		showRemoteBranches: boolean,
 		includeReflogs: boolean
 	): Promise<number>;
+	repoRoot(path: string): Promise<string>;
+	remoteNames(path: string): Promise<string[]>;
+	authors(path: string): Promise<string>;
+	configList(path: string, local: boolean): Promise<string>;
+	currentBranchName(path: string): Promise<string | null>;
 	engineVersion(): string;
 }
 

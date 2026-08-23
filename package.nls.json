@@ -11,7 +11,7 @@
 	"command.git-graph-rs.resumeWorkspaceCodeReview.title": "Resume a specific Code Review in Workspace...",
 	"command.git-graph-rs.version.title": "Get Version Information",
 	"command.git-graph-rs.searchCommits.title": "Search Commits in History...",
-	"command.git-graph-rs.filterByFile.title": "Show File History in Git Graph",
+	"command.git-graph-rs.filterByFile.title": "Show File History in Git Graph RS",
 	"command.git-graph-rs.openFile.title": "Open File",
 	"command.git-graph-rs.amendLastCommit.title": "Amend Last Commit",
 	"command.git-graph-rs.resetCurrentBranchToRemote.title": "Reset Current Branch to Remote (Soft)",

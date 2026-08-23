@@ -237,6 +237,12 @@ export interface GitHistoryMatch {
 	readonly message: string;
 }
 
+/** A distinct commit author, as the settings widget's author dropdown lists them. */
+export interface GitAuthor {
+	readonly name: string;
+	readonly email: string;
+}
+
 /* ---------- Tag details ---------- */
 
 /**

@@ -502,3 +502,242 @@ impl UnwrapErrOrElse for Result<git_graph_core::types::GitTagDetails, git_graph_
         }
     }
 }
+
+#[test]
+fn reads_the_url_of_a_remote_with_an_unusual_name() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    // `git remote add` refuses unusual names, but a hand-edited .git/config can carry any
+    // subsection, and the engine must read the URL of one as readily as the command line does.
+    repo.git(&[
+        "config",
+        "remote.up stream.url",
+        "https://example.invalid/spaced.git",
+    ]);
+    repo.git(&[
+        "config",
+        "remote.a..b.url",
+        "https://example.invalid/dotted.git",
+    ]);
+
+    let engine = open(&repo);
+    assert_eq!(
+        config::remote_url(&engine, "up stream").unwrap().as_deref(),
+        Some("https://example.invalid/spaced.git")
+    );
+    assert_eq!(
+        config::remote_url(&engine, "a..b").unwrap().as_deref(),
+        Some("https://example.invalid/dotted.git")
+    );
+
+    let error = config::remote_url(&engine, "").unwrap_err();
+    assert_eq!(error.kind, ErrorKind::InvalidArgument);
+}
+
+#[test]
+fn counting_an_empty_branch_list_is_declined() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let hash = repo.commit_file("a.txt", "1\n", "first");
+
+    let engine = open(&repo);
+    let error = log::count_commits_before(&engine, Some(&[]), &hash, true, false).unwrap_err();
+
+    // The command line this replaces would count from HEAD for an empty ref list; the engine
+    // declines rather than guess, so the call falls back and behaviour is preserved exactly.
+    assert_eq!(error.kind, ErrorKind::Unsupported);
+}
+
+#[test]
+fn reads_a_tag_message_without_its_trailing_blank_lines() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let hash = repo.commit_file("a.txt", "1\n", "first");
+    repo.write("tag-message.txt", "line one\n\nline two\n\n\n");
+    repo.git(&["tag", "-a", "wordy", "-F", "tag-message.txt"]);
+
+    let engine = open(&repo);
+    let details = details::tag_details(&engine, "wordy").unwrap();
+
+    assert_ne!(details.hash, hash);
+    assert_eq!(details.message, "line one\n\nline two");
+}
+
+/// Serialises the tests that touch process-wide configuration environment variables.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn finds_the_repository_root_from_a_subdirectory() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.write("nested/deep/file.txt", "x\n");
+
+    let nested = repo.path().join("nested").join("deep");
+    let root = git_graph_core::repository::repo_root(nested.to_str().unwrap()).unwrap();
+
+    let normalise = |path: String| {
+        path.trim_start_matches(r"\\?\")
+            .replace('\\', "/")
+            .to_lowercase()
+    };
+    assert_eq!(
+        normalise(root),
+        normalise(repo.path().display().to_string())
+    );
+
+    let error =
+        git_graph_core::repository::repo_root(std::env::temp_dir().to_str().unwrap()).unwrap_err();
+    assert_eq!(error.kind, ErrorKind::NotARepository);
+}
+
+#[test]
+fn lists_the_local_configuration_with_git_resolution_semantics() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.git(&["config", "branch.main.remote", "origin"]);
+    // A repeated key keeps its last value, which is git's own resolution.
+    repo.git(&["config", "--add", "custom.key", "first"]);
+    repo.git(&["config", "--add", "custom.key", "second"]);
+
+    let engine = open(&repo);
+    let config = config::config_list(&engine, config::ConfigLocation::Local).unwrap();
+
+    assert_eq!(config["user.name"], "Test User");
+    assert_eq!(config["branch.main.remote"], "origin");
+    assert_eq!(config["custom.key"], "second");
+}
+
+#[test]
+fn lists_the_global_configuration_and_declines_includes() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+
+    let _guard = ENV_LOCK.lock().unwrap();
+    let global = repo.path().join("global-gitconfig");
+    std::fs::write(&global, "[user]\n\tname = Global Identity\n").unwrap();
+    std::env::set_var("GIT_CONFIG_GLOBAL", &global);
+
+    let engine = open(&repo);
+    let config = config::config_list(&engine, config::ConfigLocation::Global).unwrap();
+
+    std::env::remove_var("GIT_CONFIG_GLOBAL");
+
+    assert_eq!(config["user.name"], "Global Identity");
+
+    // An include directive is where the engine stops and lets the command line answer.
+    std::fs::write(&global, "[include]\n\tpath = elsewhere\n").unwrap();
+    std::env::set_var("GIT_CONFIG_GLOBAL", &global);
+    let error = config::config_list(&engine, config::ConfigLocation::Global).unwrap_err();
+    std::env::remove_var("GIT_CONFIG_GLOBAL");
+
+    assert_eq!(error.kind, ErrorKind::Unsupported);
+}
+
+#[test]
+fn aggregates_authors_like_shortlog() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.git(&[
+        "-c",
+        "user.name=Second Author",
+        "-c",
+        "user.email=second@example.com",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "second",
+    ]);
+    // The same name with a second spelling of the email: one author, the most-prolific spelling.
+    repo.git(&[
+        "-c",
+        "user.name=Test User",
+        "-c",
+        "user.email=other@example.com",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "third",
+    ]);
+    repo.git(&[
+        "-c",
+        "user.name=Test User",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "fourth",
+    ]);
+
+    let expected = repo.git(&["shortlog", "-e", "-s", "-n", "HEAD"]);
+    let engine = open(&repo);
+    let authors = log::authors(&engine).unwrap();
+
+    assert_eq!(
+        authors,
+        vec![
+            git_graph_core::types::GitAuthor {
+                name: "Second Author".into(),
+                email: "second@example.com".into()
+            },
+            git_graph_core::types::GitAuthor {
+                name: "Test User".into(),
+                email: "test@example.com".into()
+            },
+        ]
+    );
+    // The same walk git's shortlog makes: three Test User commits against one Second Author.
+    assert!(expected.contains("Second Author"), "shortlog: {expected}");
+}
+
+#[test]
+fn reads_the_checked_out_branch_name() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+
+    let engine = open(&repo);
+    assert_eq!(
+        config::current_branch_name(&engine).unwrap().as_deref(),
+        Some("main")
+    );
+
+    repo.git(&["checkout", "--quiet", "--detach", "HEAD"]);
+    assert_eq!(config::current_branch_name(&engine).unwrap(), None);
+}
+
+#[test]
+fn an_unborn_head_still_names_its_branch() {
+    require_git!();
+    let repo = TestRepo::new();
+
+    let engine = open(&repo);
+    // `git symbolic-ref --short HEAD` prints the branch even before the first commit exists.
+    assert_eq!(
+        config::current_branch_name(&engine).unwrap().as_deref(),
+        Some("main")
+    );
+}
+
+#[test]
+fn lists_remote_names_alphabetically() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.git(&["remote", "add", "zeta", "https://example.invalid/z.git"]);
+    repo.git(&["remote", "add", "alpha", "https://example.invalid/a.git"]);
+
+    let engine = open(&repo);
+    assert_eq!(
+        config::remote_names(&engine).unwrap(),
+        vec!["alpha", "zeta"]
+    );
+}

@@ -11,6 +11,7 @@ import { isAddonAvailable, loadAddon, platformKey } from './addon';
 import { CliBackend } from './cliBackend';
 import { BackendCapability, BackendReport } from '../types';
 import {
+	GitAuthor,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -36,8 +37,12 @@ export { CliBackend } from './cliBackend';
 export interface BackendOptions {
 	/** Force a particular backend, rather than preferring the engine. */
 	readonly prefer?: 'rust' | 'git-cli';
-	/** The `git` executable the fallback should use. */
-	readonly gitPath?: string;
+	/**
+	 * The `git` executable the fallback should use: a path when one was found, `null` when none
+	 * exists (the engine then runs alone), or undefined when the caller has not looked — the
+	 * fallback then uses whatever `git` is on the PATH.
+	 */
+	readonly gitPath?: string | null;
 	/** Called whenever a call falls back, so the extension can log it. */
 	readonly onFallback?: (method: string, error: GitBackendError) => void;
 }
@@ -203,34 +208,61 @@ class FallbackBackend implements GitBackend {
 			backend.countCommitsBefore(repo, branches, hash, showRemoteBranches, includeCommitsMentionedByReflogs)
 		);
 	}
+
+	public repoRoot(path: string): Promise<string> {
+		return this.attempt('repoRoot', (backend) => backend.repoRoot(path));
+	}
+
+	public getRemotes(repo: string): Promise<ReadonlyArray<string>> {
+		return this.attempt('getRemotes', (backend) => backend.getRemotes(repo));
+	}
+
+	public getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>> {
+		return this.attempt('getAuthors', (backend) => backend.getAuthors(repo));
+	}
+
+	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
+		return this.attempt('getConfigList', (backend) => backend.getConfigList(repo, location));
+	}
+
+	public currentBranchName(repo: string): Promise<string | null> {
+		return this.attempt('currentBranchName', (backend) => backend.currentBranchName(repo));
+	}
 }
 
 /**
  * Build the backend the extension should use.
  *
- * On a platform with a prebuilt engine this is the engine, wrapped so that anything it cannot
- * answer reaches the `git` CLI. On a platform without one — or when the user has asked for the CLI
- * — it is the CLI alone, and the extension behaves exactly as the original did.
+ * With both an engine binary and a `git` executable available, this is the engine wrapped so that
+ * anything it cannot answer reaches the `git` CLI. With an engine but no `git`, it is the engine
+ * alone: every read still works (the read path is fully engine-served), and operations that would
+ * need the CLI report so instead of silently spawning nothing. With no engine it is the CLI
+ * alone, matching the original extension — and if there is no `git` either, that is reported by
+ * the view, which has nothing to run on.
  */
 export function createBackend(options: BackendOptions = {}): GitBackend {
-	const cli = new CliBackend(options.gitPath);
+	// `null` means no Git was found anywhere; `undefined` means the caller has not looked, and
+	// whatever `git` is on the PATH stands in.
+	const hasGit = options.gitPath !== null;
 
-	if (options.prefer === 'git-cli') return cli;
-	if (!isAddonAvailable()) return cli;
+	if (options.prefer === 'git-cli') return new CliBackend(options.gitPath ?? 'git');
+	if (!isAddonAvailable()) return new CliBackend(options.gitPath ?? 'git');
+	if (!hasGit) return new NativeBackend();
 
 	try {
-		return new FallbackBackend(new NativeBackend(), cli, options.onFallback);
+		return new FallbackBackend(new NativeBackend(), new CliBackend(options.gitPath ?? 'git'), options.onFallback);
 	} catch {
 		// Loading the addon can fail for reasons the availability probe cannot see (a mismatched
 		// Node ABI, a missing system library). The extension still works; it is just not faster.
-		return cli;
+		return new CliBackend(options.gitPath ?? 'git');
 	}
 }
 
 /** Which backend `createBackend` would pick, without building it. */
 export function describeBackend(options: BackendOptions = {}): string {
 	if (options.prefer === 'git-cli') return 'git-cli';
-	return isAddonAvailable() ? 'rust' : 'git-cli';
+	if (!isAddonAvailable()) return 'git-cli';
+	return options.gitPath === null ? 'rust (engine only; no git CLI found)' : 'rust';
 }
 
 /**
@@ -242,7 +274,7 @@ export function describeBackend(options: BackendOptions = {}): string {
  * runs over the `git` CLI. This report is what the Settings widget's backend section shows, so
  * a user can see at a glance what is fast and what is not, on their machine.
  */
-export function describeCapabilities(options: { addonRoot?: string } = {}): BackendReport {
+export function describeCapabilities(options: { addonRoot?: string; gitCliAvailable?: boolean } = {}): BackendReport {
 	const engineAvailable = isAddonAvailable(options.addonRoot);
 	let engineVersion: string | null = null;
 	if (engineAvailable) {
@@ -263,9 +295,7 @@ export function describeCapabilities(options: { addonRoot?: string } = {}): Back
 		// Reflog tips and `--glob=` patterns are declined by the engine and answered by the CLI,
 		// transparently, per call.
 		{ area: 'counting', provider: 'rust', note: 'dynamic' },
-		// Remotes, identity, push default and diff tools come from the engine; the branch-level
-		// config and the author list still spawn git (the settings widget's own data source).
-		{ area: 'config', provider: 'hybrid', note: 'configHybrid' },
+		{ area: 'config', provider: 'rust' },
 		{ area: 'writes', provider: 'git-cli', note: 'writesAlways' }
 	];
 	const onCli: BackendCapability[] = [
@@ -276,6 +306,7 @@ export function describeCapabilities(options: { addonRoot?: string } = {}): Back
 		platform: platformKey(),
 		engineAvailable,
 		engineVersion,
+		gitCliAvailable: options.gitCliAvailable !== false,
 		capabilities: engineAvailable ? onEngine : onCli
 	};
 }

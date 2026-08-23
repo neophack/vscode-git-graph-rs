@@ -10,6 +10,7 @@ const MEDIA_CACHE_VERSION = '1.39.6';
 
 import { AvatarManager } from './avatarManager';
 import { describeCapabilities } from './backend';
+import { hasEngineForPlatform } from './backend/addon';
 import { getConfig } from './config';
 import { CommitComparisonView } from './comparisonView';
 import { DataSource, GitCommitData, GitCommitDetailsData, GitConfigKey } from './dataSource';
@@ -897,7 +898,7 @@ export class GitGraphView extends Disposable {
 			repos: this.repoManager.getRepos(),
 			loadRepoInfoRefreshId: this.loadRepoInfoRefreshId,
 			loadCommitsRefreshId: this.loadCommitsRefreshId,
-			backend: describeCapabilities()
+			backend: describeCapabilities({ gitCliAvailable: !this.dataSource.isGitExecutableUnknown() })
 		};
 		const globalState = this.extensionState.getGlobalViewState();
 		const workspaceState = this.extensionState.getWorkspaceViewState();
@@ -908,10 +909,10 @@ export class GitGraphView extends Disposable {
 			colorParams += '[data-color="' + i + '"]{--git-graph-color:var(--git-graph-color' + i + ');} ';
 		}
 
-		// A platform without an engine binary does not get an error page: the view loads normally
-		// and every query runs over the `git` CLI backend (see createBackend). The Settings
-		// widget's backend section is where the split is shown.
-		if (this.dataSource.isGitExecutableUnknown()) {
+		// The view needs the engine or Git — either one is enough (the engine serves every read
+		// in-process; Git serves everything through the CLI backend). The page below appears only
+		// when neither is present. The Settings widget's backend section shows which is in use.
+		if (this.dataSource.isGitExecutableUnknown() && !hasEngineForPlatform(this.extensionPath)) {
 			body = `<body class="unableToLoad">
 			<h2>Unable to load Git Graph</h2>
 			<p class="unableToLoadMessage">${UNABLE_TO_FIND_GIT_MSG}</p>
@@ -958,7 +959,8 @@ export class GitGraphView extends Disposable {
 			<script nonce="${nonce}">(function(){ var api = acquireVsCodeApi(); document.getElementById('rescanForReposBtn').addEventListener('click', function(){ api.postMessage({command: 'rescanForRepos'}); }); })();</script>
 			</body>`;
 		}
-		this.isGraphViewLoaded = numRepos > 0 && !this.dataSource.isGitExecutableUnknown();
+		this.isGraphViewLoaded =
+			numRepos > 0 && (!this.dataSource.isGitExecutableUnknown() || hasEngineForPlatform(this.extensionPath));
 		this.loadViewTo = null;
 
 		return `<!DOCTYPE html>

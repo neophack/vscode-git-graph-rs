@@ -16,6 +16,7 @@ import * as path from 'path';
 
 import { GitBackend } from './api';
 import {
+	GitAuthor,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -669,6 +670,87 @@ export class CliBackend implements GitBackend {
 		return count;
 	}
 
+	/** The root of the repository containing a path. */
+	public async repoRoot(path: string): Promise<string> {
+		const out = await this.run(['rev-parse', '--show-toplevel'], path);
+		return out.trim();
+	}
+
+	/** The names of the repository's remotes. */
+	public async getRemotes(repo: string): Promise<string[]> {
+		const out = await this.run(['remote'], repo);
+		return out.split(EOL).filter((line) => line !== '');
+	}
+
+	/**
+	 * The distinct commit authors of the current branch's history — `git shortlog -s -n -e`,
+	 * parsed and reduced exactly the way the extension always reduced it (de-duplicated by name,
+	 * the most-prolific spelling first, then sorted by name).
+	 */
+	public async getAuthors(repo: string): Promise<GitAuthor[]> {
+		const out = await this.run(['shortlog', '-e', '-s', '-n', 'HEAD'], repo).catch((error) => {
+			const message = String(error instanceof Error ? error.message : error).toLowerCase();
+			// A machine without the global configuration file makes shortlog fail; the extension
+			// has always treated that as "no authors".
+			if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
+				return '';
+			}
+			throw error;
+		});
+		const seen = new Set<string>();
+		const authors: GitAuthor[] = [];
+		for (const raw of out.split(EOL)) {
+			const line = raw.trim();
+			if (line === '') continue;
+			const entry = line.substring(line.indexOf('\t') + 1);
+			const separator = entry.indexOf('<');
+			const author =
+				separator === -1
+					? { name: entry.trim(), email: '' }
+					: {
+							name: entry.substring(0, separator).trim(),
+							email: entry.substring(separator + 1, entry.length - (entry.endsWith('>') ? 1 : 0)).trim()
+						};
+			if (seen.has(author.name)) continue;
+			seen.add(author.name);
+			authors.push(author);
+		}
+		authors.sort((a, b) => (a.name > b.name ? 1 : -1));
+		return authors;
+	}
+
+	/** The config entries of one location, last value per key. */
+	public async getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
+		const out = await this.run(
+			['--no-pager', 'config', '--list', '-z', '--includes', `--${location}`],
+			repo
+		).catch((error) => {
+			const message = String(error instanceof Error ? error.message : error).toLowerCase();
+			if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
+				return '';
+			}
+			throw error;
+		});
+		const configs: { [key: string]: string } = {};
+		const pairs = out.split('\0');
+		for (let i = 0; i < pairs.length - 1; i++) {
+			const lines = pairs[i].split(EOL);
+			const key = lines.shift()!;
+			configs[key] = lines.join('\n');
+		}
+		return configs;
+	}
+
+	/** The checked-out branch's short name, or NULL when HEAD is detached. */
+	public async currentBranchName(repo: string): Promise<string | null> {
+		try {
+			const out = await this.run(['symbolic-ref', '--short', 'HEAD'], repo);
+			return out.trim() || null;
+		} catch {
+			return null;
+		}
+	}
+
 	/* ---------- Internals ---------- */
 
 	private async getLog(repo: string, options: LogOptions) {
@@ -816,11 +898,6 @@ export class CliBackend implements GitBackend {
 		}
 
 		return { refData, branches, branchHead, tagNames: tagNames.sort() };
-	}
-
-	private async getRemotes(repo: string): Promise<string[]> {
-		const out = await this.run(['remote'], repo);
-		return out.split(EOL).filter((line) => line !== '');
 	}
 
 	private async getCommitDetailsBase(repo: string, hash: string) {

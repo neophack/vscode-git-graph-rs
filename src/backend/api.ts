@@ -9,6 +9,7 @@
 
 import { call, callJson, loadAddon } from './addon';
 import {
+	GitAuthor,
 	GitCommitData,
 	GitCommitDetails,
 	GitCommitFile,
@@ -127,6 +128,21 @@ export interface GitBackend {
 		showRemoteBranches: boolean,
 		includeCommitsMentionedByReflogs: boolean
 	): Promise<number>;
+
+	/** The root of the repository containing a path, as `git rev-parse --show-toplevel` prints. */
+	repoRoot(path: string): Promise<string>;
+
+	/** The names of the repository's remotes, as `git remote` lists them. */
+	getRemotes(repo: string): Promise<ReadonlyArray<string>>;
+
+	/** The distinct commit authors of the current branch's history (`git shortlog -s -n -e`). */
+	getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>>;
+
+	/** The config entries of one location, last value per key (`git config --list -z --includes`). */
+	getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }>;
+
+	/** The checked-out branch's short name, or NULL when HEAD is detached. */
+	currentBranchName(repo: string): Promise<string | null>;
 }
 
 /** The defaults a view load uses when the caller does not say otherwise. */
@@ -281,5 +297,25 @@ export class NativeBackend implements GitBackend {
 		return call(() =>
 			this.addon.countCommitsBefore(repo, branches !== null ? [...branches] : null, hash, showRemoteBranches, includeCommitsMentionedByReflogs)
 		);
+	}
+
+	public repoRoot(path: string): Promise<string> {
+		return call(() => this.addon.repoRoot(path));
+	}
+
+	public getRemotes(repo: string): Promise<ReadonlyArray<string>> {
+		return call(() => this.addon.remoteNames(repo));
+	}
+
+	public getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>> {
+		return callJson(() => this.addon.authors(repo));
+	}
+
+	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
+		return callJson(() => this.addon.configList(repo, location === 'local'));
+	}
+
+	public currentBranchName(repo: string): Promise<string | null> {
+		return call(() => this.addon.currentBranchName(repo));
 	}
 }

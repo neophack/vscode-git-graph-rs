@@ -83,6 +83,11 @@ function buildFixture() {
 	git(['tag', '-a', 'v2.0', '-m', 'an annotated tag']);
 	// A hierarchical tag name, which is legal git and must survive the engine's validation.
 	git(['tag', 'release/v2.1', renamed]);
+	// A tag whose message has paragraphs and trailing blank lines, to pin down how both sides
+	// trim it for the Tag Details dialogue.
+	write('tag-message.txt', 'line one\n\nline two\n\n\n');
+	git(['tag', '-a', 'v3.0', '-F', 'tag-message.txt', renamed]);
+	fs.rmSync(path.join(repoPath, 'tag-message.txt'));
 
 	// A binary file, so that the two implementations have to agree about detecting it.
 	write('blob.bin', '\u0000\u0001\u0002not text\u0000\u0003');
@@ -98,6 +103,10 @@ function buildFixture() {
 	write('.gitmodules', '[submodule "sub"]\n\tpath = sub\n\turl = https://example.invalid/sub.git\n');
 	git(['add', '.gitmodules', 'sub']);
 	commit('add the submodule');
+
+	// A second author with fewer commits, so the author aggregation has something to order.
+	clock += 60;
+	git(['-c', 'user.name=Second Author', '-c', 'user.email=second@example.com', 'commit', '--quiet', '--allow-empty', '-m', 'a commit by the second author'], { date: `${clock} +0000` });
 
 	// A remote, without any network: the tracking refs are written directly.
 	git(['remote', 'add', 'origin', 'https://example.invalid/repo.git']);
@@ -670,6 +679,39 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.equal(path.basename(a[0]), 'sub');
 	});
 
+	it('serves the remaining reads the same way', async () => {
+		// Repository discovery, from a subdirectory of the work tree.
+		const nested = path.join(repoPath, 'sub');
+		const [rootA, rootB] = await Promise.all([rust.repoRoot(nested), cli.repoRoot(nested)]);
+		const normaliseRoot = (value) => fs.realpathSync.native(value).split(path.sep).join('/').toLowerCase();
+		assert.equal(normaliseRoot(rootA), normaliseRoot(rootB));
+
+		// Remote names.
+		const [remotesA, remotesB] = await Promise.all([rust.getRemotes(root), cli.getRemotes(root)]);
+		assert.deepEqual([...remotesA], [...remotesB]);
+		assert.deepEqual([...remotesA], ['origin']);
+
+		// The author list: aggregated, de-duplicated by name, sorted by name.
+		const [authorsA, authorsB] = await Promise.all([rust.getAuthors(root), cli.getAuthors(root)]);
+		assert.deepEqual([...authorsA], [...authorsB]);
+		assert.deepEqual(authorsA.map((author) => author.name), ['Second Author', 'Test User']);
+		assert.deepEqual(authorsA[1], { name: 'Test User', email: 'test@example.com' });
+
+		// The configuration of both locations: the fixture's HOME holds no global file, so both
+		// sides agree there is nothing global, and the local entries match key for key.
+		const [localA, localB] = await Promise.all([rust.getConfigList(root, 'local'), cli.getConfigList(root, 'local')]);
+		assert.deepEqual(localA, localB);
+		assert.equal(localA['branch.main.remote'], 'origin');
+		assert.equal(localA['remote.origin.url'], 'https://example.invalid/repo.git');
+		const [globalA, globalB] = await Promise.all([rust.getConfigList(root, 'global'), cli.getConfigList(root, 'global')]);
+		assert.deepEqual(globalA, globalB);
+
+		// The checked-out branch.
+		const [branchA, branchB] = await Promise.all([rust.currentBranchName(root), cli.currentBranchName(root)]);
+		assert.equal(branchA, branchB);
+		assert.equal(branchA, 'main');
+	});
+
 	it('reads the same current branch upstream', async () => {
 		const [a, b] = await Promise.all([
 			rust.getCurrentBranchUpstream(root),
@@ -725,6 +767,30 @@ describe('the Rust engine and the git CLI agree', () => {
 		const [ra, rb] = await Promise.all([rust.searchHistory(root, pattern), cli.searchHistory(root, pattern)]);
 		assert.deepEqual([...ra], [...rb]);
 		assert.ok(ra.length >= 2, 'the pattern matches at least the feature and main commits');
+
+		// A dot in the pattern is a wildcard to both sides, as it is to POSIX ERE.
+		const [da, db] = await Promise.all([rust.searchHistory(root, 'f.rst'), cli.searchHistory(root, 'f.rst')]);
+		assert.deepEqual([...da], [...db]);
+		assert.ok(da.length >= 1, "'f.rst' matches 'the first commit' through the wildcard");
+	});
+
+	it('returns one body per commit however often it is named', async () => {
+		const hashes = [fixture.first, fixture.first, fixture.renamed];
+		const [a, b] = await Promise.all([
+			rust.getCommitBodies(root, hashes),
+			cli.getCommitBodies(root, hashes)
+		]);
+		assert.deepEqual(a, b);
+		assert.equal(Object.keys(a).length, 2, 'a commit named twice is one entry');
+	});
+
+	it('trims the same multi-paragraph tag message', async () => {
+		const [a, b] = await Promise.all([
+			rust.getTagDetails(root, 'v3.0'),
+			cli.getTagDetails(root, 'v3.0')
+		]);
+		assert.deepEqual({ ...a }, { ...b });
+		assert.equal(a.message, 'line one\n\nline two');
 	});
 
 	// Last in the block: this one pushes a second stash, which the earlier tests count on not
@@ -738,6 +804,36 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.equal(a.length, 2);
 		assert.match(a[0].message, /the second stashed work/, 'the newest stash comes first');
 		assert.match(a[1].message, /the stashed work/);
+	});
+});
+
+describe('unusual remote names', () => {
+	it('reads a hand-edited config subsection the same way', async () => {
+		// `git remote add` refuses names with spaces, but nothing stops a hand-edited .git/config
+		// from carrying one — and the remote URL lookup must read it exactly as `git config` does.
+		const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-oddremote-'));
+		const rust = new NativeBackend();
+		const cli = new CliBackend();
+		try {
+			const gitOdd = (args) =>
+				execFileSync('git', args, {
+					cwd: repoPath,
+					encoding: 'utf8',
+					env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoPath }
+				});
+			gitOdd(['init', '--quiet']);
+			gitOdd(['config', 'remote.up stream.url', 'https://example.invalid/spaced.git']);
+
+			const [a, b] = await Promise.all([
+				rust.getRemoteUrl(repoPath, 'up stream'),
+				cli.getRemoteUrl(repoPath, 'up stream')
+			]);
+			assert.equal(a, b);
+			assert.equal(a, 'https://example.invalid/spaced.git');
+		} finally {
+			rust.closeAllRepositories();
+			fs.rmSync(repoPath, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -765,6 +861,38 @@ describe('the backend selection', () => {
 	});
 });
 
+describe('running without a git CLI', () => {
+	it('builds the engine alone when no git executable exists', async () => {
+		const { createBackend, describeBackend } = await import('../out/backend/index.js');
+		assert.equal(describeBackend({ gitPath: null }), 'rust (engine only; no git CLI found)');
+
+		const fallbacks = [];
+		const backend = createBackend({ gitPath: null, onFallback: (method) => fallbacks.push(method) });
+		assert.equal(backend.name, 'rust', 'no fallback wrapper when there is nothing to fall back to');
+
+		// Everything the engine serves still works...
+		const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-nogit-'));
+		try {
+			execFileSync('git', ['init', '--quiet'], { cwd: outside, env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: outside } });
+			const root = await backend.openRepository(outside);
+			const refs = await backend.getRefs(root, {});
+			assert.deepEqual([...refs.heads], []);
+		} finally {
+			fs.rmSync(outside, { recursive: true, force: true });
+		}
+
+		// ...and what it declines surfaces as an error rather than silently falling back.
+		await assert.rejects(() => backend.getConfigList('C:\no-such-repo', 'local'));
+		assert.deepEqual(fallbacks, [], 'with no CLI there is nothing to fall back to');
+	});
+
+	it('reports whether the git CLI is available', async () => {
+		const { describeCapabilities } = await import('../out/backend/index.js');
+		assert.equal(describeCapabilities().gitCliAvailable, true);
+		assert.equal(describeCapabilities({ gitCliAvailable: false }).gitCliAvailable, false);
+	});
+});
+
 describe('the backend capability report', () => {
 	it('reports the engine split for this platform', async () => {
 		const { describeCapabilities } = await import('../out/backend/index.js');
@@ -778,12 +906,11 @@ describe('the backend capability report', () => {
 		for (const area of ['repoInfo', 'commits', 'details', 'diffs', 'onDemand', 'metadata']) {
 			assert.equal(byArea[area].provider, 'rust', `${area} is served by the engine`);
 		}
-		// The documented hybrids: reflog/glob counting declines per call, config is part CLI,
-		// and writes are always git.
+		// The documented splits: reflog/glob counting declines per call, and writes are always git.
 		assert.equal(byArea.counting.provider, 'rust');
 		assert.equal(byArea.counting.note, 'dynamic');
-		assert.equal(byArea.config.provider, 'hybrid');
-		assert.equal(byArea.config.note, 'configHybrid');
+		assert.equal(byArea.config.provider, 'rust');
+		assert.equal(byArea.config.note, undefined);
 		assert.equal(byArea.writes.provider, 'git-cli');
 		assert.equal(byArea.writes.note, 'writesAlways');
 	});

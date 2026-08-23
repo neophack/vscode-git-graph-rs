@@ -19,7 +19,7 @@ use gix::ObjectId;
 
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
-use crate::types::{CommitOrdering, CommitRecord, GitHistoryMatch};
+use crate::types::{CommitOrdering, CommitRecord, GitAuthor, GitHistoryMatch};
 
 /// How many commits are read for every commit displayed, so that the topological re-ordering has
 /// enough of the graph to be exact over the page it returns.
@@ -554,6 +554,14 @@ pub fn count_commits_before(
                 "Custom branch glob patterns are not resolved by the engine",
             ));
         }
+        // An empty branch list is what `git rev-list --count ^<hash>` with no refs is: a count
+        // from HEAD. Rather than silently reimplement that different default, the call is
+        // declined and the fallback runs the command line this replaces.
+        if branches.is_empty() {
+            return Err(Error::unsupported(
+                "An empty branch list counts from HEAD; the engine does not guess that",
+            ));
+        }
     }
 
     let excluded_id = repo.resolve_commit(hash)?;
@@ -602,4 +610,50 @@ pub fn count_commits_before(
         }
     }
     Ok(count)
+}
+
+/* ---------- Authors ---------- */
+
+/// The distinct commit authors of the current branch's history — what `git shortlog -s -n -e`
+/// is parsed into: aggregated per (name, email), ordered by commit count (most first), then
+/// de-duplicated by name (the first, most-prolific spelling wins) and sorted by name.
+pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
+    let git = repo.borrow();
+    let head = git
+        .head_id()
+        .map_err(|_| Error::not_found("The repository has no commits"))?;
+
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    for info in git
+        .rev_walk(std::iter::once(head))
+        .all()
+        .git_ctx("Could not walk the commit graph")?
+    {
+        let info = match info {
+            Ok(info) => info,
+            Err(_) => break,
+        };
+        let Ok(commit) = git.find_commit(info.id) else {
+            continue;
+        };
+        let Ok(author) = commit.author() else {
+            continue;
+        };
+        *counts
+            .entry((author.name.to_string(), author.email.to_string()))
+            .or_insert(0) += 1;
+    }
+
+    let mut ordered: Vec<((String, String), usize)> = counts.into_iter().collect();
+    ordered.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut authors: Vec<GitAuthor> = Vec::new();
+    for ((name, email), _count) in ordered {
+        if seen.insert(name.clone()) {
+            authors.push(GitAuthor { name, email });
+        }
+    }
+    authors.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(authors)
 }

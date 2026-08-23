@@ -300,6 +300,59 @@ pub async fn count_commits_before(
     .await
 }
 
+/// The root of the repository containing a path, without keeping the repository open.
+#[napi]
+pub async fn repo_root(path: String) -> Result<String> {
+    run(move || git_graph_core::repository::repo_root(&path)).await
+}
+
+/// The names of the repository's remotes.
+#[napi]
+pub async fn remote_names(path: String) -> Result<Vec<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        config::remote_names(&repo)
+    })
+    .await
+}
+
+/// The distinct commit authors of the current branch's history, as a JSON array.
+#[napi]
+pub async fn authors(path: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&log::authors(&repo)?)
+    })
+    .await
+}
+
+/// The configuration entries of one location (local or global), last value per key, as JSON.
+#[napi]
+pub async fn config_list(path: String, local: bool) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&config::config_list(
+            &repo,
+            if local {
+                config::ConfigLocation::Local
+            } else {
+                config::ConfigLocation::Global
+            },
+        )?)
+    })
+    .await
+}
+
+/// The checked-out branch's short name, or NULL when HEAD is detached.
+#[napi]
+pub async fn current_branch_name(path: String) -> Result<Option<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        config::current_branch_name(&repo)
+    })
+    .await
+}
+
 /// The engine's version, so the extension can report which backend it is running.
 #[napi]
 pub fn engine_version() -> String {

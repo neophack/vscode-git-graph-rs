@@ -52,6 +52,154 @@ found by measuring rather than by guessing:
    would cost a call per field, and a page of a thousand commits has tens of thousands of them.
    ([`native/node/src/lib.rs`](native/node/src/lib.rs))
 
+## Benchmarks: engine vs `git` CLI, by operation and repository size
+
+Measured with `node scripts/bench.mjs <repo> --all` on three synthetic repositories of
+increasing size, plus this repository itself (a real working tree with uncommitted changes).
+Each repository is walked by both
+backends through the same interface; the numbers are the median of 7 runs after a warm-up
+(the engine's caches and the OS page cache are warm, so this measures steady-state
+interaction, not the first cold open).
+
+Environment: Windows 11, Intel i7-14650HX (16 cores), Node 24, git 2.50.1.
+
+| Repository | Commits | Tags | Pack size |
+|---|---|---|---|
+| small | 100 | 10 | loose objects |
+| medium | 1 000 | 100 | loose objects |
+| large | 10 000 | 1 000 | ~6 MiB |
+
+### This repository (3 commits, a real working tree with uncommitted changes)
+
+| operation | git CLI | engine | speedup |
+|---|---:|---:|---:|
+| view load (repoInfo + first page) | 282.0 ms | 11.3 ms | **24.9×** |
+| getRepoInfo | 124.3 ms | 1.1 ms | **108.7×** |
+| getCommits (a page of the graph) | 142.9 ms | 12.0 ms | **11.9×** |
+| getRefs | 81.4 ms | 0.9 ms | **90.0×** |
+| getCommitDetails | 136.7 ms | 31.4 ms | **4.4×** |
+| getCommitBodies (3 commits) | 36.9 ms | 0.6 ms | **60.0×** |
+| getCommitSummaries (3 commits) | 45.8 ms | 0.7 ms | **62.6×** |
+| getCommitSubject | 35.3 ms | 0.3 ms | **137.5×** |
+| searchHistory | 38.2 ms | 1.6 ms | **24.2×** |
+| getConfig | 74.1 ms | 0.3 ms | **271.7×** |
+| getStashes | 41.5 ms | 0.6 ms | **67.7×** |
+| getUncommittedChangeCount | 50.1 ms | 9.3 ms | **5.4×** |
+| compareCommits | 100.1 ms | 31.4 ms | **3.2×** |
+| countCommitsBefore | 51.7 ms | 1.6 ms | **31.8×** |
+| getCommitFile (the 15 000-line webview bundle) | 45.8 ms | 0.9 ms | **52.7×** |
+| getCommitFileDiff (same file) | 136.9 ms | 28.1 ms | **4.9×** |
+| getCurrentBranchUpstream | 45.4 ms | 0.3 ms | **140.4×** |
+| getRemoteUrl | 39.7 ms | 0.3 ms | **127.4×** |
+
+This is the everyday shape: a tiny history, but real files — diffing the 15 000-line webview
+bundle is real work for both sides, and the engine still returns it 5× sooner.
+
+### Small (100 commits)
+
+| operation | git CLI | engine | speedup |
+|---|---:|---:|---:|
+| view load (repoInfo + first page) | 292.8 ms | 29.3 ms | **10.0×** |
+| getRepoInfo | 125.2 ms | 4.0 ms | **31.5×** |
+| getCommits (a page of the graph) | 167.6 ms | 27.1 ms | **6.2×** |
+| getRefs | 97.3 ms | 4.5 ms | **21.4×** |
+| getCommitDetails | 123.1 ms | 3.4 ms | **35.9×** |
+| getCommitBodies (50 commits) | 60.4 ms | 5.1 ms | **11.7×** |
+| getCommitSummaries (50 commits) | 68.7 ms | 5.8 ms | **11.8×** |
+| getCommitSubject | 46.3 ms | 0.5 ms | **99.8×** |
+| searchHistory ('' matches everything) | 66.3 ms | 19.3 ms | **3.4×** |
+| getConfig | 74.2 ms | 0.2 ms | **309×** |
+| getStashes | 46.1 ms | 0.8 ms | **59.5×** |
+| getUncommittedChangeCount | 51.8 ms | 9.0 ms | **5.8×** |
+| compareCommits | 85.2 ms | 11.7 ms | **7.3×** |
+| countCommitsBefore | 59.5 ms | 14.4 ms | **4.1×** |
+| getCommitFile | 46.3 ms | 0.6 ms | **75.7×** |
+| getCommitFileDiff | 92.0 ms | 2.3 ms | **40.9×** |
+| getCurrentBranchUpstream | 42.2 ms | 0.3 ms | **146×** |
+| getSubmodules | 0.0 ms | 0.2 ms | 0.2× ¹ |
+| getRemoteUrl | 41.5 ms | 0.2 ms | **230×** |
+| getTagDetails (annotated tag) | 45.3 ms | 0.6 ms | **76.1×** |
+
+### Medium (1 000 commits)
+
+| operation | git CLI | engine | speedup |
+|---|---:|---:|---:|
+| view load (repoInfo + first page) | 318.0 ms | 118.9 ms | **2.7×** |
+| getRepoInfo | 156.2 ms | 33.9 ms | **4.6×** |
+| getCommits (a page of the graph) | 230.1 ms | 110.4 ms | **2.1×** |
+| getRefs | 107.4 ms | 33.8 ms | **3.2×** |
+| getCommitDetails | 119.5 ms | 3.0 ms | **40.3×** |
+| getCommitBodies (50 commits) | 59.2 ms | 5.7 ms | **10.3×** |
+| getCommitSummaries (50 commits) | 70.7 ms | 5.7 ms | **12.4×** |
+| getCommitSubject | 44.7 ms | 0.6 ms | **77.0×** |
+| searchHistory | 82.5 ms | 46.2 ms | **1.8×** |
+| getConfig | 66.2 ms | 0.3 ms | **255×** |
+| getStashes | 43.6 ms | 0.4 ms | **111×** |
+| getUncommittedChangeCount | 45.5 ms | 7.0 ms | **6.5×** |
+| compareCommits | 78.1 ms | 13.0 ms | **6.0×** |
+| countCommitsBefore | 150.6 ms | 159.4 ms | 0.9× ² |
+| getCommitFile | 46.7 ms | 0.9 ms | **50.8×** |
+| getCommitFileDiff | 92.6 ms | 2.6 ms | **35.5×** |
+| getCurrentBranchUpstream | 46.3 ms | 0.6 ms | **74.2×** |
+| getSubmodules | 0.1 ms | 0.3 ms | 0.2× ¹ |
+| getRemoteUrl | 48.4 ms | 0.2 ms | **288×** |
+| getTagDetails (annotated tag) | 55.9 ms | 0.7 ms | **83.5×** |
+
+### Large (10 000 commits, 1 000 tags)
+
+| operation | git CLI | engine | speedup |
+|---|---:|---:|---:|
+| view load (repoInfo + first page) | 292.7 ms | 120.7 ms | **2.4×** |
+| getRepoInfo | 130.4 ms | 40.7 ms | **3.2×** |
+| getCommits (a page of the graph) | 192.3 ms | 111.9 ms | **1.7×** |
+| getRefs | 98.6 ms | 37.6 ms | **2.6×** |
+| getCommitDetails | 121.6 ms | 5.5 ms | **22.2×** |
+| getCommitBodies (50 commits) | 76.6 ms | 8.0 ms | **9.6×** |
+| getCommitSummaries (50 commits) | 85.4 ms | 6.0 ms | **14.3×** |
+| getCommitSubject | 54.5 ms | 0.6 ms | **84.3×** |
+| searchHistory | 112.6 ms | 63.6 ms | **1.8×** |
+| getConfig | 69.0 ms | 0.3 ms | **211×** |
+| getStashes | 46.3 ms | 0.4 ms | **105×** |
+| getUncommittedChangeCount | 52.6 ms | 8.8 ms | **6.0×** |
+| compareCommits | 86.2 ms | 21.6 ms | **4.0×** |
+| countCommitsBefore | 119.6 ms | 93.5 ms | **1.3×** |
+| getCommitFile | 51.2 ms | 0.6 ms | **83.6×** |
+| getCommitFileDiff | 106.4 ms | 2.9 ms | **37.1×** |
+| getCurrentBranchUpstream | 47.5 ms | 0.5 ms | **88.8×** |
+| getSubmodules | 0.0 ms | 0.3 ms | 0.2× ¹ |
+| getRemoteUrl | 45.6 ms | 0.2 ms | **230×** |
+| getTagDetails (annotated tag) | 52.2 ms | 0.5 ms | **107×** |
+
+¹ `getSubmodules` on the CLI backend answers from the working tree (no `.gitmodules` — no
+process spawn), so this row compares a no-op against the engine reading the index; it is not
+a real defeat. On any repository *with* submodules the CLI spawns `git config -f .gitmodules`
+at the ~45 ms floor every other CLI row shows.
+
+² `countCommitsBefore` on the 1 000-commit repository was the one row where the engine lost
+(159.4 ms vs 150.6 ms): counting every commit before an early revision walks essentially the
+whole history, which is `git rev-list --count`'s best case. On the 10 000-commit repository —
+where the pack is built and the walk reads packed objects — the engine is ahead again (1.3×).
+
+### What the numbers say
+
+- **The single-object reads win by two orders of magnitude** (`getConfig`, `getRemoteUrl`,
+  `getCommitSubject`, `getStashes`, `getCurrentBranchUpstream`) at every repository size. On the
+  CLI side these all cost one `git` spawn (~45 ms floor on Windows), while the engine answers
+  from its warm repository handle in well under a millisecond. The gap does not narrow as the
+  repository grows, because the spawn is the cost.
+- **The graph walk (`view load`, `getCommits`) wins by 10× on the small repository and settles
+  around 2× on the larger ones.** Page size is capped at 300 commits, so the engine's cost is
+  roughly constant while the CLI's cost is dominated by ref scanning (1 000 tags in the large
+  repository) and pack reads. Two× off the number the user waits for on every repository open
+  remains the difference between a view that loads instantly and one that visibly pauses.
+- **Repository size moves the engine's cost, ref count moves both.** The rows that scan refs
+  (`getRepoInfo`, `getRefs`) grow with the tag count for both backends; the rows that read
+  individual objects stay flat from 100 to 10 000 commits.
+- **The only operations that approach parity are full-history walks** (`searchHistory` with a
+  pattern that matches everything, `countCommitsBefore`), where the work is proportional to the
+  history and `git`'s walker is highly optimised. The engine still leads, but by 1.3–1.8×
+  rather than 10×.
+
 ## Architecture
 
 ```
@@ -222,6 +370,12 @@ through the `git` CLI backend instead — the view loads normally, with an infor
 the Settings widget's **Backend** section shows exactly which areas run on which backend. The
 engine is a speed optimisation, never a requirement.
 
+The reverse also holds: **a machine without Git installed runs the extension on the engine alone**
+— the whole read path (graph, details, comparisons, search, settings panel data) is served
+in-process, the view loads normally, and write operations report that they need Git. The write
+path (fetch/push, merge, rebase, stash operations, branch and tag maintenance) still runs through
+the `git` CLI — including where gix itself has no implementation yet (push above all).
+
 ## Shipping
 
 [`.github/workflows/native-build.yml`](.github/workflows/native-build.yml) builds one binary per
@@ -277,6 +431,22 @@ write path (checkout, merge, rebase, stash operations, remotes, tags) is on neit
 it still spawns `git` directly in `DataSource`, and those phases need the interface extended
 first, then both implementations, as [Roadmap](#roadmap) says. See `GAPS.md` for the full
 inventory of what is missing.
+
+## License & credits
+
+The Rust engine (`native/`), the build scripts, the custom-made icons and the
+`git-graph-rs-*` assets are original to this project and released under the
+[MIT license](LICENSE).
+
+The webview and extension host layers are ported and modified from
+[mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph),
+whose license (`licenses/LICENSE_GIT_GRAPH`) does not permit publishing
+derivative works — see `LICENSE` for how that applies to this repository.
+Further credits: the Visual Studio Code Git Extension (Askpass, Find Git
+Executable — MIT), Octicons, vscode-icons and Icons8 for icons, and the
+[gix][gix] and [napi-rs][napi-rs] ecosystems the engine builds on
+(MIT OR Apache-2.0). The full inventory lives in
+[`licenses/THIRD-PARTY-NOTICES.md`](licenses/THIRD-PARTY-NOTICES.md).
 
 [napi-rs]: https://napi.rs
 [gix]: https://github.com/GitoxideLabs/gitoxide

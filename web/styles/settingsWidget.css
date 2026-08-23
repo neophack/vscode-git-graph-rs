@@ -355,7 +355,13 @@
 	font-size:inherit;
 }
 
-/* Backend section: which engine serves each capability on this platform */
+/* Backend section: which engine serves each capability on this platform.
+   The capability labels and engine status texts can be longer than the settings
+   column is wide, so they wrap to the available width instead of pushing the
+   "Served by" column out of the widget (badges themselves stay on one line). */
+.settingsSection.backendSection > table td{
+	white-space:normal;
+}
 .backendSection code{
 	background:var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.16));
 	border-radius:3px;

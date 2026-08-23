@@ -2,10 +2,10 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"license": "MIT",
 	"private": true,
-	"publisher": "aucneon",
+	"publisher": "neophack",
 	"engines": {
 		"vscode": "^1.38.0",
 		"node": ">=18"

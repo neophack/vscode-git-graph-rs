@@ -29,7 +29,7 @@ the CLI, and what failed.
 ## Operations served by the Rust engine (gix)
 
 These `DataSource` methods turn each request into a single JSON call to the engine (the
-`GitBackend` interface in `src/backend/api.ts` — 25 methods plus handle management):
+`GitBackend` interface in `src/backend/api.ts` — 30 methods plus handle management):
 
 | Feature (as the user sees it) | DataSource method | Engine implementation |
 |---|---|---|
@@ -65,15 +65,17 @@ answers for the same repository, and any divergence is an engine bug.
 The following features spawn a git subprocess on every call (`execFile`, with the Askpass
 credential environment), matching the original extension's implementation:
 
-**Read operations (the parts of hybrid methods the engine does not cover)**
+**Read operations (everything that still spawns git)**
 
 | Feature | DataSource method |
 |---|---|
-| Branch-level config and author list in `getConfig` | `getConfig` (hybrid: this part still goes to the CLI) |
 | Single-file diff of an arbitrary from→to pair (comparison view) | `getCommitFileDiff` (hybrid: only the commit↔its-parent case goes to the engine) |
+| "Are changes staged?" (checked before committing a squash) | `areStagedChanges` (private) |
+| Which remotes contain a commit (checked before pushing a tag) | `getRemotesContainingCommit` (private) |
 
-The engine also *declines* two `countCommitsBefore` argument shapes — reflog tips and
-`--glob=` patterns — which `FallbackBackend` then routes here automatically.
+The engine also *declines* three argument shapes, which `FallbackBackend` then routes here
+automatically: `countCommitsBefore` with reflog tips or `--glob=` patterns or an empty branch
+list, and `getConfigList` for a file carrying `include`/`includeIf` directives.
 
 **All write operations (41)**: branches (`checkoutBranch`, `createBranch`, `deleteBranch`,
 `renameBranch`, `deleteRemoteBranch`), tags (`addTag`, `deleteTag`), remotes

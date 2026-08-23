@@ -46,8 +46,19 @@ export async function activate(context: vscode.ExtensionContext) {
 		logger.log('Using ' + gitExecutable.path + ' (version: ' + gitExecutable.version + ')');
 	} catch (_) {
 		gitExecutable = null;
-		showErrorMessage(UNABLE_TO_FIND_GIT_MSG);
-		logger.logError(UNABLE_TO_FIND_GIT_MSG);
+		if (hasEngineForPlatform(context.extensionPath)) {
+			// No Git executable, but the engine can serve the whole read path in-process: the
+			// extension is usable as-is, and write operations report that they need Git.
+			const zh = getConfig().interfaceLanguage === 'zh-cn';
+			const msg = zh
+				? 'Git Graph RS：未找到 Git，将通过 Rust 引擎运行（查看、比较、搜索等全部可用；写入类操作需要安装 Git）。'
+				: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).';
+			showInformationMessage(msg);
+			logger.log(msg);
+		} else {
+			showErrorMessage(UNABLE_TO_FIND_GIT_MSG);
+			logger.logError(UNABLE_TO_FIND_GIT_MSG);
+		}
 	}
 
 	const configurationEmitter = new EventEmitter<vscode.ConfigurationChangeEvent>();

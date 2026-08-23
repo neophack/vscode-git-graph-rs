@@ -12,7 +12,7 @@ behavioural deviations.
 
 ## 1. The read path
 
-Twenty-eight methods on `GitBackend`, implemented natively *and* over the `git` CLI, and asserted to
+Thirty methods on `GitBackend`, implemented natively *and* over the `git` CLI, and asserted to
 agree with each other in `tests/backends.test.mjs`. `DataSource` delegates to the backend for every
 read; on a platform without the native addon every call lands on the CLI implementation instead.
 
@@ -34,18 +34,27 @@ read; on a platform without the native addon every call lands on the CLI impleme
 
 ### Reads still engine-side pending
 
-None — every read `DataSource` offers is on both backends. Two methods remain *hybrid*, with part
-of their work still spawning `git` directly (never behind `GitBackend`):
+None — every read `DataSource` offers is on both backends, including the repository discovery
+behind the workspace scan, the settings panel's config and author lists, the remote names and
+the checked-out branch. Three reads still spawn `git` directly at action time (never behind
+`GitBackend`):
 
-- `getConfig`: the branch-level config and the author list still come from the CLI, whose output
-  shape the settings widget expects.
 - `getCommitFileDiff`: only the commit↔its-parent case goes to the engine; an arbitrary from→to
   pair still spawns `git diff`.
+- `areStagedChanges` (before committing a squash) and `getRemotesContainingCommit` (before
+  pushing a tag).
 
-Two `countCommitsBefore` argument shapes (reflog tips, `--glob=` patterns) are *declined* by the
-engine with `Unsupported`, which the fallback wrapper routes to the CLI automatically.
+Three argument shapes are *declined* by the engine with `Unsupported`, which the fallback
+wrapper routes to the CLI automatically: `countCommitsBefore` with reflog tips, `--glob=`
+patterns or an empty branch list, and `getConfigList` for a file carrying `include` directives.
 
-## 2. The write path — CLI only
+## 2. The write path — CLI only (and the extension now runs without Git installed)
+
+The engine serves every read, so the extension loads and works on a machine with no `git`
+executable at all (`createBackend` then returns the engine alone; write operations report that
+they need Git). Moving the writes onto the engine has a hard external limit: gix does not
+implement `push` (and its fetch needs the network feature set), so a literal 100% is not
+reachable today; everything else is a matter of the phased work below.
 
 All forty-one write operations work (they are the original's CLI implementations, ported with the
 extension layer), but none are on `GitBackend`, so the engine does not serve them yet. Grouped by
@@ -95,7 +104,9 @@ Documented in the README's "Known deviations from git":
 
 1. ~~Make it an extension at all~~ — done.
 2. ~~`getConfig`, `getCommitFile`, `getCommitFileDiff`~~ — done.
-3. ~~The remaining reads onto the engine~~ — done (both backends, cross-backend tested).
+3. ~~The remaining reads onto the engine~~ — done, twice over: the on-demand reads, then the
+   action-time ones (repository discovery, config/author lists, remote names, branch name).
+   Every read is now on both backends, cross-backend tested.
 4. **The write path**, phase by phase — the interface needs extending first, then both
    implementations, the same way the reads were done.
 5. **The deviations above**, which are small but user-visible.
