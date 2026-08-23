@@ -7,19 +7,23 @@
  */
 
 import { GitBackend, NativeBackend } from './api';
-import { isAddonAvailable } from './addon';
+import { isAddonAvailable, loadAddon, platformKey } from './addon';
 import { CliBackend } from './cliBackend';
+import { BackendCapability, BackendReport } from '../types';
 import {
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
 	GitCommitFile,
 	GitCommitStash,
+	GitCommitSummary,
 	GitConfigSnapshot,
 	GitFileChange,
+	GitHistoryMatch,
 	GitRefData,
 	GitRepoInfo,
 	GitStash,
+	GitTagDetails,
 	LogOptions,
 	RefReadOptions
 } from './types';
@@ -142,6 +146,63 @@ class FallbackBackend implements GitBackend {
 	public getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
 		return this.attempt('getCommitFileDiff', (backend) => backend.getCommitFileDiff(repo, hash, file));
 	}
+
+	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
+		return this.attempt('getCommitBodies', (backend) => backend.getCommitBodies(repo, hashes));
+	}
+
+	public getCommitSubject(repo: string, hash: string): Promise<string> {
+		return this.attempt('getCommitSubject', (backend) => backend.getCommitSubject(repo, hash));
+	}
+
+	public getCommitSummaries(
+		repo: string,
+		hashes: ReadonlyArray<string>
+	): Promise<{ [hash: string]: GitCommitSummary }> {
+		return this.attempt('getCommitSummaries', (backend) => backend.getCommitSummaries(repo, hashes));
+	}
+
+	public searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>> {
+		return this.attempt('searchHistory', (backend) => backend.searchHistory(repo, query));
+	}
+
+	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
+		return this.attempt('getTagDetails', (backend) => backend.getTagDetails(repo, tagName));
+	}
+
+	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
+		return this.attempt('getRemoteUrl', (backend) => backend.getRemoteUrl(repo, remote));
+	}
+
+	public getNewPathOfRenamedFile(
+		repo: string,
+		commitHash: string,
+		oldFilePath: string
+	): Promise<string | null> {
+		return this.attempt('getNewPathOfRenamedFile', (backend) =>
+			backend.getNewPathOfRenamedFile(repo, commitHash, oldFilePath)
+		);
+	}
+
+	public getSubmodules(repo: string): Promise<ReadonlyArray<string>> {
+		return this.attempt('getSubmodules', (backend) => backend.getSubmodules(repo));
+	}
+
+	public getCurrentBranchUpstream(repo: string): Promise<string | null> {
+		return this.attempt('getCurrentBranchUpstream', (backend) => backend.getCurrentBranchUpstream(repo));
+	}
+
+	public countCommitsBefore(
+		repo: string,
+		branches: ReadonlyArray<string> | null,
+		hash: string,
+		showRemoteBranches: boolean,
+		includeCommitsMentionedByReflogs: boolean
+	): Promise<number> {
+		return this.attempt('countCommitsBefore', (backend) =>
+			backend.countCommitsBefore(repo, branches, hash, showRemoteBranches, includeCommitsMentionedByReflogs)
+		);
+	}
 }
 
 /**
@@ -170,4 +231,51 @@ export function createBackend(options: BackendOptions = {}): GitBackend {
 export function describeBackend(options: BackendOptions = {}): string {
 	if (options.prefer === 'git-cli') return 'git-cli';
 	return isAddonAvailable() ? 'rust' : 'git-cli';
+}
+
+/**
+ * Which backend serves each area of the extension *on the platform this editor is running on*.
+ *
+ * The split differs per platform: everywhere the engine binary loads, the reads are served by
+ * Rust (with the two documented hybrids), and the write path spawns `git`; on a platform without
+ * a binary — an architecture the engine is not built for, or a package missing it — everything
+ * runs over the `git` CLI. This report is what the Settings widget's backend section shows, so
+ * a user can see at a glance what is fast and what is not, on their machine.
+ */
+export function describeCapabilities(options: { addonRoot?: string } = {}): BackendReport {
+	const engineAvailable = isAddonAvailable(options.addonRoot);
+	let engineVersion: string | null = null;
+	if (engineAvailable) {
+		try {
+			engineVersion = (options.addonRoot === undefined ? loadAddon() : loadAddon(options.addonRoot)).engineVersion();
+		} catch {
+			// The availability probe succeeded but the version call failed: report without it.
+		}
+	}
+
+	const onEngine: BackendCapability[] = [
+		{ area: 'repoInfo', provider: 'rust' },
+		{ area: 'commits', provider: 'rust' },
+		{ area: 'details', provider: 'rust' },
+		{ area: 'diffs', provider: 'rust' },
+		{ area: 'onDemand', provider: 'rust' },
+		{ area: 'metadata', provider: 'rust' },
+		// Reflog tips and `--glob=` patterns are declined by the engine and answered by the CLI,
+		// transparently, per call.
+		{ area: 'counting', provider: 'rust', note: 'dynamic' },
+		// Remotes, identity, push default and diff tools come from the engine; the branch-level
+		// config and the author list still spawn git (the settings widget's own data source).
+		{ area: 'config', provider: 'hybrid', note: 'configHybrid' },
+		{ area: 'writes', provider: 'git-cli', note: 'writesAlways' }
+	];
+	const onCli: BackendCapability[] = [
+		'repoInfo', 'commits', 'details', 'diffs', 'onDemand', 'metadata', 'counting', 'config', 'writes'
+	].map((area) => ({ area, provider: 'git-cli' as const }));
+
+	return {
+		platform: platformKey(),
+		engineAvailable,
+		engineVersion,
+		capabilities: engineAvailable ? onEngine : onCli
+	};
 }

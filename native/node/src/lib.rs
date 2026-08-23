@@ -14,7 +14,7 @@ use napi_derive::napi;
 
 use git_graph_core::types::{LogOptions, RefReadOptions};
 use git_graph_core::{
-    blob, config, details, diff, graph, refs, stash, status, Error, ErrorKind, RepoManager,
+    blob, config, details, diff, graph, log, refs, stash, status, Error, ErrorKind, RepoManager,
 };
 
 /// Open a repository and keep it open.
@@ -180,6 +180,122 @@ pub async fn load_commit_file_diff(
     run(move || {
         let repo = RepoManager::global().get(&path)?;
         blob::commit_file_diff(&repo, &commit_hash, &file)
+    })
+    .await
+}
+
+/// The full commit message of each of the given commits, keyed by hash, as a JSON object.
+#[napi]
+pub async fn load_commit_bodies(path: String, hashes: Vec<String>) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&details::commit_bodies(&repo, &hashes)?)
+    })
+    .await
+}
+
+/// The subject of one commit.
+#[napi]
+pub async fn load_commit_subject(path: String, hash: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        details::commit_subject(&repo, &hash)
+    })
+    .await
+}
+
+/// The summary of each of the given commits, keyed by hash, as a JSON object.
+#[napi]
+pub async fn load_commit_summaries(path: String, hashes: Vec<String>) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&details::commit_summaries(&repo, &hashes)?)
+    })
+    .await
+}
+
+/// The commits whose message matches a pattern, newest first, as a JSON array.
+#[napi]
+pub async fn search_history(path: String, query: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&log::search_history(&repo, &query)?)
+    })
+    .await
+}
+
+/// A tag in full (tagger, message, signature presence), as a JSON object.
+#[napi]
+pub async fn load_tag_details(path: String, tag_name: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&details::tag_details(&repo, &tag_name)?)
+    })
+    .await
+}
+
+/// The fetch URL of a remote, or NULL when it is not configured.
+#[napi]
+pub async fn remote_url(path: String, remote: String) -> Result<Option<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        config::remote_url(&repo, &remote)
+    })
+    .await
+}
+
+/// Where a file was renamed to between a commit and the working tree, or NULL when it was not.
+#[napi]
+pub async fn new_path_of_renamed_file(
+    path: String,
+    commit_hash: String,
+    old_file_path: String,
+) -> Result<Option<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        diff::new_path_of_renamed_file(&repo, &commit_hash, &old_file_path)
+    })
+    .await
+}
+
+/// The roots of the repository's initialised submodules.
+#[napi]
+pub async fn submodules(path: String) -> Result<Vec<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        config::submodules(&repo)
+    })
+    .await
+}
+
+/// The upstream of the checked-out branch (`origin/main`), or NULL when there is none.
+#[napi]
+pub async fn current_branch_upstream(path: String) -> Result<Option<String>> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        config::current_branch_upstream(&repo)
+    })
+    .await
+}
+
+/// How many commits are reachable from the shown refs but not from `hash` — `git rev-list --count`.
+#[napi]
+pub async fn count_commits_before(
+    path: String,
+    branches: Option<Vec<String>>,
+    hash: String,
+    show_remote_branches: bool,
+    include_reflogs: bool,
+) -> Result<u32> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        Ok(log::count_commits_before(
+            &repo,
+            branches.as_deref(),
+            &hash,
+            show_remote_branches,
+            include_reflogs,
+        )? as u32)
     })
     .await
 }

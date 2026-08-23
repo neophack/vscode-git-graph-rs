@@ -322,6 +322,8 @@ class SettingsWidget {
 				'<div id="openExtensionSettings">' + SVG_ICONS.gear + strings.settingsOpenExtensionSettings + '</div>' +
 				'</div></div>';
 
+			globalHtml += SettingsWidget.renderBackendSection(this.view.backend);
+
 			this.contentsElem.innerHTML = '<div id="settingsColumns">' +
 				'<div class="settingsColumn" id="settingsRepoColumn"><h3 class="settingsColumnTitle" title="' + strings.settingsColumnRepoHint + '">' + strings.settingsColumnRepo + '</h3>' + repoHtml + '</div>' +
 				'<div class="settingsColumn" id="settingsGlobalColumn"><h3 class="settingsColumnTitle" title="' + strings.settingsColumnGlobalHint + '">' + strings.settingsColumnGlobal + '</h3>' + globalHtml + '</div>' +
@@ -665,6 +667,61 @@ class SettingsWidget {
 
 
 	/* Global Setting Render Helpers */
+
+	/**
+	 * Render the Backend section: which engine serves each area of the extension *on the platform
+	 * this editor is running on*. The split is computed by the extension host (it depends on
+	 * whether this installation actually contains an engine binary for this platform) and sent
+	 * with the view's initial state.
+	 * @param backend The backend report from the extension host.
+	 * @returns The HTML of the section.
+	 */
+	private static renderBackendSection(backend: GG.BackendReport) {
+		const areaLabels: { [area: string]: string } = {
+			repoInfo: strings.settingsBackendAreaRepoInfo,
+			commits: strings.settingsBackendAreaCommits,
+			details: strings.settingsBackendAreaDetails,
+			diffs: strings.settingsBackendAreaDiffs,
+			onDemand: strings.settingsBackendAreaOnDemand,
+			metadata: strings.settingsBackendAreaMetadata,
+			counting: strings.settingsBackendAreaCounting,
+			config: strings.settingsBackendAreaConfig,
+			writes: strings.settingsBackendAreaWrites
+		};
+		const providerLabels: { [provider: string]: string } = {
+			'rust': strings.settingsBackendProviderRust,
+			'git-cli': strings.settingsBackendProviderCli,
+			'hybrid': strings.settingsBackendProviderHybrid
+		};
+		const noteTitles: { [note: string]: string } = {
+			'dynamic': strings.settingsBackendNoteDynamic,
+			'configHybrid': strings.settingsBackendNoteConfigHybrid,
+			'writesAlways': strings.settingsBackendNoteWritesAlways
+		};
+
+		const engineStatus = backend.engineAvailable
+			? formatStr(strings.settingsBackendEngineLoaded, backend.engineVersion ?? '')
+			: strings.settingsBackendEngineMissing;
+
+		let html = '<div class="settingsSection backendSection"><h3>' + strings.settingsSectionBackend + '</h3>' +
+			'<table>' +
+			'<tr class="lineBelow"><td class="left">' + escapeHtml(strings.settingsBackendPlatform) + '</td><td class="left"><code>' + escapeHtml(backend.platform) + '</code></td></tr>' +
+			'<tr class="lineBelow"><td class="left">' + escapeHtml(strings.settingsBackendEngine) + '</td><td class="left backendEngine' + (backend.engineAvailable ? ' engineLoaded' : ' engineMissing') + '">' + escapeHtml(engineStatus) + '</td></tr>' +
+			'</table>' +
+			'<table class="backendTable">' +
+			'<tr><th class="left">' + escapeHtml(strings.settingsBackendArea) + '</th><th class="left">' + escapeHtml(strings.settingsBackendProvider) + '</th></tr>';
+
+		for (const capability of backend.capabilities) {
+			const note = capability.note !== undefined ? noteTitles[capability.note] : null;
+			html += '<tr class="lineAbove">' +
+				'<td class="left">' + escapeHtml(areaLabels[capability.area] ?? capability.area) + (note !== null ? ' <span class="settingsWidgetInfo" title="' + escapeHtml(note) + '">' + SVG_ICONS.info + '</span>' : '') + '</td>' +
+				'<td class="left"><span class="backendBadge ' + capability.provider + '">' + escapeHtml(providerLabels[capability.provider] ?? capability.provider) + '</span></td>' +
+				'</tr>';
+		}
+
+		html += '</table></div>';
+		return html;
+	}
 
 	/**
 	 * Render a table row containing a `<select>` bound to a Global Setting.

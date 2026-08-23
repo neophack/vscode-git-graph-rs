@@ -1011,7 +1011,10 @@ function validateExternalConfigFile(file: Readonly<ExternalRepoConfig.File>) {
 	if (typeof file.pinnedBranches !== 'undefined' && (!Array.isArray(file.pinnedBranches) || file.pinnedBranches.some((branch) => typeof branch !== 'string'))) {
 		return 'pinnedBranches';
 	}
-	if (typeof file.pinnedCommits !== 'undefined' && (!Array.isArray(file.pinnedCommits) || file.pinnedCommits.some((commit) => typeof commit !== 'object' || commit === null || typeof commit.hash !== 'string' || typeof commit.summary !== 'string'))) {
+	if (typeof file.pinnedCommits !== 'undefined' && (!Array.isArray(file.pinnedCommits) || file.pinnedCommits.some((commit) => typeof commit !== 'object' || commit === null || typeof commit.hash !== 'string' || typeof commit.summary !== 'string'
+		|| (typeof commit.author !== 'undefined' && typeof commit.author !== 'string')
+		|| (typeof commit.email !== 'undefined' && typeof commit.email !== 'string')
+		|| (typeof commit.date !== 'undefined' && typeof commit.date !== 'number')))) {
 		return 'pinnedCommits';
 	}
 	if (typeof file.pullRequestConfig !== 'undefined' && (
@@ -1147,6 +1150,7 @@ function pinsEqual(a: Pick<GitRepoState, 'pinnedBranches' | 'pinnedCommits'>, b:
 	return a.pinnedBranches.every((branch, i) => branch === b.pinnedBranches[i])
 		&& a.pinnedCommits.every((commit, i) => {
 			const other = b.pinnedCommits[i];
-			return other !== undefined && commit.hash === other.hash && commit.summary === other.summary;
+			return other !== undefined && commit.hash === other.hash && commit.summary === other.summary
+				&& commit.author === other.author && commit.email === other.email && commit.date === other.date;
 		});
 }

@@ -5,11 +5,19 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+  # Lets the release workflow run this whole pipeline (engine tests, the six platform builds,
+  # the cross-backend integration tests, packaging) before publishing anything.
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
   # A failed build should not also be a slow build.
   CARGO_INCREMENTAL: 0
+
+# Least privilege: this workflow only builds and tests. (When the release workflow calls it, the
+# caller's broader token cannot leak in — a called workflow's permissions are capped by its own.)
+permissions:
+  contents: read
 
 jobs:
   # The engine's own tests, which compare it against what `git` reports for the same question.

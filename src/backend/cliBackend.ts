@@ -11,6 +11,8 @@
  */
 
 import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { GitBackend } from './api';
 import {
@@ -19,14 +21,18 @@ import {
 	GitCommitDetails,
 	GitCommitFile,
 	GitCommitStash,
+	GitCommitSummary,
 	GitConfigSnapshot,
 	GitFileChange,
 	GitFileStatus,
+	GitHistoryMatch,
 	GitRef,
 	GitRefData,
 	GitRemoteConfig,
 	GitRepoInfo,
+	GitSignatureStatus,
 	GitStash,
+	GitTagDetails,
 	GitTagRef,
 	LogOptions,
 	UNCOMMITTED
@@ -430,6 +436,239 @@ export class CliBackend implements GitBackend {
 			.replace(/\n$/m, '');
 	}
 
+	/* ---------- On-demand reads ---------- */
+
+	/** The full commit message of each of the given commits, keyed by hash. */
+	public async getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
+		// With no hashes there is nothing to ask for — and `git log --no-walk` with no revisions
+		// would silently default to HEAD, answering a question nobody asked.
+		if (hashes.length === 0) return {};
+		const out = await this.run(
+			['-c', 'log.showSignature=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...hashes],
+			repo
+		);
+		const bodies: { [hash: string]: string } = {};
+		for (let record of out.split('\x1e')) {
+			record = record.replace(/^\n/, ''); // git terminates each formatted entry with a newline
+			const sep = record.indexOf('\x1f');
+			if (sep <= 0) continue;
+			bodies[record.substring(0, sep)] = record.substring(sep + 1).replace(/\n$/, '');
+		}
+		return bodies;
+	}
+
+	/** The subject of one commit, whitespace-normalised as the extension has always shown it. */
+	public async getCommitSubject(repo: string, hash: string): Promise<string> {
+		const out = await this.run(
+			['-c', 'log.showSignature=false', 'log', '--format=%s', '-n', '1', hash, '--'],
+			repo
+		);
+		return out.trim().replace(/\s+/g, ' ');
+	}
+
+	/** The summary of each of the given commits, keyed by hash. */
+	public async getCommitSummaries(
+		repo: string,
+		hashes: ReadonlyArray<string>
+	): Promise<{ [hash: string]: GitCommitSummary }> {
+		const out = await this.run(
+			['show', '--quiet', '--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B%x1e', ...hashes],
+			repo
+		);
+		const summaries: { [hash: string]: GitCommitSummary } = {};
+		for (const record of out.replace(/\x1e\s*$/, '').split('\x1e')) {
+			const parts = record.trim().split('\x1f');
+			if (parts.length === 5) {
+				summaries[parts[0]] = {
+					hash: parts[0],
+					author: parts[1],
+					email: parts[2],
+					date: parseInt(parts[3], 10),
+					message: parts[4].trim()
+				};
+			}
+		}
+		return summaries;
+	}
+
+	/** The commits whose message matches a pattern, newest first. */
+	public async searchHistory(repo: string, query: string): Promise<GitHistoryMatch[]> {
+		// The unit separator (\x1f) is used instead of `|` so that hashes, author names and
+		// subjects containing `|` don't shift the fields.
+		const out = await this.run(
+			['log', '--all', '-E', '-i', `--grep=${query}`, '--format=%H%x1f%an%x1f%at%x1f%s', '--max-count=100'],
+			repo
+		);
+		const text = out.replace(/\n$/, '');
+		if (text === '') return [];
+		return text.split('\n').map((line) => {
+			const parts = line.split('\x1f');
+			return {
+				hash: parts[0],
+				author: parts[1],
+				date: parseInt(parts[2], 10),
+				message: parts.slice(3).join('|')
+			};
+		});
+	}
+
+	/** A tag in full, read from the ref as `for-each-ref` reports it. */
+	public async getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
+		const ref = `refs/tags/${tagName}`;
+		const format = [
+			'%(objectname)',
+			'%(taggername)',
+			'%(taggeremail)',
+			'%(taggerdate:unix)',
+			'%(contents:signature)',
+			'%(contents)'
+		].join(SEPARATOR);
+		const out = await this.run(['for-each-ref', ref, `--format=${format}`], repo);
+		const data = out.split(SEPARATOR);
+		if (data.length < 6 || data[0] === '') {
+			throw new GitBackendError('NotFound', `Could not find the tag ${tagName}`);
+		}
+		const signed = data[4] !== '';
+		const taggerDate = parseInt(data[3], 10);
+		return {
+			hash: data[0],
+			taggerName: data[1],
+			taggerEmail: data[2].substring(data[2].startsWith('<') ? 1 : 0, data[2].length - (data[2].endsWith('>') ? 1 : 0)),
+			// A lightweight tag has no tagger date to parse; the epoch stands in where the
+			// original's parse produced nothing.
+			taggerDate: Number.isNaN(taggerDate) ? 0 : taggerDate,
+			message: removeTrailingBlankLines(
+				data
+					.slice(5)
+					.join(SEPARATOR)
+					.replace(data[4], '')
+					.split(EOL)
+			).join('\n'),
+			// As with commit signatures on this backend, presence is reported without verification.
+			signature: signed
+				? { key: '', signer: '', status: GitSignatureStatus.CannotBeChecked }
+				: null
+		};
+	}
+
+	/** The fetch URL of a remote, or NULL when it is not configured. */
+	public async getRemoteUrl(repo: string, remote: string): Promise<string | null> {
+		try {
+			const out = await this.run(['config', '--get', `remote.${remote}.url`], repo);
+			return out.split(EOL)[0];
+		} catch {
+			// `git config --get` exits non-zero when the key is unset: that is the answer, not a failure.
+			return null;
+		}
+	}
+
+	/** Where a file was renamed to between a commit and the working tree, or NULL. */
+	public async getNewPathOfRenamedFile(
+		repo: string,
+		commitHash: string,
+		oldFilePath: string
+	): Promise<string | null> {
+		const out = await this.run(
+			['diff', '--name-status', '--find-renames', '--diff-filter=R', '-z', commitHash],
+			repo
+		);
+		const fields = out.split('\0');
+		for (let i = 0; i < fields.length && fields[i] !== ''; ) {
+			const type = fields[i][0];
+			if (type === GitFileStatus.Renamed) {
+				if (fields[i + 1] === oldFilePath) return fields[i + 2];
+				i += 3;
+			} else if (
+				type === GitFileStatus.Added ||
+				type === GitFileStatus.Modified ||
+				type === GitFileStatus.Deleted
+			) {
+				i += 2;
+			} else {
+				break;
+			}
+		}
+		return null;
+	}
+
+	/** The roots of the repository's initialised submodules. */
+	public getSubmodules(repo: string): Promise<string[]> {
+		return new Promise<string[]>((resolve) => {
+			fs.readFile(path.join(repo, '.gitmodules'), { encoding: 'utf8' }, async (err, data) => {
+				const submodules: string[] = [];
+				if (!err) {
+					const lines = data.split(/\r\n|\r|\n/);
+					let inSubmoduleSection = false;
+					const section = /^\s*\[.*\]\s*$/,
+						submodule = /^\s*\[submodule "([^"]+)"\]\s*$/,
+						pathProp = /^\s*path\s+=\s+(.*)$/;
+
+					for (const line of lines) {
+						if (line.match(section) !== null) {
+							inSubmoduleSection = line.match(submodule) !== null;
+							continue;
+						}
+						const match = inSubmoduleSection ? line.match(pathProp) : null;
+						if (match === null) continue;
+
+						// A submodule that was never initialised has no repository below its path;
+						// resolving the path's root drops it, as `rev-parse` fails there.
+						try {
+							const root = await this.run(
+								['rev-parse', '--show-toplevel'],
+								path.join(repo, match[1].trim())
+							);
+							const normalised = path.normalize(root.trim());
+							if (!submodules.includes(normalised)) submodules.push(normalised);
+						} catch {
+							/* not initialised (or no longer present): nothing to list */
+						}
+					}
+				}
+				resolve(submodules);
+			});
+		});
+	}
+
+	/** The upstream of the checked-out branch, or NULL when there is none. */
+	public async getCurrentBranchUpstream(repo: string): Promise<string | null> {
+		try {
+			const out = await this.run(
+				['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+				repo
+			);
+			return out.trim() || null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** How many commits are reachable from the given refs but not from `hash`. */
+	public async countCommitsBefore(
+		repo: string,
+		branches: ReadonlyArray<string> | null,
+		hash: string,
+		showRemoteBranches: boolean,
+		includeCommitsMentionedByReflogs: boolean
+	): Promise<number> {
+		const args = ['rev-list', '--count'];
+		if (branches !== null) {
+			args.push(...branches);
+		} else {
+			args.push('--branches', '--tags');
+			if (showRemoteBranches) args.push('--remotes');
+			if (includeCommitsMentionedByReflogs) args.push('--reflog');
+			args.push('HEAD');
+		}
+		args.push(`^${hash}`);
+		const out = await this.run(args, repo);
+		const count = parseInt(out.trim(), 10);
+		if (Number.isNaN(count)) {
+			throw new GitBackendError('Git', `Could not count the commits before ${hash}`);
+		}
+		return count;
+	}
+
 	/* ---------- Internals ---------- */
 
 	private async getLog(repo: string, options: LogOptions) {
@@ -751,6 +990,14 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 function unique(values: ReadonlyArray<string>): string[] {
 	return Array.from(new Set(values));
+}
+
+/** Remove the trailing blank lines of a message before showing it, as the original did. */
+function removeTrailingBlankLines(lines: string[]): string[] {
+	while (lines.length > 0 && lines[lines.length - 1] === '') {
+		lines.pop();
+	}
+	return lines;
 }
 
 function message(error: unknown): string {

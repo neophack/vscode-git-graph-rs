@@ -255,6 +255,51 @@ pub struct CommitFile {
     pub binary: bool,
 }
 
+/* ---------- On-demand commit reads ---------- */
+
+/// The fields the Commit Comparison View describes a commit with.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitSummary {
+    pub hash: String,
+    pub author: String,
+    pub email: String,
+    /// The author date, which is what `git show --format=%at` reports.
+    pub date: i64,
+    /// The full commit message, trimmed as `git show --format=%B` output is.
+    pub message: String,
+}
+
+/// One hit of a commit-message search, as the Find dialogue lists them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHistoryMatch {
+    pub hash: String,
+    pub author: String,
+    pub date: i64,
+    /// The commit subject.
+    pub message: String,
+}
+
+/* ---------- Tag details ---------- */
+
+/// An annotated tag in full, or the fields a lightweight tag can fill in.
+///
+/// A lightweight tag has no tagger and no message of its own: the tagger fields are empty and the
+/// message is the tagged commit's, which is what `for-each-ref %(contents)` reports for one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitTagDetails {
+    /// The tag object for an annotated tag, the commit for a lightweight one.
+    pub hash: String,
+    pub tagger_name: String,
+    pub tagger_email: String,
+    pub tagger_date: i64,
+    pub message: String,
+    /// Present when the tag carries a signature (reported as unverified, like commit signatures).
+    pub signature: Option<GitSignature>,
+}
+
 /* ---------- Working tree status ---------- */
 
 #[derive(Debug, Clone, Default)]

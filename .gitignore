@@ -8,3 +8,4 @@ native/*/
 *.vsix
 .zcode
 media/
+*.log

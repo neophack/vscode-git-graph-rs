@@ -10,9 +10,11 @@ handle that stays warm for the whole editor session.
 ## Status
 
 This is a working VS Code extension: the webview and extension host layer are ported from the
-original (with the Gerrit integration removed), and the hot read paths — the view load, commit,
-stash and uncommitted details, comparisons, config, file contents and single-file diffs — are
-served by the Rust engine, falling back to the `git` CLI wherever the engine does not reach yet.
+original (with the Gerrit integration removed), and **every repository read** — the view load,
+commit, stash and uncommitted details, comparisons, config, file contents and single-file diffs,
+plus the on-demand reads behind the Find dialogue, the tag details, submodule and upstream
+lookups, and the commit counting the view's jump-to-commit uses — is served by the Rust engine,
+falling back to the `git` CLI wherever the engine does not reach.
 The write path (checkout, merge, rebase and the rest) still goes through the `git` CLI, behind
 the same interface. See [GAPS.md](GAPS.md) and [Roadmap](#roadmap).
 
@@ -124,8 +126,8 @@ tell which one it is talking to, so any disagreement is a user-visible behaviour
 
 ## Known deviations from git
 
-- **Commit signatures are reported as present but unverified.** Verifying them needs a full OpenPGP
-  and SSH implementation plus access to the user's keyring. The status reported is `E` ("cannot be
+- **Commit and tag signatures are reported as present but unverified.** Verifying them needs a full
+  OpenPGP and SSH implementation plus access to the user's keyring. The status reported is `E` ("cannot be
   checked"), which is what git itself reports when the key is unavailable — rather than claiming a
   signature is good without having checked it.
 
@@ -152,6 +154,7 @@ npm run build              # the addon (debug) + the TypeScript
 npm run build:native:release
 npm test                   # cargo tests + the cross-backend integration tests
 npm run bench -- <repo-path> --tags
+npm run bench:all -- <repo-path>   # every read operation, engine vs CLI, one table
 npm run lint               # clippy + rustfmt
 ```
 
@@ -159,7 +162,18 @@ On Windows, `build-and-install.bat` runs the whole chain — native addon, TypeS
 tests — packages the vsix and installs it into VS Code, stopping at the first failure.
 
 Which operations the Rust engine serves and which still spawn `git` is documented in
-[docs/BACKENDS.md](docs/BACKENDS.md).
+[docs/BACKENDS.md](docs/BACKENDS.md); what the engine depends on — including why a pure-Rust
+addon still needs platform linkers — is documented in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+### Measuring, and reading the measurements
+
+`node scripts/bench.mjs <repo-path>` reports the number that matters — one view load — for both
+backends; `--all` times **every** read operation the extension performs, one table row per
+operation with the speedup and what each side returned (`--json` emits the same measurements for
+trend tracking). While `git-graph-rs.enableLog` is on, every spawned `git` command is logged with
+its duration and every engine→CLI fallback with its reason; `node scripts/analyze-log.mjs
+<logfile>` summarises a session log into where the time went, which methods fell back, and what
+failed.
 
 The icon set (the marketplace PNG, the themed menu icons, and the mobile notification set —
 all the same crab-and-graph motif) is regenerated from the SVG masters with
@@ -169,15 +183,18 @@ Cross-compiling for another platform:
 
 ```sh
 node scripts/build-addon.mjs --release --target aarch64-apple-darwin
+build-rust.bat                        # all six targets, one command (Windows host)
 ```
 
-The build is delegated to [`@napi-rs/cli`](https://napi.rs) (`napi build`). A target of a foreign
-OS family goes through `--cross-compile`, which builds with `cargo-zigbuild` (Linux and macOS
-targets; `zig` must be on the PATH) or `cargo-xwin` (Windows targets), installing either
-automatically on first use. A target of the host's own OS family uses the platform's own cross
-linker instead — the Visual Studio "C++ ARM64 build tools" component on Windows,
-`gcc-aarch64-linux-gnu` on Linux. The binaries that ship are the ones CI builds on native runners
-for each platform, not local cross-builds.
+The build is delegated to [`@napi-rs/cli`](https://napi.rs) (`napi build`), with three routes
+behind it. A target of a foreign OS family goes through `--cross-compile`, which builds with
+`cargo-zigbuild` — Linux targets get their cross glibc linker from zig, and so do the macOS
+targets (zig bundles the macOS libc, so no Apple SDK is needed); `zig` comes from the PATH or
+from the pip `ziglang` package. The Windows arm64 target from a Windows host is linked directly
+by `rust-lld` against the Windows SDK's arm64 libraries and the ARM64 CRT vsix from cargo-xwin's
+cache — neither the VS "C++ ARM64 build tools" component nor symlink privileges (which
+cargo-xwin's own extraction needs) are required. Everything else builds natively. The binaries
+that ship are the ones CI builds on native runners for each platform, not local cross-builds.
 
 ## Supported platforms
 
@@ -188,19 +205,22 @@ builds.)
 | Platform | Target | CI | On a Windows host | On a Linux host | On a macOS host |
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | ✅ | ✅ local MSVC | — | — |
-| Windows arm64 | `aarch64-pc-windows-msvc` | ✅ | ✅ VS ARM64 tools or `cargo-xwin` | — | — |
-| Linux x64 | `x86_64-unknown-linux-gnu` | ✅ | via CI only¹ | ✅ native | — |
-| Linux arm64 | `aarch64-unknown-linux-gnu` | ✅ | via CI only¹ | ✅ `gcc-aarch64-linux-gnu` | — |
-| macOS x64 | `x86_64-apple-darwin` | ✅ | via CI only | via CI only | ✅ Xcode clang |
-| macOS arm64 | `aarch64-apple-darwin` | ✅ | via CI only | via CI only | ✅ Xcode clang |
+| Windows arm64 | `aarch64-pc-windows-msvc` | ✅ | ✅ `rust-lld` + SDK/CRT (see above) | — | — |
+| Linux x64 | `x86_64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ native | — |
+| Linux arm64 | `aarch64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ `gcc-aarch64-linux-gnu` | — |
+| macOS x64 | `x86_64-apple-darwin` | ✅ | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
+| macOS arm64 | `aarch64-apple-darwin` | ✅ | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
 
-¹ Linux targets can also be cross-compiled from Windows with `cargo-zigbuild` + `zig` (zig
-provides the cross glibc linker); the darwin targets require Apple's SDK and in practice a Mac —
-for them, [`cargo build --release --target aarch64-apple-darwin` on a Mac] or CI is the path.
+¹ A cross-built binary has not run on the platform it targets: the cross-builds are for
+development and packaging convenience, and the binaries that ship are still the ones CI builds on
+native runners. A binary cross-built with zig links only the platform's libc, which is also why
+no Apple SDK is needed for the darwin targets.
 
 A platform whose binary is missing from the VSIX is still fully functional: the extension detects
 at load time that no engine matches `process.platform` + `process.arch` and serves every query
-through the `git` CLI backend instead. The engine is a speed optimisation, never a requirement.
+through the `git` CLI backend instead — the view loads normally, with an informational notice, and
+the Settings widget's **Backend** section shows exactly which areas run on which backend. The
+engine is a speed optimisation, never a requirement.
 
 ## Shipping
 
@@ -219,6 +239,15 @@ native/
 
 At load time the extension picks the directory for `process.platform` + `process.arch`. One VSIX
 holds all six; installing it needs no Git, Rust, Cargo, Python or CMake on the user's machine.
+
+### Publishing a release
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) is triggered by hand — the
+Actions tab ("Release" → "Run workflow") or `gh workflow run release.yml -f version=v0.2.0`. It
+runs the whole build-and-test pipeline on native runners, assembles the VSIX from exactly the
+binaries that run produced, and publishes a GitHub Release with the VSIX and the six engine
+binaries as assets. The tag defaults to `package.json`'s version; an override updates the VSIX's
+version to match. Nothing is published unless every test passed.
 
 ## Roadmap
 
@@ -242,11 +271,12 @@ The phases below follow the rewrite plan this project was started from.
 | 12 | Gerrit changes and patchsets | partial — change refs are filtered and displayed |
 | 13–14 | Large-repository work, cache invalidation | partial — handles and object caches are warm; no incremental invalidation yet |
 
-The CLI fallback covers the **read** methods on `GitBackend`, and only those — it is what makes a
-platform without a prebuilt binary work, not a substitute for the unstarted phases. The write path
-(checkout, merge, rebase, stash operations, remotes, tags) is on neither backend yet: those phases
-need the interface extended first, then both implementations, as
-[Roadmap](#roadmap) says. See `GAPS.md` for the full inventory of what is missing.
+The **whole read path** is on `GitBackend`, implemented twice — engine and CLI — and asserted to
+agree in the cross-backend test; that is what makes a platform without a prebuilt binary work. The
+write path (checkout, merge, rebase, stash operations, remotes, tags) is on neither backend yet:
+it still spawns `git` directly in `DataSource`, and those phases need the interface extended
+first, then both implementations, as [Roadmap](#roadmap) says. See `GAPS.md` for the full
+inventory of what is missing.
 
 [napi-rs]: https://napi.rs
 [gix]: https://github.com/GitoxideLabs/gitoxide

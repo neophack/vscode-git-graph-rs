@@ -19,7 +19,7 @@ use gix::ObjectId;
 
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
-use crate::types::{CommitOrdering, CommitRecord};
+use crate::types::{CommitOrdering, CommitRecord, GitHistoryMatch};
 
 /// How many commits are read for every commit displayed, so that the topological re-ordering has
 /// enough of the graph to be exact over the page it returns.
@@ -436,4 +436,170 @@ pub fn all_tips(repo: &Repo, include_tags: bool, include_remotes: bool) -> Resul
         return Err(Error::not_found("The repository has no commits"));
     }
     Ok(tips)
+}
+
+/* ---------- History search ---------- */
+
+/// How many hits the Find dialogue shows, matching the original's `--max-count=100`.
+const SEARCH_LIMIT: usize = 100;
+
+/// Search every commit message for a pattern, newest first, as `git log --all -E -i --grep`.
+///
+/// The tips are everything `git log --all` walks from — local branches, tags, remote-tracking
+/// branches, HEAD, and the stash, whose ref lives in `refs/` even though the graph never shows it.
+/// The walk is commit-date ordered (git's default for `--grep`), not topologically constrained, so
+/// it needs none of the windowed re-ordering the graph does.
+pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> {
+    let matcher = regex::RegexBuilder::new(query)
+        .case_insensitive(true)
+        .build()
+        .map_err(|e| Error::invalid_argument(format!("Invalid search query: {e}")))?;
+
+    // A repository with no refs at all has nothing to search; git's `--all` simply matches nothing.
+    let mut tips = all_tips(repo, true, true).unwrap_or_default();
+    if let Some(stash) = stash_tip(repo) {
+        if !tips.contains(&stash) {
+            tips.push(stash);
+        }
+    }
+    if tips.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let git = repo.borrow();
+    let walk = git
+        .rev_walk(tips.iter().copied())
+        .sorting(gix::revision::walk::Sorting::ByCommitTime(
+            gix::traverse::commit::simple::CommitTimeOrder::NewestFirst,
+        ))
+        .all()
+        .git_ctx("Could not walk the commit graph")?;
+
+    let mut matches: Vec<GitHistoryMatch> = Vec::new();
+    for info in walk {
+        let info = match info {
+            Ok(info) => info,
+            // A missing object truncates the search rather than failing it, as it truncates the
+            // graph walk.
+            Err(_) => break,
+        };
+        let commit = match git.find_commit(info.id) {
+            Ok(commit) => commit,
+            Err(_) => continue,
+        };
+        let raw = commit
+            .message_raw()
+            .git_ctx("Could not decode the commit message")?
+            .to_string();
+        if !matcher.is_match(&raw) {
+            continue;
+        }
+        let author = commit
+            .author()
+            .git_ctx("Could not decode the commit author")?;
+        matches.push(GitHistoryMatch {
+            hash: commit.id().detach().to_string(),
+            author: author.name.to_string(),
+            date: author.time().map(|time| time.seconds).unwrap_or(0),
+            message: commit
+                .message()
+                .git_ctx("Could not decode the commit message")?
+                .summary()
+                .to_string(),
+        });
+        if matches.len() >= SEARCH_LIMIT {
+            break;
+        }
+    }
+    Ok(matches)
+}
+
+/// The commit `refs/stash` points at, if a stash exists.
+fn stash_tip(repo: &Repo) -> Option<ObjectId> {
+    let git = repo.borrow();
+    git.try_find_reference("refs/stash")
+        .ok()
+        .flatten()
+        .and_then(|mut reference| reference.peel_to_id().ok())
+        .map(|id| id.detach())
+}
+
+/* ---------- Commit counting ---------- */
+
+/// Count the commits reachable from the given tips but not from `hash` — `git rev-list --count
+/// <tips> ^<hash>` — which is how the view jumps straight to a pinned commit without paging.
+///
+/// A starting point that does not resolve fails the call (as the command line fails), because a
+/// silently smaller count would jump the view to the wrong place.
+///
+/// ### Deviation
+///
+/// Reflog tips and `--glob=` patterns are not understood; asking for either is reported as
+/// unsupported so the call reaches the `git` CLI instead.
+pub fn count_commits_before(
+    repo: &Repo,
+    branches: Option<&[String]>,
+    hash: &str,
+    show_remote_branches: bool,
+    include_reflogs: bool,
+) -> Result<u64> {
+    if include_reflogs {
+        return Err(Error::unsupported(
+            "Commits mentioned by reflogs are not counted by the engine",
+        ));
+    }
+    if let Some(branches) = branches {
+        if branches.iter().any(|branch| branch.starts_with("--glob=")) {
+            return Err(Error::unsupported(
+                "Custom branch glob patterns are not resolved by the engine",
+            ));
+        }
+    }
+
+    let excluded_id = repo.resolve_commit(hash)?;
+    let tips = match branches {
+        Some(branches) => {
+            let git = repo.borrow();
+            let mut tips = Vec::with_capacity(branches.len());
+            for branch in branches {
+                // Strict, unlike the view's own tip resolution: the command line this replaces
+                // fails on a stale branch name, and the caller treats a failure as "no count".
+                tips.push(crate::repository::resolve_commit_in(&git, branch)?);
+            }
+            tips
+        }
+        None => all_tips(repo, true, show_remote_branches)?,
+    };
+
+    let git = repo.borrow();
+
+    // Everything reachable from the excluded commit is crossed out first, so that the counting
+    // walk is a single pass that only tests set membership.
+    let mut excluded: HashSet<ObjectId> = HashSet::new();
+    for info in git
+        .rev_walk([excluded_id])
+        .all()
+        .git_ctx("Could not walk the commit graph")?
+    {
+        match info {
+            Ok(info) => {
+                excluded.insert(info.id);
+            }
+            Err(_) => break,
+        }
+    }
+
+    let mut count = 0u64;
+    for info in git
+        .rev_walk(tips.iter().copied())
+        .all()
+        .git_ctx("Could not walk the commit graph")?
+    {
+        match info {
+            Ok(info) if !excluded.contains(&info.id) => count += 1,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+    Ok(count)
 }

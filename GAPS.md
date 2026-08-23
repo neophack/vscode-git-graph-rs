@@ -4,16 +4,17 @@ An inventory of `vscode-git-graph` (the TypeScript original, 26,500 lines) again
 `vscode-git-graph-rs` (this project).
 
 The short version: **this project is now a VS Code extension.** The webview and extension host
-layer are ported over (with the Gerrit integration of the original deliberately removed), the
-hot read paths go through the Rust engine, and everything else runs over the `git` CLI exactly
-as the original did. What remains are the colder reads, the whole write path on the engine, and
-a few behavioural deviations.
+layer are ported over (with the Gerrit integration of the original deliberately removed), every
+repository read runs through the `GitBackend` interface with the Rust engine serving it (and the
+`git` CLI answering wherever the engine does not reach), and the write operations run over the
+`git` CLI exactly as the original did. What remains is the write path on the engine, and a few
+behavioural deviations.
 
 ## 1. The read path
 
-Eighteen methods on `GitBackend`, implemented natively *and* over the `git` CLI, and asserted to
-agree with each other in `tests/backends.test.mjs`. `DataSource` delegates to the backend; on a
-platform without the native addon every call lands on the CLI implementation instead.
+Twenty-eight methods on `GitBackend`, implemented natively *and* over the `git` CLI, and asserted to
+agree with each other in `tests/backends.test.mjs`. `DataSource` delegates to the backend for every
+read; on a platform without the native addon every call lands on the CLI implementation instead.
 
 | Capability | Original | Here |
 |---|---|---|
@@ -33,12 +34,16 @@ platform without the native addon every call lands on the CLI implementation ins
 
 ### Reads still engine-side pending
 
-These work (they go through `DataSource`'s CLI implementation), but have no engine equivalent, so
-they do not benefit from the resident-handle speedup:
+None — every read `DataSource` offers is on both backends. Two methods remain *hybrid*, with part
+of their work still spawning `git` directly (never behind `GitBackend`):
 
-`getCommitBodies`, `getCommitSubject`, `getCommitSummaries`, `searchHistory`, `getTagDetails`,
-`getRemoteUrl`, `getNewPathOfRenamedFile`, `getSubmodules`, `getCurrentBranchUpstream`,
-`countCommitsBefore`.
+- `getConfig`: the branch-level config and the author list still come from the CLI, whose output
+  shape the settings widget expects.
+- `getCommitFileDiff`: only the commit↔its-parent case goes to the engine; an arbitrary from→to
+  pair still spawns `git diff`.
+
+Two `countCommitsBefore` argument shapes (reflog tips, `--glob=` patterns) are *declined* by the
+engine with `Unsupported`, which the fallback wrapper routes to the CLI automatically.
 
 ## 2. The write path — CLI only
 
@@ -77,17 +82,20 @@ Documented in the README's "Known deviations from git":
 | Area | Difference |
 |---|---|
 | Commit signatures | reported as present but unverified (status `E`), never as valid |
+| Tag signatures | the same, and on both backends: moving `getTagDetails` behind `GitBackend` dropped the original's real `verify-tag`/gpg verification on the CLI path too |
 | Ordering | exact within a bounded window rather than over the whole history |
 | Worktree line counts | a file modified but not staged has no `additions`/`deletions` when comparing an arbitrary revision against the working tree |
+| Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename existing only in the working tree is not reassembled by the engine |
+| Lightweight tags | the Tag Details dialogue hides the Tagger/Date row instead of showing an empty tagger and an invalid date (a deliberate improvement over the original) |
 | Mailmap | the engine does not apply `.mailmap`; the original honours `useMailmap` |
-| Reflog-mentioned commits | `includeCommitsMentionedByReflogs` is accepted but ignored by the engine |
-| Custom branch glob patterns | `--glob=` branch entries are not understood by the engine's tip resolution |
+| Reflog-mentioned commits | `includeCommitsMentionedByReflogs` is accepted but ignored by the engine's graph; `countCommitsBefore` declines it and the CLI answers |
+| Custom branch glob patterns | `--glob=` branch entries are not understood by the engine's tip resolution (`countCommitsBefore` declines them; the graph skips them) |
 
 ## 5. Suggested order
 
 1. ~~Make it an extension at all~~ — done.
 2. ~~`getConfig`, `getCommitFile`, `getCommitFileDiff`~~ — done.
-3. **The remaining reads** onto the engine, one capability at a time, always both backends so the
-   cross-backend test keeps its meaning.
-4. **The write path**, phase by phase, the same way.
+3. ~~The remaining reads onto the engine~~ — done (both backends, cross-backend tested).
+4. **The write path**, phase by phase — the interface needs extending first, then both
+   implementations, the same way the reads were done.
 5. **The deviations above**, which are small but user-visible.

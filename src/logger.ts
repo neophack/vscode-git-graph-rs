@@ -83,8 +83,10 @@ export class Logger extends Disposable {
 	 * Log the execution of a spawned command to the Output Channel.
 	 * @param cmd The command being spawned.
 	 * @param args The arguments passed to the command.
+	 * @param durationMs How long the command took, when known — the number the performance log
+	 * analysis is built around (see `scripts/analyze-log.mjs`).
 	 */
-	public logCmd(cmd: string, args: string[]) {
+	public logCmd(cmd: string, args: string[], durationMs?: number) {
 		this.log('> ' + cmd + ' ' + args.map((arg) => arg === ''
 			? '""'
 			: arg.startsWith('--format=')
@@ -92,7 +94,7 @@ export class Logger extends Disposable {
 				: arg.includes(' ')
 					? '"' + arg.replace(DOUBLE_QUOTE_REGEXP, '\\"') + '"'
 					: arg
-		).join(' '));
+		).join(' ') + (typeof durationMs === 'number' ? ' (' + durationMs + ' ms)' : ''));
 	}
 
 	/**

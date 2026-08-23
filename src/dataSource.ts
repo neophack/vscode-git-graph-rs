@@ -1,20 +1,18 @@
 import * as cp from 'child_process';
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
 import { GitBackend, createBackend } from './backend';
 import { getConfig } from './config';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitFileStatus, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType, Writeable } from './types';
-import { GitExecutable, GitVersionRequirement, UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromStr, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage } from './utils';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { GitExecutable, GitVersionRequirement, UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 
 const EOL_REGEX = /\r\n|\r|\n/g;
 const INVALID_BRANCH_REGEXP = /^\(.* .*\)$/;
 const DRIVE_LETTER_PATH_REGEX = /^[a-z]:\//;
-const GIT_LOG_SEPARATOR = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
 
 export const enum GitConfigKey {
 	DiffGuiTool = 'diff.guitool',
@@ -23,15 +21,6 @@ export const enum GitConfigKey {
 	UserEmail = 'user.email',
 	UserName = 'user.name'
 }
-
-const GPG_STATUS_CODE_PARSING_DETAILS: Readonly<{ [statusCode: string]: GpgStatusCodeParsingDetails }> = {
-	'GOODSIG': { status: GitSignatureStatus.GoodAndValid, uid: true },
-	'BADSIG': { status: GitSignatureStatus.Bad, uid: true },
-	'ERRSIG': { status: GitSignatureStatus.CannotBeChecked, uid: false },
-	'EXPSIG': { status: GitSignatureStatus.GoodButExpired, uid: true },
-	'EXPKEYSIG': { status: GitSignatureStatus.GoodButMadeByExpiredKey, uid: true },
-	'REVKEYSIG': { status: GitSignatureStatus.GoodButMadeByRevokedKey, uid: true }
-};
 
 /**
  * Interfaces Git Graph with the Git executable to provide all Git integrations.
@@ -176,23 +165,12 @@ export class DataSource extends Disposable {
 	}
 
 	public searchHistory(repo: string, query: string): Promise<{hash: string, author: string, date: number, message: string}[]> {
-		// The unit separator (\x1f) is used instead of `|` so that hashes, author names and
-		// subjects containing `|` don't shift the fields
-		const args = ['log', '--all', '-E', '-i', '--grep=' + query, '--format=%H%x1f%an%x1f%at%x1f%s', '--max-count=100'];
-		return this.spawnGit(args, repo, (stdoutBuf) => {
-			const text = stdoutBuf.toString().replace(/\n$/, '');
-			if (!text) return [];
-			const lines = text.split('\n');
-			return lines.map(line => {
-				const parts = line.split('\x1f');
-				return {
-					hash: parts[0],
-					author: parts[1],
-					date: parseInt(parts[2], 10),
-					message: parts.slice(3).join('|')
-				};
-			});
-		});
+		return this.backend.searchHistory(repo, query).then((matches) => matches.map((match) => ({
+			hash: match.hash,
+			author: match.author,
+			date: match.date,
+			message: match.message
+		})));
 	}
 
 	public getRepoInfo(repo: string, showRemoteBranches: boolean, showStashes: boolean, hideRemotes: ReadonlyArray<string>): Promise<GitRepoInfo> {
@@ -505,16 +483,9 @@ export class DataSource extends Disposable {
 	 * @returns A map of commit hash to summary, or NULL if an error occurred.
 	 */
 	public getCommitSummaries(repo: string, commitHashes: string[]): Promise<{ [hash: string]: { hash: string, author: string, email: string, date: number, message: string } } | null> {
-		return this.spawnGit(['show', '--quiet', '--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B%x1e'].concat(commitHashes), repo, (stdout) => {
-			const summaries: { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } } = {};
-			for (const record of stdout.replace(/\x1e\s*$/, '').split('\x1e')) {
-				const parts = record.trim().split('\x1f');
-				if (parts.length === 5) {
-					summaries[parts[0]] = { hash: parts[0], author: parts[1], email: parts[2], date: parseInt(parts[3], 10), message: parts[4].trim() };
-				}
-			}
-			return summaries;
-		}).catch(() => null);
+		return this.backend.getCommitSummaries(repo, commitHashes).then((summaries) => summaries as {
+			[hash: string]: { hash: string, author: string, email: string, date: number, message: string }
+		}, () => null);
 	}
 
 	/**
@@ -524,9 +495,7 @@ export class DataSource extends Disposable {
 	 * @returns The subject string, or NULL if an error occurred.
 	 */
 	public getCommitSubject(repo: string, commitHash: string): Promise<string | null> {
-		return this.spawnGit(['-c', 'log.showSignature=false', 'log', '--format=%s', '-n', '1', commitHash, '--'], repo, (stdout) => {
-			return stdout.trim().replace(/\s+/g, ' ');
-		}).then((subject) => subject, () => null);
+		return this.backend.getCommitSubject(repo, commitHash).catch(() => null);
 	}
 
 	/**
@@ -536,9 +505,7 @@ export class DataSource extends Disposable {
 	 * @returns The URL, or NULL if an error occurred.
 	 */
 	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
-		return this.spawnGit(['config', '--get', 'remote.' + remote + '.url'], repo, (stdout) => {
-			return stdout.split(EOL_REGEX)[0];
-		}).then((url) => url, () => null);
+		return this.backend.getRemoteUrl(repo, remote).catch(() => null);
 	}
 
 	/**
@@ -549,10 +516,7 @@ export class DataSource extends Disposable {
 	 * @returns The new renamed file path, or NULL if either: the file wasn't renamed or the Git command failed to execute.
 	 */
 	public getNewPathOfRenamedFile(repo: string, commitHash: string, oldFilePath: string) {
-		return this.getDiffNameStatus(repo, commitHash, '', 'R').then((renamed) => {
-			const renamedRecordForFile = renamed.find((record) => record.oldFilePath === oldFilePath);
-			return renamedRecordForFile ? renamedRecordForFile.newFilePath : null;
-		}).catch(() => null);
+		return this.backend.getNewPathOfRenamedFile(repo, commitHash, oldFilePath).catch(() => null);
 	}
 
 	/**
@@ -566,30 +530,10 @@ export class DataSource extends Disposable {
 			return Promise.resolve({ details: null, error: constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.TagDetails, 'retrieving Tag Details') });
 		}
 
-		const ref = 'refs/tags/' + tagName;
-		return this.spawnGit(['for-each-ref', ref, '--format=' + ['%(objectname)', '%(taggername)', '%(taggeremail)', '%(taggerdate:unix)', '%(contents:signature)', '%(contents)'].join(GIT_LOG_SEPARATOR)], repo, (stdout) => {
-			const data = stdout.split(GIT_LOG_SEPARATOR);
-			return {
-				hash: data[0],
-				taggerName: data[1],
-				taggerEmail: data[2].substring(data[2].startsWith('<') ? 1 : 0, data[2].length - (data[2].endsWith('>') ? 1 : 0)),
-				taggerDate: parseInt(data[3]),
-				message: removeTrailingBlankLines(data.slice(5).join(GIT_LOG_SEPARATOR).replace(data[4], '').split(EOL_REGEX)).join('\n'),
-				signed: data[4] !== ''
-			};
-		}).then(async (tag) => ({
-			details: {
-				hash: tag.hash,
-				taggerName: tag.taggerName,
-				taggerEmail: tag.taggerEmail,
-				taggerDate: tag.taggerDate,
-				message: tag.message,
-				signature: tag.signed
-					? await this.getTagSignature(repo, ref)
-					: null
-			},
+		return this.backend.getTagDetails(repo, tagName).then((details) => ({
+			details: details as unknown as GitTagDetails,
 			error: null
-		})).catch((errorMessage) => ({
+		}), (errorMessage) => ({
 			details: null,
 			error: errorMessage
 		}));
@@ -601,30 +545,7 @@ export class DataSource extends Disposable {
 	 * @returns An array of the paths of the submodules.
 	 */
 	public getSubmodules(repo: string) {
-		return new Promise<string[]>(resolve => {
-			fs.readFile(path.join(repo, '.gitmodules'), { encoding: 'utf8' }, async (err: NodeJS.ErrnoException | null, data: string) => {
-				let submodules: string[] = [];
-				if (!err) {
-					let lines = data.split(EOL_REGEX), inSubmoduleSection = false, match;
-					const section = /^\s*\[.*\]\s*$/, submodule = /^\s*\[submodule "([^"]+)"\]\s*$/, pathProp = /^\s*path\s+=\s+(.*)$/;
-
-					for (let i = 0; i < lines.length; i++) {
-						if (lines[i].match(section) !== null) {
-							inSubmoduleSection = lines[i].match(submodule) !== null;
-							continue;
-						}
-
-						if (inSubmoduleSection && (match = lines[i].match(pathProp)) !== null) {
-							let root = await this.repoRoot(getPathFromUri(vscode.Uri.file(path.join(repo, getPathFromStr(match[1])))));
-							if (root !== null && !submodules.includes(root)) {
-								submodules.push(root);
-							}
-						}
-					}
-				}
-				resolve(submodules);
-			});
-		});
+		return this.backend.getSubmodules(repo).then((submodules) => [...submodules], () => []);
 	}
 
 
@@ -1340,11 +1261,7 @@ export class DataSource extends Disposable {
 	 * @param repo The path of the repository.
 	 */
 	public async getCurrentBranchUpstream(repo: string): Promise<string | null> {
-		try {
-			return await this.spawnGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], repo, (stdout: string) => stdout.trim());
-		} catch (_) {
-			return null;
-		}
+		return this.backend.getCurrentBranchUpstream(repo).catch(() => null);
 	}
 
 	/**
@@ -1611,18 +1528,7 @@ export class DataSource extends Disposable {
 	public getCommitBodies(repo: string, commitHashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
 		const hashes = commitHashes.filter((hash) => isValidCommitHash(hash));
 		if (hashes.length === 0) return Promise.resolve({});
-		const args = ['-c', 'log.showSignature=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...hashes];
-		return this.spawnGit(args, repo, (stdoutBuf) => {
-			const bodies: { [hash: string]: string } = {};
-			const text = stdoutBuf.toString();
-			for (let record of text.split('\x1e')) {
-				record = record.replace(/^\n/, ''); // git terminates each formatted entry with a newline
-				const sep = record.indexOf('\x1f');
-				if (sep <= 0) continue;
-				bodies[record.substring(0, sep)] = record.substring(sep + 1).replace(/\n$/, '');
-			}
-			return bodies;
-		});
+		return this.backend.getCommitBodies(repo, hashes);
 	}
 
 
@@ -1663,37 +1569,6 @@ export class DataSource extends Disposable {
 	}
 
 	/**
-	 * Get the diff `--name-status` records.
-	 * @param repo The path of the repository.
-	 * @param fromHash The revision the diff is from.
-	 * @param toHash The revision the diff is to.
-	 * @param filter The types of file changes to retrieve (defaults to `AMDR`).
-	 * @returns An array of `--name-status` records.
-	 */
-	private getDiffNameStatus(repo: string, fromHash: string, toHash: string, filter: string = 'AMDR') {
-		return this.execDiff(repo, fromHash, toHash, '--name-status', filter).then((output) => {
-			let records: DiffNameStatusRecord[] = [], i = 0;
-			while (i < output.length && output[i] !== '') {
-				let type = <GitFileStatus>output[i][0];
-				if (type === GitFileStatus.Added || type === GitFileStatus.Deleted || type === GitFileStatus.Modified) {
-					// Add, Modify, or Delete
-					let p = getPathFromStr(output[i + 1]);
-					records.push({ type: type, oldFilePath: p, newFilePath: p });
-					i += 2;
-				} else if (type === GitFileStatus.Renamed) {
-					// Rename
-					records.push({ type: type, oldFilePath: getPathFromStr(output[i + 1]), newFilePath: getPathFromStr(output[i + 2]) });
-					i += 3;
-				} else {
-					break;
-				}
-			}
-			return records;
-		});
-	}
-
-
-	/**
 	 * Count the commits reachable from the currently shown refs but NOT from the given hash, i.e.
 	 * the number of commits newer than it. Used by the webview to jump directly to a pinned commit
 	 * with a single loadCommits request instead of paging through the history. The count
@@ -1708,20 +1583,7 @@ export class DataSource extends Disposable {
 	 */
 	public countCommitsBefore(repo: string, branches: ReadonlyArray<string> | null, hash: string, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean): Promise<number | null> {
 		const refs = branches === null ? null : branches.filter((branch) => isSafeRefName(branch) || isValidCommitHash(branch) || branch.startsWith('--glob='));
-		const args = ['rev-list', '--count'];
-		if (refs !== null) {
-			args.push(...refs);
-		} else {
-			args.push('--branches', '--tags');
-			if (showRemoteBranches) args.push('--remotes');
-			if (includeCommitsMentionedByReflogs) args.push('--reflog');
-			args.push('HEAD');
-		}
-		args.push('^' + hash);
-		return this.spawnGit(args, repo, (stdout) => {
-			const count = parseInt(stdout.trim(), 10);
-			return isNaN(count) ? null : count;
-		}).catch(() => <number | null>null);
+		return this.backend.countCommitsBefore(repo, refs, hash, showRemoteBranches, includeCommitsMentionedByReflogs).catch(() => <number | null>null);
 	}
 
 
@@ -1767,52 +1629,6 @@ export class DataSource extends Disposable {
 	}
 
 	/**
-	 * Get the signature of a signed tag.
-	 * @param repo The path of the repository.
-	 * @param ref The reference identifying the tag.
-	 * @returns A Promise resolving to the signature.
-	 */
-	private getTagSignature(repo: string, ref: string): Promise<GitSignature> {
-		return this._spawnGit(['verify-tag', '--raw', ref], repo, (stdout, stderr) => stderr || stdout.toString(), true).then((output) => {
-			const records = output.split(EOL_REGEX)
-				.filter((line: string) => line.startsWith('[GNUPG:] '))
-				.map((line: string) => line.split(' '));
-
-			let signature: Writeable<GitSignature> | null = null, trustLevel: string | null = null, parsingDetails: GpgStatusCodeParsingDetails | undefined;
-			for (let i = 0; i < records.length; i++) {
-				parsingDetails = GPG_STATUS_CODE_PARSING_DETAILS[records[i][1]];
-				if (parsingDetails) {
-					if (signature !== null) {
-						throw new Error('Multiple Signatures Exist: As Git currently doesn\'t support them, nor does Git Graph (for consistency).');
-					} else {
-						signature = {
-							status: parsingDetails.status,
-							key: records[i][2],
-							signer: parsingDetails.uid ? records[i].slice(3).join(' ') : '' // When parsingDetails.uid === TRUE, the signer is the rest of the record (so join the remaining arguments)
-						};
-					}
-				} else if (records[i][1].startsWith('TRUST_')) {
-					trustLevel = records[i][1];
-				}
-			}
-
-			if (signature !== null && signature.status === GitSignatureStatus.GoodAndValid && (trustLevel === 'TRUST_UNDEFINED' || trustLevel === 'TRUST_NEVER')) {
-				signature.status = GitSignatureStatus.GoodWithUnknownValidity;
-			}
-
-			if (signature !== null) {
-				return signature;
-			} else {
-				throw new Error('No Signature could be parsed.');
-			}
-		}).catch(() => ({
-			status: GitSignatureStatus.CannotBeChecked,
-			key: '',
-			signer: ''
-		}));
-	}
-
-	/**
 	 * Get the number of uncommitted changes in a repository.
 	 * @param repo The path of the repository.
 	 * @returns The number of uncommitted changes.
@@ -1849,31 +1665,6 @@ export class DataSource extends Disposable {
 			} else {
 				return null;
 			}
-		});
-	}
-
-	/**
-	 * Get the diff between two revisions.
-	 * @param repo The path of the repository.
-	 * @param fromHash The revision the diff is from.
-	 * @param toHash The revision the diff is to.
-	 * @param arg Sets the data reported from the diff.
-	 * @param filter The types of file changes to retrieve.
-	 * @returns The diff output.
-	 */
-	private execDiff(repo: string, fromHash: string, toHash: string, arg: '--numstat' | '--name-status', filter: string) {
-		let args: string[];
-		if (fromHash === toHash) {
-			args = ['diff-tree', arg, '-r', '--root', '--find-renames', '--diff-filter=' + filter, '-z', fromHash];
-		} else {
-			args = ['diff', arg, '--find-renames', '--diff-filter=' + filter, '-z', fromHash];
-			if (toHash !== '') args.push(toHash);
-		}
-
-		return this.spawnGit(args, repo, (stdout) => {
-			let lines = stdout.split('\0');
-			if (fromHash === toHash) lines.shift();
-			return lines;
 		});
 	}
 
@@ -1953,10 +1744,14 @@ export class DataSource extends Disposable {
 				return reject(UNABLE_TO_FIND_GIT_MSG);
 			}
 
+			// The command is logged with how long it took, once it has finished: that duration is
+			// what makes the opt-in session log analysable for performance (scripts/analyze-log.mjs).
+			const started = Date.now();
 			resolveSpawnOutput(cp.spawn(this.gitExecutable.path, args, {
 				cwd: repo,
 				env: Object.assign({}, process.env, this.askpassEnv)
 			})).then((values) => {
+				this.logger.logCmd('git', args, Date.now() - started);
 				const status = values[0], stdout = values[1], stderr = values[2];
 				if (status.code === 0 || ignoreExitCode) {
 					resolve(resolveValue(stdout, stderr));
@@ -1964,8 +1759,6 @@ export class DataSource extends Disposable {
 					reject(getErrorMessage(status.error, stdout, stderr));
 				}
 			});
-
-			this.logger.logCmd('git', args);
 		});
 	}
 }
@@ -2001,26 +1794,8 @@ function getErrorMessage(error: Error | null, stdoutBuffer: Buffer, stderr: stri
 	return lines.join('\n');
 }
 
-/**
- * Remove trailing blank lines from an array of lines.
- * @param lines The array of lines.
- * @returns The same array.
- */
-function removeTrailingBlankLines(lines: string[]) {
-	while (lines.length > 0 && lines[lines.length - 1] === '') {
-		lines.pop();
-	}
-	return lines;
-}
-
 
 /* Types */
-
-interface DiffNameStatusRecord {
-	type: GitFileStatus;
-	oldFilePath: string;
-	newFilePath: string;
-}
 
 interface GitBranchData {
 	branches: string[];
@@ -2062,9 +1837,4 @@ interface GitRepoConfigData {
 interface GitTagDetailsData {
 	details: GitTagDetails | null;
 	error: ErrorInfo;
-}
-
-interface GpgStatusCodeParsingDetails {
-	readonly status: GitSignatureStatus,
-	readonly uid: boolean
 }

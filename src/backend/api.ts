@@ -13,11 +13,14 @@ import {
 	GitCommitDetails,
 	GitCommitFile,
 	GitCommitStash,
+	GitCommitSummary,
 	GitConfigSnapshot,
 	GitFileChange,
+	GitHistoryMatch,
 	GitRefData,
 	GitRepoInfo,
 	GitStash,
+	GitTagDetails,
 	LogOptions,
 	RefReadOptions
 } from './types';
@@ -82,6 +85,48 @@ export interface GitBackend {
 
 	/** The unified diff of one file in one commit (against its first parent). */
 	getCommitFileDiff(repo: string, hash: string, file: string): Promise<string>;
+
+	/** The full commit message of each of the given commits, keyed by hash. */
+	getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }>;
+
+	/** The subject of one commit, whitespace-normalised. */
+	getCommitSubject(repo: string, hash: string): Promise<string>;
+
+	/** The summary of each of the given commits, keyed by hash. */
+	getCommitSummaries(
+		repo: string,
+		hashes: ReadonlyArray<string>
+	): Promise<{ [hash: string]: GitCommitSummary }>;
+
+	/** The commits whose message matches a pattern (extended, case-insensitive), newest first. */
+	searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>>;
+
+	/** A tag in full: tagger, message, and whether it is signed. */
+	getTagDetails(repo: string, tagName: string): Promise<GitTagDetails>;
+
+	/** The fetch URL of a remote, or NULL when it is not configured. */
+	getRemoteUrl(repo: string, remote: string): Promise<string | null>;
+
+	/** Where a file was renamed to between a commit and the working tree, or NULL when it was not. */
+	getNewPathOfRenamedFile(repo: string, commitHash: string, oldFilePath: string): Promise<string | null>;
+
+	/** The roots of the repository's initialised submodules. */
+	getSubmodules(repo: string): Promise<ReadonlyArray<string>>;
+
+	/** The upstream of the checked-out branch (`origin/main`), or NULL when there is none. */
+	getCurrentBranchUpstream(repo: string): Promise<string | null>;
+
+	/**
+	 * How many commits are reachable from the given branches (or from every ref, when NULL) but
+	 * not from `hash` — `git rev-list --count <refs> ^<hash>`.
+	 */
+	countCommitsBefore(
+		repo: string,
+		branches: ReadonlyArray<string> | null,
+		hash: string,
+		showRemoteBranches: boolean,
+		includeCommitsMentionedByReflogs: boolean
+	): Promise<number>;
 }
 
 /** The defaults a view load uses when the caller does not say otherwise. */
@@ -185,5 +230,56 @@ export class NativeBackend implements GitBackend {
 
 	public getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
 		return call(() => this.addon.loadCommitFileDiff(repo, hash, file));
+	}
+
+	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
+		return callJson(() => this.addon.loadCommitBodies(repo, [...hashes]));
+	}
+
+	public getCommitSubject(repo: string, hash: string): Promise<string> {
+		return call(() => this.addon.loadCommitSubject(repo, hash));
+	}
+
+	public getCommitSummaries(
+		repo: string,
+		hashes: ReadonlyArray<string>
+	): Promise<{ [hash: string]: GitCommitSummary }> {
+		return callJson(() => this.addon.loadCommitSummaries(repo, [...hashes]));
+	}
+
+	public searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>> {
+		return callJson(() => this.addon.searchHistory(repo, query));
+	}
+
+	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
+		return callJson(() => this.addon.loadTagDetails(repo, tagName));
+	}
+
+	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
+		return call(() => this.addon.remoteUrl(repo, remote));
+	}
+
+	public getNewPathOfRenamedFile(repo: string, commitHash: string, oldFilePath: string): Promise<string | null> {
+		return call(() => this.addon.newPathOfRenamedFile(repo, commitHash, oldFilePath));
+	}
+
+	public getSubmodules(repo: string): Promise<ReadonlyArray<string>> {
+		return call(() => this.addon.submodules(repo));
+	}
+
+	public getCurrentBranchUpstream(repo: string): Promise<string | null> {
+		return call(() => this.addon.currentBranchUpstream(repo));
+	}
+
+	public countCommitsBefore(
+		repo: string,
+		branches: ReadonlyArray<string> | null,
+		hash: string,
+		showRemoteBranches: boolean,
+		includeCommitsMentionedByReflogs: boolean
+	): Promise<number> {
+		return call(() =>
+			this.addon.countCommitsBefore(repo, branches !== null ? [...branches] : null, hash, showRemoteBranches, includeCommitsMentionedByReflogs)
+		);
 	}
 }

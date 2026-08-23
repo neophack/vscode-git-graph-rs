@@ -35,6 +35,8 @@ class GitGraphView {
 
 	public readonly graph: Graph;
 	public readonly config: Config;
+	/** Which backend serves each area on this platform — shown by the Settings widget. */
+	public readonly backend: GG.BackendReport;
 
 	public moreCommitsAvailable: boolean = false;
 	public expandedCommit: ExpandedCommit | null = null;
@@ -94,6 +96,7 @@ class GitGraphView {
 	constructor(viewElem: HTMLElement, prevState: WebViewState | null) {
 		this.gitRepos = initialState.repos;
 		this.config = initialState.config;
+		this.backend = initialState.backend;
 		setInterfaceLanguage(this.config.interfaceLanguage);
 		this.renderToolbarText();
 		this.maxCommits = this.config.initialLoadCommits;
@@ -1132,11 +1135,21 @@ class GitGraphView {
 		return this.getPinnedCommits().some((pinned) => pinned.hash === hash);
 	}
 
-	public togglePinCommit(hash: string, summary: string) {
+	public togglePinCommit(hash: string, commit: GG.GitCommit | null) {
 		if (hash === UNCOMMITTED) return;
 		const wasPinned = this.isCommitPinned(hash);
 		const pinned = this.getPinnedCommits().filter((pinned) => pinned.hash !== hash);
-		if (!wasPinned) pinned.push({ hash: hash, summary: summary });
+		if (!wasPinned && commit !== null) {
+			// The author and date are captured alongside the subject, so the chip's tooltip keeps
+			// describing the commit even once it has scrolled out of the loaded page.
+			pinned.push({
+				hash: hash,
+				summary: commit.message.split(/\r?\n/)[0],
+				author: commit.author,
+				email: commit.email,
+				date: commit.date
+			});
+		}
 		this.saveRepoStateValue(this.currentRepo, 'pinnedCommits', pinned);
 		this.render();
 	}
@@ -1147,6 +1160,29 @@ class GitGraphView {
 		if (!wasPinned) pinned.push(branch);
 		this.saveRepoStateValue(this.currentRepo, 'pinnedBranches', pinned);
 		this.render();
+	}
+
+	/**
+	 * The tooltip of a pinned commit chip: what clicking it does, followed by the commit's own
+	 * details — subject, author and date. A commit that is in the loaded page is described from
+	 * the page (always current); one that has scrolled out falls back to what was captured at pin
+	 * time, so the chip never degrades to a bare hash.
+	 */
+	private pinnedCommitChipTitle(pinned: GG.PinnedCommit): string {
+		const index = this.commitLookup[pinned.hash];
+		const commit = typeof index === 'number' ? this.commits[index] : undefined;
+		const summary = commit !== undefined ? commit.message.split(/\r?\n/)[0] : pinned.summary;
+		const author = commit !== undefined ? commit.author : pinned.author;
+		const email = commit !== undefined ? commit.email : pinned.email;
+		const date = commit !== undefined ? commit.date : pinned.date;
+
+		let title = formatStr(strings.pinnedCommitChipTitle, pinned.hash);
+		if (typeof summary === 'string' && summary !== '') title += '\n' + summary;
+		if (typeof author === 'string' && author !== '') {
+			title += '\n' + author + (typeof email === 'string' && email !== '' ? ' <' + email + '>' : '');
+		}
+		if (typeof date === 'number') title += '\n' + formatLongDate(date);
+		return title;
 	}
 
 	/**
@@ -1167,13 +1203,13 @@ class GitGraphView {
 		let html = '<span class="unselectable pinnedRowLabel">' + strings.pinnedLabel + '</span>';
 		for (const branch of pinnedBranches) {
 			const name = escapeHtml(branch);
-			html += '<span class="pinnedChip" data-type="branch" data-value="' + name + '"' + formatStr(strings.pinnedBranchChipTitle, name) + '">\uD83D\uDCCC ' + name +
+			html += '<span class="pinnedChip" data-type="branch" data-value="' + name + '" title="' + formatStr(strings.pinnedBranchChipTitle, name) + '">\uD83D\uDCCC ' + name +
 				'<span class="pinnedChipRemove" data-type="branch" data-value="' + name + '" title="' + formatStr(strings.pinnedUnpinBranch, name) + '">&times;</span></span>';
 		}
 		for (const pinned of pinnedCommits) {
 			const hash = escapeHtml(pinned.hash);
 			const summary = escapeHtml(pinned.summary.length > 30 ? pinned.summary.substring(0, 30) + '…' : pinned.summary);
-			html += '<span class="pinnedChip" data-type="commit" data-value="' + hash + '"' + formatStr(strings.pinnedCommitChipTitle, hash) + '">\uD83D\uDCCC <b>' + abbrevCommit(pinned.hash) + '</b>' + (summary !== '' ? ' ' + summary : '') +
+			html += '<span class="pinnedChip" data-type="commit" data-value="' + hash + '" title="' + escapeHtml(this.pinnedCommitChipTitle(pinned)) + '">\uD83D\uDCCC <b>' + abbrevCommit(pinned.hash) + '</b>' + (summary !== '' ? ' ' + summary : '') +
 				'<span class="pinnedChipRemove" data-type="commit" data-value="' + hash + '" title="' + formatStr(strings.pinnedUnpinCommit, hash) + '">&times;</span></span>';
 		}
 		controls.innerHTML = html;
@@ -1183,7 +1219,7 @@ class GitGraphView {
 	private onPinnedChipClick(target: HTMLElement) {
 		const remove = <HTMLElement | null>target.closest('.pinnedChipRemove');
 		if (remove !== null && remove.dataset.value !== undefined) {
-			if (remove.dataset.type === 'commit') this.togglePinCommit(remove.dataset.value, '');
+			if (remove.dataset.type === 'commit') this.togglePinCommit(remove.dataset.value, null);
 			else this.togglePinBranch(remove.dataset.value);
 			return;
 		}
@@ -1377,7 +1413,7 @@ class GitGraphView {
 			) + '."></span>'
 			: '';
 		const pinnedBadge = pinnedCommitHashes.has(commit.hash)
-			? '<span class="pinnedBadge" title="Pinned commit">\uD83D\uDCCC</span>'
+			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
 			: '';
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + message) + '</span></td>' +
@@ -1705,8 +1741,12 @@ class GitGraphView {
 			'Tag <b><i>' + escapeHtml(tagName) + '</i></b><br><span class="messageContent">' +
 			'<b>Object: </b>' + escapeHtml(details.hash) + '<br>' +
 			'<b>Commit: </b>' + escapeHtml(commitHash) + '<br>' +
-			'<b>Tagger: </b>' + escapeHtml(details.taggerName) + ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(details.taggerEmail) + '" tabindex="-1">' + escapeHtml(details.taggerEmail) + '</a>&gt;' + (details.signature !== null ? generateSignatureHtml(details.signature) : '') + '<br>' +
-			'<b>Date: </b>' + formatLongDate(details.taggerDate) + '<br><br>' +
+			// A lightweight tag has no tagger of its own, so there is no tagger or date to show.
+			(details.taggerName !== '' || details.taggerEmail !== ''
+				? '<b>Tagger: </b>' + escapeHtml(details.taggerName) + ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(details.taggerEmail) + '" tabindex="-1">' + escapeHtml(details.taggerEmail) + '</a>&gt;' + (details.signature !== null ? generateSignatureHtml(details.signature) : '') + '<br>' +
+				  '<b>Date: </b>' + formatLongDate(details.taggerDate) + '<br>'
+				: '') +
+			'<br>' +
 			textFormatter.format(details.message) +
 			'</span>'
 		);

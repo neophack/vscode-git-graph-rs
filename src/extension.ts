@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
-import { enginePlatformTable, hasEngineForPlatform, platformKey } from './backend/addon';
+import { hasEngineForPlatform, platformKey } from './backend/addon';
 import { CommandManager } from './commands';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -22,21 +22,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	logger.setEnabled(getConfig().enableLog);
 	logger.log('Starting Git Graph ...');
 
-	// The extension cannot serve the graph view without a native engine for this platform, which
-	// VS Code cannot know at install time (a universal VSIX has no per-architecture restriction).
-	// Activation is the first moment the user can be told, so say it here — the Git Graph view
-	// itself shows the same information as a page when it is opened.
+	// No engine binary for this platform is not an error: everything runs over the `git` CLI
+	// backend instead, with the full feature set. Say so once, quietly — the Settings widget's
+	// backend section is where the per-capability split is shown.
 	if (!hasEngineForPlatform(context.extensionPath)) {
 		const zh = getConfig().interfaceLanguage === 'zh-cn';
-		const included = enginePlatformTable(context.extensionPath)
-			.filter((platform) => platform.present)
-			.map((platform) => platform.label)
-			.join(zh ? '、' : ', ');
 		const msg = zh
-			? `Git Graph RS 无法加载图形视图：当前系统架构（${platformKey()}）没有可用的原生引擎。此安装包包含的架构：${included}`
-			: `Git Graph RS cannot load the graph view: there is no native engine available for the system architecture this editor is running on (${platformKey()}). Architectures included in this package: ${included}`;
-		showErrorMessage(msg);
-		logger.logError(msg);
+			? `Git Graph RS：当前系统（${platformKey()}）没有原生引擎，将通过 git 命令行运行（功能完整，读操作为原版速度）。`
+			: `Git Graph RS: no native engine is available for this system (${platformKey()}), so it runs over the git CLI instead (full functionality, original-extension read speed).`;
+		showInformationMessage(msg);
+		logger.log(msg);
 	}
 
 	const gitExecutableEmitter = new EventEmitter<GitExecutable>();

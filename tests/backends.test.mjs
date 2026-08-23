@@ -81,10 +81,23 @@ function buildFixture() {
 	git(['mv', 'a.txt', 'renamed.txt']);
 	const renamed = commit('rename a file');
 	git(['tag', '-a', 'v2.0', '-m', 'an annotated tag']);
+	// A hierarchical tag name, which is legal git and must survive the engine's validation.
+	git(['tag', 'release/v2.1', renamed]);
 
 	// A binary file, so that the two implementations have to agree about detecting it.
 	write('blob.bin', '\u0000\u0001\u0002not text\u0000\u0003');
 	const binary = commit('add a binary file');
+
+	// An initialised submodule: a repository below its path, registered in .gitmodules. It is
+	// committed (as a gitlink, the way `git submodule add` leaves it), so it disturbs neither the
+	// working-tree status nor the graph the other tests compare.
+	git(['init', '--quiet', 'sub']);
+	git(['-C', 'sub', 'config', 'user.name', 'Sub User']);
+	git(['-C', 'sub', 'config', 'user.email', 'sub@example.com']);
+	git(['-C', 'sub', 'commit', '--quiet', '--allow-empty', '-m', 'inside the submodule']);
+	write('.gitmodules', '[submodule "sub"]\n\tpath = sub\n\turl = https://example.invalid/sub.git\n');
+	git(['add', '.gitmodules', 'sub']);
+	commit('add the submodule');
 
 	// A remote, without any network: the tracking refs are written directly.
 	git(['remote', 'add', 'origin', 'https://example.invalid/repo.git']);
@@ -92,13 +105,17 @@ function buildFixture() {
 	git(['update-ref', 'refs/remotes/origin/HEAD', renamed]);
 	git(['update-ref', 'refs/remotes/origin/changes/45/12345/1', first]);
 	git(['update-ref', 'refs/remotes/origin/changes/45/12345/meta', first]);
+	// The checked-out branch follows it, which is what `@{upstream}` reports.
+	git(['config', 'branch.main.remote', 'origin']);
+	git(['config', 'branch.main.merge', 'refs/heads/main']);
 
 	// A stash, so that a commit no branch points at has to appear in the graph.
 	write('renamed.txt', 'stashed change\n');
 	git(['stash', 'push', '--quiet', '-m', 'the stashed work']);
 
-	// An uncommitted working tree.
-	write('renamed.txt', 'uncommitted change\n');
+	// An uncommitted working tree. The modified renamed.txt keeps most of a.txt's original
+	// lines, so that the rename a.txt → renamed.txt is still detected against the working tree.
+	write('renamed.txt', Array.from({ length: 39 }, (_, n) => `line ${n}\n`).join('') + 'line 39 (uncommitted)\n');
 	write('untracked.txt', 'not added yet\n');
 
 	return { first, feature, renamed, binary };
@@ -514,6 +531,202 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.equal(rust.openRepositoryCount, before, 'a second request must reuse the warm handle');
 	});
 
+	it('reads the same commit bodies', async () => {
+		const hashes = [fixture.first, fixture.feature, fixture.renamed, fixture.binary];
+		const [a, b] = await Promise.all([
+			rust.getCommitBodies(root, hashes),
+			cli.getCommitBodies(root, hashes)
+		]);
+		assert.deepEqual(a, b);
+		assert.equal(a[fixture.renamed], 'rename a file');
+		// A missing hash fails the whole call, on both sides.
+		await assert.rejects(() => rust.getCommitBodies(root, ['deadbeefdeadbeefdeadbeefdeadbeefdeadbeef']));
+		await assert.rejects(() => cli.getCommitBodies(root, ['deadbeefdeadbeefdeadbeefdeadbeefdeadbeef']));
+	});
+
+	it('reads the same commit subject', async () => {
+		const merge = fixture.renamed; // any commit works; use several to be sure
+		for (const hash of [fixture.first, merge, fixture.binary]) {
+			const [a, b] = await Promise.all([
+				rust.getCommitSubject(root, hash),
+				cli.getCommitSubject(root, hash)
+			]);
+			assert.equal(a, b, `getCommitSubject: ${hash}`);
+		}
+		const subject = await cli.getCommitSubject(root, fixture.renamed);
+		assert.equal(subject, 'rename a file');
+	});
+
+	it('reads the same commit summaries', async () => {
+		const hashes = [fixture.first, fixture.feature];
+		const [a, b] = await Promise.all([
+			rust.getCommitSummaries(root, hashes),
+			cli.getCommitSummaries(root, hashes)
+		]);
+		assert.deepEqual(Object.keys(a).sort(), Object.keys(b).sort());
+		for (const hash of hashes) {
+			assert.deepEqual({ ...a[hash] }, { ...b[hash] }, `getCommitSummaries: ${hash}`);
+		}
+		assert.equal(a[fixture.first].author, 'Test User');
+		assert.equal(a[fixture.first].message, 'the first commit');
+	});
+
+	it('searches history the same way', async () => {
+		const [a, b] = await Promise.all([rust.searchHistory(root, 'feature'), cli.searchHistory(root, 'feature')]);
+		assert.deepEqual([...a], [...b]);
+		assert.ok(a.some((match) => match.message === 'the feature commit'));
+
+		// The search is case-insensitive and regex-flavoured, as `git log -E -i --grep` is.
+		const [upperA, upperB] = await Promise.all([
+			rust.searchHistory(root, 'THE FEATURE'),
+			cli.searchHistory(root, 'THE FEATURE')
+		]);
+		assert.deepEqual([...upperA], [...upperB]);
+		assert.ok(upperA.length > 0);
+
+		const [noneA, noneB] = await Promise.all([
+			rust.searchHistory(root, 'no-such-thing-at-all'),
+			cli.searchHistory(root, 'no-such-thing-at-all')
+		]);
+		assert.deepEqual([...noneA], [...noneB]);
+		assert.equal(noneA.length, 0);
+	});
+
+	it('reads the same tag details', async () => {
+		const [annotatedA, annotatedB] = await Promise.all([
+			rust.getTagDetails(root, 'v2.0'),
+			cli.getTagDetails(root, 'v2.0')
+		]);
+		assert.deepEqual({ ...annotatedA }, { ...annotatedB });
+		assert.equal(annotatedA.taggerName, 'Test User');
+		assert.equal(annotatedA.message, 'an annotated tag');
+		assert.equal(annotatedA.signature, null);
+
+		const [lightA, lightB] = await Promise.all([
+			rust.getTagDetails(root, 'v1.0'),
+			cli.getTagDetails(root, 'v1.0')
+		]);
+		// A lightweight tag has no tagger: its hash is the commit's and its message the commit's.
+		assert.equal(lightA.hash, lightB.hash);
+		assert.equal(lightA.hash, fixture.first);
+		assert.equal(lightA.message, lightB.message);
+		assert.equal(lightA.message, 'the first commit');
+		assert.equal(lightA.signature, null);
+		assert.equal(lightB.signature, null);
+
+		await assert.rejects(() => rust.getTagDetails(root, 'no-such-tag'));
+		await assert.rejects(() => cli.getTagDetails(root, 'no-such-tag'));
+	});
+
+	it('reads tag details for hierarchical tag names', async () => {
+		const [a, b] = await Promise.all([
+			rust.getTagDetails(root, 'release/v2.1'),
+			cli.getTagDetails(root, 'release/v2.1')
+		]);
+		assert.deepEqual({ ...a }, { ...b });
+		// A lightweight tag below a slash: the hash is the commit it names.
+		assert.equal(a.hash, fixture.renamed);
+		assert.equal(a.message, 'rename a file');
+	});
+
+	it('reads the same remote urls', async () => {
+		const [a, b] = await Promise.all([
+			rust.getRemoteUrl(root, 'origin'),
+			cli.getRemoteUrl(root, 'origin')
+		]);
+		assert.equal(a, b);
+		assert.equal(a, 'https://example.invalid/repo.git');
+
+		const [missingA, missingB] = await Promise.all([
+			rust.getRemoteUrl(root, 'no-such-remote'),
+			cli.getRemoteUrl(root, 'no-such-remote')
+		]);
+		assert.equal(missingA, null);
+		assert.equal(missingB, null);
+	});
+
+	it('follows the same rename into the working tree', async () => {
+		const [a, b] = await Promise.all([
+			rust.getNewPathOfRenamedFile(root, fixture.first, 'a.txt'),
+			cli.getNewPathOfRenamedFile(root, fixture.first, 'a.txt')
+		]);
+		assert.equal(a, b);
+		assert.equal(a, 'renamed.txt');
+
+		const [noneA, noneB] = await Promise.all([
+			rust.getNewPathOfRenamedFile(root, fixture.first, 'no-such.txt'),
+			cli.getNewPathOfRenamedFile(root, fixture.first, 'no-such.txt')
+		]);
+		assert.equal(noneA, null);
+		assert.equal(noneB, null);
+	});
+
+	it('lists the same submodules', async () => {
+		const [a, b] = await Promise.all([rust.getSubmodules(root), cli.getSubmodules(root)]);
+		// The two may spell the separator differently; both must name the same directory.
+		const normalise = (value) => fs.realpathSync.native(value).replace(/\\/g, '/').toLowerCase();
+		assert.deepEqual(a.map(normalise), b.map(normalise));
+		assert.equal(a.length, 1);
+		assert.equal(path.basename(a[0]), 'sub');
+	});
+
+	it('reads the same current branch upstream', async () => {
+		const [a, b] = await Promise.all([
+			rust.getCurrentBranchUpstream(root),
+			cli.getCurrentBranchUpstream(root)
+		]);
+		assert.equal(a, b);
+		assert.equal(a, 'origin/main');
+	});
+
+	it('counts commits before the same way', async () => {
+		for (const args of [
+			{ branches: null, showRemoteBranches: true, includeReflogs: false },
+			{ branches: null, showRemoteBranches: false, includeReflogs: false },
+			{ branches: ['main'], showRemoteBranches: true, includeReflogs: false }
+		]) {
+			const [a, b] = await Promise.all([
+				rust.countCommitsBefore(root, args.branches, fixture.first, args.showRemoteBranches, args.includeReflogs),
+				cli.countCommitsBefore(root, args.branches, fixture.first, args.showRemoteBranches, args.includeReflogs)
+			]);
+			assert.equal(a, b, `countCommitsBefore: ${JSON.stringify(args)}`);
+		}
+
+		// An unknown hash is not counted, on either side.
+		assert.equal(await rust.countCommitsBefore(root, null, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', true, false).catch(() => null), null);
+		assert.equal(await cli.countCommitsBefore(root, null, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', true, false).catch(() => null), null);
+	});
+
+	it('routes what the engine declines to the CLI, invisibly', async () => {
+		const { createBackend } = await import('../out/backend/index.js');
+		const fallbacks = [];
+		const backend = createBackend({ onFallback: (method) => fallbacks.push(method) });
+
+		// A --glob= pattern: the engine's tip resolution does not understand it, so the CLI answers.
+		const glob = ['--glob=refs/heads/**'];
+		const viaFallback = await backend.countCommitsBefore(root, glob, fixture.first, true, false);
+		const viaCli = await cli.countCommitsBefore(root, glob, fixture.first, true, false);
+		assert.equal(viaFallback, viaCli);
+		assert.deepEqual(fallbacks, ['countCommitsBefore']);
+
+		// Reflog tips take the same path.
+		fallbacks.length = 0;
+		const reflogCount = await backend.countCommitsBefore(root, null, fixture.first, true, true);
+		assert.equal(reflogCount, await cli.countCommitsBefore(root, null, fixture.first, true, true));
+		assert.deepEqual(fallbacks, ['countCommitsBefore']);
+	});
+
+	it('returns no bodies for no commits, and searches with regex metacharacters', async () => {
+		const [a, b] = await Promise.all([rust.getCommitBodies(root, []), cli.getCommitBodies(root, [])]);
+		assert.deepEqual(a, {});
+		assert.deepEqual(b, {});
+
+		const pattern = 'the (feature|main) commit';
+		const [ra, rb] = await Promise.all([rust.searchHistory(root, pattern), cli.searchHistory(root, pattern)]);
+		assert.deepEqual([...ra], [...rb]);
+		assert.ok(ra.length >= 2, 'the pattern matches at least the feature and main commits');
+	});
+
 	// Last in the block: this one pushes a second stash, which the earlier tests count on not
 	// being there yet.
 	it('orders multiple stashes newest first', async () => {
@@ -549,5 +762,48 @@ describe('the backend selection', () => {
 		const { createBackend, describeBackend } = await import('../out/backend/index.js');
 		assert.equal(describeBackend({ prefer: 'git-cli' }), 'git-cli');
 		assert.equal(createBackend({ prefer: 'git-cli' }).name, 'git-cli');
+	});
+});
+
+describe('the backend capability report', () => {
+	it('reports the engine split for this platform', async () => {
+		const { describeCapabilities } = await import('../out/backend/index.js');
+		const report = describeCapabilities();
+
+		assert.equal(report.platform, `${process.platform}-${process.arch}`);
+		assert.equal(report.engineAvailable, true);
+		assert.match(report.engineVersion ?? '', /^\d+\.\d+\.\d+/);
+
+		const byArea = Object.fromEntries(report.capabilities.map((capability) => [capability.area, capability]));
+		for (const area of ['repoInfo', 'commits', 'details', 'diffs', 'onDemand', 'metadata']) {
+			assert.equal(byArea[area].provider, 'rust', `${area} is served by the engine`);
+		}
+		// The documented hybrids: reflog/glob counting declines per call, config is part CLI,
+		// and writes are always git.
+		assert.equal(byArea.counting.provider, 'rust');
+		assert.equal(byArea.counting.note, 'dynamic');
+		assert.equal(byArea.config.provider, 'hybrid');
+		assert.equal(byArea.config.note, 'configHybrid');
+		assert.equal(byArea.writes.provider, 'git-cli');
+		assert.equal(byArea.writes.note, 'writesAlways');
+	});
+
+	it('reports everything on the git CLI when no engine is present', async () => {
+		const { describeCapabilities } = await import('../out/backend/index.js');
+		const { resetAddonCache } = await import('../out/backend/addon.js');
+		const withoutEngine = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-noengine-'));
+		// The addon loader caches its first successful load globally, so the cache is dropped
+		// before probing an engine-less root — and restored (dropped again) afterwards.
+		resetAddonCache();
+		try {
+			const report = describeCapabilities({ addonRoot: withoutEngine });
+			assert.equal(report.engineAvailable, false);
+			assert.equal(report.engineVersion, null);
+			assert.ok(report.capabilities.length >= 9);
+			assert.ok(report.capabilities.every((capability) => capability.provider === 'git-cli'));
+		} finally {
+			resetAddonCache();
+			fs.rmSync(withoutEngine, { recursive: true, force: true });
+		}
 	});
 });

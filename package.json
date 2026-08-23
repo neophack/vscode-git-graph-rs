@@ -40,6 +40,8 @@
 		"test:rust": "cargo test --workspace",
 		"test:node": "node --test \"tests/**/*.test.mjs\"",
 		"bench": "node scripts/bench.mjs",
+		"bench:all": "node scripts/bench.mjs --all",
+		"analyze-log": "node scripts/analyze-log.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
 	},
 	"dependencies": {

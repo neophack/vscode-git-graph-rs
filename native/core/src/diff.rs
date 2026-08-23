@@ -25,6 +25,28 @@ pub fn diff_revisions(repo: &Repo, from: &str, to: &str) -> Result<Vec<GitFileCh
     diff_commits(repo, Some(from_id), to_id)
 }
 
+/// Where a file has been renamed to between a commit and the working tree, or `None` when it has
+/// not been renamed (or no longer exists).
+///
+/// This backs the code-review view's file tracking: when the reviewed file was renamed since the
+/// revision under review, the review follows it to its new path rather than losing it.
+///
+/// A rename is recognised by the paths alone, rather than by the change's status: a file that was
+/// renamed *and then modified in the working tree* is layered into a modification record by the
+/// worktree overlay, but it still carries the pre-rename path on its old side — which is exactly
+/// the rename this question asks about.
+pub fn new_path_of_renamed_file(
+    repo: &Repo,
+    commit_hash: &str,
+    old_file_path: &str,
+) -> Result<Option<String>> {
+    let changes = diff_revisions(repo, commit_hash, "")?;
+    Ok(changes.into_iter().find_map(|change| {
+        (change.old_file_path == old_file_path && change.new_file_path != old_file_path)
+            .then_some(change.new_file_path)
+    }))
+}
+
 /// The file changes a commit introduced, compared against its first parent.
 ///
 /// A root commit is compared against the empty tree, which is how the commit that created a

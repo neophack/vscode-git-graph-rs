@@ -711,7 +711,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			visible: hash !== UNCOMMITTED,
 
-			onClick: () => view.togglePinCommit(hash, commit.message.split(/\r?\n/)[0])
+			onClick: () => view.togglePinCommit(hash, commit)
 
 		}
 

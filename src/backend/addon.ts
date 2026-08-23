@@ -28,6 +28,22 @@ interface NativeAddon {
 	loadConfig(path: string): Promise<string>;
 	loadCommitFile(path: string, commitHash: string, file: string): Promise<string>;
 	loadCommitFileDiff(path: string, commitHash: string, file: string): Promise<string>;
+	loadCommitBodies(path: string, hashes: string[]): Promise<string>;
+	loadCommitSubject(path: string, hash: string): Promise<string>;
+	loadCommitSummaries(path: string, hashes: string[]): Promise<string>;
+	searchHistory(path: string, query: string): Promise<string>;
+	loadTagDetails(path: string, tagName: string): Promise<string>;
+	remoteUrl(path: string, remote: string): Promise<string | null>;
+	newPathOfRenamedFile(path: string, commitHash: string, oldFilePath: string): Promise<string | null>;
+	submodules(path: string): Promise<string[]>;
+	currentBranchUpstream(path: string): Promise<string | null>;
+	countCommitsBefore(
+		path: string,
+		branches: string[] | null,
+		hash: string,
+		showRemoteBranches: boolean,
+		includeReflogs: boolean
+	): Promise<number>;
 	engineVersion(): string;
 }
 
@@ -43,7 +59,7 @@ const ENGINE_PLATFORMS: Readonly<Record<string, { directory: string; os: string;
 	'darwin-arm64': { directory: 'darwin-arm64', os: 'macOS', arch: 'ARM64' }
 };
 
-/** One row of the engine-platform table the unsupported-architecture page shows. */
+/** One row of the engine-platform table (diagnostics; see `enginePlatformTable`). */
 export interface EnginePlatform {
 	/** The `${platform}-${arch}` key of the editor this engine serves. */
 	readonly key: string;
@@ -61,8 +77,8 @@ export interface EnginePlatform {
 
 /**
  * Every platform a native engine exists for, with whether this installation actually contains the
- * binary. The unsupported-architecture page shows this table, so a package that is missing some of
- * the binaries reports which ones it has instead of claiming to support all of them.
+ * binary — a diagnostics view of the package's contents. A missing binary is not an error: the
+ * extension runs over the `git` CLI, and the Settings widget's backend section shows the split.
  */
 export function enginePlatformTable(
 	root: string = path.join(__dirname, '..', '..')
@@ -108,7 +124,7 @@ export function platformKey(
  * Is there a native engine binary for this editor — a platform a binary is built for, with the
  * binary actually present? An incomplete package (a known platform whose binary is missing, e.g.
  * a VSIX built without one of the six targets) is reported the same way as an unknown platform:
- * both get the unsupported-architecture page.
+ * both simply run over the `git` CLI backend for everything.
  */
 export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '..')): boolean {
 	try {

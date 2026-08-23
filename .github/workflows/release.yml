@@ -1,0 +1,111 @@
+name: Release
+
+# A manual, full-pipeline release: run the whole "Build and test" workflow (engine tests, the six
+# native platform builds on their native runners, the cross-backend integration tests), assemble
+# the VSIX from those binaries, and publish a GitHub Release carrying the VSIX plus every engine.
+#
+# Trigger it from the Actions tab ("Release" → "Run workflow") or with:
+#
+#   gh workflow run release.yml -f version=v0.2.0
+#
+# The tag defaults to the version in package.json; pass `version` to override (the VSIX's version
+# is updated to match, so the marketplace id and the tag never disagree).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag (defaults to package.json, e.g. v0.2.0)'
+        required: false
+        default: ''
+        type: string
+      prerelease:
+        description: 'Mark the release as a pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  # Creating the release (tag, notes, assets) is the one thing this workflow does beyond CI.
+  contents: write
+
+jobs:
+  # Everything "Build and test" does: engine tests, six platform builds, integration tests, and
+  # the packaged `git-graph-rs` artifact. A release is only made when all of it passes.
+  build-and-test:
+    uses: ./.github/workflows/native-build.yml
+
+  release:
+    name: Publish the release
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The packaged artifact (out/, native/*/git-graph.node, package.json) is laid over the
+      # checkout, so the VSIX is assembled from exactly the binaries this run built and tested.
+      - uses: actions/download-artifact@v4
+        with:
+          name: git-graph-rs
+          path: .
+
+      - name: Install packaging dependencies
+        run: npm ci || npm install
+
+      - name: Resolve the release tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ]; then
+            VERSION="v$(node -p "require('./package.json').version")"
+          fi
+          case "$VERSION" in
+            v*) ;;
+            *)  VERSION="v$VERSION" ;;
+          esac
+          echo "TAG=$VERSION" >> "$GITHUB_ENV"
+
+          # Keep the VSIX version and the tag in agreement when an override was given.
+          PKG_VERSION="${VERSION#v}"
+          if [ "$(node -p "require('./package.json').version")" != "$PKG_VERSION" ]; then
+            npm pkg set version="$PKG_VERSION"
+            echo "package.json bumped to $PKG_VERSION to match the tag"
+          fi
+
+      - name: Package the VSIX
+        run: npm run package
+
+      # Six files all called git-graph.node would collide as release assets; each is renamed to
+      # the platform directory it was built for, which is also where the extension loads it from.
+      - name: Stage the engine binaries
+        run: |
+          mkdir -p engines
+          for binary in native/*/git-graph.node; do
+            platform="$(basename "$(dirname "$binary")")"
+            cp "$binary" "engines/git-graph.$platform.node"
+          done
+          ls -l engines git-graph-rs-*.vsix
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Git Graph RS ${{ env.TAG }}
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: |
+            git-graph-rs-*.vsix
+            engines/*.node
+
+      # A direct download path that does not need the release page.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: git-graph-rs-vsix-${{ env.TAG }}
+          path: git-graph-rs-*.vsix
+          if-no-files-found: error

@@ -215,6 +215,45 @@ export interface GitCommitFile {
 	readonly binary: boolean;
 }
 
+/* ---------- On-demand commit reads ---------- */
+
+/** The fields the Commit Comparison View describes a commit with. */
+export interface GitCommitSummary {
+	readonly hash: string;
+	readonly author: string;
+	readonly email: string;
+	/** The author date, which is what `git show --format=%at` reports. */
+	readonly date: number;
+	/** The full commit message, trimmed as `git show --format=%B` output is. */
+	readonly message: string;
+}
+
+/** One hit of a commit-message search, as the Find dialogue lists them. */
+export interface GitHistoryMatch {
+	readonly hash: string;
+	readonly author: string;
+	readonly date: number;
+	/** The commit subject. */
+	readonly message: string;
+}
+
+/* ---------- Tag details ---------- */
+
+/**
+ * An annotated tag in full, or the fields a lightweight tag can fill in (empty tagger, the tagged
+ * commit's message).
+ */
+export interface GitTagDetails {
+	/** The tag object for an annotated tag, the commit for a lightweight one. */
+	readonly hash: string;
+	readonly taggerName: string;
+	readonly taggerEmail: string;
+	readonly taggerDate: number;
+	readonly message: string;
+	/** Present when the tag carries a signature (reported as unverified, like commit signatures). */
+	readonly signature: GitSignature | null;
+}
+
 /* ---------- Errors ---------- */
 
 /**

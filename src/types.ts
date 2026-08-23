@@ -143,6 +143,13 @@ export interface GitRepoState {
 export interface PinnedCommit {
 	hash: string;
 	summary: string;
+	/**
+	 * Captured when the commit is pinned, so the chip's tooltip can show who wrote it and when
+	 * even while the commit itself is outside the loaded page of the graph.
+	 */
+	author?: string;
+	email?: string;
+	date?: number;
 }
 
 /** A pull request (GitHub) or merge request (GitLab) of the repository's remote. */
@@ -256,6 +263,31 @@ export interface GitGraphViewInitialState {
 	readonly repos: GitRepoSet;
 	readonly loadRepoInfoRefreshId: number;
 	readonly loadCommitsRefreshId: number;
+	/** Which backend serves each area of the extension on this platform. */
+	readonly backend: BackendReport;
+}
+
+/* Backend capability report */
+
+/** Which backend serves one area of the extension, on the platform the editor is running on. */
+export interface BackendCapability {
+	/** A stable area id ('repoInfo', 'commits', …); the webview localises it. */
+	readonly area: string;
+	readonly provider: 'rust' | 'git-cli' | 'hybrid';
+	/** A stable note id explaining the split, when it needs explaining. */
+	readonly note?: 'dynamic' | 'configHybrid' | 'writesAlways';
+}
+
+/**
+ * The per-platform backend split, shown by the Settings widget: the engine's presence and
+ * version, and one row per functional area saying who answers it.
+ */
+export interface BackendReport {
+	/** `${platform}-${arch}` of this editor, e.g. `win32-x64`. */
+	readonly platform: string;
+	readonly engineAvailable: boolean;
+	readonly engineVersion: string | null;
+	readonly capabilities: ReadonlyArray<BackendCapability>;
 }
 
 export interface GitGraphViewConfig {

@@ -354,3 +354,51 @@
 	font-family:inherit;
 	font-size:inherit;
 }
+
+/* Backend section: which engine serves each capability on this platform */
+.backendSection code{
+	background:var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.16));
+	border-radius:3px;
+	padding:0 4px;
+	font-size:11px;
+}
+.backendSection .backendEngine{
+	font-weight:600;
+}
+.backendSection .backendEngine.engineLoaded{
+	color:var(--vscode-testing-iconPassed, #73c991);
+}
+.backendSection .backendEngine.engineMissing{
+	color:var(--vscode-editorWarning-foreground, #cca700);
+}
+.backendTable th{
+	font-weight:600;
+	color:var(--vscode-descriptionForeground, inherit);
+	padding:4px 0 2px;
+}
+.backendTable td{
+	padding:4px 0;
+}
+.backendBadge{
+	display:inline-block;
+	border-radius:9px;
+	padding:1px 8px;
+	font-size:11px;
+	font-weight:600;
+	white-space:nowrap;
+}
+.backendBadge.rust{
+	color:var(--vscode-testing-iconPassed, #73c991);
+	background:rgba(115, 201, 145, 0.14);
+	border:1px solid rgba(115, 201, 145, 0.4);
+}
+.backendBadge.git-cli{
+	color:var(--vscode-descriptionForeground, inherit);
+	background:rgba(128, 128, 128, 0.12);
+	border:1px solid rgba(128, 128, 128, 0.35);
+}
+.backendBadge.hybrid{
+	color:var(--vscode-editorInfo-foreground, #3794ff);
+	background:rgba(55, 148, 255, 0.12);
+	border:1px solid rgba(55, 148, 255, 0.4);
+}
