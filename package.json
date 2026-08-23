@@ -6,6 +6,14 @@
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/neophack/vscode-git-graph-rs.git"
+	},
+	"bugs": {
+		"url": "https://github.com/neophack/vscode-git-graph-rs/issues"
+	},
+	"homepage": "https://github.com/neophack/vscode-git-graph-rs#readme",
 	"engines": {
 		"vscode": "^1.38.0",
 		"node": ">=18"
@@ -35,10 +43,10 @@
 		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug",
 		"clean": "node scripts/clean.js",
 		"compile": "npm run clean && npm run compile-src && npm run compile-web",
-		"package": "vsce package --allow-missing-repository --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid",
+		"package": "vsce package --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid",
 		"test": "npm run test:rust && npm run test:node",
 		"test:rust": "cargo test --workspace",
-		"test:node": "node --test \"tests/**/*.test.mjs\"",
+		"test:node": "node scripts/run-tests.mjs",
 		"bench": "node scripts/bench.mjs",
 		"bench:all": "node scripts/bench.mjs --all",
 		"analyze-log": "node scripts/analyze-log.mjs",

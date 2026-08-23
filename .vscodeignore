@@ -18,6 +18,7 @@ native/node/Cargo.lock
 Cargo.toml
 Cargo.lock
 *.vsix
+*.log
 tsconfig.json
 jest.config.js
 GAPS.md

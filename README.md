@@ -1,11 +1,25 @@
 # Git Graph (Rust)
 
+[![Visual Studio Marketplace version](https://img.shields.io/visual-studio-marketplace/v/neophack.git-graph-rs)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/neophack.git-graph-rs)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Build and test](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml/badge.svg)](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml)
+
 A rewrite of the Git Graph VS Code extension with its Git backend in Rust, loaded
 into the extension host as a Node-API addon through [napi-rs], reading repositories with [gix].
 
 The original extension answered every question by spawning a `git` process and parsing its output.
 This one reads the object database, the refs and the index directly, in-process, from a repository
 handle that stays warm for the whole editor session.
+
+**Install** it from the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+(search for "Git Graph RS"), or download the VSIX from
+[GitHub Releases](https://github.com/neophack/vscode-git-graph-rs/releases) and install it with
+`code --install-extension git-graph-rs-<version>.vsix`.
+
+The source lives at [github.com/neophack/vscode-git-graph-rs](https://github.com/neophack/vscode-git-graph-rs);
+bug reports, feature requests and questions go to
+[the issue tracker](https://github.com/neophack/vscode-git-graph-rs/issues).
 
 ## Status
 
