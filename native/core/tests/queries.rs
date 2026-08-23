@@ -601,6 +601,14 @@ fn lists_the_local_configuration_with_git_resolution_semantics() {
     // A repeated key keeps its last value, which is git's own resolution.
     repo.git(&["config", "--add", "custom.key", "first"]);
     repo.git(&["config", "--add", "custom.key", "second"]);
+    // Section and key names are case-insensitive, so the list spells them lower-cased however
+    // the file spells them, the shape `git config --list` prints; a subsection's case is
+    // significant and is kept. (The macOS runners' own global configuration carries camelCase
+    // advice keys, which is where a spelling mismatch between the engine and git first showed.)
+    let local = repo.path().join(".git").join("config");
+    let text = std::fs::read_to_string(&local).unwrap()
+        + "[advice]\n\tamWorkDir = false\n[SomeSection \"CamelCase\"]\n\tSomeKey = mixed case\n";
+    std::fs::write(&local, text).unwrap();
 
     let engine = open(&repo);
     let config = config::config_list(&engine, config::ConfigLocation::Local).unwrap();
@@ -608,6 +616,9 @@ fn lists_the_local_configuration_with_git_resolution_semantics() {
     assert_eq!(config["user.name"], "Test User");
     assert_eq!(config["branch.main.remote"], "origin");
     assert_eq!(config["custom.key"], "second");
+    assert_eq!(config["advice.amworkdir"], "false");
+    assert_eq!(config["somesection.CamelCase.somekey"], "mixed case");
+    assert!(!config.contains_key("advice.amWorkDir"));
 }
 
 #[test]

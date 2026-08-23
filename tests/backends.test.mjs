@@ -117,6 +117,14 @@ function buildFixture() {
 	// The checked-out branch follows it, which is what `@{upstream}` reports.
 	git(['config', 'branch.main.remote', 'origin']);
 	git(['config', 'branch.main.merge', 'refs/heads/main']);
+	// Both backends must spell configuration the way `git config --list` does: section and key
+	// names lower-cased however the file spells them, a subsection's case kept. The macOS
+	// runners' own global configuration carries camelCase advice keys, which is where a
+	// mismatch between the backends first showed — so the same shape lives in this fixture.
+	fs.appendFileSync(
+		path.join(repoPath, '.git', 'config'),
+		'[advice]\n\tamWorkDir = false\n[SomeSection "CamelCase"]\n\tSomeKey = mixed case\n'
+	);
 
 	// A stash, so that a commit no branch points at has to appear in the graph.
 	write('renamed.txt', 'stashed change\n');

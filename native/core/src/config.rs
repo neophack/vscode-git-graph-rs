@@ -217,6 +217,10 @@ pub fn config_list(
             // A repeated key keeps its last value, which is git's own resolution; a section
             // seen later in the file overwrites an earlier one for the same full key.
             if let Some(value) = section.values(&key).pop() {
+                // Key names are case-insensitive like the section, and `git config --list`
+                // spells both lower-cased however the file spells them; only a subsection's
+                // case is significant, so that is kept as written.
+                let key = key.to_lowercase();
                 let full_key = match header.subsection_name() {
                     Some(subsection) => {
                         format!("{name}.{}.{key}", String::from_utf8_lossy(subsection))
