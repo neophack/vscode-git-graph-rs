@@ -2,7 +2,8 @@ name: Release
 
 # A manual, full-pipeline release: run the whole "Build and test" workflow (engine tests, the six
 # native platform builds on their native runners, the cross-backend integration tests), assemble
-# the VSIX from those binaries, and publish a GitHub Release carrying the VSIX plus every engine.
+# the VSIXs from those binaries, and publish a GitHub Release carrying a universal VSIX (every
+# engine) plus one smaller VSIX per platform (only that platform's engine).
 #
 # Trigger it from the Actions tab ("Release" → "Run workflow") or with:
 #
@@ -80,16 +81,30 @@ jobs:
       - name: Package the VSIX
         run: npm run package
 
-      # Six files all called git-graph.node would collide as release assets; each is renamed to
-      # the platform directory it was built for, which is also where the extension loads it from.
-      - name: Stage the engine binaries
+      # Six smaller VSIXs, one per platform, each carrying only that platform's engine. The
+      # extension loads `native/<platform>/git-graph.node` and treats every other platform's
+      # binary as optional, so a single-engine package needs no code changes.
+      - name: Package the per-platform VSIXs
         run: |
-          mkdir -p engines
+          stash="$(mktemp -d)"
           for binary in native/*/git-graph.node; do
             platform="$(basename "$(dirname "$binary")")"
-            cp "$binary" "engines/git-graph.$platform.node"
+            mv "$binary" "$stash/$platform.node"
           done
-          ls -l engines git-graph-rs-*.vsix
+          for engine in "$stash"/*.node; do
+            platform="$(basename "$engine" .node)"
+            cp "$engine" "native/$platform/git-graph.node"
+            npx vsce package \
+              --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid \
+              --out "git-graph-rs-${TAG#v}-$platform.vsix"
+            rm "native/$platform/git-graph.node"
+          done
+          # Put the full engine set back, so the workspace matches what was built and tested.
+          for engine in "$stash"/*.node; do
+            platform="$(basename "$engine" .node)"
+            mv "$engine" "native/$platform/git-graph.node"
+          done
+          ls -l git-graph-rs-*.vsix
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
@@ -101,7 +116,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             git-graph-rs-*.vsix
-            engines/*.node
 
       # A direct download path that does not need the release page.
       - uses: actions/upload-artifact@v4
