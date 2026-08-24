@@ -5,9 +5,9 @@
  *     mhutchie/vscode-git-graph, develop branch), and
  *   - `resources/rust-crab.svg`, the small Ferris that marks this fork as the Rust one.
  *
- * Each output is the untouched upstream icon with the crab stamped into its top-right corner —
- * the one region the original artwork leaves empty — recoloured per variant so the crab is
- * coloured on the coloured icons and a matching gray on the themed monochrome ones.
+ * Each output is the untouched upstream icon with the crab riding the right edge at mid-height,
+ * recoloured per variant so the crab is coloured on the coloured icons and a matching gray on
+ * the themed monochrome ones.
  *
  *   node scripts/generate-icons.mjs
  */
@@ -72,31 +72,31 @@ const write = (file, contents) => fs.writeFileSync(path.join(resources, file), c
 // The webview title icon, 24x24: coloured upstream art plus the coloured crab.
 const webview = stamp(
 	'webview-icon.svg',
-	crab(FERRIS, 'translate(16.2 0.45) scale(0.78)')
+	crab(FERRIS, 'translate(16.2 8.6) scale(0.78)')
 );
 write('git-graph-rs-webview-icon.svg', webview);
 write(
 	'git-graph-rs-webview-icon-dark.svg',
-	stamp('webview-icon-dark.svg', crab({ body: '#c5c5c5', limbs: '#757575' }, 'translate(16.2 0.45) scale(0.78)'))
+	stamp('webview-icon-dark.svg', crab({ body: '#c5c5c5', limbs: '#757575' }, 'translate(16.2 8.6) scale(0.78)'))
 );
 write(
 	'git-graph-rs-webview-icon-light.svg',
-	stamp('webview-icon-light.svg', crab({ body: '#656565', limbs: '#858585' }, 'translate(16.2 0.45) scale(0.78)'))
+	stamp('webview-icon-light.svg', crab({ body: '#656565', limbs: '#858585' }, 'translate(16.2 8.6) scale(0.78)'))
 );
 
 // The command icons, 16x16: gray crab, matching each theme's grays.
 write(
 	'git-graph-rs-cmd-icon-light.svg',
-	stamp('cmd-icon-light.svg', crab({ body: '#424242', limbs: '#757575' }, 'translate(10.45 0.3) scale(0.55)'))
+	stamp('cmd-icon-light.svg', crab({ body: '#424242', limbs: '#757575' }, 'translate(10.45 5.61) scale(0.55)'))
 );
 write(
 	'git-graph-rs-cmd-icon-dark.svg',
-	stamp('cmd-icon-dark.svg', crab({ body: '#c5c5c5', limbs: '#8a8a8a' }, 'translate(10.45 0.3) scale(0.55)'))
+	stamp('cmd-icon-dark.svg', crab({ body: '#c5c5c5', limbs: '#8a8a8a' }, 'translate(10.45 5.61) scale(0.55)'))
 );
 
-// The mobile notification icons, 48x48: the upstream art doubled, the crab perched on the
-// top-right corner and the badge pinned over it. The crab and badge are *outside* the scale(2)
-// group — they are placed in 48-canvas coordinates.
+// The mobile notification icons, 48x48: the upstream art doubled, the crab riding the right
+// edge at mid-height and the badge pinned to the top-right corner. The crab and badge are
+// *outside* the scale(2) group — they are placed in 48-canvas coordinates.
 const notificationDir = path.join(resources, 'notification');
 fs.mkdirSync(notificationDir, { recursive: true });
 
@@ -111,7 +111,7 @@ fs.writeFileSync(
 	path.join(notificationDir, 'notification.svg'),
 	`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">\n` +
 		`<g transform="scale(2)">${inner('webview-icon.svg')}</g>\n` +
-		crab(FERRIS, 'translate(25 0.6) scale(2)') +
+		crab(FERRIS, 'translate(25 15.3) scale(2)') +
 		badge() +
 		'\n</svg>\n'
 );
@@ -121,17 +121,17 @@ fs.writeFileSync(
 	path.join(notificationDir, 'notification-white.svg'),
 	`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">\n` +
 		`<g transform="scale(2)">${inner('webview-icon.svg')}</g>\n` +
-		crab({ body: '#ffffff', limbs: '#ffffff', eye: '#ffffff', pupil: '#ffffff' }, 'translate(25 0.6) scale(2)') +
+		crab({ body: '#ffffff', limbs: '#ffffff', eye: '#ffffff', pupil: '#ffffff' }, 'translate(25 15.3) scale(2)') +
 		'<circle cx="40" cy="9" r="7.5" fill="#ffffff"/>' +
 		'\n</svg>\n'
 );
 
 /* ---------- The raster set ---------- */
 
-// The marketplace icon: the upstream PNG with the crab composited into its top-right corner.
+// The marketplace icon: the upstream PNG with the crab composited onto its right edge at mid-height.
 const crabPng = await sharp(path.join(resources, 'rust-crab.svg'), { density: 300 }).resize({ width: 44 }).png().toBuffer();
 await sharp(path.join(upstream, 'icon.png'))
-	.composite([{ input: crabPng, left: 82, top: 3 }])
+	.composite([{ input: crabPng, left: 82, top: 44 }])
 	.png()
 	.toFile(path.join(resources, 'icon.png'));
 
@@ -146,4 +146,4 @@ for (const size of [96, 192]) {
 		.toFile(path.join(notificationDir, `notification-white-${size}.png`));
 }
 
-console.log('icons rebuilt: upstream art + the Rust crab, top-right');
+console.log('icons rebuilt: upstream art + the Rust crab at mid-height on the right');

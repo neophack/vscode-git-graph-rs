@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DataSource } from './dataSource';
+import { t } from './i18n';
 import { GitFileStatus } from './types';
 import { UNCOMMITTED, getPathFromStr } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
@@ -65,7 +66,7 @@ export class DiffDocProvider extends Disposable implements vscode.TextDocumentCo
 					return document.value;
 				},
 				(errorMessage) => {
-					return 'Unable to retrieve file: ' + errorMessage;
+					return t('unableToRetrieveFile', errorMessage);
 				}
 			);
 		} catch (err) {
@@ -152,6 +153,6 @@ export function decodeDiffDocUri(uri: vscode.Uri): DiffDocUriData {
 	try {
 		return JSON.parse(Buffer.from(query, 'base64').toString());
 	} catch (e) {
-		throw new Error('Unable to decode the Git Graph RS diff document URI: the data is malformed.');
+		throw new Error(t('malformedDiffDocUri'));
 	}
 }

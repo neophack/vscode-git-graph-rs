@@ -7,10 +7,11 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
+import { t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { StatusBarItem } from './statusBarItem';
-import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage } from './utils';
+import { GitExecutable, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
 import { EventEmitter } from './utils/event';
 
 /**
@@ -26,10 +27,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// backend instead, with the full feature set. Say so once, quietly — the Settings widget's
 	// backend section is where the per-capability split is shown.
 	if (!hasEngineForPlatform(context.extensionPath)) {
-		const zh = getConfig().interfaceLanguage === 'zh-cn';
-		const msg = zh
-			? `Git Graph RS：当前系统（${platformKey()}）没有原生引擎，将通过 git 命令行运行（功能完整，读操作为原版速度）。`
-			: `Git Graph RS: no native engine is available for this system (${platformKey()}), so it runs over the git CLI instead (full functionality, original-extension read speed).`;
+		const msg = t('noEngineForPlatform', platformKey());
 		showInformationMessage(msg);
 		logger.log(msg);
 	}
@@ -49,15 +47,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (hasEngineForPlatform(context.extensionPath)) {
 			// No Git executable, but the engine can serve the whole read path in-process: the
 			// extension is usable as-is, and write operations report that they need Git.
-			const zh = getConfig().interfaceLanguage === 'zh-cn';
-			const msg = zh
-				? 'Git Graph RS：未找到 Git，将通过 Rust 引擎运行（查看、比较、搜索等全部可用；写入类操作需要安装 Git）。'
-				: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).';
+			const msg = t('noGitRunsOnEngine');
 			showInformationMessage(msg);
 			logger.log(msg);
 		} else {
-			showErrorMessage(UNABLE_TO_FIND_GIT_MSG);
-			logger.logError(UNABLE_TO_FIND_GIT_MSG);
+			showErrorMessage(unableToFindGitMsg());
+			logger.logError(unableToFindGitMsg());
 		}
 	}
 
@@ -83,12 +78,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
 				getGitExecutableFromPaths(paths).then((gitExecutable) => {
 					gitExecutableEmitter.emit(gitExecutable);
-					const msg = 'Git Graph is now using ' + gitExecutable.path + ' (version: ' + gitExecutable.version + ')';
+					const msg = t('nowUsingGit', gitExecutable.path, gitExecutable.version);
 					showInformationMessage(msg);
 					logger.log(msg);
 					repoManager.searchWorkspaceForRepos();
 				}, () => {
-					const msg = 'The new value of "git.path" ("' + paths.join('", "') + '") does not ' + (paths.length > 1 ? 'contain a string that matches' : 'match') + ' the path and filename of a valid Git executable.';
+					const msg = t('gitPathInvalid', paths.join('", "'), paths.length > 1 ? t('gitPathInvalidContain') : t('gitPathInvalidMatch'));
 					showErrorMessage(msg);
 					logger.logError(msg);
 				});

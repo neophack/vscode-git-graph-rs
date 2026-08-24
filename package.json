@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
@@ -863,10 +863,16 @@
 				"git-graph-rs.interfaceLanguage": {
 					"type": "string",
 					"enum": [
+						"auto",
 						"en",
 						"zh-cn"
 					],
-					"default": "en",
+					"enumDescriptions": [
+						"%config.git-graph-rs.interfaceLanguage.enumDescription0%",
+						"%config.git-graph-rs.interfaceLanguage.enumDescription1%",
+						"%config.git-graph-rs.interfaceLanguage.enumDescription2%"
+					],
+					"default": "auto",
 					"description": "%config.git-graph-rs.interfaceLanguage.description%"
 				},
 				"git-graph-rs.keyboardShortcut.find": {

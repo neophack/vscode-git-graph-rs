@@ -30,13 +30,13 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				if (options.length === 0) {
 
-					dialog.showError('Compare Branch', 'No other local branches to compare with.', 'Close', null);
+					dialog.showError(strings.compareBranchTitle, strings.compareNoOtherBranches, strings.dialogClose, null);
 
 					return;
 
 				}
 
-				dialog.showSelect('Select branch to compare <b><i>' + escapeHtml(refName) + '</i></b> with:', options[0].value, options, 'Compare', (compareBranch) => {
+				dialog.showSelect(formatStr(strings.selectBranchToCompare, escapeHtml(refName)), options[0].value, options, strings.compareAction, (compareBranch) => {
 
 					let refCommitIndex = view.commits.findIndex(c => c.heads.includes(refName));
 
@@ -48,7 +48,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 					} else {
 
-						dialog.showError('Compare Branch', 'Could not find the commits for the selected branches in the current view. Try loading more commits.', 'Close', null);
+						dialog.showError(strings.compareBranchTitle, strings.compareCommitsNotLoaded, strings.dialogClose, null);
 
 					}
 
@@ -64,9 +64,9 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showRefInput('Enter the new name for branch <b><i>' + escapeHtml(refName) + '</i></b>:', refName, 'Rename Branch', (newName) => {
+				dialog.showRefInput(formatStr(strings.renameBranchPrompt, escapeHtml(refName)), refName, strings.actionRenameBranch, (newName) => {
 
-					runAction({ command: 'renameBranch', repo: view.currentRepo, oldName: refName, newName: newName }, 'Renaming Branch');
+					runAction({ command: 'renameBranch', repo: view.currentRepo, oldName: refName, newName: newName }, strings.renamingBranch);
 
 				}, target);
 
@@ -90,7 +90,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				let remotesWithBranch = view.gitRemotes.filter(remote => view.gitBranches.includes('remotes/' + remote + '/' + refName));
 
-				let inputs: DialogInput[] = [{ type: DialogInputType.Checkbox, name: 'Force Delete', value: view.config.dialogDefaults.deleteBranch.forceDelete }];
+				let inputs: DialogInput[] = [{ type: DialogInputType.Checkbox, name: strings.forceDeleteCheckbox, value: view.config.dialogDefaults.deleteBranch.forceDelete }];
 
 				if (remotesWithBranch.length > 0) {
 
@@ -98,19 +98,19 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 						type: DialogInputType.Checkbox,
 
-						name: 'Delete this branch on the remote' + (view.gitRemotes.length > 1 ? 's' : ''),
+						name: view.gitRemotes.length > 1 ? strings.deleteOnRemotesCheckbox : strings.deleteOnRemoteCheckbox,
 
 						value: false,
 
-						info: 'This branch is on the remote' + (remotesWithBranch.length > 1 ? 's: ' : ' ') + formatCommaSeparatedList(remotesWithBranch.map((remote) => '"' + remote + '"'))
+						info: formatStr(remotesWithBranch.length > 1 ? strings.branchOnRemotesInfo : strings.branchOnRemoteInfo, formatCommaSeparatedList(remotesWithBranch.map((remote) => '"' + remote + '"')))
 
 					});
 
 				}
 
-				dialog.showForm('Are you sure you want to delete the branch <b><i>' + escapeHtml(refName) + '</i></b>?', inputs, 'Yes, delete', (values) => {
+				dialog.showForm(formatStr(strings.deleteBranchConfirm, escapeHtml(refName)), inputs, strings.yesDelete, (values) => {
 
-					runAction({ command: 'deleteBranch', repo: view.currentRepo, branchName: refName, forceDelete: <boolean>values[0], deleteOnRemotes: remotesWithBranch.length > 0 && <boolean>values[1] ? remotesWithBranch : [] }, 'Deleting Branch');
+					runAction({ command: 'deleteBranch', repo: view.currentRepo, branchName: refName, forceDelete: <boolean>values[0], deleteOnRemotes: remotesWithBranch.length > 0 && <boolean>values[1] ? remotesWithBranch : [] }, strings.deletingBranch);
 
 				}, target);
 
@@ -144,21 +144,21 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				const inputs: DialogInput[] = [
 
-					{ type: DialogInputType.Checkbox, name: 'Set Upstream', value: true },
+					{ type: DialogInputType.Checkbox, name: strings.setUpstreamCheckbox, value: true },
 
 					{
 
 						type: DialogInputType.Radio,
 
-						name: 'Push Mode',
+						name: strings.pushModeInput,
 
 						options: [
 
-							{ name: 'Normal', value: GG.GitPushBranchMode.Normal },
+							{ name: strings.pushModeNormal, value: GG.GitPushBranchMode.Normal },
 
-							{ name: 'Force With Lease', value: GG.GitPushBranchMode.ForceWithLease },
+							{ name: strings.pushModeForceWithLease, value: GG.GitPushBranchMode.ForceWithLease },
 
-							{ name: 'Force', value: GG.GitPushBranchMode.Force }
+							{ name: strings.pushModeForce, value: GG.GitPushBranchMode.Force }
 
 						],
 
@@ -176,7 +176,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 						type: DialogInputType.Select,
 
-						name: 'Push to Remote(s)',
+						name: strings.pushToRemotesInput,
 
 						defaults: [view.getPushRemote(refName)],
 
@@ -190,7 +190,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 
 
-				dialog.showForm('Are you sure you want to push the branch <b><i>' + escapeHtml(refName) + '</i></b>' + (multipleRemotes ? '' : ' to the remote <b><i>' + escapeHtml(view.gitRemotes[0]) + '</i></b>') + '?', inputs, 'Yes, push', (values) => {
+				dialog.showForm(formatStr(strings.pushBranchConfirm, escapeHtml(refName), multipleRemotes ? '' : formatStr(strings.pushToRemoteOf, escapeHtml(view.gitRemotes[0]))), inputs, strings.yesPush, (values) => {
 
 					const remotes = multipleRemotes ? <string[]>values.shift() : [view.gitRemotes[0]];
 
@@ -212,7 +212,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 						willUpdateBranchConfig: setUpstream && remotes.length > 0 && (view.gitConfig === null || typeof view.gitConfig.branches[refName] === 'undefined' || view.gitConfig.branches[refName].remote !== remotes[remotes.length - 1])
 
-					}, 'Pushing Branch');
+					}, strings.pushingBranch);
 
 				}, target);
 
@@ -226,19 +226,19 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to update the local branch <b><i>' + escapeHtml(refName) + '</i></b> with the latest changes from <b><i>' + escapeHtml(view.gitRemotes[0] + '/' + refName) + '</i></b>?', [{
+				dialog.showForm(formatStr(strings.updateBranchConfirm, escapeHtml(refName), escapeHtml(view.gitRemotes[0] + '/' + refName)), [{
 
 					type: DialogInputType.Checkbox,
 
-					name: 'Force Update',
+					name: strings.forceUpdateCheckbox,
 
 					value: view.config.dialogDefaults.fetchIntoLocalBranch.forceFetch,
 
-					info: 'Force the local branch to be reset to the remote branch (discard local commits).'
+					info: strings.forceUpdateInfo
 
-				}], 'Yes, update', (values) => {
+				}], strings.yesUpdate, (values) => {
 
-					runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: view.gitRemotes[0], remoteBranch: refName, localBranch: refName, force: <boolean>values[0] }, 'Updating Branch');
+					runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: view.gitRemotes[0], remoteBranch: refName, localBranch: refName, force: <boolean>values[0] }, strings.updatingBranch);
 
 				}, target);
 
@@ -262,9 +262,9 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				if (config === null) return;
 
-				dialog.showCheckbox('Are you sure you want to create a Pull Request for branch <b><i>' + escapeHtml(refName) + '</i></b>?', 'Push branch before creating the Pull Request', true, 'Yes, create Pull Request', (push) => {
+				dialog.showCheckbox(formatStr(strings.createPullRequestConfirm, escapeHtml(refName)), strings.pushBeforePullRequestCheckbox, true, strings.yesCreatePullRequest, (push) => {
 
-					runAction({ command: 'createPullRequest', repo: view.currentRepo, config: config, sourceRemote: config.sourceRemote, sourceOwner: config.sourceOwner, sourceRepo: config.sourceRepo, sourceBranch: refName, push: push }, 'Creating Pull Request');
+					runAction({ command: 'createPullRequest', repo: view.currentRepo, config: config, sourceRemote: config.sourceRemote, sourceOwner: config.sourceOwner, sourceRepo: config.sourceRepo, sourceBranch: refName, push: push }, strings.creatingPullRequest);
 
 				}, target);
 
@@ -282,7 +282,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				runAction({ command: 'createArchive', repo: view.currentRepo, ref: refName }, 'Creating Archive');
+				runAction({ command: 'createArchive', repo: view.currentRepo, ref: refName }, strings.creatingArchive);
 
 			}
 
@@ -318,7 +318,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				sendMessage({ command: 'copyToClipboard', type: 'Branch Name', data: refName });
+				sendMessage({ command: 'copyToClipboard', type: strings.copyTypeBranchName, data: refName });
 
 			}
 
@@ -328,7 +328,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 		{
 
-			title: view.getPinnedBranches().includes(refName) ? 'Unpin Branch' : 'Pin Branch',
+			title: view.getPinnedBranches().includes(refName) ? strings.unpinBranch : strings.pinBranch,
 
 			visible: true,
 
@@ -379,7 +379,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				const checkoutCommit = () => runAction({ command: 'checkoutCommit', repo: view.currentRepo, commitHash: hash }, 'Checking out Commit');
+				const checkoutCommit = () => runAction({ command: 'checkoutCommit', repo: view.currentRepo, commitHash: hash }, strings.checkingOutCommit);
 
 				if (globalState.alwaysAcceptCheckoutCommit) {
 
@@ -387,7 +387,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				} else {
 
-					dialog.showCheckbox('Are you sure you want to checkout commit <b><i>' + abbrevCommit(hash) + '</i></b>? This will result in a \'detached HEAD\' state.', 'Always Accept', false, 'Yes, checkout', (alwaysAccept) => {
+					dialog.showCheckbox(formatStr(strings.checkoutCommitConfirm, abbrevCommit(hash)), strings.alwaysAcceptCheckbox, false, strings.yesCheckout, (alwaysAccept) => {
 
 						if (alwaysAccept) {
 
@@ -429,13 +429,13 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 						type: DialogInputType.Select,
 
-						name: 'Parent Hash',
+						name: strings.parentHashInput,
 
 						options: options,
 
 						default: '1',
 
-						info: 'Choose the parent hash on the main branch, to cherry pick the commit relative to.'
+						info: strings.parentHashCherryPickInfo
 
 					});
 
@@ -445,27 +445,27 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 					type: DialogInputType.Checkbox,
 
-					name: 'Record Origin',
+						name: strings.recordOriginCheckbox,
 
 					value: view.config.dialogDefaults.cherryPick.recordOrigin,
 
-					info: 'Record that this commit was the origin of the cherry pick by appending a line to the original commit message that states "(cherry picked from commit ...​)".'
+						info: strings.recordOriginInfo
 
 				}, {
 
 					type: DialogInputType.Checkbox,
 
-					name: 'No Commit',
+						name: strings.noCommitCheckbox,
 
 					value: view.config.dialogDefaults.cherryPick.noCommit,
 
-					info: 'Cherry picked changes will be staged but not committed, so that you can select and commit specific parts of this commit.'
+						info: strings.noCommitCherryPickInfo
 
 				});
 
 
 
-				dialog.showForm('Are you sure you want to cherry pick commit <b><i>' + abbrevCommit(hash) + '</i></b>?', inputs, 'Yes, cherry pick', (values) => {
+				dialog.showForm(formatStr(strings.cherryPickConfirm, abbrevCommit(hash)), inputs, strings.yesCherryPick, (values) => {
 
 					let parentIndex = isMerge ? parseInt(<string>values.shift()) : 0;
 
@@ -483,7 +483,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 						noCommit: <boolean>values[1]
 
-					}, 'Cherry picking Commit');
+					}, strings.cherryPickingCommit);
 
 				}, target);
 
@@ -507,17 +507,17 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 					}));
 
-					dialog.showSelect('Are you sure you want to revert merge commit <b><i>' + abbrevCommit(hash) + '</i></b>? Choose the parent hash on the main branch, to revert the commit relative to:', '1', options, 'Yes, revert', (parentIndex) => {
+					dialog.showSelect(formatStr(strings.revertMergeCommitConfirm, abbrevCommit(hash)), '1', options, strings.yesRevert, (parentIndex) => {
 
-						runAction({ command: 'revertCommit', repo: view.currentRepo, commitHash: hash, parentIndex: parseInt(parentIndex) }, 'Reverting Commit');
+						runAction({ command: 'revertCommit', repo: view.currentRepo, commitHash: hash, parentIndex: parseInt(parentIndex) }, strings.revertingCommit);
 
 					}, target);
 
 				} else {
 
-					dialog.showConfirmation('Are you sure you want to revert commit <b><i>' + abbrevCommit(hash) + '</i></b>?', 'Yes, revert', () => {
+					dialog.showConfirmation(formatStr(strings.revertCommitConfirm, abbrevCommit(hash)), strings.yesRevert, () => {
 
-						runAction({ command: 'revertCommit', repo: view.currentRepo, commitHash: hash, parentIndex: 0 }, 'Reverting Commit');
+						runAction({ command: 'revertCommit', repo: view.currentRepo, commitHash: hash, parentIndex: 0 }, strings.revertingCommit);
 
 					}, target);
 
@@ -533,9 +533,9 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showConfirmation('Are you sure you want to reset the last commit? This will keep all changes from the commit as uncommitted changes.', 'Yes, reset the last commit', () => {
+				dialog.showConfirmation(strings.resetLastCommitConfirm, strings.yesResetLastCommit, () => {
 
-					runAction({ command: 'undoLastCommit', repo: view.currentRepo }, 'Resetting Last Commit');
+					runAction({ command: 'undoLastCommit', repo: view.currentRepo }, strings.resettingLastCommit);
 
 				}, target);
 
@@ -559,9 +559,9 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showConfirmation('Are you sure you want to permanently drop commit <b><i>' + abbrevCommit(hash) + '</i></b>?' + (view.onlyFollowFirstParent ? '<br/><i>Note: By enabling "Only follow the first parent of commits", some commits may have been hidden from the Git Graph View that could affect the outcome of performing this action.</i>' : ''), 'Yes, drop', () => {
+				dialog.showConfirmation(formatStr(strings.dropCommitConfirm, abbrevCommit(hash)) + (view.onlyFollowFirstParent ? strings.dropCommitFirstParentNote : ''), strings.yesDrop, () => {
 
-					runAction({ command: 'dropCommit', repo: view.currentRepo, commitHash: hash }, 'Dropping Commit');
+					runAction({ command: 'dropCommit', repo: view.currentRepo, commitHash: hash }, strings.droppingCommit);
 
 				}, target);
 
@@ -595,17 +595,17 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showSelect('Are you sure you want to reset ' + (view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b> (the current branch)' : 'the current branch') + ' to commit <b><i>' + abbrevCommit(hash) + '</i></b>?', view.config.dialogDefaults.resetCommit.mode, [
+				dialog.showSelect(formatStr(strings.resetToCommitConfirm, view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain, abbrevCommit(hash)), view.config.dialogDefaults.resetCommit.mode, [
 
-					{ name: 'Soft - Keep all changes, but reset head', value: GG.GitResetMode.Soft },
+					{ name: strings.resetModeSoft, value: GG.GitResetMode.Soft },
 
-					{ name: 'Mixed - Keep working tree, but reset index', value: GG.GitResetMode.Mixed },
+					{ name: strings.resetModeMixed, value: GG.GitResetMode.Mixed },
 
-					{ name: 'Hard - Discard all changes', value: GG.GitResetMode.Hard }
+					{ name: strings.resetModeHard, value: GG.GitResetMode.Hard }
 
-				], 'Yes, reset', (mode) => {
+				], strings.yesReset, (mode) => {
 
-					runAction({ command: 'resetToCommit', repo: view.currentRepo, commit: hash, resetMode: <GG.GitResetMode>mode }, 'Resetting to Commit');
+					runAction({ command: 'resetToCommit', repo: view.currentRepo, commit: hash, resetMode: <GG.GitResetMode>mode }, strings.resettingToCommit);
 
 				}, target);
 
@@ -697,7 +697,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 					isGui: view.gitConfig.guiDiffTool !== null
 
-				}, 'Opening External Directory Diff');
+				}, strings.openingExternalDirDiff);
 
 			}
 
@@ -707,7 +707,7 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 		{
 
-			title: view.isCommitPinned(hash) ? 'Unpin Commit' : 'Pin Commit',
+			title: view.isCommitPinned(hash) ? strings.unpinCommit : strings.pinCommit,
 
 			visible: hash !== UNCOMMITTED,
 
@@ -756,9 +756,9 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 			onClick: () => {
 
-				dialog.showConfirmation('Are you sure you want to delete the remote branch <b><i>' + escapeHtml(refName) + '</i></b>?', 'Yes, delete', () => {
+				dialog.showConfirmation(formatStr(strings.deleteRemoteBranchConfirm, escapeHtml(refName)), strings.yesDelete, () => {
 
-					runAction({ command: 'deleteRemoteBranch', repo: view.currentRepo, branchName: branchName, remote: remote }, 'Deleting Remote Branch');
+					runAction({ command: 'deleteRemoteBranch', repo: view.currentRepo, branchName: branchName, remote: remote }, strings.deletingRemoteBranch);
 
 				}, target);
 
@@ -772,19 +772,19 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to fetch the remote branch <b><i>' + escapeHtml(refName) + '</i></b> into the local branch <b><i>' + escapeHtml(branchName) + '</i></b>?', [{
+				dialog.showForm(formatStr(strings.fetchIntoLocalConfirm, escapeHtml(refName), escapeHtml(branchName)), [{
 
 					type: DialogInputType.Checkbox,
 
-					name: 'Force Fetch',
+						name: strings.forceFetchCheckbox,
 
 					value: view.config.dialogDefaults.fetchIntoLocalBranch.forceFetch,
 
-					info: 'Force the local branch to be reset to this remote branch.'
+						info: strings.forceFetchInfo
 
-				}], 'Yes, fetch', (values) => {
+					}], strings.yesFetch, (values) => {
 
-					runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: remote, remoteBranch: branchName, localBranch: branchName, force: <boolean>values[0] }, 'Fetching Branch');
+						runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: remote, remoteBranch: branchName, localBranch: branchName, force: <boolean>values[0] }, strings.fetchingBranch);
 
 				}, target);
 
@@ -806,15 +806,15 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to pull the remote branch <b><i>' + escapeHtml(refName) + '</i></b> into ' + (view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b> (the current branch)' : 'the current branch') + '? If a merge is required:', [
+				dialog.showForm(formatStr(strings.pullBranchConfirm, escapeHtml(refName), view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain), [
 
-					{ type: DialogInputType.Checkbox, name: 'Create a new commit even if fast-forward is possible', value: view.config.dialogDefaults.pullBranch.noFastForward },
+					{ type: DialogInputType.Checkbox, name: strings.noFastForwardCheckbox, value: view.config.dialogDefaults.pullBranch.noFastForward },
 
-					{ type: DialogInputType.Checkbox, name: 'Squash Commits', value: view.config.dialogDefaults.pullBranch.squash, info: 'Create a single commit on the current branch whose effect is the same as merging this remote branch.' }
+					{ type: DialogInputType.Checkbox, name: strings.squashCommitsCheckbox, value: view.config.dialogDefaults.pullBranch.squash, info: strings.squashRemoteBranchInfo }
 
-				], 'Yes, pull', (values) => {
+				], strings.yesPull, (values) => {
 
-					runAction({ command: 'pullBranch', repo: view.currentRepo, branchName: branchName, remote: remote, createNewCommit: <boolean>values[0], squash: <boolean>values[1] }, 'Pulling Branch');
+					runAction({ command: 'pullBranch', repo: view.currentRepo, branchName: branchName, remote: remote, createNewCommit: <boolean>values[0], squash: <boolean>values[1] }, strings.pullingBranch);
 
 				}, target);
 
@@ -860,7 +860,7 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 					push: false
 
-				}, 'Creating Pull Request');
+				}, strings.creatingPullRequest);
 
 			}
 
@@ -876,7 +876,7 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 			onClick: () => {
 
-				runAction({ command: 'createArchive', repo: view.currentRepo, ref: refName }, 'Creating Archive');
+				runAction({ command: 'createArchive', repo: view.currentRepo, ref: refName }, strings.creatingArchive);
 
 			}
 
@@ -912,7 +912,7 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 			onClick: () => {
 
-				sendMessage({ command: 'copyToClipboard', type: 'Branch Name', data: refName });
+				sendMessage({ command: 'copyToClipboard', type: strings.copyTypeBranchName, data: refName });
 
 			}
 
@@ -922,7 +922,7 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 		{
 
-			title: view.getPinnedBranches().includes(branchName) ? 'Unpin Branch' : 'Pin Branch',
+			title: view.getPinnedBranches().includes(branchName) ? strings.unpinBranch : strings.pinBranch,
 
 			visible: true,
 
@@ -949,19 +949,19 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to apply the stash <b><i>' + escapeHtml(selector.substring(5)) + '</i></b>?', [{
+				dialog.showForm(formatStr(strings.applyStashConfirm, escapeHtml(selector.substring(5))), [{
 
 					type: DialogInputType.Checkbox,
 
-					name: 'Reinstate Index',
+					name: strings.reinstateIndexCheckbox,
 
 					value: view.config.dialogDefaults.applyStash.reinstateIndex,
 
-					info: 'Attempt to reinstate the indexed changes, in addition to the working tree\'s changes.'
+					info: strings.reinstateIndexInfo
 
-				}], 'Yes, apply stash', (values) => {
+				}], strings.yesApplyStash, (values) => {
 
-					runAction({ command: 'applyStash', repo: view.currentRepo, selector: selector, reinstateIndex: <boolean>values[0] }, 'Applying Stash');
+					runAction({ command: 'applyStash', repo: view.currentRepo, selector: selector, reinstateIndex: <boolean>values[0] }, strings.applyingStash);
 
 				}, target);
 
@@ -975,9 +975,9 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				dialog.showRefInput('Create a branch from stash <b><i>' + escapeHtml(selector.substring(5)) + '</i></b> with the name:', '', 'Create Branch', (branchName) => {
+				dialog.showRefInput(formatStr(strings.branchFromStashPrompt, escapeHtml(selector.substring(5))), '', strings.actionCreateBranch, (branchName) => {
 
-					runAction({ command: 'branchFromStash', repo: view.currentRepo, selector: selector, branchName: branchName }, 'Creating Branch');
+					runAction({ command: 'branchFromStash', repo: view.currentRepo, selector: selector, branchName: branchName }, strings.creatingBranch);
 
 				}, target);
 
@@ -991,19 +991,19 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to pop the stash <b><i>' + escapeHtml(selector.substring(5)) + '</i></b>?', [{
+				dialog.showForm(formatStr(strings.popStashConfirm, escapeHtml(selector.substring(5))), [{
 
 					type: DialogInputType.Checkbox,
 
-					name: 'Reinstate Index',
+					name: strings.reinstateIndexCheckbox,
 
 					value: view.config.dialogDefaults.popStash.reinstateIndex,
 
-					info: 'Attempt to reinstate the indexed changes, in addition to the working tree\'s changes.'
+					info: strings.reinstateIndexInfo
 
-				}], 'Yes, pop stash', (values) => {
+				}], strings.yesPopStash, (values) => {
 
-					runAction({ command: 'popStash', repo: view.currentRepo, selector: selector, reinstateIndex: <boolean>values[0] }, 'Popping Stash');
+					runAction({ command: 'popStash', repo: view.currentRepo, selector: selector, reinstateIndex: <boolean>values[0] }, strings.poppingStash);
 
 				}, target);
 
@@ -1017,9 +1017,9 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				dialog.showConfirmation('Are you sure you want to drop the stash <b><i>' + escapeHtml(selector.substring(5)) + '</i></b>?', 'Yes, drop', () => {
+				dialog.showConfirmation(formatStr(strings.dropStashConfirm, escapeHtml(selector.substring(5))), strings.yesDrop, () => {
 
-					runAction({ command: 'dropStash', repo: view.currentRepo, selector: selector }, 'Dropping Stash');
+					runAction({ command: 'dropStash', repo: view.currentRepo, selector: selector }, strings.droppingStash);
 
 				}, target);
 
@@ -1037,7 +1037,7 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				sendMessage({ command: 'copyToClipboard', type: 'Stash Name', data: selector });
+				sendMessage({ command: 'copyToClipboard', type: strings.copyTypeStashName, data: selector });
 
 			}
 
@@ -1049,7 +1049,7 @@ function getStashContextMenuActions(view: GitGraphView, target: DialogTarget & R
 
 			onClick: () => {
 
-				sendMessage({ command: 'copyToClipboard', type: 'Stash Hash', data: hash });
+				sendMessage({ command: 'copyToClipboard', type: strings.copyTypeStashHash, data: hash });
 
 			}
 
@@ -1074,7 +1074,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 			onClick: () => {
 
-				runAction({ command: 'tagDetails', repo: view.currentRepo, tagName: tagName, commitHash: hash }, 'Retrieving Tag Details');
+				runAction({ command: 'tagDetails', repo: view.currentRepo, tagName: tagName, commitHash: hash }, strings.retrievingTagDetails);
 
 			}
 
@@ -1086,15 +1086,15 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 			onClick: () => {
 
-				let message = 'Are you sure you want to delete the tag <b><i>' + escapeHtml(tagName) + '</i></b>?';
+				let message = formatStr(strings.deleteTagConfirm, escapeHtml(tagName));
 
 				if (view.gitRemotes.length > 1) {
 
-					let options = [{ name: 'Don\'t delete on any remote', value: '-1' }];
+					let options = [{ name: strings.dontDeleteOnRemote, value: '-1' }];
 
 					view.gitRemotes.forEach((remote, i) => options.push({ name: remote, value: i.toString() }));
 
-					dialog.showSelect(message + '<br>Do you also want to delete the tag on a remote:', '-1', options, 'Yes, delete', remoteIndex => {
+					dialog.showSelect(message + strings.alsoDeleteTagOnRemote, '-1', options, strings.yesDelete, remoteIndex => {
 
 						deleteTagAction(view, tagName, remoteIndex !== '-1' ? view.gitRemotes[parseInt(remoteIndex)] : null);
 
@@ -1102,7 +1102,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 				} else if (view.gitRemotes.length === 1) {
 
-					dialog.showCheckbox(message, 'Also delete on remote', false, 'Yes, delete', deleteOnRemote => {
+					dialog.showCheckbox(message, strings.alsoDeleteOnRemoteCheckbox, false, strings.yesDelete, deleteOnRemote => {
 
 						deleteTagAction(view, tagName, deleteOnRemote ? view.gitRemotes[0] : null);
 
@@ -1110,7 +1110,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 				} else {
 
-					dialog.showConfirmation(message, 'Yes, delete', () => {
+					dialog.showConfirmation(message, strings.yesDelete, () => {
 
 						deleteTagAction(view, tagName, null);
 
@@ -1144,7 +1144,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 						skipRemoteCheck: globalState.pushTagSkipRemoteCheck
 
-					}, 'Pushing Tag');
+					}, strings.pushingTag);
 
 				};
 
@@ -1152,7 +1152,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 				if (view.gitRemotes.length === 1) {
 
-					dialog.showConfirmation('Are you sure you want to push the tag <b><i>' + escapeHtml(tagName) + '</i></b> to the remote <b><i>' + escapeHtml(view.gitRemotes[0]) + '</i></b>?', 'Yes, push', () => {
+					dialog.showConfirmation(formatStr(strings.pushTagToRemoteConfirm, escapeHtml(tagName), escapeHtml(view.gitRemotes[0])), strings.yesPush, () => {
 
 						runPushTagAction([view.gitRemotes[0]]);
 
@@ -1164,7 +1164,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 					const options = view.gitRemotes.map((remote) => ({ name: remote, value: remote }));
 
-					dialog.showMultiSelect('Are you sure you want to push the tag <b><i>' + escapeHtml(tagName) + '</i></b>? Select the remote(s) to push the tag to:', defaults, options, 'Yes, push', (remotes) => {
+					dialog.showMultiSelect(formatStr(strings.pushTagSelectRemotes, escapeHtml(tagName)), defaults, options, strings.yesPush, (remotes) => {
 
 						runPushTagAction(remotes);
 
@@ -1186,7 +1186,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 			onClick: () => {
 
-				runAction({ command: 'createArchive', repo: view.currentRepo, ref: tagName }, 'Creating Archive');
+				runAction({ command: 'createArchive', repo: view.currentRepo, ref: tagName }, strings.creatingArchive);
 
 			}
 
@@ -1200,7 +1200,7 @@ function getTagContextMenuActions(view: GitGraphView, isAnnotated: boolean, targ
 
 			onClick: () => {
 
-				sendMessage({ command: 'copyToClipboard', type: 'Tag Name', data: tagName });
+				sendMessage({ command: 'copyToClipboard', type: strings.copyTypeTagName, data: tagName });
 
 			}
 
@@ -1225,15 +1225,15 @@ function getUncommittedChangesContextMenuActions(view: GitGraphView, target: Dia
 
 			onClick: () => {
 
-				dialog.showForm('Are you sure you want to stash the <b>uncommitted changes</b>?', [
+				dialog.showForm(strings.stashUncommittedConfirm, [
 
-					{ type: DialogInputType.Text, name: 'Message', default: '', placeholder: 'Optional' },
+					{ type: DialogInputType.Text, name: strings.messageInput, default: '', placeholder: strings.optionalPlaceholder },
 
-					{ type: DialogInputType.Checkbox, name: 'Include Untracked', value: view.config.dialogDefaults.stashUncommittedChanges.includeUntracked, info: 'Include all untracked files in the stash, and then clean them from the working directory.' }
+					{ type: DialogInputType.Checkbox, name: strings.includeUntrackedCheckbox, value: view.config.dialogDefaults.stashUncommittedChanges.includeUntracked, info: strings.includeUntrackedInfo }
 
-				], 'Yes, stash', (values) => {
+				], strings.yesStash, (values) => {
 
-					runAction({ command: 'pushStash', repo: view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[1] }, 'Stashing uncommitted changes');
+					runAction({ command: 'pushStash', repo: view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[1] }, strings.stashingUncommitted);
 
 				}, target);
 
@@ -1251,15 +1251,15 @@ function getUncommittedChangesContextMenuActions(view: GitGraphView, target: Dia
 
 			onClick: () => {
 
-				dialog.showSelect('Are you sure you want to reset the <b>uncommitted changes</b> to <b>HEAD</b>?', view.config.dialogDefaults.resetUncommitted.mode, [
+				dialog.showSelect(strings.resetUncommittedConfirm, view.config.dialogDefaults.resetUncommitted.mode, [
 
-					{ name: 'Mixed - Keep working tree, but reset index', value: GG.GitResetMode.Mixed },
+					{ name: strings.resetModeMixed, value: GG.GitResetMode.Mixed },
 
-					{ name: 'Hard - Discard all changes', value: GG.GitResetMode.Hard }
+					{ name: strings.resetModeHard, value: GG.GitResetMode.Hard }
 
-				], 'Yes, reset', (mode) => {
+				], strings.yesReset, (mode) => {
 
-					runAction({ command: 'resetToCommit', repo: view.currentRepo, commit: 'HEAD', resetMode: <GG.GitResetMode>mode }, 'Resetting uncommitted changes');
+					runAction({ command: 'resetToCommit', repo: view.currentRepo, commit: 'HEAD', resetMode: <GG.GitResetMode>mode }, strings.resettingUncommitted);
 
 				}, target);
 
@@ -1273,9 +1273,9 @@ function getUncommittedChangesContextMenuActions(view: GitGraphView, target: Dia
 
 			onClick: () => {
 
-				dialog.showCheckbox('Are you sure you want to clean all untracked files?', 'Clean untracked directories', true, 'Yes, clean', directories => {
+				dialog.showCheckbox(strings.cleanUntrackedConfirm, strings.cleanDirectoriesCheckbox, true, strings.yesClean, directories => {
 
-					runAction({ command: 'cleanUntrackedFiles', repo: view.currentRepo, directories: directories }, 'Cleaning untracked files');
+					runAction({ command: 'cleanUntrackedFiles', repo: view.currentRepo, directories: directories }, strings.cleaningUntracked);
 
 				}, target);
 
@@ -1344,7 +1344,7 @@ function getViewIssueAction(view: GitGraphView, refName: string, visible: boolea
 
 			if (issueLinks.length > 1) {
 
-				dialog.showSelect('Select which issue you want to view for this branch:', '0', issueLinks.map((issueLink, i) => ({ name: issueLink.displayText, value: i.toString() })), 'View Issue', (value) => {
+				dialog.showSelect(strings.selectIssueToView, '0', issueLinks.map((issueLink, i) => ({ name: issueLink.displayText, value: i.toString() })), strings.menuViewIssue, (value) => {
 
 					sendMessage({ command: 'openExternalUrl', url: issueLinks[parseInt(value)].url });
 

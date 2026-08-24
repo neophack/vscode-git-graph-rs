@@ -358,6 +358,23 @@ class Dialog {
 	}
 
 	/**
+	 * Show a warning dialog about an operation that can cause the user to lose data, requiring
+	 * them to explicitly acknowledge the risk before the operation is performed.
+	 * @param riskHtml The HTML describing the data loss risk of the operation.
+	 * @param actioned A callback to be invoked if the user accepts the risk.
+	 */
+	public showDataLossWarning(riskHtml: string, actioned: () => void) {
+		this.show(DialogType.Form,
+			'<span class="dialogAlert warning">' + SVG_ICONS.alert + escapeHtml(strings.dataLossDialogTitle) + '</span>' +
+			'<br><span class="messageContent">' + riskHtml + '</span>' +
+			'<div class="dataLossMascot"><img src="' + DATA_LOSS_WARNING_IMAGE + '" alt="' + escapeHtml(strings.dataLossDialogTitle) + '"><div class="dataLossMascotCaption">' + escapeHtml(strings.dataLossMascotCaption) + '</div></div>',
+			strings.dataLossContinue, strings.dialogCancel, () => {
+				this.close();
+				actioned();
+			}, null, null);
+	}
+
+	/**
 	 * Show a dialog to indicate that an action is currently running.
 	 * @param action A short name that identifies the action that is running.
 	 */
@@ -740,7 +757,7 @@ class CustomSelect {
 	 */
 	private renderCurrentValue() {
 		if (this.currentElem === null) return;
-		const value = formatCommaSeparatedList(this.data.options.filter((_, index) => this.selected[index]).map((option) => option.name)) || 'None';
+		const value = formatCommaSeparatedList(this.data.options.filter((_, index) => this.selected[index]).map((option) => option.name)) || strings.noneValue;
 		this.currentElem.title = value;
 		this.currentElem.innerHTML = escapeHtml(value);
 	}

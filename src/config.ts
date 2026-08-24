@@ -303,10 +303,23 @@ class Config {
 	}
 
 	/**
-	 * Get the value of the `git-graph-rs.interfaceLanguage` Extension Setting.
+	 * Get the raw value of the `git-graph-rs.interfaceLanguage` Extension Setting (including
+	 * "auto", which defers the language to Visual Studio Code's display language).
+	 */
+	get interfaceLanguageSetting(): 'auto' | 'en' | 'zh-cn' {
+		const value = this.config.get<string>('interfaceLanguage', 'auto');
+		return value === 'en' || value === 'zh-cn' ? value : 'auto';
+	}
+
+	/**
+	 * Get the interface language to render the Git Graph interface with: the explicitly configured
+	 * `git-graph-rs.interfaceLanguage` Extension Setting, or — when it is set to "auto" (the
+	 * default) — the language Visual Studio Code itself is displayed in.
 	 */
 	get interfaceLanguage(): 'en' | 'zh-cn' {
-		return this.config.get<string>('interfaceLanguage', 'en') === 'zh-cn' ? 'zh-cn' : 'en';
+		const setting = this.interfaceLanguageSetting;
+		if (setting !== 'auto') return setting;
+		return vscode.env.language.toLowerCase().startsWith('zh') ? 'zh-cn' : 'en';
 	}
 
 	/**

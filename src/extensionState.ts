@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Avatar, AvatarCache } from './avatarManager';
 import { getConfig } from './config';
+import { t } from './i18n';
 import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from './types';
 import { GitExecutable, getPathFromStr } from './utils';
 import { Disposable } from './utils/disposable';
@@ -381,7 +382,7 @@ export class ExtensionState extends Disposable {
 		const reviews = this.getCodeReviews();
 
 		if (typeof reviews[repo] === 'undefined' || typeof reviews[repo][id] === 'undefined') {
-			return Promise.resolve('The Code Review could not be found.');
+			return Promise.resolve(t('codeReviewNotFound'));
 		}
 
 		if (remainingFiles.length > 0) {

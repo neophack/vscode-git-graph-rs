@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DEFAULT_REPO_STATE, ExtensionState } from './extensionState';
+import { t } from './i18n';
 import { Logger } from './logger';
 import { BooleanOverride, ErrorInfo, FileViewType, GitRepoSet, GitRepoState, PinnedCommit, PullRequestConfig, PullRequestConfigBase, PullRequestProvider, RepoCommitOrdering } from './types';
 import { evalPromises, getPathFromStr, getPathFromUri, getRepoName, pathWithTrailingSlash, realpath, showErrorMessage, showInformationMessage } from './utils';
@@ -701,21 +702,22 @@ export class RepoManager extends Disposable {
 			if (state && file !== null && typeof file.exportedAt === 'number' && file.exportedAt > state.lastImportAt) {
 				const validationError = validateExternalConfigFile(file);
 				if (validationError === null) {
-					const action = isRepoNew ? 'Yes' : await vscode.window.showInformationMessage('A newer Git Graph Repository Configuration File has been detected for the repository "' + (state.name || getRepoName(repo)) + '". Would you like to override your current repository configuration with the new changes?', 'Yes', 'No');
+					const yes = t('yesButton');
+					const action = isRepoNew ? yes : await vscode.window.showInformationMessage(t('newerRepoConfigDetected', state.name || getRepoName(repo)), yes, t('noButton'));
 					if (this.isKnownRepo(repo) && action) {
 						const state = this.repos[repo];
-						if (action === 'Yes') {
+						if (action === yes) {
 							applyExternalConfigFile(file, state);
 						}
 						state.lastImportAt = file.exportedAt;
 						this.extensionState.saveRepos(this.repos);
-						if (!isRepoNew && action === 'Yes') {
-							showInformationMessage('Git Graph Repository Configuration was successfully imported for the repository "' + (state.name || getRepoName(repo)) + '".');
+						if (!isRepoNew && action === yes) {
+							showInformationMessage(t('repoConfigImported', state.name || getRepoName(repo)));
 						}
 						changes = true;
 					}
 				} else {
-					showErrorMessage('The value for "' + validationError + '" in the configuration file "' + getPathFromStr(path.join(repo, '.vscode', 'git-graph-rs.json')) + '" is invalid.');
+					showErrorMessage(t('repoConfigInvalidValue', validationError, getPathFromStr(path.join(repo, '.vscode', 'git-graph-rs.json'))));
 				}
 			}
 		} catch (_) { }
@@ -888,13 +890,13 @@ function writeExternalConfigFile(repo: string, file: ExternalRepoConfig.File) {
 				const configPath = path.join(vscodePath, 'git-graph-rs.json');
 				fs.writeFile(configPath, JSON.stringify(file, null, 4), (err) => {
 					if (err) {
-						reject('Failed to write the Git Graph Repository Configuration File to "' + getPathFromStr(configPath) + '".');
+						reject(t('writeRepoConfigFailed', getPathFromStr(configPath)));
 					} else {
-						resolve('Successfully exported the Git Graph Repository Configuration to "' + getPathFromStr(configPath) + '".');
+						resolve(t('repoConfigExported', getPathFromStr(configPath)));
 					}
 				});
 			} else {
-				reject('An unexpected error occurred while checking if the "' + getPathFromStr(vscodePath) + '" directory exists. This directory is used to store the Git Graph Repository Configuration file.');
+				reject(t('checkVscodeDirFailed', getPathFromStr(vscodePath)));
 			}
 		});
 	});

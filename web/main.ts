@@ -229,7 +229,7 @@ class GitGraphView {
 				command: 'openTerminal',
 				repo: this.currentRepo,
 				name: this.gitRepos[this.currentRepo].name || getRepoName(this.currentRepo)
-			}, 'Opening Terminal');
+			}, strings.openingTerminal);
 		});
 		const filterBtn = document.getElementById('filterBtn');
 		if (filterBtn !== null) {
@@ -626,7 +626,7 @@ class GitGraphView {
 			this.loadMoreCommits();
 		} else {
 			this.pendingScrollCommitHash = null;
-			dialog.showError('Pinned Commit', 'The pinned commit could not be found in this repository\'s loaded history. Clear the branch / path filters and try again.', 'Close', null);
+			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInLoadedHistory, strings.dialogClose, null);
 		}
 	}
 
@@ -639,7 +639,7 @@ class GitGraphView {
 		if (this.pendingScrollCommitHash !== msg.hash) return;
 		if (msg.count === null) {
 			this.pendingScrollCommitHash = null;
-			dialog.showError('Pinned Commit', 'The pinned commit could not be found in this repository. It may have been rebased away, or excluded by the branch / path filters.', 'Close', null);
+			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInRepo, strings.dialogClose, null);
 			return;
 		}
 		// Jump straight to the commit: load everything up to it (plus a margin), then
@@ -724,7 +724,7 @@ class GitGraphView {
 			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo);
 			this.requestPullRequestStatus();
 		} else {
-			this.displayLoadDataError('Unable to load Repository Info', msg.error);
+			this.displayLoadDataError(strings.errLoadRepoInfo, msg.error);
 		}
 	}
 
@@ -789,9 +789,9 @@ class GitGraphView {
 			}
 		} else {
 			const error = this.gitBranches.length === 0 && msg.error.indexOf('bad revision \'HEAD\'') > -1
-				? 'There are no commits in this repository.'
+				? strings.noCommitsInRepo
 				: msg.error;
-			this.displayLoadDataError('Unable to load Commits', error);
+			this.displayLoadDataError(strings.errLoadCommits, error);
 		}
 	}
 
@@ -812,7 +812,7 @@ class GitGraphView {
 		this.currentRepoRefreshState.inProgress = false;
 		this.loadViewTo = null;
 		this.renderRefreshButton();
-		dialog.showError(message, reason, 'Retry', () => {
+		dialog.showError(message, reason, strings.retryAction, () => {
 			this.refresh(true);
 		});
 	}
@@ -839,11 +839,11 @@ class GitGraphView {
 	public getBranchOptions(includeShowAll?: boolean): ReadonlyArray<DialogSelectInputOption> {
 		const options: DialogSelectInputOption[] = [];
 		if (includeShowAll) {
-			options.push({ name: 'Show All', value: SHOW_ALL_BRANCHES });
+			options.push({ name: strings.settingsShowAll, value: SHOW_ALL_BRANCHES });
 		}
 		options.push({ name: 'HEAD', value: 'HEAD' });
 		for (let i = 0; i < this.config.customBranchGlobPatterns.length; i++) {
-			options.push({ name: 'Glob: ' + this.config.customBranchGlobPatterns[i].name, value: this.config.customBranchGlobPatterns[i].glob });
+			options.push({ name: formatStr(strings.globPrefix, this.config.customBranchGlobPatterns[i].name), value: this.config.customBranchGlobPatterns[i].glob });
 		}
 		for (let i = 0; i < this.gitBranches.length; i++) {
 			options.push({ name: this.gitBranches[i].indexOf('remotes/') === 0 ? this.gitBranches[i].substring(8) : this.gitBranches[i], value: this.gitBranches[i] });
@@ -852,7 +852,7 @@ class GitGraphView {
 	}
 	public getAuthorOptions(): ReadonlyArray<DialogSelectInputOption> {
 		const options: DialogSelectInputOption[] = [];
-		options.push({ name: 'All', value: SHOW_ALL_BRANCHES });
+		options.push({ name: strings.authorsAll, value: SHOW_ALL_BRANCHES });
 		if (this.gitConfig && this.gitConfig.authors) {
 			for (let i = 0; i < this.gitConfig.authors.length; i++) {
 				const author = this.gitConfig.authors[i];
@@ -1229,7 +1229,7 @@ class GitGraphView {
 		if (chip.dataset.type === 'commit') {
 			if (this.commitLookup[chip.dataset.value] === undefined) {
 				if (!this.moreCommitsAvailable) {
-					dialog.showError('Pinned Commit', 'The pinned commit is not currently in the view. Load more commits or clear the branch / path filters.', 'Close', null);
+					dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInView, strings.dialogClose, null);
 					return;
 				}
 				// The pinned commit is beyond the currently loaded commits: ask the extension how
@@ -1408,9 +1408,9 @@ class GitGraphView {
 
 		const commitDot = commit.hash === this.commitHead
 			? '<span class="commitHeadDot" title="' + (branchCheckedOutAtCommit !== null
-				? 'The branch ' + escapeHtml('"' + branchCheckedOutAtCommit + '"') + ' is currently checked out at this commit'
-				: 'This commit is currently checked out'
-			) + '."></span>'
+				? escapeHtml(formatStr(strings.checkedOutBranchAtCommit, branchCheckedOutAtCommit))
+				: strings.commitCurrentlyCheckedOut
+			) + '"></span>'
 			: '';
 		const pinnedBadge = pinnedCommitHashes.has(commit.hash)
 			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
@@ -1492,10 +1492,10 @@ class GitGraphView {
 		const ctx = this.createRowRenderingContext();
 		const colVisibility = ctx.colVisibility;
 
-		let html = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">Graph</th><th class="tableColHeader" data-col="1">Description</th>' +
-			(colVisibility.date ? '<th class="tableColHeader dateCol" data-col="2">Date</th>' : '') +
-			(colVisibility.author ? '<th class="tableColHeader authorCol" data-col="3">Author</th>' : '') +
-			(colVisibility.commit ? '<th class="tableColHeader commitCol" data-col="4">Commit</th>' : '') +
+		let html = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">' + strings.columnGraph + '</th><th class="tableColHeader" data-col="1">' + strings.columnDescription + '</th>' +
+			(colVisibility.date ? '<th class="tableColHeader dateCol" data-col="2">' + strings.columnDate + '</th>' : '') +
+			(colVisibility.author ? '<th class="tableColHeader authorCol" data-col="3">' + strings.columnAuthor + '</th>' : '') +
+			(colVisibility.commit ? '<th class="tableColHeader commitCol" data-col="4">' + strings.columnCommit + '</th>' : '') +
 			'</tr>';
 
 		// A full re-render can shrink the commit list (e.g. applying a path filter). A stale scroll
@@ -1632,7 +1632,7 @@ class GitGraphView {
 		if (this.moreCommitsAvailable) {
 			// Restore the "Load More Commits" button (the paging request replaced the footer with
 			// a loading indicator)
-			this.footerElem.innerHTML = '<div id="loadMoreCommitsBtn" class="roundedBtn">Load More Commits</div>';
+			this.footerElem.innerHTML = '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>';
 			document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
 				this.loadMoreCommits();
 			});
@@ -1738,13 +1738,13 @@ class GitGraphView {
 			urls: true
 		});
 		dialog.showMessage(
-			'Tag <b><i>' + escapeHtml(tagName) + '</i></b><br><span class="messageContent">' +
-			'<b>Object: </b>' + escapeHtml(details.hash) + '<br>' +
-			'<b>Commit: </b>' + escapeHtml(commitHash) + '<br>' +
+			formatStr(strings.tagDetailsTitle, escapeHtml(tagName)) + '<br><span class="messageContent">' +
+			strings.tagDetailsObject + escapeHtml(details.hash) + '<br>' +
+			strings.tagDetailsCommit + escapeHtml(commitHash) + '<br>' +
 			// A lightweight tag has no tagger of its own, so there is no tagger or date to show.
 			(details.taggerName !== '' || details.taggerEmail !== ''
-				? '<b>Tagger: </b>' + escapeHtml(details.taggerName) + ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(details.taggerEmail) + '" tabindex="-1">' + escapeHtml(details.taggerEmail) + '</a>&gt;' + (details.signature !== null ? generateSignatureHtml(details.signature) : '') + '<br>' +
-				  '<b>Date: </b>' + formatLongDate(details.taggerDate) + '<br>'
+				? strings.tagDetailsTagger + escapeHtml(details.taggerName) + ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(details.taggerEmail) + '" tabindex="-1">' + escapeHtml(details.taggerEmail) + '</a>&gt;' + (details.signature !== null ? generateSignatureHtml(details.signature) : '') + '<br>' +
+				  strings.tagDetailsDate + formatLongDate(details.taggerDate) + '<br>'
 				: '') +
 			'<br>' +
 			textFormatter.format(details.message) +
@@ -1976,7 +1976,7 @@ window.addEventListener('load', () => {
 		} catch (error) {
 			// Isolate handler errors so that a malformed message cannot break the handling of
 			// subsequent messages
-			dialog.showError('Git Graph RS', 'An unexpected error occurred while handling a message from the extension: ' + error, null, null);
+			dialog.showError('Git Graph RS', formatStr(strings.unexpectedErrorHandlingMessage, String(error)), null, null);
 		}
 	});
 
@@ -1987,40 +1987,40 @@ window.addEventListener('load', () => {
 	function handleResponseMessage(msg: GG.ResponseMessage) {
 		switch (msg.command) {
 			case 'addRemote':
-				refreshOrDisplayError(msg.error, 'Unable to Add Remote', true);
+				refreshOrDisplayError(msg.error, strings.errAddRemote, true);
 				break;
 			case 'addTag':
 				if (msg.pushToRemote !== null && msg.errors.length === 2 && msg.errors[0] === null && isExtensionErrorInfo(msg.errors[1], GG.ErrorInfoExtensionPrefix.PushTagCommitNotOnRemote)) {
 					gitGraph.refresh(false);
 					handleResponsePushTagCommitNotOnRemote(msg.repo, msg.tagName, [msg.pushToRemote], msg.commitHash, msg.errors[1]!);
 				} else {
-					refreshAndDisplayErrors(msg.errors, 'Unable to Add Tag');
+					refreshAndDisplayErrors(msg.errors, strings.errAddTag);
 				}
 				break;
 			case 'applyStash':
-				refreshOrDisplayError(msg.error, 'Unable to Apply Stash');
+				refreshOrDisplayError(msg.error, strings.errApplyStash);
 				break;
 			case 'branchFromStash':
-				refreshOrDisplayError(msg.error, 'Unable to Create Branch from Stash');
+				refreshOrDisplayError(msg.error, strings.errBranchFromStash);
 				break;
 			case 'checkoutBranch':
-				refreshAndDisplayErrors(msg.errors, 'Unable to Checkout Branch' + (msg.pullAfterwards !== null ? ' & Pull Changes' : ''));
+				refreshAndDisplayErrors(msg.errors, msg.pullAfterwards !== null ? strings.errCheckoutBranchPull : strings.errCheckoutBranch);
 				break;
 			case 'checkoutCommit':
-				refreshOrDisplayError(msg.error, 'Unable to Checkout Commit');
+				refreshOrDisplayError(msg.error, strings.errCheckoutCommit);
 				break;
 			case 'cherrypickCommit':
-				refreshAndDisplayErrors(msg.errors, 'Unable to Cherry Pick Commit');
+				refreshAndDisplayErrors(msg.errors, strings.errCherryPick);
 				break;
 			case 'cleanUntrackedFiles':
-				refreshOrDisplayError(msg.error, 'Unable to Clean Untracked Files');
+				refreshOrDisplayError(msg.error, strings.errCleanUntracked);
 				break;
 			case 'commitDetails':
 				if (msg.commitDetails !== null) {
 					showCommitDetails(gitGraph, msg.commitDetails, createFileTree(gitGraph, msg.commitDetails.fileChanges, msg.codeReview), msg.avatar, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
 				} else {
 					closeCommitDetails(gitGraph, true);
-					dialog.showError('Unable to load Commit Details', msg.error, null, null);
+					dialog.showError(strings.errCommitDetails, msg.error, null, null);
 				}
 				break;
 			case 'compareCommits':
@@ -2028,23 +2028,23 @@ window.addEventListener('load', () => {
 					showCommitComparison(gitGraph, msg.commitHash, msg.compareWithHash, msg.fileChanges, createFileTree(gitGraph, msg.fileChanges, msg.codeReview), msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
 				} else {
 					closeCommitComparison(gitGraph, true);
-					dialog.showError('Unable to load Commit Comparison', msg.error, null, null);
+					dialog.showError(strings.errCommitComparison, msg.error, null, null);
 				}
 				break;
 			case 'copyFilePath':
-				finishOrDisplayError(msg.error, 'Unable to Copy File Path to Clipboard');
+				finishOrDisplayError(msg.error, strings.errCopyFilePath);
 				break;
 			case 'copyToClipboard':
-				finishOrDisplayError(msg.error, 'Unable to Copy ' + msg.type + ' to Clipboard');
+				finishOrDisplayError(msg.error, formatStr(strings.errCopyToClipboard, msg.type));
 				break;
 			case 'createArchive':
-				finishOrDisplayError(msg.error, 'Unable to Create Archive', true);
+				finishOrDisplayError(msg.error, strings.errCreateArchive, true);
 				break;
 			case 'createBranch':
-				refreshAndDisplayErrors(msg.errors, 'Unable to Create Branch');
+				refreshAndDisplayErrors(msg.errors, strings.errCreateBranch);
 				break;
 			case 'createPullRequest':
-				finishOrDisplayErrors(msg.errors, 'Unable to Create Pull Request', () => {
+				finishOrDisplayErrors(msg.errors, strings.errCreatePullRequest, () => {
 					if (msg.push) {
 						gitGraph.refresh(false);
 					}
@@ -2054,34 +2054,34 @@ window.addEventListener('load', () => {
 				handleResponseDeleteBranch(msg);
 				break;
 			case 'deleteRemote':
-				refreshOrDisplayError(msg.error, 'Unable to Delete Remote', true);
+				refreshOrDisplayError(msg.error, strings.errDeleteRemote, true);
 				break;
 			case 'deleteRemoteBranch':
-				refreshOrDisplayError(msg.error, 'Unable to Delete Remote Branch');
+				refreshOrDisplayError(msg.error, strings.errDeleteRemoteBranch);
 				break;
 			case 'deleteTag':
-				refreshOrDisplayError(msg.error, 'Unable to Delete Tag');
+				refreshOrDisplayError(msg.error, strings.errDeleteTag);
 				break;
 			case 'deleteUserDetails':
-				finishOrDisplayErrors(msg.errors, 'Unable to Remove Git User Details', () => gitGraph.requestLoadConfig(), true);
+				finishOrDisplayErrors(msg.errors, strings.errDeleteUserDetails, () => gitGraph.requestLoadConfig(), true);
 				break;
 			case 'dropCommit':
-				refreshOrDisplayError(msg.error, 'Unable to Drop Commit');
+				refreshOrDisplayError(msg.error, strings.errDropCommit);
 				break;
 			case 'dropStash':
-				refreshOrDisplayError(msg.error, 'Unable to Drop Stash');
+				refreshOrDisplayError(msg.error, strings.errDropStash);
 				break;
 			case 'editRemote':
-				refreshOrDisplayError(msg.error, 'Unable to Save Changes to Remote', true);
+				refreshOrDisplayError(msg.error, strings.errEditRemote, true);
 				break;
 			case 'editUserDetails':
-				finishOrDisplayErrors(msg.errors, 'Unable to Save Git User Details', () => gitGraph.requestLoadConfig(), true);
+				finishOrDisplayErrors(msg.errors, strings.errEditUserDetails, () => gitGraph.requestLoadConfig(), true);
 				break;
 			case 'exportRepoConfig':
-				refreshOrDisplayError(msg.error, 'Unable to Export Repository Configuration');
+				refreshOrDisplayError(msg.error, strings.errExportRepoConfig);
 				break;
 			case 'fetch':
-				refreshOrDisplayError(msg.error, 'Unable to Fetch from Remote(s)', false);
+				refreshOrDisplayError(msg.error, strings.errFetch, false);
 				break;
 			case 'fetchAvatar':
 				imageResizer.resize(msg.image, (resizedImage) => {
@@ -2089,7 +2089,7 @@ window.addEventListener('load', () => {
 				});
 				break;
 			case 'fetchIntoLocalBranch':
-				refreshOrDisplayError(msg.error, 'Unable to Fetch into Local Branch');
+				refreshOrDisplayError(msg.error, strings.errFetchIntoLocalBranch);
 				break;
 			case 'commitBodies':
 				gitGraph.processCommitBodies(msg);
@@ -2119,46 +2119,46 @@ window.addEventListener('load', () => {
 				finishOrDisplayError(msg.error, strings.settingsUnableToSaveSetting);
 				break;
 			case 'merge':
-				refreshOrDisplayError(msg.error, 'Unable to Merge ' + msg.actionOn);
+				refreshOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn)));
 				break;
 			case 'openExtensionSettings':
-				finishOrDisplayError(msg.error, 'Unable to Open Extension Settings');
+				finishOrDisplayError(msg.error, strings.errOpenExtensionSettings);
 				break;
 			case 'openLogFile':
-				finishOrDisplayError(msg.error, 'Unable to Open the Session Log');
+				finishOrDisplayError(msg.error, strings.errOpenLogFile);
 				break;
 			case 'openExternalDirDiff':
-				finishOrDisplayError(msg.error, 'Unable to Open External Directory Diff', true);
+				finishOrDisplayError(msg.error, strings.errOpenExternalDirDiff, true);
 				break;
 			case 'openExternalUrl':
-				finishOrDisplayError(msg.error, 'Unable to Open External URL');
+				finishOrDisplayError(msg.error, strings.errOpenExternalUrl);
 				break;
 			case 'openFile':
-				finishOrDisplayError(msg.error, 'Unable to Open File');
+				finishOrDisplayError(msg.error, strings.errOpenFile);
 				break;
 			case 'openTerminal':
-				finishOrDisplayError(msg.error, 'Unable to Open Terminal', true);
+				finishOrDisplayError(msg.error, strings.errOpenTerminal, true);
 				break;
 			case 'popStash':
-				refreshOrDisplayError(msg.error, 'Unable to Pop Stash');
+				refreshOrDisplayError(msg.error, strings.errPopStash);
 				break;
 			case 'pruneRemote':
-				refreshOrDisplayError(msg.error, 'Unable to Prune Remote');
+				refreshOrDisplayError(msg.error, strings.errPruneRemote);
 				break;
 			case 'pullBranch':
-				refreshOrDisplayError(msg.error, 'Unable to Pull Branch');
+				refreshOrDisplayError(msg.error, strings.errPullBranch);
 				break;
 			case 'pushBranch':
-				refreshAndDisplayErrors(msg.errors, 'Unable to Push Branch', msg.willUpdateBranchConfig);
+				refreshAndDisplayErrors(msg.errors, strings.errPushBranch, msg.willUpdateBranchConfig);
 				break;
 			case 'pushStash':
-				refreshOrDisplayError(msg.error, 'Unable to Stash Uncommitted Changes');
+				refreshOrDisplayError(msg.error, strings.errPushStash);
 				break;
 			case 'pushTag':
 				if (msg.errors.length === 1 && isExtensionErrorInfo(msg.errors[0], GG.ErrorInfoExtensionPrefix.PushTagCommitNotOnRemote)) {
 					handleResponsePushTagCommitNotOnRemote(msg.repo, msg.tagName, msg.remotes, msg.commitHash, msg.errors[0]!);
 				} else {
-					refreshAndDisplayErrors(msg.errors, 'Unable to Push Tag');
+					refreshAndDisplayErrors(msg.errors, strings.errPushTag);
 				}
 				break;
 			case 'rebase':
@@ -2169,92 +2169,93 @@ window.addEventListener('load', () => {
 						gitGraph.refresh(false);
 					}
 				} else {
-					dialog.showError('Unable to Rebase current branch on ' + msg.actionOn, msg.error, null, null);
+					dialog.showError(formatStr(strings.errRebaseActionOn, getRebaseActionOnName(msg.actionOn)), msg.error, null, null);
 				}
 				break;
 			case 'refresh':
 				gitGraph.refresh(false);
 				break;
 			case 'renameBranch':
-				refreshOrDisplayError(msg.error, 'Unable to Rename Branch');
+				refreshOrDisplayError(msg.error, strings.errRenameBranch);
 				break;
 			case 'resetFileToRevision':
-				refreshOrDisplayError(msg.error, 'Unable to Reset File to Revision');
+				refreshOrDisplayError(msg.error, strings.errResetFileToRevision);
 				break;
 			case 'resetToCommit':
-				refreshOrDisplayError(msg.error, 'Unable to Reset to Commit');
+				refreshOrDisplayError(msg.error, strings.errResetToCommit);
 				break;
 			case 'undoLastCommit':
-				refreshOrDisplayError(msg.error, 'Unable to Reset Last Commit');
+				refreshOrDisplayError(msg.error, strings.errResetLastCommit);
 				break;
 
 			case 'revertCommit':
-				refreshOrDisplayError(msg.error, 'Unable to Revert Commit');
+				refreshOrDisplayError(msg.error, strings.errRevertCommit);
 				break;
 			case 'editCommitMessage':
-				refreshOrDisplayError(msg.error, 'Unable to Edit Commit Message');
+				refreshOrDisplayError(msg.error, strings.errEditCommitMessage);
 				break;
 
 			case 'setGlobalViewState':
-				finishOrDisplayError(msg.error, 'Unable to save the Global View State');
+				finishOrDisplayError(msg.error, strings.errSaveGlobalViewState);
 				break;
 			case 'setWorkspaceViewState':
-				finishOrDisplayError(msg.error, 'Unable to save the Workspace View State');
+				finishOrDisplayError(msg.error, strings.errSaveWorkspaceViewState);
 				break;
 			case 'startCodeReview':
 				if (msg.error === null) {
 					startCodeReview(gitGraph, msg.commitHash, msg.compareWithHash, msg.codeReview);
 				} else {
-					dialog.showError('Unable to Start Code Review', msg.error, null, null);
+					dialog.showError(strings.errStartCodeReview, msg.error, null, null);
 				}
 				break;
 			case 'tagDetails':
 				if (msg.details !== null) {
 					gitGraph.renderTagDetails(msg.tagName, msg.commitHash, msg.details);
 				} else {
-					dialog.showError('Unable to retrieve Tag Details', msg.error, null, null);
+					dialog.showError(strings.errTagDetails, msg.error, null, null);
 				}
 				break;
 			case 'updateCodeReview':
 				if (msg.error !== null) {
-					dialog.showError('Unable to update Code Review', msg.error, null, null);
+					dialog.showError(strings.errUpdateCodeReview, msg.error, null, null);
 				}
 				break;
 			case 'viewDiff':
-				finishOrDisplayError(msg.error, 'Unable to View Diff');
+				finishOrDisplayError(msg.error, strings.errViewDiff);
 				break;
 			case 'viewDiffWithWorkingFile':
-				finishOrDisplayError(msg.error, 'Unable to View Diff with Working File');
+				finishOrDisplayError(msg.error, strings.errViewDiffWithWorkingFile);
 				break;
 			case 'viewFileAtRevision':
-				finishOrDisplayError(msg.error, 'Unable to View File at Revision');
+				finishOrDisplayError(msg.error, strings.errViewFileAtRevision);
 				break;
 			case 'viewScm':
-				finishOrDisplayError(msg.error, 'Unable to open the Source Control View');
+				finishOrDisplayError(msg.error, strings.errViewScm);
 				break;
 		}
 	}
 
 	function handleResponseDeleteBranch(msg: GG.ResponseDeleteBranch) {
 		if (msg.errors.length > 0 && msg.errors[0] !== null && msg.errors[0].includes('git branch -D')) {
-			dialog.showConfirmation('The branch <b><i>' + escapeHtml(msg.branchName) + '</i></b> is not fully merged. Would you like to force delete it?', 'Yes, force delete branch', () => {
-				runAction({ command: 'deleteBranch', repo: msg.repo, branchName: msg.branchName, forceDelete: true, deleteOnRemotes: msg.deleteOnRemotes }, 'Deleting Branch');
+			dialog.showConfirmation(formatStr(strings.branchNotFullyMerged, escapeHtml(msg.branchName)), strings.yesForceDeleteBranch, () => {
+				runAction({ command: 'deleteBranch', repo: msg.repo, branchName: msg.branchName, forceDelete: true, deleteOnRemotes: msg.deleteOnRemotes }, strings.deletingBranch);
 			}, { type: TargetType.Repo });
 		} else {
-			refreshAndDisplayErrors(msg.errors, 'Unable to Delete Branch');
+			refreshAndDisplayErrors(msg.errors, strings.errDeleteBranch);
 		}
 	}
 
 	function handleResponsePushTagCommitNotOnRemote(repo: string, tagName: string, remotes: string[], commitHash: string, error: string) {
 		const remotesNotContainingCommit: string[] = parseExtensionErrorInfo(error, GG.ErrorInfoExtensionPrefix.PushTagCommitNotOnRemote);
+		const plural = remotesNotContainingCommit.length > 1;
 
-		const html = '<span class="dialogAlert">' + SVG_ICONS.alert + 'Warning: Commit is not on Remote' + (remotesNotContainingCommit.length > 1 ? 's ' : ' ') + '</span><br>' +
+		const html = '<span class="dialogAlert">' + SVG_ICONS.alert + (plural ? strings.warnCommitNotOnRemotes : strings.warnCommitNotOnRemote) + '</span><br>' +
 			'<span class="messageContent">' +
-			'<p style="margin:0 0 6px 0;">The tag <b><i>' + escapeHtml(tagName) + '</i></b> is on a commit that isn\'t on any known branch on the remote' + (remotesNotContainingCommit.length > 1 ? 's' : '') + ' ' + formatCommaSeparatedList(remotesNotContainingCommit.map((remote) => '<b><i>' + escapeHtml(remote) + '</i></b>')) + '.</p>' +
-			'<p style="margin:0;">Would you like to proceed to push the tag to the remote' + (remotes.length > 1 ? 's' : '') + ' ' + formatCommaSeparatedList(remotes.map((remote) => '<b><i>' + escapeHtml(remote) + '</i></b>')) + ' anyway?</p>' +
+			'<p style="margin:0 0 6px 0;">' + formatStr(plural ? strings.tagCommitNotOnRemotePlural : strings.tagCommitNotOnRemoteSingular, escapeHtml(tagName), formatCommaSeparatedList(remotesNotContainingCommit.map((remote) => '<b><i>' + escapeHtml(remote) + '</i></b>'))) + '</p>' +
+			'<p style="margin:0;">' + formatStr(remotes.length > 1 ? strings.proceedPushTagPlural : strings.proceedPushTagSingular, formatCommaSeparatedList(remotes.map((remote) => '<b><i>' + escapeHtml(remote) + '</i></b>'))) + '</p>' +
 			'</span>';
 
-		dialog.showForm(html, [{ type: DialogInputType.Checkbox, name: 'Always Proceed', value: false }], 'Proceed to Push', (values) => {
+		dialog.showForm(html, [{ type: DialogInputType.Checkbox, name: strings.alwaysProceedCheckbox, value: false }], strings.proceedToPushAction, (values) => {
 			if (<boolean>values[0]) {
 				updateGlobalViewState('pushTagSkipRemoteCheck', true);
 			}
@@ -2265,8 +2266,8 @@ window.addEventListener('load', () => {
 				remotes: remotes,
 				commitHash: commitHash,
 				skipRemoteCheck: true
-			}, 'Pushing Tag');
-		}, { type: TargetType.Repo }, 'Cancel', null, true);
+			}, strings.pushingTag);
+		}, { type: TargetType.Repo }, strings.dialogCancel, null, true);
 	}
 
 	function refreshOrDisplayError(error: GG.ErrorInfo, errorMessage: string, configChanges: boolean = false) {
@@ -2443,7 +2444,57 @@ function getRepoDropdownOptions(repos: Readonly<GG.GitRepoSet>) {
 	return options;
 }
 
+/**
+ * Assess whether an action can cause the user to lose data, and if so describe the risk.
+ * Covers every write operation performed via runAction, so operations that bypass the
+ * per-action confirmation dialogs are still guarded.
+ * @param msg The request message describing the action that is about to be performed.
+ * @returns The HTML describing the data loss risk, or null if the action cannot lose data.
+ */
+function getDataLossRisk(msg: GG.RequestMessage): string | null {
+	switch (msg.command) {
+		case 'resetToCommit':
+			return msg.resetMode === GG.GitResetMode.Hard ? strings.riskResetHard : null;
+		case 'cleanUntrackedFiles':
+			return (msg.directories ? strings.riskCleanUntrackedDirectories : strings.riskCleanUntrackedFiles) + ' ' + strings.riskCleanUntrackedSuffix;
+		case 'deleteBranch': {
+			const risks: string[] = [];
+			if (msg.forceDelete) risks.push(formatStr(strings.riskDeleteBranchForce, escapeHtml(msg.branchName)));
+			if (msg.deleteOnRemotes.length > 0) risks.push(formatStr(strings.riskDeleteBranchRemote, escapeHtml(formatCommaSeparatedList(msg.deleteOnRemotes.map((remote) => '"' + remote + '"')))));
+			return risks.length > 0 ? risks.join('<br>') : null;
+		}
+		case 'deleteRemoteBranch':
+			return formatStr(strings.riskDeleteRemoteBranch, escapeHtml(msg.remote + '/' + msg.branchName));
+		case 'pushBranch': {
+			const target = escapeHtml(formatCommaSeparatedList(msg.remotes.map((remote) => remote + '/' + msg.branchName)));
+			return msg.mode === GG.GitPushBranchMode.Force
+				? formatStr(strings.riskPushForce, target)
+				: msg.mode === GG.GitPushBranchMode.ForceWithLease
+					? formatStr(strings.riskPushForceWithLease, target)
+					: null;
+		}
+		case 'fetchIntoLocalBranch':
+			return msg.force ? formatStr(strings.riskFetchIntoLocalBranchForce, escapeHtml(msg.localBranch)) : null;
+		case 'dropCommit':
+			return strings.riskDropCommit;
+		case 'dropStash':
+			return strings.riskDropStash;
+		case 'resetFileToRevision':
+			return formatStr(strings.riskResetFile, escapeHtml(msg.filePath));
+		default:
+			return null;
+	}
+}
+
 function runAction(msg: GG.RequestMessage, action: string) {
+	const risk = getDataLossRisk(msg);
+	if (risk !== null) {
+		dialog.showDataLossWarning(risk, () => {
+			dialog.showActionRunning(action);
+			sendMessage(msg);
+		});
+		return;
+	}
 	dialog.showActionRunning(action);
 	sendMessage(msg);
 }
@@ -2482,9 +2533,9 @@ function findCommitElemWithId(id: number | null) {
 
 function generateSignatureHtml(signature: GG.GitSignature) {
 	const status: GG.GitSignatureStatus = signature.status;
-	return '<span class="signatureInfo ' + status + '" title="' + GIT_SIGNATURE_STATUS_DESCRIPTIONS[status] + ':'
-		+ ' Signed by ' + escapeHtml(signature.signer !== '' ? signature.signer : '<Unknown>')
-		+ ' (GPG Key Id: ' + escapeHtml(signature.key !== '' ? signature.key : '<Unknown>') + ')">'
+	return '<span class="signatureInfo ' + status + '" title="' + getGitSignatureStatusDescription(status) + strings.signatureDescColon
+		+ strings.signatureSignedBy + escapeHtml(signature.signer !== '' ? signature.signer : strings.signatureUnknown)
+		+ strings.signatureGpgKeyIdPrefix + escapeHtml(signature.key !== '' ? signature.key : strings.signatureUnknown) + strings.signatureGpgKeyIdSuffix + '">'
 		+ (status === GG.GitSignatureStatus.GoodAndValid
 			? SVG_ICONS.passed
 			: status === GG.GitSignatureStatus.Bad

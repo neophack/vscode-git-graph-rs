@@ -1,5 +1,17 @@
 /* Dialog Actions (tag, branch checkout/creation, merge, rebase, edit message) */
 
+function getMergeActionOnName(actionOn: GG.MergeActionOn): string {
+	return actionOn === GG.MergeActionOn.Branch
+		? strings.actionOnBranch
+		: actionOn === GG.MergeActionOn.RemoteTrackingBranch
+			? strings.actionOnRemoteTrackingBranch
+			: strings.actionOnCommit;
+}
+
+function getRebaseActionOnName(actionOn: GG.RebaseActionOn): string {
+	return actionOn === GG.RebaseActionOn.Branch ? strings.actionOnBranch : strings.actionOnCommit;
+}
+
 function addTagAction(view: GitGraphView, hash: string, initialName: string, initialType: GG.TagType, initialMessage: string, initialPushToRemote: string | null, target: DialogTarget & CommitTarget, isInitialLoad: boolean = true) {
 
 	let mostRecentTagsIndex = -1;
@@ -40,17 +52,17 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 	const inputs: DialogInput[] = [
 
-		{ type: DialogInputType.TextRef, name: 'Name', default: initialName, info: mostRecentTags.length > 0 ? 'The most recent tag' + (mostRecentTags.length > 1 ? 's' : '') + ' in the loaded commits ' + (mostRecentTags.length > 1 ? 'are' : 'is') + ' ' + formatCommaSeparatedList(mostRecentTags) + '.' : undefined },
+		{ type: DialogInputType.TextRef, name: strings.inputNameLabel, default: initialName, info: mostRecentTags.length > 0 ? formatStr(mostRecentTags.length > 1 ? strings.tagNameInfoMultiple : strings.tagNameInfoSingle, formatCommaSeparatedList(mostRecentTags)) : undefined },
 
-		{ type: DialogInputType.Select, name: 'Type', default: initialType === GG.TagType.Annotated ? 'annotated' : 'lightweight', options: [{ name: 'Annotated', value: 'annotated' }, { name: 'Lightweight', value: 'lightweight' }] },
+		{ type: DialogInputType.Select, name: strings.tagTypeInput, default: initialType === GG.TagType.Annotated ? 'annotated' : 'lightweight', options: [{ name: strings.tagTypeAnnotated, value: 'annotated' }, { name: strings.tagTypeLightweight, value: 'lightweight' }] },
 
-		{ type: DialogInputType.Text, name: 'Message', default: initialMessage, placeholder: 'Optional', info: 'A message can only be added to an annotated tag.' }
+		{ type: DialogInputType.Text, name: strings.messageInput, default: initialMessage, placeholder: strings.optionalPlaceholder, info: strings.tagMessageInfo }
 
 	];
 
 	if (view.gitRemotes.length > 1) {
 
-		const options = [{ name: 'Don\'t push', value: '-1' }];
+		const options = [{ name: strings.dontPushOption, value: '-1' }];
 
 		view.gitRemotes.forEach((remote, i) => options.push({ name: remote, value: i.toString() }));
 
@@ -64,19 +76,19 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 				: -1;
 
-		inputs.push({ type: DialogInputType.Select, name: 'Push to remote', options: options, default: defaultOption.toString(), info: 'Once this tag has been added, push it to this remote.' });
+		inputs.push({ type: DialogInputType.Select, name: strings.pushToRemoteInput, options: options, default: defaultOption.toString(), info: strings.pushToRemoteInfo });
 
 	} else if (view.gitRemotes.length === 1) {
 
 		const defaultValue = initialPushToRemote !== null || isInitialLoad;
 
-		inputs.push({ type: DialogInputType.Checkbox, name: 'Push to remote', value: defaultValue, info: 'Once this tag has been added, push it to the repositories remote.' });
+		inputs.push({ type: DialogInputType.Checkbox, name: strings.pushToRemoteInput, value: defaultValue, info: strings.pushToRemoteRepoInfo });
 
 	}
 
 
 
-	dialog.showForm('Add tag to commit <b><i>' + abbrevCommit(hash) + '</i></b>:', inputs, 'Add Tag', (values) => {
+	dialog.showForm(formatStr(strings.addTagToCommit, abbrevCommit(hash)), inputs, strings.actionAddTag, (values) => {
 
 		const tagName = <string>values[0];
 
@@ -118,7 +130,7 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 				force: force
 
-			}, 'Adding Tag');
+			}, strings.addingTag);
 
 		};
 
@@ -126,11 +138,11 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 		if (view.gitTags.includes(tagName)) {
 
-			dialog.showTwoButtons('A tag named <b><i>' + escapeHtml(tagName) + '</i></b> already exists, do you want to replace it with this new tag?', 'Yes, replace the existing tag', () => {
+			dialog.showTwoButtons(formatStr(strings.tagExistsReplace, escapeHtml(tagName)), strings.yesReplaceTag, () => {
 
 				runAddTagAction(true);
 
-			}, 'No, choose another tag name', () => {
+			}, strings.noOtherTagName, () => {
 
 				addTagAction(view, hash, tagName, type, message, pushToRemote, target, false);
 
@@ -151,17 +163,17 @@ function checkoutBranchAction(view: GitGraphView, refName: string, remote: strin
 
 	if (remote !== null) {
 
-		dialog.showRefInput('Enter the name of the new branch you would like to create when checking out <b><i>' + escapeHtml(refName) + '</i></b>:', (prefillName !== null ? prefillName : (remote !== '' ? refName.substring(remote.length + 1) : refName)), 'Checkout Branch', newBranch => {
+		dialog.showRefInput(formatStr(strings.checkoutNewBranchPrompt, escapeHtml(refName)), (prefillName !== null ? prefillName : (remote !== '' ? refName.substring(remote.length + 1) : refName)), strings.actionCheckoutBranch, newBranch => {
 
 			if (view.gitBranches.includes(newBranch)) {
 
 				const canPullFromRemote = remote !== '';
 
-				dialog.showTwoButtons('The name <b><i>' + escapeHtml(newBranch) + '</i></b> is already used by another branch:', 'Choose another branch name', () => {
+				dialog.showTwoButtons(formatStr(strings.branchNameInUse, escapeHtml(newBranch)), strings.chooseAnotherBranchName, () => {
 
 					checkoutBranchAction(view, refName, remote, newBranch, target);
 
-				}, 'Checkout the existing branch' + (canPullFromRemote ? ' & pull changes' : ''), () => {
+				}, canPullFromRemote ? strings.checkoutExistingBranchAndPull : strings.checkoutExistingBranch, () => {
 
 					runAction({
 
@@ -189,13 +201,13 @@ function checkoutBranchAction(view: GitGraphView, refName: string, remote: strin
 
 							: null
 
-					}, 'Checking out Branch' + (canPullFromRemote ? ' & Pulling Changes' : ''));
+					}, canPullFromRemote ? strings.checkingOutBranchAndPulling : strings.checkingOutBranch);
 
 				}, target);
 
 			} else {
 
-				runAction({ command: 'checkoutBranch', repo: view.currentRepo, branchName: newBranch, remoteBranch: refName, pullAfterwards: null }, 'Checking out Branch');
+				runAction({ command: 'checkoutBranch', repo: view.currentRepo, branchName: newBranch, remoteBranch: refName, pullAfterwards: null }, strings.checkingOutBranch);
 
 			}
 
@@ -203,7 +215,7 @@ function checkoutBranchAction(view: GitGraphView, refName: string, remote: strin
 
 	} else {
 
-		runAction({ command: 'checkoutBranch', repo: view.currentRepo, branchName: refName, remoteBranch: null, pullAfterwards: null }, 'Checking out Branch');
+		runAction({ command: 'checkoutBranch', repo: view.currentRepo, branchName: refName, remoteBranch: null, pullAfterwards: null }, strings.checkingOutBranch);
 
 	}
 
@@ -212,23 +224,23 @@ function checkoutBranchAction(view: GitGraphView, refName: string, remote: strin
 
 function createBranchAction(view: GitGraphView, hash: string, initialName: string, initialCheckOut: boolean, target: DialogTarget & CommitTarget) {
 
-	dialog.showForm('Create branch at commit <b><i>' + abbrevCommit(hash) + '</i></b>:', [
+	dialog.showForm(formatStr(strings.createBranchAtCommit, abbrevCommit(hash)), [
 
-		{ type: DialogInputType.TextRef, name: 'Name', default: initialName },
+		{ type: DialogInputType.TextRef, name: strings.inputNameLabel, default: initialName },
 
-		{ type: DialogInputType.Checkbox, name: 'Check out', value: initialCheckOut }
+		{ type: DialogInputType.Checkbox, name: strings.checkOutCheckbox, value: initialCheckOut }
 
-	], 'Create Branch', (values) => {
+	], strings.actionCreateBranch, (values) => {
 
 		const branchName = <string>values[0], checkOut = <boolean>values[1];
 
 		if (view.gitBranches.includes(branchName)) {
 
-			dialog.showTwoButtons('A branch named <b><i>' + escapeHtml(branchName) + '</i></b> already exists, do you want to replace it with this new branch?', 'Yes, replace the existing branch', () => {
+			dialog.showTwoButtons(formatStr(strings.branchExistsReplace, escapeHtml(branchName)), strings.yesReplaceBranch, () => {
 
-				runAction({ command: 'createBranch', repo: view.currentRepo, branchName: branchName, commitHash: hash, checkout: checkOut, force: true }, 'Creating Branch');
+				runAction({ command: 'createBranch', repo: view.currentRepo, branchName: branchName, commitHash: hash, checkout: checkOut, force: true }, strings.creatingBranch);
 
-			}, 'No, choose another branch name', () => {
+			}, strings.noOtherBranchName, () => {
 
 				createBranchAction(view, hash, branchName, checkOut, target);
 
@@ -236,7 +248,7 @@ function createBranchAction(view: GitGraphView, hash: string, initialName: strin
 
 		} else {
 
-			runAction({ command: 'createBranch', repo: view.currentRepo, branchName: branchName, commitHash: hash, checkout: checkOut, force: false }, 'Creating Branch');
+			runAction({ command: 'createBranch', repo: view.currentRepo, branchName: branchName, commitHash: hash, checkout: checkOut, force: false }, strings.creatingBranch);
 
 		}
 
@@ -247,31 +259,33 @@ function createBranchAction(view: GitGraphView, hash: string, initialName: strin
 
 function deleteTagAction(view: GitGraphView, refName: string, deleteOnRemote: string | null) {
 
-	runAction({ command: 'deleteTag', repo: view.currentRepo, tagName: refName, deleteOnRemote: deleteOnRemote }, 'Deleting Tag');
+	runAction({ command: 'deleteTag', repo: view.currentRepo, tagName: refName, deleteOnRemote: deleteOnRemote }, strings.deletingTag);
 
 }
 
 
 function fetchFromRemotesAction(view: GitGraphView) {
 
-	runAction({ command: 'fetch', repo: view.currentRepo, name: null, prune: view.config.fetchAndPrune, pruneTags: view.config.fetchAndPruneTags }, 'Fetching from Remote(s)');
+	runAction({ command: 'fetch', repo: view.currentRepo, name: null, prune: view.config.fetchAndPrune, pruneTags: view.config.fetchAndPruneTags }, strings.fetchingFromRemotes);
 
 }
 
 
 function mergeAction(view: GitGraphView, obj: string, name: string, actionOn: GG.MergeActionOn, target: DialogTarget & (CommitTarget | RefTarget)) {
 
-	dialog.showForm('Are you sure you want to merge ' + actionOn.toLowerCase() + ' <b><i>' + escapeHtml(name) + '</i></b> into ' + (view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b> (the current branch)' : 'the current branch') + '?', [
+	const actionOnName = getMergeActionOnName(actionOn);
 
-		{ type: DialogInputType.Checkbox, name: 'Create a new commit even if fast-forward is possible', value: view.config.dialogDefaults.merge.noFastForward },
+	dialog.showForm(formatStr(strings.mergeConfirm, actionOnName, escapeHtml(name), view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain), [
 
-		{ type: DialogInputType.Checkbox, name: 'Squash Commits', value: view.config.dialogDefaults.merge.squash, info: 'Create a single commit on the current branch whose effect is the same as merging this ' + actionOn.toLowerCase() + '.' },
+		{ type: DialogInputType.Checkbox, name: strings.noFastForwardCheckbox, value: view.config.dialogDefaults.merge.noFastForward },
 
-		{ type: DialogInputType.Checkbox, name: 'No Commit', value: view.config.dialogDefaults.merge.noCommit, info: 'The changes of the merge will be staged but not committed, so that you can review and/or modify the merge result before committing.' }
+		{ type: DialogInputType.Checkbox, name: strings.squashCommitsCheckbox, value: view.config.dialogDefaults.merge.squash, info: formatStr(strings.squashMergeInfo, actionOnName) },
 
-	], 'Yes, merge', (values) => {
+		{ type: DialogInputType.Checkbox, name: strings.noCommitCheckbox, value: view.config.dialogDefaults.merge.noCommit, info: strings.noCommitMergeInfo }
 
-		runAction({ command: 'merge', repo: view.currentRepo, obj: obj, actionOn: actionOn, createNewCommit: <boolean>values[0], squash: <boolean>values[1], noCommit: <boolean>values[2] }, 'Merging ' + actionOn);
+	], strings.yesMerge, (values) => {
+
+		runAction({ command: 'merge', repo: view.currentRepo, obj: obj, actionOn: actionOn, createNewCommit: <boolean>values[0], squash: <boolean>values[1], noCommit: <boolean>values[2] }, formatStr(strings.mergingActionOn, actionOnName));
 
 	}, target);
 
@@ -280,17 +294,17 @@ function mergeAction(view: GitGraphView, obj: string, name: string, actionOn: GG
 
 function rebaseAction(view: GitGraphView, obj: string, name: string, actionOn: GG.RebaseActionOn, target: DialogTarget & (CommitTarget | RefTarget)) {
 
-	dialog.showForm('Are you sure you want to rebase ' + (view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b> (the current branch)' : 'the current branch') + ' on ' + actionOn.toLowerCase() + ' <b><i>' + escapeHtml(name) + '</i></b>?', [
+	dialog.showForm(formatStr(strings.rebaseConfirm, view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain, getRebaseActionOnName(actionOn), escapeHtml(name)), [
 
-		{ type: DialogInputType.Checkbox, name: 'Launch Interactive Rebase in new Terminal', value: view.config.dialogDefaults.rebase.interactive },
+		{ type: DialogInputType.Checkbox, name: strings.interactiveRebaseCheckbox, value: view.config.dialogDefaults.rebase.interactive },
 
-		{ type: DialogInputType.Checkbox, name: 'Ignore Date', value: view.config.dialogDefaults.rebase.ignoreDate, info: 'Only applicable to a non-interactive rebase.' }
+		{ type: DialogInputType.Checkbox, name: strings.ignoreDateCheckbox, value: view.config.dialogDefaults.rebase.ignoreDate, info: strings.ignoreDateInfo }
 
-	], 'Yes, rebase', (values) => {
+	], strings.yesRebase, (values) => {
 
 		let interactive = <boolean>values[0];
 
-		runAction({ command: 'rebase', repo: view.currentRepo, obj: obj, actionOn: actionOn, ignoreDate: <boolean>values[1], interactive: interactive }, interactive ? 'Launching Interactive Rebase' : 'Rebasing on ' + actionOn);
+		runAction({ command: 'rebase', repo: view.currentRepo, obj: obj, actionOn: actionOn, ignoreDate: <boolean>values[1], interactive: interactive }, interactive ? strings.launchingInteractiveRebase : formatStr(strings.rebasingOnActionOn, getRebaseActionOnName(actionOn)));
 
 	}, target);
 
@@ -309,21 +323,21 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 
 	dialog.showForm(
 
-		`Edit commit message for <b><i>${abbrevCommit(hash)}</i></b>:`,
+		formatStr(strings.editCommitMessagePrompt, abbrevCommit(hash)),
 
 		[{
 
 			type: DialogInputType.Textarea, lines: 5,
 
-			name: 'Commit Message',
+			name: strings.commitMessageInput,
 
 			default: commit.message,
 
-			placeholder: 'Enter the new commit message'
+			placeholder: strings.commitMessagePlaceholder
 
 		}],
 
-		'Update Message',
+		strings.updateMessageAction,
 
 		(values) => {
 
@@ -331,7 +345,7 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 
 			if (newMessage.trim() === '') {
 
-				dialog.showError('Commit message cannot be empty.', null, null, null);
+				dialog.showError(strings.commitMessageEmptyError, null, null, null);
 
 				return;
 
@@ -353,7 +367,7 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 
 				message: newMessage
 
-			}, 'Editing Commit Message');
+			}, strings.editingCommitMessage);
 
 		},
 
@@ -362,4 +376,3 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 	);
 
 }
-

@@ -6,10 +6,18 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
+import { isZhCn, t } from './i18n';
 import { ErrorInfo, GitFileStatus, GitRepoSet, PullRequestConfig, PullRequestProvider, RepoDropdownOrder } from './types';
 
 export const UNCOMMITTED = '*';
-export const UNABLE_TO_FIND_GIT_MSG = 'Unable to find a Git executable. Either: Set the Visual Studio Code Setting "git.path" to the path and filename of an existing Git executable, or install Git and restart Visual Studio Code.';
+
+/**
+ * Get the localised "unable to find a Git executable" message.
+ * @returns The localised message.
+ */
+export function unableToFindGitMsg(): string {
+	return t('unableToFindGit');
+}
 
 
 /* Path Manipulation */
@@ -234,6 +242,10 @@ export function getRelativeTimeDiff(unixTimestamp: number) {
 		diff /= 31557600;
 	}
 	diff = Math.round(diff);
+	if (isZhCn()) {
+		const units: { [unit: string]: string } = { second: '秒', minute: '分钟', hour: '小时', day: '天', week: '周', month: '个月', year: '年' };
+		return diff + ' ' + units[unit] + '前';
+	}
 	return diff + ' ' + unit + (diff !== 1 ? 's' : '') + ' ago';
 }
 
@@ -325,8 +337,8 @@ export function getSortedRepositoryPaths(repos: GitRepoSet, order: RepoDropdownO
 export function archive(repo: string, ref: string, dataSource: DataSource): Thenable<ErrorInfo> {
 	return vscode.window.showSaveDialog({
 		defaultUri: vscode.Uri.file(repo),
-		saveLabel: 'Create Archive',
-		filters: { 'TAR Archive': ['tar'], 'ZIP Archive': ['zip'] }
+		saveLabel: t('archiveSaveLabel'),
+		filters: { [t('archiveTarFilter')]: ['tar'], [t('archiveZipFilter')]: ['zip'] }
 	}).then(
 		(uri) => {
 			if (uri) {
@@ -334,13 +346,13 @@ export function archive(repo: string, ref: string, dataSource: DataSource): Then
 				if (extension === 'tar' || extension === 'zip') {
 					return dataSource.archive(repo, ref, uri.fsPath, extension);
 				} else {
-					return 'Invalid file extension "*.' + extension + '". The archive file must have a *.tar or *.zip extension.';
+					return t('archiveInvalidExtension', extension);
 				}
 			} else {
-				return 'No file name was provided for the archive.';
+				return t('archiveNoFileName');
 			}
 		},
-		() => 'Visual Studio Code was unable to display the save dialog.'
+		() => t('archiveNoSaveDialog')
 	);
 }
 
@@ -364,7 +376,7 @@ export function copyFilePathToClipboard(repo: string, filePath: string, absolute
 export function copyToClipboard(text: string): Thenable<ErrorInfo> {
 	return vscode.env.clipboard.writeText(text).then(
 		() => null,
-		() => 'Visual Studio Code was unable to write to the Clipboard.'
+		() => t('clipboardWriteFailed')
 	);
 }
 
@@ -402,7 +414,7 @@ export function createPullRequest(config: PullRequestConfig, sourceOwner: string
 
 	const url = templateUrl.replace(/\$([1-8])/g, (_, index) => urlFieldValues[parseInt(index) - 1]);
 
-	return openExternalUrl(url, 'Pull Request URL');
+	return openExternalUrl(url, t('pullRequestUrlType'));
 }
 
 /**
@@ -412,7 +424,7 @@ export function createPullRequest(config: PullRequestConfig, sourceOwner: string
 export function openExtensionSettings(): Thenable<ErrorInfo> {
 	return vscode.commands.executeCommand('workbench.action.openSettings', '@ext:aucneon.git-graph-rs').then(
 		() => null,
-		() => 'Visual Studio Code was unable to open the Git Graph Extension Settings.'
+		() => t('openExtensionSettingsFailed')
 	);
 }
 
@@ -422,8 +434,8 @@ export function openExtensionSettings(): Thenable<ErrorInfo> {
  * @param type The type of URL being opened (defaults to "External URL").
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export function openExternalUrl(url: string, type: string = 'External URL'): Thenable<ErrorInfo> {
-	const getErrorMessage = () => 'Visual Studio Code was unable to open the ' + type + ': ' + url;
+export function openExternalUrl(url: string, type: string = t('externalUrlType')): Thenable<ErrorInfo> {
+	const getErrorMessage = () => t('openUrlFailed', type, url);
 	try {
 		return vscode.env.openExternal(vscode.Uri.parse(url)).then(
 			(success) => success ? null : getErrorMessage(),
@@ -465,10 +477,10 @@ export async function openFile(repo: string, filePath: string, hash: string | nu
 			viewColumn: viewColumn === null ? getConfig().openNewTabEditorGroup : viewColumn
 		}).then(
 			() => null,
-			() => 'Visual Studio Code was unable to open ' + newFilePath + '.'
+			() => t('openFileFailed', newFilePath)
 		);
 	} else {
-		return 'The file ' + newFilePath + ' doesn\'t currently exist in this repository.';
+		return t('fileNotInRepo', newFilePath);
 	}
 }
 
@@ -484,12 +496,12 @@ export async function openFile(repo: string, filePath: string, hash: string | nu
  */
 export function viewDiff(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus) {
 	if (type !== GitFileStatus.Untracked) {
-		let abbrevFromHash = abbrevCommit(fromHash), abbrevToHash = toHash !== UNCOMMITTED ? abbrevCommit(toHash) : 'Present', pathComponents = newFilePath.split('/');
+		let abbrevFromHash = abbrevCommit(fromHash), abbrevToHash = toHash !== UNCOMMITTED ? abbrevCommit(toHash) : t('diffTitlePresent'), pathComponents = newFilePath.split('/');
 		let desc = fromHash === toHash
 			? fromHash === UNCOMMITTED
-				? 'Uncommitted'
-				: (type === GitFileStatus.Added ? 'Added in ' + abbrevToHash : type === GitFileStatus.Deleted ? 'Deleted in ' + abbrevToHash : abbrevFromHash + '^ ↔ ' + abbrevToHash)
-			: (type === GitFileStatus.Added ? 'Added between ' + abbrevFromHash + ' & ' + abbrevToHash : type === GitFileStatus.Deleted ? 'Deleted between ' + abbrevFromHash + ' & ' + abbrevToHash : abbrevFromHash + ' ↔ ' + abbrevToHash);
+				? t('diffTitleUncommitted')
+				: (type === GitFileStatus.Added ? t('diffTitleAddedIn', abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedIn', abbrevToHash) : t('diffTitleChangedWithParent', abbrevFromHash, abbrevToHash))
+			: (type === GitFileStatus.Added ? t('diffTitleAddedBetween', abbrevFromHash, abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedBetween', abbrevFromHash, abbrevToHash) : t('diffTitleChanged', abbrevFromHash, abbrevToHash));
 		let title = pathComponents[pathComponents.length - 1] + ' (' + desc + ')';
 		if (fromHash === UNCOMMITTED) fromHash = 'HEAD';
 
@@ -498,7 +510,7 @@ export function viewDiff(repo: string, fromHash: string, toHash: string, oldFile
 			viewColumn: getConfig().openNewTabEditorGroup
 		}).then(
 			() => null,
-			() => 'Visual Studio Code was unable to load the diff editor for ' + newFilePath + '.'
+			() => t('diffEditorFailed', newFilePath)
 		);
 	} else {
 		return openFile(repo, newFilePath);
@@ -549,7 +561,7 @@ export function viewFileAtRevision(repo: string, hash: string, filePath: string)
 		viewColumn: getConfig().openNewTabEditorGroup
 	}).then(
 		() => null,
-		() => 'Visual Studio Code was unable to open ' + filePath + ' at commit ' + abbrevCommit(hash) + '.'
+		() => t('viewFileAtRevisionFailed', filePath, abbrevCommit(hash))
 	);
 }
 
@@ -560,7 +572,7 @@ export function viewFileAtRevision(repo: string, hash: string, filePath: string)
 export function viewScm(): Thenable<ErrorInfo> {
 	return vscode.commands.executeCommand('workbench.view.scm').then(
 		() => null,
-		() => 'Visual Studio Code was unable to open the Source Control View.'
+		() => t('openScmFailed')
 	);
 }
 
@@ -578,7 +590,7 @@ export function openGitTerminal(cwd: string, gitPath: string, command: string | 
 
 	const options: vscode.TerminalOptions = {
 		cwd: cwd,
-		name: 'Git Graph RS: ' + name,
+		name: t('terminalName', name),
 		env: { 'PATH': p }
 	};
 	const shell = getConfig().integratedTerminalShell;
@@ -912,6 +924,6 @@ function parseVersion(version: string) {
  * @returns The message for the user.
  */
 export function constructIncompatibleGitVersionMessage(executable: GitExecutable, version: GitVersionRequirement, feature?: string) {
-	return 'A newer version of Git (>= ' + version + ') is required for ' + (feature ? feature : 'this feature') + '. Git ' + executable.version + ' is currently installed. Please install a newer version of Git to use this feature.';
+	return t('incompatibleGitVersion', version, feature !== undefined ? feature : t('thisFeature'), executable.version);
 }
 

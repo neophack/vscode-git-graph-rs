@@ -543,7 +543,7 @@ function observeUrls(view: GitGraphView) {
 
 					{
 
-						title: 'Open URL',
+						title: strings.menuOpenUrl,
 
 						visible: isExternalUrl,
 
@@ -557,7 +557,7 @@ function observeUrls(view: GitGraphView) {
 
 					{
 
-						title: 'Follow Internal Link',
+						title: strings.menuFollowInternalLink,
 
 						visible: isInternalUrl,
 
@@ -567,13 +567,13 @@ function observeUrls(view: GitGraphView) {
 
 					{
 
-						title: 'Copy URL to Clipboard',
+						title: strings.menuCopyUrl,
 
 						visible: isExternalUrl,
 
 						onClick: () => {
 
-							sendMessage({ command: 'copyToClipboard', type: 'External URL', data: (<HTMLAnchorElement>eventTarget).href });
+							sendMessage({ command: 'copyToClipboard', type: strings.copyTypeExternalUrl, data: (<HTMLAnchorElement>eventTarget).href });
 
 						}
 
@@ -1125,7 +1125,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Date',
+					title: strings.columnDate,
 
 					visible: true,
 
@@ -1137,7 +1137,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Author',
+					title: strings.columnAuthor,
 
 					visible: true,
 
@@ -1149,7 +1149,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Commit',
+					title: strings.columnCommit,
 
 					visible: true,
 
@@ -1165,7 +1165,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Commit Timestamp Order',
+					title: strings.orderCommitTimestamp,
 
 					visible: true,
 
@@ -1177,7 +1177,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Author Timestamp Order',
+					title: strings.orderAuthorTimestamp,
 
 					visible: true,
 
@@ -1189,7 +1189,7 @@ function makeTableResizable(view: GitGraphView) {
 
 				{
 
-					title: 'Topological Order',
+					title: strings.orderTopological,
 
 					visible: true,
 

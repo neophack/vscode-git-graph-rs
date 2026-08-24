@@ -1,0 +1,375 @@
+/**
+ * Localised strings for the extension host (notifications, quick picks, modal dialogs and the
+ * fallback webview pages).
+ *
+ * The active language follows the `git-graph-rs.interfaceLanguage` Extension Setting (the same
+ * setting that drives the Git Graph View webview), and is read at call time so a configuration
+ * change applies to every message shown afterwards.
+ */
+import { getConfig } from './config';
+
+const EN = {
+	/* Git executable & version requirements */
+	unableToFindGit: 'Unable to find a Git executable. Either: Set the Visual Studio Code Setting "git.path" to the path and filename of an existing Git executable, or install Git and restart Visual Studio Code.',
+	nowUsingGit: 'Git Graph is now using {0} (version: {1})',
+	gitPathInvalid: 'The new value of "git.path" ("{0}") does not {1} the path and filename of a valid Git executable.',
+	gitPathInvalidMatch: 'match',
+	gitPathInvalidContain: 'contain a string that matches',
+	incompatibleGitVersion: 'A newer version of Git (>= {0}) is required for {1}. Git {2} is currently installed. Please install a newer version of Git to use this feature.',
+	thisFeature: 'this feature',
+	featurePruningTagsWhenFetching: 'pruning tags when fetching',
+
+	/* Start-up notices */
+	noEngineForPlatform: 'Git Graph RS: no native engine is available for this system ({0}), so it runs over the git CLI instead (full functionality, original-extension read speed).',
+	noGitRunsOnEngine: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).',
+
+	/* Command palette / quick picks & notifications */
+	selectRepoForCommand: 'Select the repository to run the command on:',
+	unableToAmendLastCommit: 'Unable to Amend Last Commit: {0}',
+	amendedLastCommit: 'Amended the last commit in "{0}".',
+	noUpstreamBranch: 'Unable to Reset to Remote: The current branch has no upstream (remote tracking) branch.',
+	resetToRemoteConfirm: 'Reset the current branch to "{0}"?\n\nAll commits ahead of the remote will be undone (soft reset), and their changes will be kept staged.',
+	resetToRemoteButton: 'Reset to Remote',
+	unableToResetToRemote: 'Unable to Reset Current Branch to Remote: {0}',
+	resetToRemoteDone: 'Reset the current branch to "{0}" (soft reset).',
+	filterByFileUndetermined: 'Unable to determine the file to filter the Git Graph view by.',
+	filterByFileNotInRepo: 'The file "{0}" is not within a repository known to Git Graph.',
+	filterByFileMultipleRepos: 'All selected files must be within the same repository.',
+	repoAdded: 'The repository "{0}" was added to Git Graph.',
+	repoAddFailed: '{0} Therefore it could not be added to Git Graph.',
+	folderNotInWorkspace: 'The folder "{0}" is not within the opened Visual Studio Code workspace, and therefore could not be added to Git Graph.',
+	selectRepoToRemove: 'Select a repository to remove from Git Graph RS:',
+	repoRemoved: 'The repository "{0}" was removed from Git Graph.',
+	repoNotKnown: 'The repository "{0}" is not known to Git Graph.',
+	avatarCacheCleared: 'The Avatar Cache was successfully cleared.',
+	unexpectedErrorInCommand: 'An unexpected error occurred while running the command "{0}".',
+	selectRepoToFetch: 'Select the repository you want to open in Git Graph, and fetch from remote(s):',
+	endedAllCodeReviews: 'Ended All Code Reviews in Workspace',
+	noCodeReviewsInProgress: 'There are no Code Reviews in progress within the current workspace.',
+	selectCodeReviewToEnd: 'Select the Code Review you want to end:',
+	endedCodeReview: 'Successfully ended Code Review "{0}".',
+	selectCodeReviewToResume: 'Select the Code Review you want to resume:',
+	selectRepoToSearch: 'Select the repository to search in',
+	searchCommitsPrompt: 'Search commit history by message, author, or hash (supports regex)',
+	searchCommitsPlaceholder: 'Enter your search query',
+	noCommitsFound: 'No commits found matching the query.',
+	selectCommitToView: 'Select a commit to view in Git Graph RS',
+	searchCommitsError: 'Error searching commit history.',
+	versionInfo: 'Git Graph RS: {0}\nVisual Studio Code: {1}\nOS: {2}\nGit: {3}',
+	copyButton: 'Copy',
+	versionInfoError: 'An unexpected error occurred while retrieving version information.',
+	unableToOpenFile: 'Unable to Open File: {0}',
+	openFileMissingArgs: 'Unable to Open File: The command was not called with the required arguments.',
+	unknownCommitSubject: '<Unknown Commit Subject>',
+
+	/* View & actions */
+	actionHandlingError: 'Git Graph RS encountered an error while handling this action.',
+	noReposInWorkspace: 'No Git repositories were found in the current workspace.',
+	interfaceLanguageInvalid: 'The interface language must be "auto", "en" or "zh-cn".',
+	settingNotWritable: 'The setting "{0}" cannot be changed from the Settings page.',
+	settingValueInvalid: 'The value provided for the setting "{0}" is invalid.',
+	uncommittedChangesRow: 'Uncommitted Changes ({0})',
+	noLogRecorded: 'No log is being recorded for this session. Enable the "git-graph-rs.enableLog" setting to record one.',
+	viewGitGraphRs: 'View Git Graph RS',
+	codeReviewNotFound: 'The Code Review could not be found.',
+
+	/* Webview fallback pages */
+	unableToLoadGitGraph: 'Unable to load Git Graph',
+	noReposWhenLastScanned: 'No Git repositories were found in the current workspace when it was last scanned by Git Graph.',
+	noReposHint: 'If your repositories are in subfolders of the open workspace folder(s), make sure you have set the Git Graph Setting "git-graph-rs.maxDepthOfRepoSearch" appropriately (read the <a href="{0}" target="_blank">documentation</a> for more information).',
+	rescanForReposButton: 'Re-scan the current workspace for repositories',
+
+	/* Repository configuration import/export */
+	newerRepoConfigDetected: 'A newer Git Graph Repository Configuration File has been detected for the repository "{0}". Would you like to override your current repository configuration with the new changes?',
+	yesButton: 'Yes',
+	noButton: 'No',
+	repoConfigImported: 'Git Graph Repository Configuration was successfully imported for the repository "{0}".',
+	repoConfigInvalidValue: 'The value for "{0}" in the configuration file "{1}" is invalid.',
+	writeRepoConfigFailed: 'Failed to write the Git Graph Repository Configuration File to "{0}".',
+	repoConfigExported: 'Successfully exported the Git Graph Repository Configuration to "{0}".',
+	checkVscodeDirFailed: 'An unexpected error occurred while checking if the "{0}" directory exists. This directory is used to store the Git Graph Repository Configuration file.',
+
+	/* Data source messages */
+	invalidCommitHash: 'Invalid commit hash was provided for "{0}"',
+	invalidStashSelector: 'Invalid stash selector was provided for "{0}"',
+	invalidUrl: 'Invalid URL was provided for "{0}"',
+	invalidRefName: 'Invalid reference name was provided for "{0}"',
+	pruneTagsRequiresPrune: 'In order to Prune Tags, pruning must also be enabled when fetching from remote(s).',
+	editMessageNonHead: 'Editing commit messages for non-HEAD commits is not yet supported.',
+
+	/* File / diff / terminal helpers */
+	archiveSaveLabel: 'Create Archive',
+	archiveTarFilter: 'TAR Archive',
+	archiveZipFilter: 'ZIP Archive',
+	archiveInvalidExtension: 'Invalid file extension "*.{0}". The archive file must have a *.tar or *.zip extension.',
+	archiveNoFileName: 'No file name was provided for the archive.',
+	archiveNoSaveDialog: 'Visual Studio Code was unable to display the save dialog.',
+	clipboardWriteFailed: 'Visual Studio Code was unable to write to the Clipboard.',
+	pullRequestUrlType: 'Pull Request URL',
+	externalUrlType: 'External URL',
+	openUrlFailed: 'Visual Studio Code was unable to open the {0}: {1}',
+	openExtensionSettingsFailed: 'Visual Studio Code was unable to open the Git Graph Extension Settings.',
+	openFileFailed: 'Visual Studio Code was unable to open {0}.',
+	fileNotInRepo: 'The file {0} doesn\'t currently exist in this repository.',
+	diffTitlePresent: 'Present',
+	diffTitleUncommitted: 'Uncommitted',
+	diffTitleAddedIn: 'Added in {0}',
+	diffTitleDeletedIn: 'Deleted in {0}',
+	diffTitleChanged: '{0} \u2194 {1}',
+	diffTitleChangedWithParent: '{0}^ \u2194 {1}',
+	diffTitleAddedBetween: 'Added between {0} & {1}',
+	diffTitleDeletedBetween: 'Deleted between {0} & {1}',
+	diffEditorFailed: 'Visual Studio Code was unable to load the diff editor for {0}.',
+	viewFileAtRevisionFailed: 'Visual Studio Code was unable to open {0} at commit {1}.',
+	openScmFailed: 'Visual Studio Code was unable to open the Source Control View.',
+	terminalName: 'Git Graph RS: {0}',
+	openExternalDirDiffTerminalName: 'Open External Directory Diff',
+	unableToRetrieveFile: 'Unable to retrieve file: {0}',
+	malformedDiffDocUri: 'Unable to decode the Git Graph RS diff document URI: the data is malformed.',
+
+	/* Commit Comparison View */
+	comparePanelTitle: 'Compare {0} \u2194 {1}',
+	comparePresentLabel: 'Present',
+	compareUncommittedLabel: 'Uncommitted changes',
+	compareWorkingTreeLabel: 'The current working tree',
+	comparingChangesTitle: 'Comparing changes',
+	compareErrorLabel: 'Error',
+	compareFilesChangedLabel: 'Files changed',
+	compareLoadingChanges: 'Loading changes&hellip;',
+	compareNoChanges: 'No changes between these commits.',
+	compareOneFileChanged: '1 file changed',
+	compareFilesChanged: '{0} files changed',
+	compareStatsAdditions: ' with <span class="additions">+{0}</span>',
+	compareStatsDeletions: ' <span class="deletions">&minus;{0}</span>',
+	compareOpenDiffInEditor: 'Open Diff in Editor',
+	compareLoadingDiff: 'Loading diff&hellip;',
+	compareBinaryFile: 'Binary file &mdash; the diff cannot be displayed.',
+	compareNoTextualChanges: 'No textual changes.',
+	compareHexPrevDiff: 'Previous difference',
+	compareHexNextDiff: 'Next difference',
+	compareHexDiffStatus: 'Difference {0} of {1}',
+	compareHexNoDifferences: 'No differences',
+	compareHexAnalysing: 'Analysing&hellip;',
+	compareHexColOffset: 'Offset',
+	compareHexColAscii: 'ASCII',
+	compareHexSizes: '{0} &harr; {1}',
+	compareHexLoadError: 'Unable to load the binary contents: {0}',
+	compareHexToggleButton: 'Hex',
+	compareImageToggleButton: 'Picture',
+	compareImageCaptionOld: 'Original',
+	compareImageCaptionDiff: 'Difference',
+	compareImageCaptionNew: 'Modified',
+	compareImageDiffPixels: '{0}% of the pixels differ',
+	compareImageStatsTpl: '{0} pixels ({1}%) differ &middot; max {2} &middot; avg {3} &middot; MSE {4} &middot; PSNR {5} dB',
+	compareImageModeEnhanced: 'Difference enhanced',
+	compareImageModeDifference: 'Difference',
+	compareImageModeBlend: 'Blend',
+	compareImageModeHighlight: 'Highlight',
+	compareImageModeBlink: 'Blink',
+	compareImageAmplify: 'Amplify',
+	compareImageBlendAlpha: 'Blend',
+	compareImageTolerance: 'Tolerance',
+	compareImageNoDifferences: 'The images are identical',
+	compareImageTooLarge: 'The image is too large to compare here ({0} > {1} bytes) &mdash; the hex view is still available.',
+	compareImageUnsupportedType: 'This file type cannot be rendered as a picture.',
+	compareImageDecodeError: 'The image could not be decoded.',
+	compareImageZoomFit: 'Fit',
+	compareImageZoomIn: 'Zoom in',
+	compareImageZoomOut: 'Zoom out',
+	binaryCompareTitle: '{0} ({1} \u2194 {2})'
+};
+
+type MessageKey = keyof typeof EN;
+
+const ZH_CN: Record<MessageKey, string> = {
+	/* Git 可执行文件与版本要求 */
+	unableToFindGit: '找不到 Git 可执行文件。请：将 Visual Studio Code 设置 "git.path" 设为现有 Git 可执行文件的路径和文件名，或安装 Git 并重启 Visual Studio Code。',
+	nowUsingGit: 'Git Graph 现在使用 {0}（版本：{1}）',
+	gitPathInvalid: '"git.path" 的新值（"{0}"）{1}有效 Git 可执行文件的路径和文件名。',
+	gitPathInvalidMatch: '不匹配',
+	gitPathInvalidContain: '不包含匹配',
+	incompatibleGitVersion: '使用{1}需要更新版本的 Git（>= {0}）。当前安装的是 Git {2}。请安装更新版本的 Git 以使用此功能。',
+	thisFeature: '此功能',
+	featurePruningTagsWhenFetching: '拉取时清理标签',
+
+	/* 启动提示 */
+	noEngineForPlatform: 'Git Graph RS：当前系统（{0}）没有原生引擎，将通过 git 命令行运行（功能完整，读操作为原版速度）。',
+	noGitRunsOnEngine: 'Git Graph RS：未找到 Git，将通过 Rust 引擎运行（查看、比较、搜索等全部可用；写入类操作需要安装 Git）。',
+
+	/* 命令面板 / 快速选择与通知 */
+	selectRepoForCommand: '选择要在其上运行命令的仓库：',
+	unableToAmendLastCommit: '无法修正上一次提交：{0}',
+	amendedLastCommit: '已修正“{0}”中的上一次提交。',
+	noUpstreamBranch: '无法重置到远程：当前分支没有上游（远程跟踪）分支。',
+	resetToRemoteConfirm: '将当前分支重置到“{0}”吗？\n\n所有领先于远程的提交将被撤销（软重置），其更改将保留在暂存区。',
+	resetToRemoteButton: '重置到远程',
+	unableToResetToRemote: '无法将当前分支重置到远程：{0}',
+	resetToRemoteDone: '已将当前分支重置到“{0}”（软重置）。',
+	filterByFileUndetermined: '无法确定用于过滤 Git Graph 视图的文件。',
+	filterByFileNotInRepo: '文件“{0}”不在 Git Graph 已知的仓库中。',
+	filterByFileMultipleRepos: '所有选中的文件必须位于同一仓库中。',
+	repoAdded: '已将仓库“{0}”添加到 Git Graph。',
+	repoAddFailed: '{0} 因此无法将其添加到 Git Graph。',
+	folderNotInWorkspace: '文件夹“{0}”不在当前打开的 Visual Studio Code 工作区内，因此无法添加到 Git Graph。',
+	selectRepoToRemove: '选择要从 Git Graph RS 移除的仓库：',
+	repoRemoved: '已从 Git Graph 移除仓库“{0}”。',
+	repoNotKnown: 'Git Graph 不认识仓库“{0}”。',
+	avatarCacheCleared: '头像缓存已成功清除。',
+	unexpectedErrorInCommand: '运行命令“{0}”时发生意外错误。',
+	selectRepoToFetch: '选择要在 Git Graph 中打开并从远程拉取的仓库：',
+	endedAllCodeReviews: '已结束工作区中的所有代码评审',
+	noCodeReviewsInProgress: '当前工作区中没有正在进行的代码评审。',
+	selectCodeReviewToEnd: '选择要结束的代码评审：',
+	endedCodeReview: '已成功结束代码评审“{0}”。',
+	selectCodeReviewToResume: '选择要恢复的代码评审：',
+	selectRepoToSearch: '选择要搜索的仓库',
+	searchCommitsPrompt: '按提交信息、作者或哈希搜索提交历史（支持正则表达式）',
+	searchCommitsPlaceholder: '输入搜索内容',
+	noCommitsFound: '未找到与搜索内容匹配的提交。',
+	selectCommitToView: '选择要在 Git Graph RS 中查看的提交',
+	searchCommitsError: '搜索提交历史时出错。',
+	versionInfo: 'Git Graph RS：{0}\nVisual Studio Code：{1}\n操作系统：{2}\nGit：{3}',
+	copyButton: '复制',
+	versionInfoError: '获取版本信息时发生意外错误。',
+	unableToOpenFile: '无法打开文件：{0}',
+	openFileMissingArgs: '无法打开文件：命令未携带必需的参数。',
+	unknownCommitSubject: '<未知提交主题>',
+
+	/* 视图与操作 */
+	actionHandlingError: 'Git Graph RS 处理此操作时遇到错误。',
+	noReposInWorkspace: '在当前工作区中未找到 Git 仓库。',
+	interfaceLanguageInvalid: '界面语言必须是 "auto"、"en" 或 "zh-cn"。',
+	settingNotWritable: '设置“{0}”不能在设置页面中更改。',
+	settingValueInvalid: '为设置“{0}”提供的值无效。',
+	uncommittedChangesRow: '未提交的更改（{0}）',
+	noLogRecorded: '本会话未记录日志。启用 "git-graph-rs.enableLog" 设置以开始记录。',
+	viewGitGraphRs: '查看 Git Graph RS',
+	codeReviewNotFound: '找不到该代码评审。',
+
+	/* Webview 回退页面 */
+	unableToLoadGitGraph: '无法加载 Git Graph',
+	noReposWhenLastScanned: 'Git Graph 上次扫描时未在当前工作区中找到任何 Git 仓库。',
+	noReposHint: '如果您的仓库位于工作区文件夹的子文件夹中，请确保已正确设置 Git Graph 的 "git-graph-rs.maxDepthOfRepoSearch" 设置（详情请阅读<a href="{0}" target="_blank">文档</a>）。',
+	rescanForReposButton: '重新扫描当前工作区以查找仓库',
+
+	/* 仓库配置导入/导出 */
+	newerRepoConfigDetected: '检测到仓库“{0}”有更新版本的 Git Graph 仓库配置文件。是否用新的更改覆盖当前的仓库配置？',
+	yesButton: '是',
+	noButton: '否',
+	repoConfigImported: '已成功为仓库“{0}”导入 Git Graph 仓库配置。',
+	repoConfigInvalidValue: '配置文件“{1}”中“{0}”的值无效。',
+	writeRepoConfigFailed: '无法将 Git Graph 仓库配置文件写入“{0}”。',
+	repoConfigExported: '已成功将 Git Graph 仓库配置导出到“{0}”。',
+	checkVscodeDirFailed: '检查目录“{0}”是否存在时发生意外错误。该目录用于存储 Git Graph 仓库配置文件。',
+
+	/* 数据源消息 */
+	invalidCommitHash: '为“{0}”提供的提交哈希无效',
+	invalidStashSelector: '为“{0}”提供的贮藏选择器无效',
+	invalidUrl: '为“{0}”提供的 URL 无效',
+	invalidRefName: '为“{0}”提供的引用名称无效',
+	pruneTagsRequiresPrune: '清理标签时，从远程拉取必须同时启用清理。',
+	editMessageNonHead: '尚不支持编辑非 HEAD 提交的提交信息。',
+
+	/* 文件 / 差异 / 终端辅助 */
+	archiveSaveLabel: '创建归档',
+	archiveTarFilter: 'TAR 归档',
+	archiveZipFilter: 'ZIP 归档',
+	archiveInvalidExtension: '文件扩展名“*.{0}”无效。归档文件必须使用 *.tar 或 *.zip 扩展名。',
+	archiveNoFileName: '未提供归档文件的文件名。',
+	archiveNoSaveDialog: 'Visual Studio Code 无法显示保存对话框。',
+	clipboardWriteFailed: 'Visual Studio Code 无法写入剪贴板。',
+	pullRequestUrlType: '拉取请求 URL',
+	externalUrlType: '外部 URL',
+	openUrlFailed: 'Visual Studio Code 无法打开{0}：{1}',
+	openExtensionSettingsFailed: 'Visual Studio Code 无法打开 Git Graph 扩展设置。',
+	openFileFailed: 'Visual Studio Code 无法打开 {0}。',
+	fileNotInRepo: '文件 {0} 当前不在此仓库中。',
+	diffTitlePresent: '当前',
+	diffTitleUncommitted: '未提交',
+	diffTitleAddedIn: '新增于 {0}',
+	diffTitleDeletedIn: '删除于 {0}',
+	diffTitleChanged: '{0} ↔ {1}',
+	diffTitleChangedWithParent: '{0}^ ↔ {1}',
+	diffTitleAddedBetween: '新增于 {0} 与 {1} 之间',
+	diffTitleDeletedBetween: '删除于 {0} 与 {1} 之间',
+	diffEditorFailed: 'Visual Studio Code 无法加载 {0} 的差异编辑器。',
+	viewFileAtRevisionFailed: 'Visual Studio Code 无法打开提交 {1} 处的 {0}。',
+	openScmFailed: 'Visual Studio Code 无法打开源代码管理视图。',
+	terminalName: 'Git Graph RS：{0}',
+	openExternalDirDiffTerminalName: '打开外部目录比较',
+	unableToRetrieveFile: '无法获取文件：{0}',
+	malformedDiffDocUri: '无法解码 Git Graph RS 差异文档 URI：数据格式错误。',
+
+	/* 提交比较视图 */
+	comparePanelTitle: '比较 {0} ↔ {1}',
+	comparePresentLabel: '当前',
+	compareUncommittedLabel: '未提交的更改',
+	compareWorkingTreeLabel: '当前工作区',
+	comparingChangesTitle: '比较更改',
+	compareErrorLabel: '错误',
+	compareFilesChangedLabel: '已更改的文件',
+	compareLoadingChanges: '正在加载更改&hellip;',
+	compareNoChanges: '这些提交之间没有更改。',
+	compareOneFileChanged: '1 个文件已更改',
+	compareFilesChanged: '{0} 个文件已更改',
+	compareStatsAdditions: '，<span class="additions">+{0}</span>',
+	compareStatsDeletions: ' <span class="deletions">&minus;{0}</span>',
+	compareOpenDiffInEditor: '在编辑器中打开差异',
+	compareLoadingDiff: '正在加载差异&hellip;',
+	compareBinaryFile: '二进制文件 &mdash; 无法显示差异。',
+	compareNoTextualChanges: '没有文本更改。',
+	compareHexPrevDiff: '上一处差异',
+	compareHexNextDiff: '下一处差异',
+	compareHexDiffStatus: '差异 {0} / {1}',
+	compareHexNoDifferences: '无差异',
+	compareHexAnalysing: '正在分析&hellip;',
+	compareHexColOffset: '偏移',
+	compareHexColAscii: 'ASCII',
+	compareHexSizes: '{0} &harr; {1}',
+	compareHexLoadError: '无法加载二进制内容：{0}',
+	compareHexToggleButton: '十六进制',
+	compareImageToggleButton: '图片',
+	compareImageCaptionOld: '原始',
+	compareImageCaptionDiff: '差异',
+	compareImageCaptionNew: '修改后',
+	compareImageDiffPixels: '{0}% 的像素存在差异',
+	compareImageStatsTpl: '{0} 像素差异（{1}%）&middot; 最大 {2} &middot; 平均 {3} &middot; MSE {4} &middot; PSNR {5} dB',
+	compareImageModeEnhanced: '差异增强',
+	compareImageModeDifference: '差异',
+	compareImageModeBlend: '叠加',
+	compareImageModeHighlight: '差异高亮',
+	compareImageModeBlink: '闪烁',
+	compareImageAmplify: '放大',
+	compareImageBlendAlpha: '混合',
+	compareImageTolerance: '容差',
+	compareImageNoDifferences: '两张图片内容相同',
+	compareImageTooLarge: '图片过大，无法在此比较（{0} > {1} 字节）&mdash; 仍可使用十六进制视图。',
+	compareImageUnsupportedType: '此文件类型无法渲染为图片。',
+	compareImageDecodeError: '图片无法解码。',
+	compareImageZoomFit: '适应',
+	compareImageZoomIn: '放大',
+	compareImageZoomOut: '缩小',
+	binaryCompareTitle: '{0}（{1} \u2194 {2}）'
+};
+
+/**
+ * Is the interface language of the extension currently Chinese (Simplified)?
+ * Follows the resolved `git-graph-rs.interfaceLanguage` setting ("auto" defers to Visual Studio
+ * Code's display language).
+ * @returns TRUE => zh-cn, FALSE => English (or anything else).
+ */
+export function isZhCn(): boolean {
+	return getConfig().interfaceLanguage === 'zh-cn';
+}
+
+/**
+ * Get a localised message from the dictionary of the currently configured interface language,
+ * substituting `{0}`, `{1}`, ... placeholders with the provided values.
+ * @param key The message key.
+ * @param args The values to substitute into the placeholders.
+ * @returns The localised message.
+ */
+export function t(key: MessageKey, ...args: (string | number)[]): string {
+	const template = isZhCn() ? ZH_CN[key] : EN[key];
+	return template.replace(/\{(\d+)\}/g, (match, index) => typeof args[index] === 'string' || typeof args[index] === 'number' ? String(args[index]) : match);
+}

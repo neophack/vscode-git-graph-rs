@@ -313,7 +313,7 @@ class FindWidget {
 					}
 				}
 				if (zeroLengthMatch) {
-					this.widgetElem.setAttribute(ATTR_ERROR, 'Cannot use a regular expression which has zero length matches');
+					this.widgetElem.setAttribute(ATTR_ERROR, strings.findZeroLengthMatch);
 					this.clearMatches();
 					this.matches = [];
 				}

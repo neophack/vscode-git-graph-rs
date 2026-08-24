@@ -355,7 +355,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 	if (expandedCommit.loading) {
 
-		html += '<div id="cdvLoading">' + SVG_ICONS.loading + ' Loading ' + (expandedCommit.compareWithHash === null ? expandedCommit.commitHash !== UNCOMMITTED ? 'Commit Details' : 'Uncommitted Changes' : 'Commit Comparison') + ' ...</div>';
+		html += '<div id="cdvLoading">' + SVG_ICONS.loading + ' ' + (expandedCommit.compareWithHash === null ? expandedCommit.commitHash !== UNCOMMITTED ? strings.loadingCommitDetails : strings.loadingUncommittedChanges : strings.loadingCommitComparison) + '</div>';
 
 	} else {
 
@@ -399,21 +399,21 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 					}).join(', ')
 
-					: 'None';
+					: strings.noneValue;
 
 				html += '<span class="cdvSummaryTop' + (expandedCommit.avatar !== null ? ' withAvatar' : '') + '"><span class="cdvSummaryTopRow"><span class="cdvSummaryKeyValues">'
 
-					+ '<b>Commit: </b>' + escapeHtml(commitDetails.hash) + '<br>'
+					+ strings.cdvCommitLabel + escapeHtml(commitDetails.hash) + '<br>'
 
-					+ '<b>Parents: </b>' + parents + '<br>'
+					+ strings.cdvParentsLabel + parents + '<br>'
 
-					+ '<b>Author: </b>' + escapeHtml(commitDetails.author) + (commitDetails.authorEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.authorEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.authorEmail) + '</a>&gt;' : '') + '<br>'
+					+ strings.cdvAuthorLabel + escapeHtml(commitDetails.author) + (commitDetails.authorEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.authorEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.authorEmail) + '</a>&gt;' : '') + '<br>'
 
-					+ (commitDetails.authorDate !== commitDetails.committerDate ? '<b>Author Date: </b>' + formatLongDate(commitDetails.authorDate) + '<br>' : '')
+					+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvAuthorDateLabel + formatLongDate(commitDetails.authorDate) + '<br>' : '')
 
-					+ '<b>Committer: </b>' + escapeHtml(commitDetails.committer) + (commitDetails.committerEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.committerEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.committerEmail) + '</a>&gt;' : '') + (commitDetails.signature !== null ? generateSignatureHtml(commitDetails.signature) : '') + '<br>'
+					+ strings.cdvCommitterLabel + escapeHtml(commitDetails.committer) + (commitDetails.committerEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.committerEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.committerEmail) + '</a>&gt;' : '') + (commitDetails.signature !== null ? generateSignatureHtml(commitDetails.signature) : '') + '<br>'
 
-					+ '<b>' + (commitDetails.authorDate !== commitDetails.committerDate ? 'Committer ' : '') + 'Date: </b>' + formatLongDate(commitDetails.committerDate)
+					+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvCommitterDateLabel : strings.cdvDateLabel) + formatLongDate(commitDetails.committerDate)
 
 					+ '</span>'
 
@@ -423,7 +423,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 			} else {
 
-				html += 'Displaying all uncommitted changes.';
+				html += strings.displayingUncommitted;
 
 			}
 
@@ -431,7 +431,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 			// Commit comparison should be shown
 
-			html += 'Displaying all changes from <b>' + commitOrder.from + '</b> to <b>' + (commitOrder.to !== UNCOMMITTED ? commitOrder.to : 'Uncommitted Changes') + '</b>.';
+			html += formatStr(strings.displayingChangesFromTo, commitOrder.from, commitOrder.to !== UNCOMMITTED ? commitOrder.to : strings.uncommittedChangesLabel);
 
 		}
 
@@ -439,11 +439,11 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 	}
 
-	html += '</div><div id="cdvControls"><div id="cdvClose" class="cdvControlBtn" title="Close">' + SVG_ICONS.close + '</div>' +
+		html += '</div><div id="cdvControls"><div id="cdvClose" class="cdvControlBtn" title="' + strings.dialogClose + '">' + SVG_ICONS.close + '</div>' +
 
-		(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
+			(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
 
-		(!expandedCommit.loading ? '<div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="File List View">' + SVG_ICONS.fileList + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="File Tree View">' + SVG_ICONS.fileTree + '</div><div id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="Collapse/Expand Folders">' + SVG_ICONS.collapseAll + '</div><div id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="Expand Folders">' + SVG_ICONS.expandAll + '</div>' : '') +
+			(!expandedCommit.loading ? '<div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileListViewTitle + '">' + SVG_ICONS.fileList + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileTreeViewTitle + '">' + SVG_ICONS.fileTree + '</div><div id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="' + strings.collapseFoldersTitle + '">' + SVG_ICONS.collapseAll + '</div><div id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="' + strings.expandFoldersTitle + '">' + SVG_ICONS.expandAll + '</div>' : '') +
 
 		(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
 
@@ -673,7 +673,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 					isGui: view.gitConfig.guiDiffTool !== null
 
-				}, 'Opening External Directory Diff');
+				}, strings.openingExternalDirDiff);
 
 			});
 
@@ -878,7 +878,7 @@ function cdvUpdateFileState(view: GitGraphView, file: GG.GitFileChange, fileElem
 
 		lastViewedElem.id = 'cdvLastFileViewed';
 
-		lastViewedElem.title = 'Last File Viewed';
+		lastViewedElem.title = strings.lastFileViewedTitle;
 
 		lastViewedElem.innerHTML = SVG_ICONS.eyeOpen;
 
@@ -1184,9 +1184,9 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		const commitHash = getCommitHashForFile(file, expandedCommit);
 
-		dialog.showConfirmation('Are you sure you want to reset <b><i>' + escapeHtml(file.newFilePath) + '</i></b> to it\'s state at commit <b><i>' + abbrevCommit(commitHash) + '</i></b>? Any uncommitted changes made to this file will be overwritten.', 'Yes, reset file', () => {
+		dialog.showConfirmation(formatStr(strings.resetFileConfirm, escapeHtml(file.newFilePath), abbrevCommit(commitHash)), strings.yesResetFile, () => {
 
-			runAction({ command: 'resetFileToRevision', repo: view.currentRepo, commitHash: commitHash, filePath: file.newFilePath }, 'Resetting file');
+			runAction({ command: 'resetFileToRevision', repo: view.currentRepo, commitHash: commitHash, filePath: file.newFilePath }, strings.resettingFile);
 
 		}, {
 
@@ -1412,7 +1412,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'View Diff',
+					title: strings.cdvMenuViewDiff,
 
 					visible: visibility.viewDiff && diffPossible,
 
@@ -1422,7 +1422,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'View File at this Revision',
+					title: strings.cdvMenuViewFileAtRevision,
 
 					visible: visibility.viewFileAtThisRevision && fileExistsAtThisRevisionAndDiffPossible,
 
@@ -1432,7 +1432,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'View Diff with Working File',
+					title: strings.cdvMenuViewDiffWithWorkingFile,
 
 					visible: visibility.viewDiffWithWorkingFile && fileExistsAtThisRevisionAndDiffPossible,
 
@@ -1442,7 +1442,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Open File',
+					title: strings.cdvMenuOpenFile,
 
 					visible: visibility.openFile && file.type !== GG.GitFileStatus.Deleted,
 
@@ -1456,7 +1456,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Mark as Reviewed',
+					title: strings.cdvMenuMarkReviewed,
 
 					visible: visibility.markAsReviewed && codeReviewInProgressAndNotReviewed,
 
@@ -1466,7 +1466,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Mark as Not Reviewed',
+					title: strings.cdvMenuMarkNotReviewed,
 
 					visible: visibility.markAsNotReviewed && expandedCommit.codeReview !== null && !codeReviewInProgressAndNotReviewed,
 
@@ -1480,7 +1480,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Reset File to this Revision' + ELLIPSIS,
+					title: strings.cdvMenuResetFileToRevision + ELLIPSIS,
 
 					visible: visibility.resetFileToThisRevision && fileExistsAtThisRevision && expandedCommit.compareWithHash === null,
 
@@ -1494,7 +1494,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Copy Absolute File Path to Clipboard',
+					title: strings.cdvMenuCopyAbsolutePath,
 
 					visible: visibility.copyAbsoluteFilePath,
 
@@ -1504,7 +1504,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 				{
 
-					title: 'Copy Relative File Path to Clipboard',
+					title: strings.cdvMenuCopyRelativePath,
 
 					visible: visibility.copyRelativeFilePath,
 
@@ -1586,7 +1586,7 @@ function renderCdvExternalDiffBtn(view: GitGraphView) {
 
 		: null;
 
-	externalDiffBtnElem.title = 'Open External Directory Diff' + (toolName !== null ? ' with "' + toolName + '"' : '');
+	externalDiffBtnElem.title = strings.externalDiffTitle + (toolName !== null ? formatStr(strings.externalDiffWithTool, toolName) : '');
 
 }
 
@@ -1659,7 +1659,7 @@ function renderCodeReviewBtn(view: GitGraphView) {
 
 	alterClass(btnElem, CLASS_ACTIVE, active);
 
-	btnElem.title = (active ? 'End' : 'Start') + ' Code Review';
+	btnElem.title = active ? strings.endCodeReviewTitle : strings.startCodeReviewTitle;
 
 }
 

@@ -51,16 +51,39 @@ const SVG_ICONS = {
 	expandAll: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 9H4V10H9V9Z" fill="#C5C5C5"/><path d="M7 12L7 7L6 7L6 12L7 12Z" fill="#C5C5C5"/><path fill-rule="evenodd" clip-rule="evenodd" d="M5 3L6 2H13L14 3V10L13 11H11V13L10 14H3L2 13V6L3 5H5V3ZM6 5H10L11 6V10H13V3H6V5ZM10 6H3V13H10V6Z" fill="#C5C5C5"/></svg>'
 };
 
-const GIT_FILE_CHANGE_TYPES: Record<string, string> = { 'A': 'Added', 'M': 'Modified', 'D': 'Deleted', 'R': 'Renamed', 'U': 'Untracked' };
-const GIT_SIGNATURE_STATUS_DESCRIPTIONS: Record<string, string> = {
-	'G': 'Valid Signature',
-	'U': 'Good Signature with Unknown Validity',
-	'X': 'Good Signature that has Expired',
-	'Y': 'Good Signature made by an Expired Key',
-	'R': 'Good Signature made by a Revoked Key',
-	'E': 'Signature could not be checked',
-	'B': 'Bad Signature'
-};
+/**
+ * Get the localised display name of a Git file change type (A/M/D/R/U), as shown in file tooltips.
+ * @param type The Git file change type code.
+ * @returns The localised name.
+ */
+function getGitFileChangeTypeName(type: string): string {
+	switch (type) {
+		case 'A': return strings.changeTypeAdded;
+		case 'M': return strings.changeTypeModified;
+		case 'D': return strings.changeTypeDeleted;
+		case 'R': return strings.changeTypeRenamed;
+		case 'U': return strings.changeTypeUntracked;
+		default: return type;
+	}
+}
+
+/**
+ * Get the localised description of a commit signature status, as shown in signature tooltips.
+ * @param status The signature status code (G/U/X/Y/R/E/B).
+ * @returns The localised description.
+ */
+function getGitSignatureStatusDescription(status: string): string {
+	switch (status) {
+		case 'G': return strings.signatureStatusValid;
+		case 'U': return strings.signatureStatusUnknownValidity;
+		case 'X': return strings.signatureStatusExpired;
+		case 'Y': return strings.signatureStatusExpiredKey;
+		case 'R': return strings.signatureStatusRevokedKey;
+		case 'E': return strings.signatureStatusCouldNotBeChecked;
+		case 'B': return strings.signatureStatusBad;
+		default: return status;
+	}
+}
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const REF_INVALID_REGEX = /^[-\/].*|[\\" ><~^:?*[]|\.\.|\/\/|\/\.|@{|[.\/]$|\.lock$|^@$/g;
 
@@ -272,10 +295,12 @@ function formatCommaSeparatedList(items: string[]) {
  * @returns The formatted date.
  */
 function formatShortDate(unixTimestamp: number) {
-	const date = new Date(unixTimestamp * 1000), format = initialState.config.dateFormat;
+	const date = new Date(unixTimestamp * 1000), format = initialState.config.dateFormat, zh = getInterfaceLanguage() === 'zh-cn';
 	let dateStr = format.iso
 		? date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate())
-		: date.getDate() + ' ' + MONTHS[date.getMonth()] + ' ' + date.getFullYear();
+		: zh
+			? date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日'
+			: date.getDate() + ' ' + MONTHS[date.getMonth()] + ' ' + date.getFullYear();
 	let hourMinsStr = pad2(date.getHours()) + ':' + pad2(date.getMinutes());
 	let formatted;
 
@@ -307,7 +332,12 @@ function formatShortDate(unixTimestamp: number) {
 			diff /= 31557600;
 		}
 		diff = Math.round(diff);
-		formatted = diff + ' ' + unit + (diff !== 1 ? 's' : '') + ' ago';
+		if (zh) {
+			const units: { [unit: string]: string } = { second: '秒', minute: '分钟', hour: '小时', day: '天', week: '周', month: '个月', year: '年' };
+			formatted = diff + ' ' + units[unit] + '前';
+		} else {
+			formatted = diff + ' ' + unit + (diff !== 1 ? 's' : '') + ' ago';
+		}
 	}
 	return {
 		title: dateStr + ' ' + hourMinsStr + ':' + pad2(date.getSeconds()),
@@ -327,6 +357,8 @@ function formatLongDate(unixTimestamp: number) {
 		let absoluteTimezoneOffset = Math.abs(timezoneOffset);
 		let timezone = timezoneOffset === 0 ? 'Z' : ' ' + (timezoneOffset < 0 ? '+' : '-') + pad2(Math.floor(absoluteTimezoneOffset / 60)) + pad2(absoluteTimezoneOffset % 60);
 		return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds()) + timezone;
+	} else if (getInterfaceLanguage() === 'zh-cn') {
+		return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
 	} else {
 		return date.toString();
 	}

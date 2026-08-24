@@ -259,9 +259,10 @@ class SettingsWidget {
 
 			let globalHtml = '<div class="settingsSection"><h3>' + strings.settingsSectionGraphDisplay + '</h3><table>' +
 				SettingsWidget.selectRow('settingsInterfaceLanguage', strings.settingsInterfaceLanguageLabel, [
+					{ name: strings.settingsLanguageAuto, value: 'auto' },
 					{ name: strings.settingsLanguageEnglish, value: 'en' },
 					{ name: strings.settingsLanguageChinese, value: 'zh-cn' }
-				], viewConfig.interfaceLanguage) +
+				], viewConfig.interfaceLanguageSetting) +
 				SettingsWidget.selectRow('settingsGraphStyle', strings.settingsGraphStyleLabel, [
 					{ name: strings.settingsGraphStyleRounded, value: 'rounded' },
 					{ name: strings.settingsGraphStyleAngular, value: 'angular' }
@@ -416,10 +417,11 @@ class SettingsWidget {
 			}
 
 			const interfaceLanguageElem = <HTMLSelectElement>document.getElementById('settingsInterfaceLanguage');
-			interfaceLanguageElem.value = this.view.config.interfaceLanguage;
+			interfaceLanguageElem.value = this.view.config.interfaceLanguageSetting;
 			interfaceLanguageElem.addEventListener('change', () => {
-				const language: 'en' | 'zh-cn' = interfaceLanguageElem.value === 'zh-cn' ? 'zh-cn' : 'en';
-				if (language === this.view.config.interfaceLanguage) return;
+				const value = interfaceLanguageElem.value;
+				const language: 'auto' | 'en' | 'zh-cn' = value === 'en' || value === 'zh-cn' ? value : 'auto';
+				if (language === this.view.config.interfaceLanguageSetting) return;
 				// Saving the setting reloads the Git Graph View, which re-renders everything in the new language
 				runAction({ command: 'setInterfaceLanguage', language: language }, strings.settingsSavingLanguage);
 			});

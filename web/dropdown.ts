@@ -49,14 +49,14 @@ class Dropdown {
 
 		this.filterInput = filter.appendChild(document.createElement('input'));
 		this.filterInput.className = 'dropdownFilterInput';
-		this.filterInput.placeholder = 'Filter ' + dropdownType + '...';
+		this.filterInput.placeholder = formatStr(strings.filterDropdownPlaceholder, dropdownType);
 
 		this.optionsElem = this.menuElem.appendChild(document.createElement('div'));
 		this.optionsElem.className = 'dropdownOptions';
 
 		this.noResultsElem = this.menuElem.appendChild(document.createElement('div'));
 		this.noResultsElem.className = 'dropdownNoResults';
-		this.noResultsElem.innerHTML = 'No results found.';
+		this.noResultsElem.innerHTML = strings.dropdownNoResults;
 
 		this.currentValueElem = this.elem.appendChild(document.createElement('div'));
 		this.currentValueElem.className = 'dropdownCurrentValue';

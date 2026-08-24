@@ -4,9 +4,10 @@ import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
 import { GitBackend, createBackend } from './backend';
 import { getConfig } from './config';
+import { t } from './i18n';
 import { Logger } from './logger';
 import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
-import { GitExecutable, GitVersionRequirement, UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage } from './utils';
+import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 
@@ -58,8 +59,8 @@ export class DataSource extends Disposable {
 				valid = isSafeRefName(value);
 			}
 			if (!valid) {
-				const label = kind === 'hash' ? 'commit hash' : (kind === 'stash' ? 'stash selector' : (kind === 'url' ? 'URL' : 'reference name'));
-				return 'Invalid ' + label + ' was provided for "' + name + '"';
+				const key = kind === 'hash' ? 'invalidCommitHash' : (kind === 'stash' ? 'invalidStashSelector' : (kind === 'url' ? 'invalidUrl' : 'invalidRefName'));
+				return t(key as 'invalidCommitHash', name);
 			}
 		}
 		return null;
@@ -745,9 +746,9 @@ export class DataSource extends Disposable {
 		}
 		if (pruneTags) {
 			if (!prune) {
-				return Promise.resolve('In order to Prune Tags, pruning must also be enabled when fetching from ' + (remote !== null ? 'a remote' : 'remote(s)') + '.');
+				return Promise.resolve(t('pruneTagsRequiresPrune'));
 			} else if (this.gitExecutable !== null && !doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.FetchAndPruneTags)) {
-				return Promise.resolve(constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.FetchAndPruneTags, 'pruning tags when fetching'));
+				return Promise.resolve(constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.FetchAndPruneTags, t('featurePruningTagsWhenFetching')));
 			}
 			args.push('--prune-tags');
 		}
@@ -1257,7 +1258,7 @@ export class DataSource extends Disposable {
 				}
 				return this.runGitCommand(args, repo);
 			} else {
-				return 'Editing commit messages for non-HEAD commits is not yet supported.';
+				return t('editMessageNonHead');
 			}
 		} catch (error) {
 			return error as ErrorInfo;
@@ -1395,7 +1396,7 @@ export class DataSource extends Disposable {
 	 */
 	public pushStash(repo: string, message: string, includeUntracked: boolean): Promise<ErrorInfo> {
 		if (this.gitExecutable === null) {
-			return Promise.resolve(UNABLE_TO_FIND_GIT_MSG);
+			return Promise.resolve(unableToFindGitMsg());
 		} else if (!doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.PushStash)) {
 			return Promise.resolve(constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.PushStash));
 		}
@@ -1428,7 +1429,7 @@ export class DataSource extends Disposable {
 
 		return new Promise<ErrorInfo>((resolve) => {
 			if (this.gitExecutable === null) {
-				resolve(UNABLE_TO_FIND_GIT_MSG);
+				resolve(unableToFindGitMsg());
 			} else {
 				const args = ['difftool', '--dir-diff'];
 				const config = getConfig(repo);
@@ -1462,7 +1463,7 @@ export class DataSource extends Disposable {
 						}
 					});
 				} else {
-					openGitTerminal(repo, this.gitExecutable.path, args.join(' '), 'Open External Directory Diff');
+					openGitTerminal(repo, this.gitExecutable.path, args.join(' '), t('openExternalDirDiffTerminalName'));
 				}
 				setTimeout(() => resolve(null), 1500);
 			}
@@ -1479,7 +1480,7 @@ export class DataSource extends Disposable {
 	public openGitTerminal(repo: string, command: string | null, name: string) {
 		return new Promise<ErrorInfo>((resolve) => {
 			if (this.gitExecutable === null) {
-				resolve(UNABLE_TO_FIND_GIT_MSG);
+				resolve(unableToFindGitMsg());
 			} else {
 				openGitTerminal(repo, this.gitExecutable.path, command, name);
 				setTimeout(() => resolve(null), 1000);
@@ -1635,7 +1636,7 @@ export class DataSource extends Disposable {
 		this.invalidateRefCache(repo);
 		return new Promise<ErrorInfo>((resolve) => {
 			if (this.gitExecutable === null) {
-				return resolve(UNABLE_TO_FIND_GIT_MSG);
+				return resolve(unableToFindGitMsg());
 			}
 
 			const cmd = cp.spawn(this.gitExecutable.path, args, {
@@ -1664,6 +1665,26 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Spawn Git for a streaming read: unlike the buffered helpers, the caller consumes the
+	 * child's `stdout` directly and destroys the process when done. Used by the hex comparison
+	 * view to read byte ranges of large blobs without ever buffering a whole blob.
+	 * @param args The arguments to pass to Git.
+	 * @param repo The repository to run the command in.
+	 * @returns The spawned Git child process.
+	 */
+	public spawnGitStream(args: string[], repo: string): cp.ChildProcess {
+		if (this.gitExecutable === null) {
+			throw new Error(unableToFindGitMsg());
+		}
+		const child = cp.spawn(this.gitExecutable.path, args, {
+			cwd: repo,
+			env: Object.assign({}, process.env, this.askpassEnv)
+		});
+		this.logger.logCmd('git', args);
+		return child;
+	}
+
+	/**
 	 * Spawn Git, with the return value resolved from `stdout` as a string.
 	 * @param args The arguments to pass to Git.
 	 * @param repo The repository to run the command in.
@@ -1683,7 +1704,7 @@ export class DataSource extends Disposable {
 	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false) {
 		return new Promise<T>((resolve, reject) => {
 			if (this.gitExecutable === null) {
-				return reject(UNABLE_TO_FIND_GIT_MSG);
+				return reject(unableToFindGitMsg());
 			}
 
 			// The command is logged with how long it took, once it has finished: that duration is

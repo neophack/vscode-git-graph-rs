@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { getConfig } from './config';
+import { t } from './i18n';
 import { Logger } from './logger';
 import { RepoChangeEvent } from './repoManager';
 import { Disposable } from './utils/disposable';
@@ -25,7 +26,7 @@ export class StatusBarItem extends Disposable {
 
 		const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
 		statusBarItem.text = 'Git Graph RS';
-		statusBarItem.tooltip = 'View Git Graph RS';
+		statusBarItem.tooltip = t('viewGitGraphRs');
 		statusBarItem.command = 'git-graph-rs.view';
 		this.statusBarItem = statusBarItem;
 

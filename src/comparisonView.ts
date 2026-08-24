@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
+import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
+import { BinaryCompareView } from './binaryCompareView';
 import { DataSource } from './dataSource';
+import { HexDiffSession } from './hexDiff';
+import { t } from './i18n';
 import { GitFileChange } from './types';
 import { UNCOMMITTED, abbrevCommit, encodeJsonForInlineScript, getNonce, viewDiff } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
@@ -15,6 +19,8 @@ export class CommitComparisonView extends Disposable {
 
 	private readonly panel: vscode.WebviewPanel;
 	private fileChanges: ReadonlyArray<GitFileChange> = [];
+	/** Hex comparison sessions by file index; only the most recent few are kept (they hold chunk caches). */
+	private readonly hexSessions = new Map<number, HexDiffSession>();
 
 	/**
 	 * Opens a Commit Comparison View for the given commit range, reusing (and revealing) the
@@ -30,10 +36,10 @@ export class CommitComparisonView extends Disposable {
 		new CommitComparisonView(dataSource, repo, fromHash, toHash, key);
 	}
 
-	private constructor(dataSource: DataSource, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, key: string) {
+	private constructor(private readonly dataSource: DataSource, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, key: string) {
 		super();
 
-		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', 'Compare ' + abbrevCommit(fromHash) + ' ↔ ' + (toHash === '' ? 'Present' : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
+		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', t('comparePanelTitle', abbrevCommit(fromHash), toHash === '' ? t('comparePresentLabel') : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
 			enableScripts: true
 		});
 
@@ -59,10 +65,32 @@ export class CommitComparisonView extends Disposable {
 				} else if (msg.command === 'viewDiff') {
 					const file = this.fileChanges[msg.index];
 					await viewDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath, file.type);
+				} else if (msg.command === 'viewDiffBinary') {
+					// Binary files have no textual diff to open in the native editor: the
+					// standalone Binary Compare tab shows the full hex / picture comparison.
+					const file = this.fileChanges[msg.index];
+					if (file !== undefined) {
+						BinaryCompareView.open(this.dataSource, this.repo, this.fromHash, this.toHash, file);
+					}
+				} else if (msg.command === 'getHexInfo') {
+					const session = this.hexSession(msg.index);
+					if (session === null) return;
+					await respondHexInfo(session, msg.index, msg.bytesPerRow, this.hexPost());
+				} else if (msg.command === 'getHexRows') {
+					const session = this.hexSessions.get(msg.index);
+					if (session === undefined) return;
+					await respondHexRows(session, msg.index, msg.start, msg.count, this.hexPost());
+				} else if (msg.command === 'getImageData') {
+					const session = this.hexSession(msg.index);
+					const file = this.fileChanges[msg.index];
+					if (session === null || file === undefined) return;
+					await respondImageData(session, msg.index, file, this.hexPost());
 				}
 			}),
 			toDisposable(() => {
 				CommitComparisonView.openViews.delete(key);
+				for (const session of this.hexSessions.values()) session.dispose();
+				this.hexSessions.clear();
 				this.panel.dispose();
 			})
 		);
@@ -84,12 +112,46 @@ export class CommitComparisonView extends Disposable {
 		});
 	}
 
+	/** A poster for the shared binary-compare responders that checks the panel's lifetime. */
+	private hexPost(): BinaryComparePost {
+		return (message) => {
+			if (!this.isDisposed()) void this.panel.webview.postMessage(message);
+		};
+	}
+
+	/**
+	 * The hex comparison session of a file, creating it on first use. Re-selecting a file
+	 * reuses its session (the visible chunks stay cached); at most a few sessions are kept
+	 * alive, since each one may hold megabytes of blob chunks.
+	 */
+	private hexSession(index: number): HexDiffSession | null {
+		const existing = this.hexSessions.get(index);
+		if (existing !== undefined) {
+			this.hexSessions.delete(index);
+			this.hexSessions.set(index, existing);
+			return existing;
+		}
+		const file = this.fileChanges[index];
+		if (file === undefined) return null;
+		const session = createHexSession(this.dataSource, this.repo, this.fromHash, this.toHash, file);
+		wireHexSession(session, index, this.hexPost());
+		this.hexSessions.set(index, session);
+		while (this.hexSessions.size > 4) {
+			const oldest = this.hexSessions.keys().next();
+			if (oldest.done) break;
+			const evicted = this.hexSessions.get(oldest.value);
+			this.hexSessions.delete(oldest.value);
+			if (evicted !== undefined) evicted.dispose();
+		}
+		return session;
+	}
+
 	/**
 	 * Generates the HTML of one of the two commit description cards shown in the header.
 	 */
 	private commitCardHtml(hash: string, summaries: { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } }, role: 'base' | 'compare') {
 		if (hash === '' || hash === UNCOMMITTED) {
-			return '<div class="commitCard" data-role="' + role + '"><div class="firstLine"><span class="chip">Present</span><span class="author">Uncommitted changes</span></div><p class="message">The current working tree</p></div>';
+			return '<div class="commitCard" data-role="' + role + '"><div class="firstLine"><span class="chip">' + t('comparePresentLabel') + '</span><span class="author">' + t('compareUncommittedLabel') + '</span></div><p class="message">' + t('compareWorkingTreeLabel') + '</p></div>';
 		}
 		const summary = summaries[hash];
 		if (summary === undefined) {
@@ -116,7 +178,7 @@ export class CommitComparisonView extends Disposable {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <style>
 	body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 	#header { padding: 10px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; }
@@ -160,24 +222,25 @@ export class CommitComparisonView extends Disposable {
 	tr.add td.code { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }
 	tr.del td.code, tr.del td.ln { background: rgba(248,81,73,0.15); }
 	tr.del td.code { color: var(--vscode-gitDecoration-deletedResourceForeground, #b31d28); }
-	tr.hunk td { background: var(--vscode-editorInlayHint-background, rgba(127,127,127,0.15)); color: var(--vscode-editorInlayHint-foreground, inherit); padding: 2px 8px; font-size: 11px; }
+		tr.hunk td { background: var(--vscode-editorInlayHint-background, rgba(127,127,127,0.15)); color: var(--vscode-editorInlayHint-foreground, inherit); padding: 2px 8px; font-size: 11px; }
+		${binaryCompareCss()}
 </style>
 </head>
 <body>
 <div id="header">
-	<h1>Comparing changes</h1>
+	<h1>${t('comparingChangesTitle')}</h1>
 	<div id="commitCards">${this.commitCardHtml(this.fromHash, summaries, 'base')}<span class="arrowSep">&hellip;</span>${this.commitCardHtml(this.toHash, summaries, 'compare')}</div>
 	<div id="stats"></div>
 </div>
 <div id="body">
-	<div id="sidebar"><h2>${error !== null ? 'Error' : 'Files changed'}</h2></div>
-	<div id="main"><div id="fileHeader"></div><div id="diffArea"><div class="status">${loading ? 'Loading changes&hellip;' : escapeHtml(error !== null ? error : 'No changes between these commits.')}</div></div></div>
+	<div id="sidebar"><h2>${error !== null ? t('compareErrorLabel') : t('compareFilesChangedLabel')}</h2></div>
+	<div id="main"><div id="fileHeader"></div><div id="diffArea"><div class="status">${loading ? t('compareLoadingChanges') : escapeHtml(error !== null ? error : t('compareNoChanges'))}</div></div></div>
 </div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 	const LETTERS = { A: 'A', C: 'C', D: 'D', M: 'M', R: 'R', T: 'T', U: 'U', '??': 'U' };
-	let selectedIndex = -1, requestedIndex = -1;
+	let selectedIndex = -1, requestedIndex = -1, lastDiffWasBinary = false;
 
 	/* ---------- Statistics header ---------- */
 	let totalAdditions = 0, totalDeletions = 0;
@@ -185,11 +248,12 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 		if (file.additions !== null) totalAdditions += file.additions;
 		if (file.deletions !== null) totalDeletions += file.deletions;
 	}
+	const filesChangedTemplate = '${t('compareFilesChanged', '{0')}';
 	if (changes.length > 0) {
 		document.getElementById('stats').innerHTML =
-			(changes.length === 1 ? '1 file changed' : changes.length + ' files changed') +
-			(totalAdditions > 0 ? ' with <span class="additions">+' + totalAdditions + '</span>' : '') +
-			(totalDeletions > 0 ? ' <span class="deletions">&minus;' + totalDeletions + '</span>' : '');
+			(changes.length === 1 ? '${t('compareOneFileChanged')}' : filesChangedTemplate.replace('{0}', String(changes.length))) +
+			(totalAdditions > 0 ? '${t('compareStatsAdditions', '{0}')}'.replace('{0}', String(totalAdditions)) : '') +
+			(totalDeletions > 0 ? '${t('compareStatsDeletions', '{0}')}'.replace('{0}', String(totalDeletions)) : '');
 	}
 
 	/* ---------- File tree sidebar ---------- */
@@ -254,19 +318,30 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 	const diffCache = {}; // index -> { diff: string|null, error: string|null }: revisiting a file is instant
 	function selectFile(index) {
 		selectedIndex = index;
+		lastDiffWasBinary = false;
+		hexActive = false;
+		hexEls = null;
+		hexSections = null;
+		hexRows.clear();
+		imgActive = false;
+		imgEls = null;
+		diffArea.className = '';
 		document.querySelectorAll('.treeRow.file').forEach((row) => row.classList.toggle('selected', parseInt(row.dataset.index) === index));
 		const file = changes[index];
 		const filePath = file.newFilePath !== '' ? file.newFilePath : file.oldFilePath;
+		currentFileIsImage = isImagePath(filePath);
 		document.getElementById('fileHeader').innerHTML =
 			'<span class="letter" style="color: ' + statusColour(file) + '">' + (LETTERS[file.type] || '?') + '</span>' +
 			'<span id="filePath">' + escapeHtml(filePath) + '</span>' + countsHtml(file) +
-			'<button id="openDiffBtn">Open Diff in Editor</button>';
-		document.getElementById('openDiffBtn').addEventListener('click', () => vscode.postMessage({ command: 'viewDiff', index: index }));
+			'<button id="openDiffBtn">${t('compareOpenDiffInEditor')}</button>';
+		// A binary file has no textual diff for the native editor: its button opens the
+		// standalone Binary Compare tab instead.
+		document.getElementById('openDiffBtn').addEventListener('click', () => vscode.postMessage({ command: lastDiffWasBinary ? 'viewDiffBinary' : 'viewDiff', index: index }));
 		const cached = diffCache[index];
 		if (cached !== undefined) {
 			showDiff(cached);
 		} else {
-			diffArea.innerHTML = '<div class="status">Loading diff&hellip;</div>';
+			diffArea.innerHTML = '<div class="status">${t('compareLoadingDiff')}</div>';
 			vscode.postMessage({ command: 'getFileDiff', index: index });
 		}
 		requestedIndex = index;
@@ -322,9 +397,11 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 			}
 		}
 		if (binary) {
-			diffArea.innerHTML = '<div class="status">Binary file &mdash; the diff cannot be displayed.</div>';
+			lastDiffWasBinary = true;
+			if (currentFileIsImage) enterImageView(selectedIndex);
+			else enterHexView(selectedIndex);
 		} else if (rows.childNodes.length === 0) {
-			diffArea.innerHTML = '<div class="status">No textual changes.</div>';
+			diffArea.innerHTML = '<div class="status">${t('compareNoTextualChanges')}</div>';
 		} else {
 			table.appendChild(rows);
 			diffArea.innerHTML = '';
@@ -332,13 +409,20 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 		}
 	}
 
+	/* The hex and picture comparison area, shared with the standalone Binary Compare tab. */
+	${binaryCompareScript()}
+
 	window.addEventListener('message', (event) => {
 		const msg = event.data;
 		if (msg.command === 'fileDiff') {
 			diffCache[msg.index] = { diff: msg.diff, error: msg.error };
 			if (msg.index === requestedIndex) showDiff(diffCache[msg.index]);
+		} else {
+			handleBinaryCompareMessage(msg);
 		}
 	});
+
+	window.addEventListener('resize', function () { onBinaryCompareResize(); });
 
 	if (changes.length > 0) selectFile(0);
 </script>

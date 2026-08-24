@@ -238,5 +238,8 @@
 	"config.git-graph-rs.tabIconColourTheme.description": "Specifies the colour theme of the icon displayed on the Git Graph tab.",
 	"config.git-graph-rs.tabIconColourTheme.enumDescription0": "Show a colour icon which suits most Visual Studio Code colour themes",
 	"config.git-graph-rs.tabIconColourTheme.enumDescription1": "Show a grey icon which suits Visual Studio Code colour themes that are predominantly grayscale",
-	"config.git-graph-rs.interfaceLanguage.description": "The language used for the Git Graph View's webview interface (toolbar, context menus, dialogs and messages). Changing this setting reloads the view."
+	"config.git-graph-rs.interfaceLanguage.description": "The language used for the Git Graph View's webview interface (toolbar, context menus, dialogs and messages). The default \"auto\" follows Visual Studio Code's display language; setting it to \"en\" or \"zh-cn\" overrides it. Changing this setting reloads the view.",
+	"config.git-graph-rs.interfaceLanguage.enumDescription0": "Follow Visual Studio Code's display language",
+	"config.git-graph-rs.interfaceLanguage.enumDescription1": "English",
+	"config.git-graph-rs.interfaceLanguage.enumDescription2": "Chinese (Simplified)"
 }

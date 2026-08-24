@@ -310,6 +310,7 @@ export interface GitGraphViewConfig {
 	readonly fetchAvatars: boolean;
 	readonly graph: GraphConfig;
 	readonly interfaceLanguage: 'en' | 'zh-cn';
+	readonly interfaceLanguageSetting: 'auto' | 'en' | 'zh-cn';
 	readonly includeCommitsMentionedByReflogs: boolean;
 	readonly initialLoadCommits: number;
 	readonly keybindings: KeybindingConfig
@@ -1395,7 +1396,7 @@ export interface ResponsePullRequestStatus {
 
 export interface RequestSetInterfaceLanguage extends BaseMessage {
 	readonly command: 'setInterfaceLanguage';
-	readonly language: 'en' | 'zh-cn';
+	readonly language: 'auto' | 'en' | 'zh-cn';
 }
 export interface ResponseSetInterfaceLanguage extends ResponseWithErrorInfo {
 	readonly command: 'setInterfaceLanguage';

@@ -15,12 +15,13 @@ import { getConfig } from './config';
 import { CommitComparisonView } from './comparisonView';
 import { DataSource, GitCommitData, GitCommitDetailsData, GitConfigKey } from './dataSource';
 import { ExtensionState } from './extensionState';
+import { t } from './i18n';
 import { Logger } from './logger';
 import { PullRequestDataSource } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { ErrorInfo, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
-import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, showErrorMessage, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
+import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**
@@ -273,7 +274,7 @@ export class GitGraphView extends Disposable {
 			await this.handleMessage(msg);
 		} catch (error) {
 			this.logger.logError('Failed to handle "' + msg.command + '" message: ' + error);
-			showErrorMessage('Git Graph RS encountered an error while handling this action.');
+			showErrorMessage(t('actionHandlingError'));
 		} finally {
 			this.repoFileWatcher.unmute();
 		}
@@ -714,7 +715,7 @@ export class GitGraphView extends Disposable {
 				break;
 			case 'rescanForRepos':
 				if (!(await this.repoManager.searchWorkspaceForRepos())) {
-					showErrorMessage('No Git repositories were found in the current workspace.');
+					showErrorMessage(t('noReposInWorkspace'));
 				}
 				break;
 			case 'resetFileToRevision':
@@ -870,6 +871,7 @@ export class GitGraphView extends Disposable {
 				fetchAvatars: config.fetchAvatars && this.extensionState.isAvatarStorageAvailable(),
 				graph: config.graph,
 				interfaceLanguage: config.interfaceLanguage,
+				interfaceLanguageSetting: config.interfaceLanguageSetting,
 				includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
 				initialLoadCommits: config.initialLoadCommits,
 				keybindings: config.keybindings,
@@ -914,8 +916,8 @@ export class GitGraphView extends Disposable {
 		// when neither is present. The Settings widget's backend section shows which is in use.
 		if (this.dataSource.isGitExecutableUnknown() && !hasEngineForPlatform(this.extensionPath)) {
 			body = `<body class="unableToLoad">
-			<h2>Unable to load Git Graph</h2>
-			<p class="unableToLoadMessage">${UNABLE_TO_FIND_GIT_MSG}</p>
+			<h2>${t('unableToLoadGitGraph')}</h2>
+			<p class="unableToLoadMessage">${unableToFindGitMsg()}</p>
 			</body>`;
 		} else if (numRepos > 0) {
 			const stickyClassAttr = initialState.config.stickyHeader ? ' class="sticky"' : '';
@@ -952,10 +954,10 @@ export class GitGraphView extends Disposable {
 			</body>`;
 		} else {
 			body = `<body class="unableToLoad">
-			<h2>Unable to load Git Graph</h2>
-			<p class="unableToLoadMessage">No Git repositories were found in the current workspace when it was last scanned by Git Graph.</p>
-			<p>If your repositories are in subfolders of the open workspace folder(s), make sure you have set the Git Graph Setting "git-graph-rs.maxDepthOfRepoSearch" appropriately (read the <a href="https://github.com/mhutchie/vscode-git-graph/wiki/Extension-Settings#max-depth-of-repo-search" target="_blank">documentation</a> for more information).</p>
-			<p><div id="rescanForReposBtn" class="roundedBtn">Re-scan the current workspace for repositories</div></p>
+			<h2>${t('unableToLoadGitGraph')}</h2>
+			<p class="unableToLoadMessage">${t('noReposWhenLastScanned')}</p>
+			<p>${t('noReposHint', 'https://github.com/mhutchie/vscode-git-graph/wiki/Extension-Settings#max-depth-of-repo-search')}</p>
+			<p><div id="rescanForReposBtn" class="roundedBtn">${t('rescanForReposButton')}</div></p>
 			<script nonce="${nonce}">(function(){ var api = acquireVsCodeApi(); document.getElementById('rescanForReposBtn').addEventListener('click', function(){ api.postMessage({command: 'rescanForRepos'}); }); })();</script>
 			</body>`;
 		}
@@ -1005,8 +1007,8 @@ export class GitGraphView extends Disposable {
 	 * @param language The interface language.
 	 * @returns The ErrorInfo of the failure (NULL => saved successfully).
 	 */
-	private async setInterfaceLanguage(language: 'en' | 'zh-cn'): Promise<ErrorInfo> {
-		if (language !== 'en' && language !== 'zh-cn') return 'The interface language must be either "en" or "zh-cn".';
+	private async setInterfaceLanguage(language: 'auto' | 'en' | 'zh-cn'): Promise<ErrorInfo> {
+		if (language !== 'auto' && language !== 'en' && language !== 'zh-cn') return t('interfaceLanguageInvalid');
 		try {
 			await vscode.workspace.getConfiguration('git-graph-rs').update('interfaceLanguage', language, vscode.ConfigurationTarget.Global);
 		} catch (error) {
@@ -1032,10 +1034,10 @@ export class GitGraphView extends Disposable {
 			: null;
 		if (isValid === null) {
 			this.logger.log('Rejected a request to save the setting "' + setting + '" (not a writable Global Setting).');
-			return 'The setting "' + setting + '" cannot be changed from the Settings page.';
+			return t('settingNotWritable', setting);
 		}
 		if (!isValid(value)) {
-			return 'The value provided for the setting "' + setting + '" is invalid.';
+			return t('settingValueInvalid', setting);
 		}
 		try {
 			await vscode.workspace.getConfiguration('git-graph-rs').update(setting, value, vscode.ConfigurationTarget.Global);
@@ -1086,7 +1088,7 @@ export class GitGraphView extends Disposable {
 					author: '*',
 					email: '',
 					date: Math.round(Date.now() / 1000),
-					message: 'Uncommitted Changes (' + numUncommittedChanges + ')',
+					message: t('uncommittedChangesRow', numUncommittedChanges),
 					heads: [],
 					tags: [],
 					remotes: [],
@@ -1135,7 +1137,7 @@ export class GitGraphView extends Disposable {
 	private async openLogFile(): Promise<string | null> {
 		const logFile = this.logger.getLogFile();
 		if (logFile === null) {
-			return 'No log is being recorded for this session. Enable the "git-graph-rs.enableLog" setting to record one.';
+			return t('noLogRecorded');
 		}
 		try {
 			const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile));

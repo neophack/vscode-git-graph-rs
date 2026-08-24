@@ -186,6 +186,33 @@ body.vscode-high-contrast .dialog{
 	margin-right:8px;
 }
 
+/* Data loss risk warnings (see Dialog.showDataLossWarning) */
+.dialog .dialogAlert.warning{
+	color:var(--vscode-errorForeground, #f48771);
+}
+.dialog .dialogAlert.warning svg{
+	fill:var(--vscode-errorForeground, #f48771);
+	opacity:1;
+}
+.dialog .dataLossMascot{
+	margin-top:12px;
+	text-align:center;
+	-webkit-user-select:none;
+	user-select:none;
+}
+.dialog .dataLossMascot img{
+	display:block;
+	margin:0 auto;
+	max-width:150px;
+	max-height:150px;
+	border-radius:8px;
+}
+.dialog .dataLossMascotCaption{
+	margin-top:6px;
+	font-weight:bold;
+	color:var(--vscode-errorForeground, #f48771);
+}
+
 .dialog .dialogInfo{
 	cursor:help;
 }

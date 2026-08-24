@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "git-graph-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "gix",
  "regex",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "git-graph-node"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "git-graph-core",
  "napi",
