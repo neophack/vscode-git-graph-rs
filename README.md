@@ -24,7 +24,9 @@ bug reports, feature requests and questions go to
 ## Status
 
 This is a working VS Code extension: the webview and extension host layer are ported from the
-original (with the Gerrit integration removed), and **every repository read** — the view load,
+original (including a Gerrit integration of its own: per-repository change-ref fetching with a
+change badge, a review-info dialog and an open/merged/abandoned status filter), and **every
+repository read** — the view load,
 commit, stash and uncommitted details, comparisons, config, file contents and single-file diffs,
 plus the on-demand reads behind the Find dialogue, the tag details, submodule and upstream
 lookups, and the commit counting the view's jump-to-commit uses — is served by the Rust engine,
@@ -345,7 +347,8 @@ Cross-compiling for another platform:
 
 ```sh
 node scripts/build-addon.mjs --release --target aarch64-apple-darwin
-build-rust.bat                        # all six targets, one command (Windows host)
+build-rust.bat                        # the four common targets, one command (Windows host)
+build-rust.bat --full                 # all six, adding Windows arm64 and macOS x64
 ```
 
 The build is delegated to [`@napi-rs/cli`](https://napi.rs) (`napi build`), with three routes
@@ -362,15 +365,17 @@ that ship are the ones CI builds on native runners for each platform, not local 
 
 The native engine is built for the six platforms Visual Studio Code itself ships for — every
 desktop OS in both x64 and arm64. (32-bit x86 is not listed because VS Code no longer ships 32-bit
-builds.)
+builds.) Only the four common ones ship by default: Windows ARM64 and macOS x64 have few users, and
+on them the extension runs over the `git` CLI backend instead (see below) — a `full` release run or
+`build-rust.bat --full` builds and packages all six.
 
 | Platform | Target | CI | On a Windows host | On a Linux host | On a macOS host |
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | ✅ | ✅ local MSVC | — | — |
-| Windows arm64 | `aarch64-pc-windows-msvc` | ✅ | ✅ `rust-lld` + SDK/CRT (see above) | — | — |
+| Windows arm64 | `aarch64-pc-windows-msvc` | ✅ full only | ✅ `rust-lld` + SDK/CRT (see above) | — | — |
 | Linux x64 | `x86_64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ native | — |
 | Linux arm64 | `aarch64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ `gcc-aarch64-linux-gnu` | — |
-| macOS x64 | `x86_64-apple-darwin` | ✅ | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
+| macOS x64 | `x86_64-apple-darwin` | ✅ full only | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
 | macOS arm64 | `aarch64-apple-darwin` | ✅ | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
 
 ¹ A cross-built binary has not run on the platform it targets: the cross-builds are for
@@ -393,29 +398,33 @@ the `git` CLI — including where gix itself has no implementation yet (push abo
 ## Shipping
 
 [`.github/workflows/native-build.yml`](.github/workflows/native-build.yml) builds one binary per
-platform and assembles them into the layout the extension loads from:
+platform — the four common ones by default, all six when its `full` input is set — and assembles
+them into the layout the extension loads from:
 
 ```
 native/
 ├── win32-x64-msvc/git-graph.node
-├── win32-arm64-msvc/git-graph.node
+├── win32-arm64-msvc/git-graph.node      # full runs only
 ├── linux-x64-gnu/git-graph.node
 ├── linux-arm64-gnu/git-graph.node
-├── darwin-x64/git-graph.node
+├── darwin-x64/git-graph.node            # full runs only
 └── darwin-arm64/git-graph.node
 ```
 
 At load time the extension picks the directory for `process.platform` + `process.arch`. One VSIX
-holds all six; installing it needs no Git, Rust, Cargo, Python or CMake on the user's machine.
+holds every engine that was built; installing it needs no Git, Rust, Cargo, Python or CMake on the
+user's machine.
 
 ### Publishing a release
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) is triggered by hand — the
 Actions tab ("Release" → "Run workflow") or `gh workflow run release.yml -f version=v0.2.0`. It
 runs the whole build-and-test pipeline on native runners, assembles the VSIX from exactly the
-binaries that run produced, and publishes a GitHub Release with the VSIX and the six engine
-binaries as assets. The tag defaults to `package.json`'s version; an override updates the VSIX's
-version to match. Nothing is published unless every test passed.
+binaries that run produced, and publishes a GitHub Release with the VSIX and the per-platform
+VSIXs as assets. By default the engines and the per-platform VSIXs are the four common ones;
+check `full` (or `gh workflow run release.yml -f full=true`) to ship all six. The tag defaults to
+`package.json`'s version; an override updates the VSIX's version to match. Nothing is published
+unless every test passed.
 
 ## Roadmap
 
@@ -436,7 +445,7 @@ The phases below follow the rewrite plan this project was started from.
 | 7–8 | Stash operations, rebase, interactive rebase | not started (the stash is *read* today) |
 | 9–10 | Bisect, reflog, Git Undo | not started |
 | 11 | Plumbing (objects, refs, index) | partial — the read side exists internally |
-| 12 | Gerrit changes and patchsets | partial — change refs are filtered and displayed |
+| 12 | Gerrit changes and patchsets | partial — change refs are fetched, filtered and displayed with review badges |
 | 13–14 | Large-repository work, cache invalidation | partial — handles and object caches are warm; no incremental invalidation yet |
 
 The **whole read path** is on `GitBackend`, implemented twice — engine and CLI — and asserted to

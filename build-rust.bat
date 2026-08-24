@@ -1,12 +1,19 @@
 @echo off
 setlocal enabledelayedexpansion
 rem ============================================================================
-rem  build-rust.bat - build the native addon for EVERY platform the extension
+rem  build-rust.bat - build the native addon for the platforms the extension
 rem  ships for, not just this one.
 rem
-rem    build-rust.bat                    build all six targets (release)
+rem    build-rust.bat                    build the four common targets (release)
+rem    build-rust.bat --full             build all six targets
 rem    build-rust.bat --only <triple>    build a single target
 rem    build-rust.bat --debug            debug instead of release
+rem
+rem  By default the two niche targets (aarch64-pc-windows-msvc, Windows arm64,
+rem  and x86_64-apple-darwin, macOS x64) are NOT built: few editors run them,
+rem  and the extension falls back to the `git` CLI backend when their binary is
+rem  missing, so shipping without them costs those users speed, not function.
+rem  Use --full (or --only <triple>) to build them too.
 rem
 rem  How each target is produced from a Windows host:
 rem
@@ -31,9 +38,11 @@ cd /d "%~dp0"
 
 set "RELEASE=--release"
 set "ONLY="
+set "FULL="
 :parse
 if "%~1"=="" goto :parsed
 if /i "%~1"=="--only" ( set "ONLY=%~2" & shift & shift & goto :parse )
+if /i "%~1"=="--full" ( set "FULL=1" & shift & goto :parse )
 if /i "%~1"=="--debug" ( set "RELEASE=" & shift & goto :parse )
 echo Unknown option: %~1
 goto :usage
@@ -73,12 +82,20 @@ set /a BUILT=0
 set /a FAILED=0
 
 rem ---- The six targets, each through the toolchain that suits it ---------------------
+rem The four common targets are always built; the two niche ones (Windows arm64,
+rem macOS x64) only with --full or --only, since the extension falls back to the
+rem `git` CLI backend when their binary is missing.
 call :build x86_64-pc-windows-msvc ""
-call :build aarch64-pc-windows-msvc "--cross-compile"
 call :build x86_64-unknown-linux-gnu "--cross-compile"
 call :build aarch64-unknown-linux-gnu "--cross-compile"
-call :build x86_64-apple-darwin "--cross-compile"
 call :build aarch64-apple-darwin "--cross-compile"
+if defined FULL (
+    call :build aarch64-pc-windows-msvc "--cross-compile"
+    call :build x86_64-apple-darwin "--cross-compile"
+) else (
+    echo.
+    echo Skipped: aarch64-pc-windows-msvc, x86_64-apple-darwin ^(--full builds them^)
+)
 
 echo.
 if %FAILED% GTR 0 (
@@ -106,7 +123,9 @@ if errorlevel 1 (
 exit /b 0
 
 :usage
-echo Usage: build-rust.bat [--only ^<triple^>] [--debug]
+echo Usage: build-rust.bat [--full] [--only ^<triple^>] [--debug]
+echo Builds the four common targets by default; --full adds aarch64-pc-windows-msvc
+echo and x86_64-apple-darwin ^(niche platforms that fall back to the git CLI backend^).
 echo Targets: x86_64-pc-windows-msvc aarch64-pc-windows-msvc x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin
 exit /b 1
 

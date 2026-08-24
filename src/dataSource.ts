@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
 import { GitBackend, createBackend } from './backend';
 import { getConfig } from './config';
+import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
 import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
@@ -34,6 +35,8 @@ export class DataSource extends Disposable {
 	private gitExecutable!: GitExecutable | null;
 	/** Cache of Git config data per repository, to avoid repeated Git spawns on every view load. */
 	private readonly configCache = new Map<string, { remotesSignature: string, promise: Promise<GitRepoConfigData> }>();
+	/** The Gerrit integration (change ref fetching + NoteDb meta parsing), run over this DataSource's Git runner. */
+	public readonly gerrit: GerritDataSource = new GerritDataSource(this);
 
 	/**
 	 * Check that values received from an untrusted source (the webview) are safe to be passed to
@@ -205,7 +208,7 @@ export class DataSource extends Disposable {
 	/**
 	 * Get the commits in a repository.
 	 */
-	public getCommits(repo: string, branches: ReadonlyArray<string> | null, authors: ReadonlyArray<string> | null, maxCommits: number, showTags: boolean, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: ReadonlyArray<string>, hideRemotes: ReadonlyArray<string>, _stashes: ReadonlyArray<GitStash>, _gerritRefs: ReadonlyArray<string> | null = null, _gerritShowChangeRefs: boolean = false, filterPath: string | null = null, deferUncommittedChanges: boolean = false): Promise<GitCommitData> {
+	public getCommits(repo: string, branches: ReadonlyArray<string> | null, authors: ReadonlyArray<string> | null, maxCommits: number, showTags: boolean, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: ReadonlyArray<string>, hideRemotes: ReadonlyArray<string>, _stashes: ReadonlyArray<GitStash>, gerritRefs: ReadonlyArray<string> | null = null, gerritShowChangeRefs: boolean = false, filterPath: string | null = null, deferUncommittedChanges: boolean = false): Promise<GitCommitData> {
 		const config = getConfig();
 		// Branch names are received from the webview and passed to git log as bare arguments, so
 		// drop any that could be misinterpreted as git options (argument injection). Custom Branch
@@ -225,9 +228,8 @@ export class DataSource extends Disposable {
 			commitOrdering: commitOrdering,
 			remotes: remotes,
 			hideRemotes: hideRemotes,
-			// Gerrit integration disabled
-			gerritRefs: null,
-			gerritShowChangeRefs: false,
+			gerritRefs: gerritRefs,
+			gerritShowChangeRefs: gerritShowChangeRefs,
 			filterPaths: filterPath !== null ? [filterPath] : undefined,
 			deferUncommittedChanges: deferUncommittedChanges,
 			showUncommittedChanges: config.showUncommittedChanges,

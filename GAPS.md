@@ -79,10 +79,15 @@ the roadmap phase that would add them:
 `askpass/*` and the `package.json` contributes block (14 commands, 90 settings) are ported and
 compile clean, under the `git-graph-rs` prefix.
 
-**Deliberately not ported:** the original's Gerrit integration (`gerrit.ts`,
-`reviewStateTransfer.ts`, `web/gerritView.ts`, `web/gerritFormat.ts`, the `gerrit.*` settings,
-and the Gerrit commands/menus/messages). The engine's `gerritRefs` / `showChangeRefs` ref-filter
-parameters remain in the ABI but are always passed as disabled.
+**Gerrit, re-ported in part:** the original's Gerrit integration was initially removed wholesale;
+this project now carries its display and fetch path — `src/gerrit.ts` (change ref parsing, the
+NoteDb meta history parser, the status filter, and `GerritDataSource` over the CLI), the change
+badge + review info dialog (`web/gerritView.ts`), and a Repository Settings section holding the
+per-repository "Fetch Gerrit change refs" checkbox (unchecking deletes the locally fetched change
+refs and stops the fetching) and the open/merged/abandoned/WIP status filter. The engine's
+`gerritRefs` / `showChangeRefs` graph parameters are live again for this. Still not ported: the
+Gerrit controls bar (submit-for-review / amend Change-Id / hooks), the inline meta event rows
+beneath a change's commit, and `reviewStateTransfer.ts`.
 
 ## 4. Behaviour differences in what *is* implemented
 

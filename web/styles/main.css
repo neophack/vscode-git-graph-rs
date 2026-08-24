@@ -1201,3 +1201,186 @@ body.tagLabelsRightAligned .tagsWrapper {
 .prBadge.st-merged{ color:#a371f7; }
 .prBadge.st-closed{ color:var(--gg-rejected, #bb4b4b); }
 .prBadge.st-draft{ color:var(--vscode-descriptionForeground, #888); }
+
+/* Gerrit Integration */
+
+/*
+ * Gerrit colour palette. The colours default to VS Code's chart colours so that they follow the
+ * active theme, with the original GitHub-inspired palette as fallbacks.
+ */
+:root{
+	--gg-icon:var(--vscode-charts-yellow, #f5a623);
+	--gg-approved:var(--vscode-charts-green, #2da44e);
+	--gg-approval-weak:var(--vscode-charts-green, #84d16d);
+	--gg-neutral:var(--vscode-descriptionForeground, #8b949e);
+	--gg-disapproval-weak:var(--vscode-charts-orange, #e08c38);
+	--gg-rejected:var(--vscode-charts-red, #d1242f);
+	--gg-merged:var(--vscode-charts-green, #7ca690);
+	--gg-muted-foreground:var(--vscode-descriptionForeground, rgba(139, 148, 158, 0.95));
+	--gg-muted-border:var(--vscode-descriptionForeground, rgba(139, 148, 158, 0.55));
+	--gg-muted-detail:rgba(139, 148, 158, 0.14);
+	--gg-muted-detail-background:rgba(139, 148, 158, 0.12);
+}
+body.vscode-high-contrast{
+	--gg-icon:var(--vscode-editorLightBulb-foreground, #f5a623);
+	--gg-approved:var(--vscode-testing-iconPassed, #2da44e);
+	--gg-rejected:var(--vscode-testing-iconFailed, #d1242f);
+	--gg-disapproval-weak:var(--vscode-editorWarning-foreground, #e08c38);
+	--gg-muted-foreground:var(--vscode-editor-foreground);
+	--gg-muted-border:var(--vscode-editor-foreground);
+	--gg-muted-detail:rgba(255, 255, 255, 0.16);
+	--gg-muted-detail-background:rgba(255, 255, 255, 0.12);
+}
+
+.gitRef.gerrit svg{
+	fill:var(--gg-icon);
+}
+
+.gitRef.gerrit .gg-label{
+	margin-left:4px;
+	padding:0 4px;
+	border-radius:3px;
+	font-size:9px;
+	font-weight:bold;
+	color:var(--vscode-editor-background);
+}
+
+.gitRef.gerrit .gg-label.cr2{ background-color:var(--gg-approved); }
+.gitRef.gerrit .gg-label.cr1{ background-color:var(--gg-approval-weak); }
+.gitRef.gerrit .gg-label.cr0{ background-color:var(--gg-neutral); }
+.gitRef.gerrit .gg-label.cr-1{ background-color:var(--gg-disapproval-weak); }
+.gitRef.gerrit .gg-label.cr-2{ background-color:var(--gg-rejected); }
+.gitRef.gerrit .gg-label.v1{ background-color:var(--gg-approved); }
+.gitRef.gerrit .gg-label.v-1{ background-color:var(--gg-rejected); }
+
+.gitRef.gerrit .gg-status{
+	margin:2px;
+	font-size:9px;
+	opacity:0.75;
+}
+
+.gitRef.gerrit .gg-status.merged{ color:var(--gg-merged); }
+.gitRef.gerrit .gg-status.abandoned{ color:var(--gg-rejected); text-decoration:none; }
+.gitRef.gerrit .gg-status.wip{ color:var(--gg-disapproval-weak); }
+
+/* Gerrit review info dialog (click on a change badge) */
+
+.gg-hint {
+	display:block;
+	margin-top:8px;
+	font-size:11px;
+	opacity:0.7;
+}
+
+.gg-timeline {
+	margin-top:10px;
+	padding-left:4px;
+	border-left:2px dashed var(--gg-muted-border);
+}
+
+.gg-event {
+	position:relative;
+	padding:1px 0 1px 14px;
+	font-size:11px;
+	border-radius:3px;
+}
+
+.gg-event-expandable {
+	cursor:pointer;
+}
+
+.gg-event-expandable:hover {
+	background-color:var(--gg-muted-detail);
+}
+
+.gg-event::before {
+	content:'';
+	position:absolute;
+	left:-4px;
+	top:8px;
+	width:6px;
+	height:6px;
+	border-radius:3px;
+	background-color:var(--gg-muted-foreground);
+}
+
+.gg-event-row {
+	display:flex;
+	align-items:baseline;
+	white-space:nowrap;
+}
+
+.gg-event-toggle {
+	flex:0 0 auto;
+	width:12px;
+	height:12px;
+	margin-right:2px;
+	opacity:0.45;
+	transition:transform 0.1s ease-in;
+	transform:rotate(-90deg);
+}
+
+.gg-event-toggle svg {
+	width:12px;
+	height:12px;
+	fill:var(--gg-muted-foreground);
+	display:block;
+}
+
+.gg-event.expanded .gg-event-toggle {
+	transform:rotate(0deg);
+	opacity:0.8;
+}
+
+.gg-event-icon {
+	flex:0 0 auto;
+	margin-right:4px;
+	opacity:0.8;
+}
+
+.gg-event-text {
+	flex:1 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+
+.gg-event-reviewer {
+	flex:0 1 auto;
+	min-width:4em;
+	margin-left:6px;
+	text-align:right;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	opacity:0.7;
+	font-style:italic;
+}
+
+.gg-event-date {
+	flex:0 0 auto;
+	margin-left:6px;
+	min-width:8.5em;
+	text-align:right;
+	font-variant-numeric:tabular-nums;
+	opacity:0.6;
+}
+
+.gg-event-detail {
+	display:none;
+	margin:3px 0 4px 18px;
+	padding:5px 8px;
+	border-radius:3px;
+	background-color:var(--gg-muted-detail-background);
+	font-family:var(--vscode-editor-font-family, monospace);
+	font-size:10px;
+	line-height:1.45;
+	white-space:pre-wrap;
+	word-break:break-word;
+	user-select:text;
+	max-height:260px;
+	overflow-y:auto;
+}
+
+.gg-event.expanded .gg-event-detail {
+	display:block;
+}

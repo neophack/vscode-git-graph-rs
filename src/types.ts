@@ -116,6 +116,51 @@ export interface GitRepoConfigBranch {
 	readonly remote: string | null;
 }
 
+/* Gerrit Integration Types */
+
+export type GerritChangeEventType = 'created' | 'patchset' | 'vote' | 'merged' | 'abandoned' | 'restored' | 'wip' | 'ready' | 'comment';
+
+export interface GerritChangeEvent {
+	type: GerritChangeEventType;
+	patchset: number;
+	reviewer?: string; // e.g. "Gerrit User 1000018"
+	labels?: { name: string; value: number }[]; // e.g. [{ name: 'Code-Review', value: +2 }]
+	timestamp: number;
+	raw: string;
+	rawFull: string; // the verbatim NoteDb meta commit message (shown when the event is expanded)
+}
+
+export type GerritChangeStatus = 'new' | 'merged' | 'abandoned';
+
+export interface GerritChangeState {
+	change: number;
+	patchset: number; // latest patchset
+	codeReview: number; // -2..2, the vote with the greatest absolute value (most recent wins ties)
+	verified: number; // -1..1
+	status: GerritChangeStatus;
+	wip: boolean;
+	headHash: string; // code commit of the latest patchset (badge/anchor target)
+	events: GerritChangeEvent[];
+	url: string | null; // change web URL (derived from the remote URL), NULL => unknown
+}
+
+/** Which change statuses are displayed in the Git Graph View (WIP overrides the status). */
+export interface GerritStatusFilter {
+	new: boolean;
+	merged: boolean;
+	abandoned: boolean;
+	wip: boolean;
+}
+
+export type GerritPatchsetsMode = 'latest' | 'all';
+
+/** The `gerrit.*` Extension Settings the extension host consumes. */
+export interface GerritConfig {
+	remote: string;
+	fetchLimit: number;
+	showReviewProgress: boolean;
+}
+
 export interface GitRepoState {
 	pinnedBranches: string[];
 	pinnedCommits: PinnedCommit[];
@@ -124,6 +169,8 @@ export interface GitRepoState {
 	columnWidths: ColumnWidth[] | null;
 	commitOrdering: RepoCommitOrdering;
 	fileViewType: FileViewType;
+	gerritFetchRefs: boolean;
+	gerritStatusFilter: GerritStatusFilter;
 	hideRemotes: string[];
 	includeCommitsMentionedByReflogs: BooleanOverride;
 	issueLinkingConfig: IssueLinkingConfig | null;
@@ -308,6 +355,7 @@ export interface GitGraphViewConfig {
 	readonly fetchAndPrune: boolean;
 	readonly fetchAndPruneTags: boolean;
 	readonly fetchAvatars: boolean;
+	readonly gerrit: GerritConfig;
 	readonly graph: GraphConfig;
 	readonly interfaceLanguage: 'en' | 'zh-cn';
 	readonly interfaceLanguageSetting: 'auto' | 'en' | 'zh-cn';
@@ -994,6 +1042,7 @@ export interface ResponseFetchIntoLocalBranch extends ResponseWithErrorInfo {
 export interface RequestLoadCommits extends RepoRequest {
 	readonly command: 'loadCommits';
 	readonly refreshId: number;
+	readonly hard: boolean; // true => hard refresh (e.g. the Refresh button): the extension host must bypass its commit cache
 	readonly branches: ReadonlyArray<string> | null; // null => Show All
 	readonly authors: ReadonlyArray<string> | null; // null => Show All
 	readonly maxCommits: number;
@@ -1005,6 +1054,8 @@ export interface RequestLoadCommits extends RepoRequest {
 	readonly remotes: ReadonlyArray<string>;
 	readonly hideRemotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;
+	readonly gerritFetchRefs: boolean; // false => the Gerrit integration is disabled for this repository
+	readonly gerritStatusFilter: GerritStatusFilter; // which change statuses may appear in the graph
 	readonly filterPath?: string | null; // only show commits that modified the file(s) at this path (relative to the repository root); null/undefined => no path filter
 }
 export interface ResponseLoadCommits extends ResponseWithErrorInfo {
@@ -1015,7 +1066,24 @@ export interface ResponseLoadCommits extends ResponseWithErrorInfo {
 	readonly tags: string[];
 	readonly moreCommitsAvailable: boolean;
 	readonly onlyFollowFirstParent: boolean;
+	readonly gerritStates: GerritChangeState[] | null; // NULL => the Gerrit integration is disabled for this repository
+	readonly gerritPending?: boolean; // true => the Gerrit data is still loading asynchronously: a final loadCommits response with the fresh states follows
 	readonly uncommittedPending?: boolean; // true => the "Uncommitted Changes" status is still loading asynchronously: a final loadCommits response with the fresh status follows
+}
+
+/**
+ * Enable or disable the fetching of Gerrit change refs of a repository. Disabling also deletes
+ * the locally fetched change refs (`refs/remotes/<gerrit.remote>/changes/*`), so the change
+ * commits disappear from the graph and no further fetches happen until it is enabled again.
+ */
+export interface RequestGerritSetFetchRefs extends RepoRequest {
+	readonly command: 'gerritSetFetchRefs';
+	readonly enabled: boolean;
+}
+export interface ResponseGerritSetFetchRefs extends ResponseWithErrorInfo {
+	readonly command: 'gerritSetFetchRefs';
+	readonly enabled: boolean;
+	readonly cleared: number; // the number of local change refs deleted (0 when enabling)
 }
 
 export interface RequestCountCommitsBefore extends RepoRequest {
@@ -1450,6 +1518,7 @@ export type RequestMessage =
 	| RequestFetch
 	| RequestFetchAvatar
 	| RequestFetchIntoLocalBranch
+	| RequestGerritSetFetchRefs
 	| RequestLoadCommits
 	| RequestLoadConfig
 	| RequestLoadRepoInfo
@@ -1522,6 +1591,7 @@ export type ResponseMessage =
 	| ResponseFetch
 	| ResponseFetchAvatar
 	| ResponseFetchIntoLocalBranch
+	| ResponseGerritSetFetchRefs
 	| ResponseLoadCommits
 	| ResponseLoadConfig
 	| ResponseLoadRepoInfo

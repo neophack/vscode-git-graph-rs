@@ -1277,6 +1277,23 @@
 					"default": false,
 					"description": "%config.git-graph-rs.pullRequests.enabled.description%"
 				},
+				"git-graph-rs.gerrit.remote": {
+					"type": "string",
+					"default": "origin",
+					"description": "%config.git-graph-rs.gerrit.remote.description%"
+				},
+				"git-graph-rs.gerrit.fetchLimit": {
+					"type": "number",
+					"default": 20,
+					"minimum": 1,
+					"maximum": 10000,
+					"description": "%config.git-graph-rs.gerrit.fetchLimit.description%"
+				},
+				"git-graph-rs.gerrit.showReviewProgress": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.gerrit.showReviewProgress.description%"
+				},
 				"git-graph-rs.stickyHeader": {
 					"type": "boolean",
 					"default": true,

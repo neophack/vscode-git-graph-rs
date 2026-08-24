@@ -24,7 +24,8 @@
  * targets), installing either on first use. A target of the host's own OS family uses the
  * platform's own cross linker (the Visual Studio "C++ ARM64 build tools" component on Windows,
  * gcc-aarch64-linux-gnu on Linux). The binaries that ship come from
- * `.github/workflows/native-build.yml`, which builds all six targets on native runners.
+ * `.github/workflows/native-build.yml`, which builds the common targets on native runners (all
+ * six on a `full` run); the niche ones it skips fall back to the `git` CLI backend.
  */
 
 import { spawnSync } from 'node:child_process';

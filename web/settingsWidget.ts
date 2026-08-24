@@ -171,6 +171,17 @@ class SettingsWidget {
 				'<label id="settingsOnlyFollowFirstParent"><input type="checkbox" id="settingsOnlyFollowFirstParentCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsOnlyFirstParent + '</label><span class="settingsWidgetInfo" title="' + strings.settingsOnlyFirstParentInfo + '">' + SVG_ICONS.info + '</span>' +
 				'</div>';
 
+			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionGerrit + '</h3>' +
+				SettingsWidget.checkbox('settingsGerritFetchRefs', strings.settingsGerritFetchRefs, this.repo.gerritFetchRefs, strings.settingsGerritFetchRefsInfo);
+			if (this.repo.gerritFetchRefs) {
+				repoHtml += '<div class="settingsSubLabel">' + strings.settingsGerritStatusFilterLabel + '</div>' +
+					SettingsWidget.checkbox('settingsGerritStatusNew', strings.settingsGerritStatusOpen, this.repo.gerritStatusFilter.new, null) +
+					SettingsWidget.checkbox('settingsGerritStatusMerged', strings.settingsGerritStatusMerged, this.repo.gerritStatusFilter.merged, null) +
+					SettingsWidget.checkbox('settingsGerritStatusAbandoned', strings.settingsGerritStatusAbandoned, this.repo.gerritStatusFilter.abandoned, null) +
+					SettingsWidget.checkbox('settingsGerritStatusWip', strings.settingsGerritStatusWip, this.repo.gerritStatusFilter.wip, null);
+			}
+			repoHtml += '</div>';
+
 			let userNameSet = false, userEmailSet = false;
 			if (this.config !== null) {
 				repoHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionUserDetails + '</h3>';
@@ -465,6 +476,44 @@ class SettingsWidget {
 				this.view.saveRepoStateValue(this.currentRepo, 'onlyFollowFirstParent', elem.checked ? GG.BooleanOverride.Enabled : GG.BooleanOverride.Disabled);
 				this.view.refresh(true);
 			});
+
+			const gerritFetchRefsElem = <HTMLInputElement | null>document.getElementById('settingsGerritFetchRefsCheckbox');
+			if (gerritFetchRefsElem !== null) {
+				gerritFetchRefsElem.addEventListener('change', () => {
+					if (this.currentRepo === null || this.repo === null) return;
+					if (gerritFetchRefsElem.checked) {
+						// Enabling: the repository is marked stale on the extension host, so the
+						// reload triggered by the response runs the Gerrit fetch pipeline
+						this.setGerritFetchRefs(true);
+					} else {
+						// Disabling deletes the locally fetched change refs: confirm first
+						dialog.showConfirmation(strings.settingsGerritDisableConfirm, strings.settingsGerritDisableAction, () => {
+							this.setGerritFetchRefs(false);
+						}, null);
+						gerritFetchRefsElem.checked = true; // restored unless the confirmation runs the disable
+					}
+				});
+			}
+
+			const gerritStatusFields: ReadonlyArray<{ id: string, status: keyof GG.GerritStatusFilter }> = [
+				{ id: 'settingsGerritStatusNew', status: 'new' },
+				{ id: 'settingsGerritStatusMerged', status: 'merged' },
+				{ id: 'settingsGerritStatusAbandoned', status: 'abandoned' },
+				{ id: 'settingsGerritStatusWip', status: 'wip' }
+			];
+			for (const field of gerritStatusFields) {
+				const elem = <HTMLInputElement | null>document.getElementById(field.id + 'Checkbox');
+				if (elem === null) continue;
+				elem.addEventListener('change', () => {
+					if (this.currentRepo === null || this.repo === null) return;
+					const statusFilter = Object.assign({}, this.repo.gerritStatusFilter);
+					statusFilter[field.status] = elem.checked;
+					this.view.saveRepoStateValue(this.currentRepo, 'gerritStatusFilter', statusFilter);
+					// The badges re-render instantly from the loaded states; the graph reload (which
+					// change refs are injected) follows in the background
+					this.view.applyGerritFilterChange(field.status);
+				});
+			}
 
 			if (this.config !== null) {
 				document.getElementById('editUserDetails')!.addEventListener('click', () => {
@@ -855,6 +904,19 @@ class SettingsWidget {
 		}
 
 		this.view.refresh(true);
+		this.render();
+	}
+
+	/**
+	 * Persist the "Fetch Gerrit change refs" checkbox of the Repository Settings and run the
+	 * corresponding host action: enabling marks the repository's Gerrit data stale (so the reload
+	 * triggered by the response fetches the change refs from the remote), disabling deletes the
+	 * locally fetched change refs. The response reloads the Git Graph View either way.
+	 */
+	private setGerritFetchRefs(enabled: boolean) {
+		if (this.currentRepo === null) return;
+		this.view.saveRepoStateValue(this.currentRepo, 'gerritFetchRefs', enabled);
+		runAction({ command: 'gerritSetFetchRefs', repo: this.currentRepo, enabled: enabled }, enabled ? strings.settingsGerritEnabling : strings.settingsGerritClearing);
 		this.render();
 	}
 

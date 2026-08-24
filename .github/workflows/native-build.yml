@@ -5,9 +5,23 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
-  # Lets the release workflow run this whole pipeline (engine tests, the six platform builds,
-  # the cross-backend integration tests, packaging) before publishing anything.
+    inputs:
+      full:
+        description: 'Build all six engines, including Windows ARM64 and macOS x64'
+        required: false
+        default: false
+        type: boolean
+  # Lets the release workflow run this whole pipeline (engine tests, the platform builds,
+  # the cross-backend integration tests, packaging) before publishing anything. The `full`
+  # input is the release workflow's `full` passed through; without it the two niche engines
+  # below are skipped.
   workflow_call:
+    inputs:
+      full:
+        description: 'Build all six engines, including Windows ARM64 and macOS x64'
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -51,8 +65,14 @@ jobs:
   # resolves the Node-API symbols at load time rather than linking against them, so none of these
   # need Node headers, node-gyp or Python — only a Rust toolchain, `npm ci` for the CLI, and, for
   # the cross-compiled Linux target, a linker.
+  #
+  # By default only the four engines most editors run are built. The two niche ones — Windows
+  # ARM64 and macOS x64 — are skipped: few editors run them, and the extension falls back to the
+  # `git` CLI backend when a binary is missing, so those users lose speed, not function. A `full`
+  # run (the dispatch input, or the release workflow's `full` passed through) builds all six.
   build:
     name: ${{ matrix.directory }}
+    if: ${{ inputs.full || (matrix.target != 'aarch64-pc-windows-msvc' && matrix.target != 'x86_64-apple-darwin') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

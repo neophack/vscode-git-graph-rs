@@ -1,9 +1,13 @@
 name: Release
 
-# A manual, full-pipeline release: run the whole "Build and test" workflow (engine tests, the six
+# A manual, full-pipeline release: run the whole "Build and test" workflow (engine tests, the
 # native platform builds on their native runners, the cross-backend integration tests), assemble
 # the VSIXs from those binaries, and publish a GitHub Release carrying a universal VSIX (every
-# engine) plus one smaller VSIX per platform (only that platform's engine).
+# engine that was built) plus one smaller VSIX per platform (only that platform's engine).
+#
+# By default only the four common engines are built and packaged (Windows x64, Linux x64/arm64,
+# macOS arm64); the two niche ones — Windows ARM64 and macOS x64 — are left out, and editors on
+# them fall back to the extension's `git` CLI backend. Check `full` to build and package all six.
 #
 # Trigger it from the Actions tab ("Release" → "Run workflow") or with:
 #
@@ -25,16 +29,24 @@ on:
         required: false
         default: false
         type: boolean
+      full:
+        description: 'Ship all six engines, including Windows ARM64 and macOS x64'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   # Creating the release (tag, notes, assets) is the one thing this workflow does beyond CI.
   contents: write
 
 jobs:
-  # Everything "Build and test" does: engine tests, six platform builds, integration tests, and
-  # the packaged `git-graph-rs` artifact. A release is only made when all of it passes.
+  # Everything "Build and test" does: engine tests, the platform builds, integration tests, and
+  # the packaged `git-graph-rs` artifact. A release is only made when all of it passes. `full`
+  # passed through means all six engines; the default run builds the four common ones.
   build-and-test:
     uses: ./.github/workflows/native-build.yml
+    with:
+      full: ${{ inputs.full }}
 
   release:
     name: Publish the release
@@ -81,9 +93,10 @@ jobs:
       - name: Package the VSIX
         run: npm run package
 
-      # Six smaller VSIXs, one per platform, each carrying only that platform's engine. The
-      # extension loads `native/<platform>/git-graph.node` and treats every other platform's
-      # binary as optional, so a single-engine package needs no code changes.
+      # One smaller VSIX per platform that was built, each carrying only that platform's engine.
+      # The loop follows `native/`, so a default run packages four of them and a `full` run all
+      # six. The extension loads `native/<platform>/git-graph.node` and treats every other
+      # platform's binary as optional, so a single-engine package needs no code changes.
       - name: Package the per-platform VSIXs
         run: |
           stash="$(mktemp -d)"

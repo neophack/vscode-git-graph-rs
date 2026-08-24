@@ -13,6 +13,7 @@ import {
 	DefaultColumnVisibility,
 	DialogDefaults,
 	FileViewType,
+	GerritConfig,
 	GitResetMode,
 	GraphConfig,
 	GraphStyle,
@@ -128,6 +129,18 @@ class Config {
 	get pullRequests(): PullRequestsConfig {
 		return {
 			enabled: !!this.config.get('pullRequests.enabled', false)
+		};
+	}
+
+	/**
+	 * Get the value of the `git-graph-rs.gerrit.*` Extension Settings.
+	 */
+	get gerrit(): GerritConfig {
+		const fetchLimit = this.config.get<number>('gerrit.fetchLimit', 20);
+		return {
+			remote: this.config.get<string>('gerrit.remote', 'origin'),
+			fetchLimit: Number.isFinite(fetchLimit) && fetchLimit >= 1 && fetchLimit <= 10000 ? Math.floor(fetchLimit) : 20,
+			showReviewProgress: !!this.config.get('gerrit.showReviewProgress', true)
 		};
 	}
 

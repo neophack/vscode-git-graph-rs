@@ -26,6 +26,8 @@ export const DEFAULT_REPO_STATE: GitRepoState = {
 	columnWidths: null,
 	commitOrdering: RepoCommitOrdering.Default,
 	fileViewType: FileViewType.Default,
+	gerritFetchRefs: false,
+	gerritStatusFilter: { new: true, merged: false, abandoned: false, wip: false },
 	hideRemotes: [],
 	includeCommitsMentionedByReflogs: BooleanOverride.Default,
 	issueLinkingConfig: null,

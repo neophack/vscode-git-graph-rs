@@ -40,6 +40,12 @@ class GitGraphView {
 
 	public moreCommitsAvailable: boolean = false;
 	public expandedCommit: ExpandedCommit | null = null;
+	/** The Gerrit change states of the current repository, keyed by the head commit hash of each change. */
+	public gerritStates: { [hash: string]: GG.GerritChangeState } = {};
+	/** TRUE when the Gerrit states changed in a way the rendered rows don't reflect yet (forces a re-render). */
+	private gerritStatesDirty: boolean = false;
+	/** The debounce timer of the background reload triggered by a Gerrit status filter change. */
+	private gerritFilterRefreshTimer: number | null = null;
 	private maxCommits: number;
 	public scrollTop = 0;
 	private renderedGitBranchHead: string | null = null;
@@ -429,7 +435,7 @@ class GitGraphView {
 			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
 			arraysStrictlyEqual(a.parents, b.parents) &&
 			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector))
-		) && this.renderedGitBranchHead === this.gitBranchHead ) {
+		) && this.renderedGitBranchHead === this.gitBranchHead && !this.gerritStatesDirty) {
 
 			if (this.commits[0].hash === UNCOMMITTED) {
 				this.commits[0] = commits[0];
@@ -500,6 +506,7 @@ class GitGraphView {
 
 		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
 		this.render();
+		this.gerritStatesDirty = false;
 
 		if (currentRepoLoading) {
 			if (this.config.onRepoLoad.scrollToHead && this.commitHead !== null) {
@@ -707,6 +714,8 @@ class GitGraphView {
 		this.commitHead = null;
 		this.commitLookup = {};
 		this.renderedGitBranchHead = null;
+		this.gerritStates = {};
+		this.gerritStatesDirty = false;
 		this.commitBodies = {};
 		this.commitBodiesRequested.clear();
 		this.renderedRange = null;
@@ -717,6 +726,35 @@ class GitGraphView {
 		this.footerElem.innerHTML = '';
 		this.renderGraph();
 		this.findWidget.refresh();
+	}
+
+	/**
+	 * Does a Gerrit change pass the repository's status filter (the checkboxes of the Repository
+	 * Settings)? Mirrors the extension's `filterChangeStates`, which selects the change refs
+	 * injected into the commit graph: a WIP change is shown iff "Work in Progress" is checked,
+	 * any other change iff its status is checked.
+	 */
+	public gerritPassesFilter(state: GG.GerritChangeState): boolean {
+		const filter = this.gitRepos[this.currentRepo].gerritStatusFilter;
+		if (state.wip) return filter.wip;
+		return filter[state.status];
+	}
+
+	/**
+	 * Apply a change of the Gerrit status filter (the Repository Settings checkboxes): the badges
+	 * re-render immediately from the already-loaded states, and the commit graph is reloaded in
+	 * the background (debounced, so toggling several checkboxes triggers a single load), because
+	 * only the extension knows which change refs to inject for the new filter.
+	 * @param status The status whose checkbox changed ('merged' never affects the graph).
+	 */
+	public applyGerritFilterChange(status: keyof GG.GerritStatusFilter) {
+		this.render();
+		if (status === 'merged') return; // merged changes are never injected into the graph (see the extension's buildGerritViewData)
+		if (this.gerritFilterRefreshTimer !== null) window.clearTimeout(this.gerritFilterRefreshTimer);
+		this.gerritFilterRefreshTimer = window.setTimeout(() => {
+			this.gerritFilterRefreshTimer = null;
+			this.requestLoadRepoInfoAndCommits(false, true);
+		}, 120);
 	}
 
 	public processLoadRepoInfoResponse(msg: GG.ResponseLoadRepoInfo) {
@@ -785,6 +823,18 @@ class GitGraphView {
 			// identifies whether the response belongs to the current view state: every new request
 			// increments it.
 			if (refreshState.loadCommitsRefreshId === msg.refreshId) {
+				// The Gerrit states ride along every loadCommits response: swap the map in and force
+				// a re-render when it changed (the extension serves ALL cached states, so the status
+				// filter of the Repository Settings is applied locally by this view)
+				if (msg.gerritStates !== null) {
+					const newStates: { [hash: string]: GG.GerritChangeState } = {};
+					for (const state of msg.gerritStates) newStates[state.headHash] = state;
+					this.gerritStatesDirty = !gerritStatesEqual(this.gerritStates, newStates);
+					this.gerritStates = newStates;
+				} else if (Object.keys(this.gerritStates).length > 0) {
+					this.gerritStatesDirty = true;
+					this.gerritStates = {};
+				}
 				this.loadCommits(msg.commits, msg.head, msg.tags, msg.moreCommitsAvailable, msg.onlyFollowFirstParent, msg.uncommittedPending === true);
 			}
 		} else {
@@ -943,6 +993,7 @@ class GitGraphView {
 			command: 'loadCommits',
 			repo: this.currentRepo,
 			refreshId: ++this.currentRepoRefreshState.loadCommitsRefreshId,
+			hard: this.currentRepoRefreshState.hard,
 			branches: this.currentBranches === null || (this.currentBranches.length === 1 && this.currentBranches[0] === SHOW_ALL_BRANCHES) ? null : this.currentBranches,
 			authors: this.currentAuthors === null || (this.currentAuthors.length === 1 && this.currentAuthors[0] === SHOW_ALL_BRANCHES) ? null : this.currentAuthors,
 			maxCommits: this.maxCommits,
@@ -954,6 +1005,8 @@ class GitGraphView {
 			remotes: this.gitRemotes,
 			hideRemotes: repoState.hideRemotes,
 			stashes: this.gitStashes,
+			gerritFetchRefs: repoState.gerritFetchRefs,
+			gerritStatusFilter: repoState.gerritStatusFilter,
 			filterPath: this.commitPathFilter
 		});
 	}
@@ -1401,6 +1454,12 @@ class GitGraphView {
 			refTags += refHtml;
 		}
 
+		let refGerrit = '';
+		const gerritState = this.gerritStates[commit.hash];
+		if (typeof gerritState !== 'undefined' && this.gerritPassesFilter(gerritState)) {
+			refGerrit = getGerritBadgeHtml(this, gerritState);
+		}
+
 		if (commit.stash !== null) {
 			refName = escapeHtml(commit.stash.selector);
 			refBranches = '<span class="gitRef stash" data-name="' + refName + '">' + SVG_ICONS.stash + '<span class="gitRefName" data-fullref="' + refName + '">' + escapeHtml(commit.stash.selector.substring(5)) + '</span></span>' + refBranches;
@@ -1416,7 +1475,7 @@ class GitGraphView {
 			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
 			: '';
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
-			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + message) + '</span></td>' +
+			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + getResizeColHtml(2) + date.formatted + '</td>' : '') +
 			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
 			(colVisibility.commit ? '<td class="text" title="' + escapeHtml(commit.hash) + '">' + getResizeColHtml(4) + abbrevCommit(commit.hash) + '</td>' : '') +
@@ -2082,6 +2141,11 @@ window.addEventListener('load', () => {
 				break;
 			case 'fetch':
 				refreshOrDisplayError(msg.error, strings.errFetch, false);
+				break;
+			case 'gerritSetFetchRefs':
+				// The extension cleared its commit cache and (when disabling) deleted the local
+				// change refs, so the reload below re-renders without the change commits and badges
+				refreshOrDisplayError(msg.error, strings.errGerritSetFetchRefs, true);
 				break;
 			case 'fetchAvatar':
 				imageResizer.resize(msg.image, (resizedImage) => {

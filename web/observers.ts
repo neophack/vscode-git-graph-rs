@@ -628,8 +628,15 @@ function observeTableEvents(view: GitGraphView) {
 
 			}
 
+			if (eventElem.classList.contains(CLASS_REF_GERRIT)) {
 
+				// The Gerrit change badge was clicked: show the review information of the change
 
+				showGerritReviewInfo(view, eventElem.dataset.hash!);
+
+				return;
+
+			}
 
 		} else if ((eventElem = eventTarget.closest('.commit')) !== null) {
 
@@ -705,6 +712,8 @@ function observeTableEvents(view: GitGraphView) {
 
 			if (commit === null) return;
 
+			if (eventElem.classList.contains(CLASS_REF_GERRIT)) return; // the Gerrit badge has no double click action
+
 
 
 			if (eventElem.classList.contains(CLASS_REF_HEAD) || eventElem.classList.contains(CLASS_REF_REMOTE)) {
@@ -776,6 +785,8 @@ function observeTableEvents(view: GitGraphView) {
 			const commit = view.getCommitOfElem(commitElem);
 
 			if (commit === null) return;
+
+			if (eventElem.classList.contains(CLASS_REF_GERRIT)) return; // the Gerrit badge has no context menu
 
 
 
