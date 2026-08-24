@@ -70,32 +70,18 @@ jobs:
   # ARM64 and macOS x64 — are skipped: few editors run them, and the extension falls back to the
   # `git` CLI backend when a binary is missing, so those users lose speed, not function. A `full`
   # run (the dispatch input, or the release workflow's `full` passed through) builds all six.
+  #
+  # The skip has to live here, inside the matrix: a job-level `if` only sees the github, needs,
+  # vars and inputs contexts — no matrix — so filtering on `matrix.target` there fails workflow
+  # validation outright. Picking the include list through `full` before the matrix expands means
+  # the skipped engines never even get jobs.
   build:
     name: ${{ matrix.directory }}
-    if: ${{ inputs.full || (matrix.target != 'aarch64-pc-windows-msvc' && matrix.target != 'x86_64-apple-darwin') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            directory: win32-x64-msvc
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            directory: win32-arm64-msvc
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            directory: linux-x64-gnu
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            directory: linux-arm64-gnu
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            directory: darwin-x64
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            directory: darwin-arm64
+        include: ${{ fromJSON(inputs.full && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","directory":"win32-x64-msvc"},{"os":"windows-latest","target":"aarch64-pc-windows-msvc","directory":"win32-arm64-msvc"},{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","directory":"linux-x64-gnu"},{"os":"ubuntu-latest","target":"aarch64-unknown-linux-gnu","directory":"linux-arm64-gnu"},{"os":"macos-latest","target":"x86_64-apple-darwin","directory":"darwin-x64"},{"os":"macos-latest","target":"aarch64-apple-darwin","directory":"darwin-arm64"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","directory":"win32-x64-msvc"},{"os":"ubuntu-latest","target":"x86_64-unknown-linux-gnu","directory":"linux-x64-gnu"},{"os":"ubuntu-latest","target":"aarch64-unknown-linux-gnu","directory":"linux-arm64-gnu"},{"os":"macos-latest","target":"aarch64-apple-darwin","directory":"darwin-arm64"}]') }}
     steps:
       - uses: actions/checkout@v4
 
