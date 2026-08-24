@@ -137,6 +137,14 @@ describe('the hex diff session', () => {
 			// A row inside the unaligned middle: both sides present, every byte marked changed.
 			const rows = await session.getRows(Math.floor(prefix.length / 16), 3);
 			assert.ok(rows.every((row) => row.om.indexOf('0') === -1 && row.nm.indexOf('0') === -1));
+
+			// Regression: rows inside the matched suffix hold identical bytes, so despite the
+			// sides' offsets differing nothing may be highlighted there (the suffix used to be
+			// shown as one wholly-changed block, lighting up everything after an insertion).
+			const suffixRow = Math.floor(prefix.length / 16) + Math.ceil(990 / 16);
+			const tailRows = await session.getRows(suffixRow, 2);
+			assert.ok(tailRows.length === 2 && tailRows[0].o === prefix.length + 300 && tailRows[0].n === prefix.length + 990);
+			assert.ok(tailRows.every((row) => row.om.indexOf('1') === -1 && row.nm.indexOf('1') === -1), JSON.stringify(tailRows));
 		} finally {
 			session.dispose();
 		}

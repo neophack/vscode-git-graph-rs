@@ -67,7 +67,7 @@ export async function respondHexInfo(session: HexDiffSession, index: number, byt
 	try {
 		session.setBytesPerRow(bytesPerRow);
 		await session.init();
-		post({ command: 'hexInfo', index: index, error: null, oldSize: session.oldSize, newSize: session.newSize, totalRows: session.totalRows, sections: flatSections(session.sectionLayout), layoutVersion: session.layoutVersion, bytesPerRow: HEX_BYTES_PER_ROW, rowHeight: HEX_ROW_HEIGHT });
+		post({ command: 'hexInfo', index: index, error: null, oldSize: session.oldSize, newSize: session.newSize, totalRows: session.totalRows, sections: flatSections(session.sectionLayout), layoutVersion: session.layoutVersion, bytesPerRow: session.bytesPerRow, rowHeight: HEX_ROW_HEIGHT });
 	} catch (err) {
 		post({ command: 'hexInfo', index: index, error: t('compareHexLoadError', errorMessage(err)), oldSize: -1, newSize: -1, totalRows: 0, sections: null, layoutVersion: 0, bytesPerRow: HEX_BYTES_PER_ROW, rowHeight: HEX_ROW_HEIGHT });
 	}
@@ -125,7 +125,9 @@ export function binaryCompareCss(): string {
 		#hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
 		#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
 		#hexInner { display: inline-block; min-width: 100%; }
-		#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); opacity: 0.9; font-size: 11px; }
+		/* Same font size as the rows: the column widths below are in ch, which scales with the
+		   font, so a smaller header font would slide its labels out of alignment with the bytes. */
+		#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); opacity: 0.9; }
 		#hexSpacer { position: relative; }
 		#hexView { position: absolute; top: 0; left: 0; right: 0; }
 		.hrow { display: flex; height: 19px; line-height: 19px; white-space: pre; }
@@ -172,9 +174,9 @@ export function binaryCompareScript(): string {
 	const HEX_ROW_H = 19;
 	const HEXDIGITS = [];
 	for (let i = 0; i < 256; i++) HEXDIGITS.push((i < 16 ? '0' : '') + i.toString(16));
-	const HEXDIFF_TPL = '${t('compareHexDiffStatus', '{0}', '{1')}';
+	const HEXDIFF_TPL = '${t('compareHexDiffStatus', '{0}', '{1}')}';
 	const HEXSIZES_TPL = '${t('compareHexSizes', '{0}', '{1}')}';
-	const IMGSTATS_TPL = '${t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5')}';
+	const IMGSTATS_TPL = '${t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5}')}';
 	function bcEscapeHtml(str) {
 		return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
@@ -230,6 +232,8 @@ export function binaryCompareScript(): string {
 
 	function refreshHexLayout() {
 		hexBytesPerRow = pickHexBytesPerRow();
+		applyHexBytesPerRow();
+		if (hexEls !== null) hexEls.view.innerHTML = '';
 		hexRows.clear();
 		hexPending = false;
 		hexSections = null;
@@ -531,7 +535,10 @@ export function binaryCompareScript(): string {
 		canvas.width = width;
 		canvas.height = height;
 		const ctx = canvas.getContext('2d', { willReadFrequently: true });
-		ctx.drawImage(image, 0, 0);
+		// An added or deleted picture has a missing side: draw nothing (drawImage throws on null),
+		// leaving the fresh canvas' transparent black, which the edge logic of computeImageDiff
+		// already treats as maximally different.
+		if (image !== null && image !== 'error') ctx.drawImage(image, 0, 0);
 		return ctx.getImageData(0, 0, width, height).data;
 	}
 
@@ -654,9 +661,14 @@ export function binaryCompareScript(): string {
 					} else {
 						// Highlight: the original picture with the differing pixels dyed red.
 						if (inOld) {
-							out.data[i] = 255;
-							out.data[i + 1] = imgDiff.map[p] > imgTolerance ? a[i + 1] * 0.3 : a[i + 1];
-							out.data[i + 2] = imgDiff.map[p] > imgTolerance ? a[i + 2] * 0.3 : a[i + 2];
+							// A flat saturated red: mixing the dye from the base pixel's own channels
+							// left the mark proportional to the pixel's darkness, so large changes on
+							// bright areas washed out to pale pink while small changes on dark ones
+							// glared — visibility must not depend on what lies underneath.
+							const dye = imgDiff.map[p] > imgTolerance;
+							out.data[i] = dye ? 255 : a[i];
+							out.data[i + 1] = dye ? 0 : a[i + 1];
+							out.data[i + 2] = dye ? 0 : a[i + 2];
 							out.data[i + 3] = 255;
 						} else if (inNew) {
 							out.data[i] = 170; out.data[i + 1] = 170; out.data[i + 2] = 170; out.data[i + 3] = 255;
@@ -856,5 +868,14 @@ export function binaryCompareScript(): string {
 		}
 		if (imgActive && imgZoomMode < 0) applyImageZoom();
 	}
+
+	/* A window 'resize' event only tracks the OS window being dragged: maximising or restoring
+	   it, toggling the side bar and splitting editors all resize the webview without one (or
+	   fire it before the webview has re-laid out, when the old width is still measured). The
+	   observer reports the area's own box after layout, so every cause is covered. */
+	if (typeof ResizeObserver !== 'undefined') {
+		new ResizeObserver(function () { onBinaryCompareResize(); }).observe(diffArea);
+	}
+	window.addEventListener('resize', function () { onBinaryCompareResize(); });
 `;
 }

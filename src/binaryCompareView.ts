@@ -121,7 +121,6 @@ currentFileIsImage = ${isImageChange(file) ? 'true' : 'false'};
 if (currentFileIsImage) enterImageView(0);
 else enterHexView(0);
 window.addEventListener('message', (event) => { handleBinaryCompareMessage(event.data); });
-window.addEventListener('resize', function () { onBinaryCompareResize(); });
 </script>
 </body>
 </html>`;

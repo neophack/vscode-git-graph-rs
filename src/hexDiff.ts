@@ -503,6 +503,11 @@ export class HexDiffSession {
 		return this.layoutRowCount;
 	}
 
+	/** The row width in effect; echoed back so the webview renders with what the layout uses. */
+	public get bytesPerRow(): number {
+		return this.rowWidth;
+	}
+
 	/**
 	 * Set how many bytes each rendered row holds (the webview picks 16/12/8/4 to fit the window
 	 * width). A change rebuilds the layout and bumps its version, so stale rows are dropped.
@@ -544,10 +549,12 @@ export class HexDiffSession {
 				n = section.ns + rowIn * this.rowWidth;
 				nl = Math.min(this.rowWidth, section.ns + section.nl - n);
 			}
-			// An aligned section (equal offsets and lengths on both sides — every section of an
-			// equal-size pair, and the matched prefix/suffix of any pair) is byte-compared; the
+			// An equal section is byte-compared wherever it sits: its spans hold the same bytes
+			// on both sides, so identical content shows no highlight even when the offsets differ
+			// (the matched suffix of a different-size pair). A differing section is byte-compared
+			// only when its offsets and lengths align (every section of an equal-size pair); the
 			// unaligned middle of a different-size pair is shown as one replaced block instead.
-			spans.push({ row, o, ol, n, nl, aligned: section.os === section.ns && section.ol === section.nl });
+			spans.push({ row, o, ol, n, nl, aligned: section.eq || (section.os === section.ns && section.ol === section.nl) });
 			if (o >= 0) { oldMin = Math.min(oldMin, o); oldMax = Math.max(oldMax, o + ol); }
 			if (n >= 0) { newMin = Math.min(newMin, n); newMax = Math.max(newMax, n + nl); }
 		}

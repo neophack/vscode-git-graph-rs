@@ -248,7 +248,7 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 		if (file.additions !== null) totalAdditions += file.additions;
 		if (file.deletions !== null) totalDeletions += file.deletions;
 	}
-	const filesChangedTemplate = '${t('compareFilesChanged', '{0')}';
+	const filesChangedTemplate = '${t('compareFilesChanged', '{0}')}';
 	if (changes.length > 0) {
 		document.getElementById('stats').innerHTML =
 			(changes.length === 1 ? '${t('compareOneFileChanged')}' : filesChangedTemplate.replace('{0}', String(changes.length))) +
@@ -421,8 +421,6 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 			handleBinaryCompareMessage(msg);
 		}
 	});
-
-	window.addEventListener('resize', function () { onBinaryCompareResize(); });
 
 	if (changes.length > 0) selectFile(0);
 </script>
