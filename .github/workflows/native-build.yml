@@ -180,11 +180,18 @@ jobs:
       - name: Build the TypeScript
         run: npm run build:ts
 
+      # media/out.min.js and out.min.css are what the webview loads. They are build products
+      # (media/ is gitignored) and nothing else in this pipeline produces them, so a release
+      # assembled without this step ships a VSIX whose view 404s on both files.
+      - name: Build the webview assets
+        run: npm run compile-web
+
       - uses: actions/upload-artifact@v4
         with:
           name: git-graph-rs
           path: |
             out/
+            media/
             native/*/git-graph.node
             package.json
           if-no-files-found: error
