@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -76,6 +76,65 @@ describe('the session-log analyser', () => {
 		assert.match(report, /Engine → CLI fallbacks/);
 		assert.match(report, /countCommitsBefore\s+2/);
 		assert.match(report, /Errors/);
+	});
+});
+
+describe('the i18n parity checker', () => {
+	/** Run the checker in a working directory of its own (it reads web/strings.ts and src/i18n.ts from cwd). */
+	function runChecker(cwd) {
+		return spawnSync(process.execPath, [path.join(root, 'scripts', 'check-i18n-parity.cjs')], {
+			encoding: 'utf8', cwd: cwd
+		});
+	}
+
+	it('accepts the shipped dictionaries', () => {
+		const result = runChecker(root);
+		assert.equal(result.status, 0, result.stdout + result.stderr);
+		assert.match(result.stdout, /web: \d+ EN keys, \d+ ZH keys, 0 problems/);
+		assert.match(result.stdout, /src: \d+ EN keys, \d+ ZH keys, 0 problems/);
+	});
+
+	it('reports missing keys and placeholder mismatches, and fails the build for them', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-parity-'));
+		try {
+			// Entries are tab-indented single-quoted lines, the only shape the extractor reads.
+			fs.mkdirSync(path.join(dir, 'web'));
+			fs.mkdirSync(path.join(dir, 'src'));
+			fs.writeFileSync(path.join(dir, 'web', 'strings.ts'), [
+				'const STRINGS_EN = {',
+				"\taa: 'x {0} {1}',",
+				"\tbb: 'y'",
+				'};',
+				'type WebviewStrings = typeof STRINGS_EN;',
+				'const STRINGS_ZH_CN = {',
+				"\taa: 'x {0}',",
+				"\tcc: 'z'",
+				'};',
+				'// The currently active string dictionary',
+				'let strings = STRINGS_EN;'
+			].join('\n'));
+			fs.writeFileSync(path.join(dir, 'src', 'i18n.ts'), [
+				'const EN = {',
+				"\tone: 'a {0}'",
+				'};',
+				'type MessageKey = keyof typeof EN;',
+				'const ZH_CN = {',
+				"\tone: 'b {0}'",
+				'};',
+				'// Is the interface language',
+				'export function isZhCn() { return false; }'
+			].join('\n'));
+
+			const result = runChecker(dir);
+			assert.equal(result.status, 1, 'a parity violation must fail the check');
+			assert.match(result.stdout, /web MISSING ZH key: bb/);
+			assert.match(result.stdout, /web MISSING EN key: cc/);
+			assert.match(result.stdout, /web PLACEHOLDER MISMATCH aa EN:\[\{0\},\{1\}\] ZH:\[\{0\}\]/);
+			assert.match(result.stdout, /web: 2 EN keys, 2 ZH keys, 3 problems/);
+			assert.match(result.stdout, /src: 1 EN keys, 1 ZH keys, 0 problems/);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
