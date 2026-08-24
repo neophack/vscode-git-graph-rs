@@ -393,7 +393,8 @@ function withRepo(run) {
 				fs.rmSync(repo, { recursive: true, force: true });
 				return;
 			} catch (err) {
-				if (attempt >= 20 || err.code !== 'EPERM') throw err;
+				// Windows releases the directory under either EPERM or EBUSY while the children exit.
+				if (attempt >= 50 || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err;
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			}
 		}

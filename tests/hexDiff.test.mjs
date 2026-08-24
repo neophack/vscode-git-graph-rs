@@ -45,11 +45,22 @@ function withRepo(run) {
 	git(repo, ['init', '-q']);
 	git(repo, ['config', 'user.email', 'test@test']);
 	git(repo, ['config', 'user.name', 'test']);
-	// Windows can lag a moment releasing the files a session had open; retry the removal.
-	const cleanup = () => fs.rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+	// Windows releases the directory under EPERM or EBUSY a moment after a session's killed git
+	// children exit, so the removal retries with real waits until the directory is actually gone.
+	const cleanup = async () => {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				fs.rmSync(repo, { recursive: true, force: true });
+				return;
+			} catch (err) {
+				if (attempt >= 50 || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err;
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+		}
+	};
 	return Promise.resolve().then(() => run(repo)).then(
-		(value) => { cleanup(); return value; },
-		(err) => { cleanup(); throw err; }
+		(value) => cleanup().then(() => value),
+		(err) => cleanup().then(() => { throw err; })
 	);
 }
 
