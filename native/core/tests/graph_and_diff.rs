@@ -256,6 +256,41 @@ fn detects_renames() {
 }
 
 #[test]
+fn does_not_list_a_renamed_directory_as_a_file() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let contents = (0..40).map(|n| format!("line {n}\n")).collect::<String>();
+    repo.commit_file("old/kept.txt", &contents, "first");
+
+    repo.git(&["mv", "old", "new"]);
+    repo.write("new/added.txt", "brand new\n");
+    let hash = repo.commit("rename the folder");
+
+    let engine = open(&repo);
+    let changes = diff::diff_commit(&engine, &hash).unwrap();
+
+    // The rewrite tracker pairs the deleted `old` tree with the added `new` tree as a rewrite of
+    // the directory itself, and a directory path in the list would collide with the entries under
+    // it when the view builds its file tree.
+    assert_eq!(
+        changes.len(),
+        2,
+        "only the moved file and the added file are changes: {changes:?}"
+    );
+    assert_eq!(changes[0].kind, GitFileStatus::Renamed);
+    assert_eq!(changes[0].old_file_path, "old/kept.txt");
+    assert_eq!(changes[0].new_file_path, "new/kept.txt");
+    assert_eq!(changes[1].kind, GitFileStatus::Added);
+    assert_eq!(changes[1].new_file_path, "new/added.txt");
+    assert!(
+        !changes
+            .iter()
+            .any(|change| change.new_file_path == "old" || change.new_file_path == "new"),
+        "the renamed directory itself must not be listed as a file"
+    );
+}
+
+#[test]
 fn shows_the_first_commit_as_adding_its_files() {
     require_git!();
     let mut repo = TestRepo::new();

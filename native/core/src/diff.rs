@@ -342,9 +342,18 @@ fn classify(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<GitF
         Change::Rewrite {
             source_location,
             location,
+            entry_mode,
+            source_entry_mode,
             copy,
             ..
         } => {
+            // A directory becoming renamed is not a file change; only its entries are. The rewrite
+            // tracker pairs a deleted tree with a similar added one as a rewrite of the directory
+            // itself, and a directory path in the list would collide with the entries under it
+            // when the view builds its file tree.
+            if entry_mode.is_tree() || source_entry_mode.is_tree() {
+                return None;
+            }
             // A copy is reported by git as an addition unless `-C` was asked for, and the view
             // has no separate presentation for one.
             GitFileChange {
