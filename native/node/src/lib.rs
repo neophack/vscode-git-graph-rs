@@ -89,12 +89,33 @@ pub async fn load_refs(path: String, options_json: String) -> Result<String> {
     .await
 }
 
-/// One commit in full, with the files it changed.
+/// One commit in full, with the files it changed — their statuses only, without line counts,
+/// which arrive separately through [`load_line_counts`] so a many-file commit renders at once.
 #[napi]
 pub async fn load_commit_details(path: String, hash: String) -> Result<String> {
     run(move || {
         let repo = RepoManager::global().get(&path)?;
         encode(&details::commit_details(&repo, &hash)?)
+    })
+    .await
+}
+
+/// The `+N/-M` line counts of the given paths, keyed by path.
+///
+/// `from` is null to diff `to` against its first parent (the Commit Details view), or a revision
+/// (the Commit Comparison view, or a stash's base). `paths_json` is a JSON array of paths; binary
+/// files come back with null counts, as `git diff --numstat` prints a dash for them.
+#[napi]
+pub async fn load_line_counts(
+    path: String,
+    from: Option<String>,
+    to: String,
+    paths_json: String,
+) -> Result<String> {
+    run(move || {
+        let paths: Vec<String> = decode(&paths_json)?;
+        let repo = RepoManager::global().get(&path)?;
+        encode(&diff::line_counts(&repo, from.as_deref(), &to, &paths)?)
     })
     .await
 }

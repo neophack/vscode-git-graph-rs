@@ -73,6 +73,12 @@ export interface GitFileChange {
 	readonly deletions: number | null;
 }
 
+/** The `+N/-M` line counts of one file; both are NULL for a binary file. */
+export interface GitLineCounts {
+	readonly additions: number | null;
+	readonly deletions: number | null;
+}
+
 export const enum GitFileStatus {
 	Added = 'A',
 	Modified = 'M',
@@ -825,6 +831,29 @@ export interface ResponseCommitDetails extends ResponseWithErrorInfo {
 	readonly refresh: boolean;
 }
 
+/**
+ * The line counts of specific files of the open Commit Details / Commit Comparison view, which
+ * computes its file list first and settles the `+N/-M` counts progressively — the visible files
+ * first, then the rest in the background.
+ */
+export interface RequestCommitFileCounts extends RepoRequest {
+	readonly command: 'commitFileCounts';
+	/** The commit open in the view, echoed back so a stale reply can be dropped. */
+	readonly commitHash: string;
+	/** The second commit of an open comparison, or null when a single commit is open. */
+	readonly compareWithHash: string | null;
+	/** null => diff `to` against its first parent (a plain commit); string => the diff's left side. */
+	readonly from: string | null;
+	readonly to: string;
+	readonly paths: ReadonlyArray<string>;
+}
+export interface ResponseCommitFileCounts extends ResponseWithErrorInfo {
+	readonly command: 'commitFileCounts';
+	readonly commitHash: string;
+	readonly compareWithHash: string | null;
+	readonly counts: { [path: string]: GitLineCounts };
+}
+
 export interface RequestCommitBodies extends RepoRequest {
 	readonly command: 'commitBodies';
 	readonly commitHashes: ReadonlyArray<string>;
@@ -1496,6 +1525,7 @@ export type RequestMessage =
 	| RequestCountCommitsBefore
 	| RequestCommitBodies
 	| RequestCommitDetails
+	| RequestCommitFileCounts
 	| RequestCompareCommits
 	| RequestCopyFilePath
 	| RequestCopyToClipboard
@@ -1571,6 +1601,7 @@ export type ResponseMessage =
 	| ResponseCompareCommits
 	| ResponseCommitBodies
 	| ResponseCommitDetails
+	| ResponseCommitFileCounts
 	| ResponseCopyFilePath
 	| ResponseCopyToClipboard
 	| ResponseCreateArchive

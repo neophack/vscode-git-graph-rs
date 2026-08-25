@@ -11,7 +11,11 @@ use crate::types::{
     GitSignatureStatus, GitTagDetails, UNCOMMITTED,
 };
 
-/// Read a commit in full, including the diff against its first parent.
+/// Read a commit in full, including the file statuses of the diff against its first parent.
+///
+/// The per-file line counts are deliberately **not** computed here: each one reads two blobs,
+/// which on a commit touching thousands of files dominates the load. They arrive separately, for
+/// the paths the view asks about, through [`crate::diff::line_counts`].
 pub fn commit_details(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
     let mut details = commit_details_base(repo, hash)?;
     details.file_changes = diff::diff_commit(repo, hash)?;
@@ -56,7 +60,8 @@ pub fn commit_details_base(repo: &Repo, hash: &str) -> Result<GitCommitDetails> 
 ///
 /// A stash is diffed against the commit it was taken from rather than against its own first
 /// parent, and — when it was taken with `--include-untracked` — the files recorded in its third
-/// parent are appended as untracked rather than as added.
+/// parent are appended as untracked rather than as added. As with a plain commit, the line counts
+/// are left for [`crate::diff::line_counts`], called with the stash's base as `from`.
 pub fn stash_details(repo: &Repo, hash: &str, stash: &GitCommitStash) -> Result<GitCommitDetails> {
     let mut details = commit_details_base(repo, hash)?;
 

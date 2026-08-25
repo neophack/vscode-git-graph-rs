@@ -27,6 +27,7 @@ import {
 	GitFileChange,
 	GitFileStatus,
 	GitHistoryMatch,
+	GitLineCounts,
 	GitRef,
 	GitRefData,
 	GitRemoteConfig,
@@ -315,6 +316,41 @@ export class CliBackend implements GitBackend {
 		const changes = await this.getFileChanges(repo, from, againstWorktree ? '' : to);
 		// Comparing against the working tree means the untracked and deleted files count too.
 		return againstWorktree ? mergeStatusFiles(changes, await this.getStatusFiles(repo)) : changes;
+	}
+
+	/**
+	 * The `+N/-M` line counts of the given paths, as `git diff --numstat` reports them, limited to
+	 * the paths asked for — the deferred second half of a details load, settled a viewport at a time.
+	 */
+	public async getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }> {
+		if (paths.length === 0) return {};
+		let base = from;
+		if (base === null) {
+			// The commit's first parent — or the empty tree for a root commit, whose files then
+			// report as added rather than being unaccounted for.
+			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => EMPTY_TREE);
+		}
+
+		const numStat = await this.run(['diff', '--numstat', '--find-renames', '-z', base, to, '--', ...paths], repo);
+		const counts: { [path: string]: GitLineCounts } = {};
+
+		const fields = numStat.split('\0');
+		for (let i = 0; i < fields.length && fields[i] !== ''; ) {
+			const parts = fields[i].split('\t');
+			if (parts.length !== 3) break;
+			// A rename's numstat record has an empty path, followed by the two paths as separate
+			// NUL-terminated fields; the new path (the last one) is what the counts are keyed by.
+			const path = parts[2] !== '' ? parts[2] : fields[i + 2];
+			const additions = parseInt(parts[0], 10);
+			const deletions = parseInt(parts[1], 10);
+			counts[path] = {
+				// A binary file reports a dash, which parses to NaN and is reported as "unknown".
+				additions: Number.isNaN(additions) ? null : additions,
+				deletions: Number.isNaN(deletions) ? null : deletions
+			};
+			i += parts[2] !== '' ? 1 : 3;
+		}
+		return counts;
 	}
 
 	public async getUncommittedChangeCount(repo: string, includeUntracked: boolean): Promise<number> {
@@ -926,31 +962,23 @@ export class CliBackend implements GitBackend {
 	}
 
 	/**
-	 * The file list between two revisions.
+	 * The file list between two revisions — the statuses only, from `--name-status`.
 	 *
-	 * `--name-status` gives the statuses and `--numstat` the line counts; they are merged by path,
-	 * which is how the original extension produced this list.
+	 * The line counts used to be merged in from a second `--numstat` run here; they are the
+	 * expensive half of a details load (every file costs two blob reads), so they are now answered
+	 * separately, for the paths the view asks about, by [`getLineCounts`].
 	 */
 	private async getFileChanges(repo: string, from: string, to: string): Promise<GitFileChange[]> {
-		const args = (kind: string) => {
-			const base = ['diff', kind, '--find-renames', '--diff-filter=AMDR', '-z', from];
-			if (to !== '') base.push(to);
-			return base;
-		};
-
-		const [nameStatus, numStat] = await Promise.all([
-			this.run(args('--name-status'), repo),
-			this.run(args('--numstat'), repo)
-		]);
+		const base = ['diff', '--name-status', '--find-renames', '--diff-filter=AMDR', '-z', from];
+		if (to !== '') base.push(to);
+		const nameStatus = await this.run(base, repo);
 
 		const changes: GitFileChange[] = [];
-		const byPath = new Map<string, number>();
 
 		const statusFields = nameStatus.split('\0');
 		for (let i = 0; i < statusFields.length && statusFields[i] !== ''; ) {
 			const type = statusFields[i][0] as GitFileStatus;
 			if (type === GitFileStatus.Renamed) {
-				byPath.set(statusFields[i + 2], changes.length);
 				changes.push({
 					oldFilePath: statusFields[i + 1],
 					newFilePath: statusFields[i + 2],
@@ -964,7 +992,6 @@ export class CliBackend implements GitBackend {
 				type === GitFileStatus.Modified ||
 				type === GitFileStatus.Deleted
 			) {
-				byPath.set(statusFields[i + 1], changes.length);
 				changes.push({
 					oldFilePath: statusFields[i + 1],
 					newFilePath: statusFields[i + 1],
@@ -976,27 +1003,6 @@ export class CliBackend implements GitBackend {
 			} else {
 				break;
 			}
-		}
-
-		const numFields = numStat.split('\0');
-		for (let i = 0; i < numFields.length && numFields[i] !== ''; ) {
-			const parts = numFields[i].split('\t');
-			if (parts.length !== 3) break;
-			// A rename's numstat record has an empty path, followed by the two paths as separate
-			// NUL-terminated fields.
-			const path = parts[2] !== '' ? parts[2] : numFields[i + 2];
-			const index = byPath.get(path);
-			if (index !== undefined) {
-				const additions = parseInt(parts[0], 10);
-				const deletions = parseInt(parts[1], 10);
-				// A binary file reports a dash, which parses to NaN and is reported as "unknown".
-				changes[index] = {
-					...changes[index],
-					additions: Number.isNaN(additions) ? null : additions,
-					deletions: Number.isNaN(deletions) ? null : deletions
-				};
-			}
-			i += parts[2] !== '' ? 1 : 3;
 		}
 
 		return changes;

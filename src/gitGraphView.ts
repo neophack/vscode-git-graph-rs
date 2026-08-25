@@ -424,6 +424,17 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({ command: 'commitBodies', bodies: bodies });
 				break;
 			}
+			case 'commitFileCounts': {
+				const counts = await this.dataSource.getCommitFileCounts(msg.repo, msg.from, msg.to, msg.paths);
+				this.sendMessage({
+					command: 'commitFileCounts',
+					commitHash: msg.commitHash,
+					compareWithHash: msg.compareWithHash,
+					counts: counts.counts,
+					error: counts.error
+				});
+				break;
+			}
 			case 'compareCommits':
 				this.sendMessage({
 					command: 'compareCommits',

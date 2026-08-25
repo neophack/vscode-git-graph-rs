@@ -173,7 +173,17 @@ pub struct GitFileChange {
     pub new_file_path: String,
     #[serde(rename = "type")]
     pub kind: GitFileStatus,
-    /// `None` for binary files, where git reports a dash instead of a line count.
+    /// `None` for binary files, where git reports a dash instead of a line count — and while the
+    /// counts of a freshly opened view are still being computed in the background.
+    pub additions: Option<u32>,
+    pub deletions: Option<u32>,
+}
+
+/// The `+N/-M` line counts of one file, as `git diff --numstat` reports them. Both fields are
+/// `None` for a binary file.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLineCounts {
     pub additions: Option<u32>,
     pub deletions: Option<u32>,
 }

@@ -7,7 +7,7 @@ import { getConfig } from './config';
 import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
 import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -411,6 +411,26 @@ export class DataSource extends Disposable {
 			return { fileChanges: fileChanges as unknown as GitFileChange[], error: null };
 		}, (errorMessage) => {
 			return { fileChanges: [], error: errorMessage };
+		});
+	}
+
+	/**
+	 * Get the +/- line counts of specific files of the open Commit Details / Commit Comparison view.
+	 *
+	 * The details themselves arrive without counts (each one costs two blob reads, which dominates
+	 * the load of a many-file commit); the view settles them progressively through this method —
+	 * the visible files first, then the rest in the background.
+	 * @param repo The path of the repository.
+	 * @param from The diff's left side, or null to diff `to` against its first parent (a plain commit).
+	 * @param to The diff's right side.
+	 * @param paths The paths to count, keyed by the file's new path.
+	 * @returns The counts, keyed by path; a binary file reports null counts.
+	 */
+	public getCommitFileCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<GitCommitFileCountsData> {
+		return this.backend.getLineCounts(repo, from, to, paths).then((counts) => {
+			return { counts: counts as { [path: string]: GitLineCounts }, error: null };
+		}, (errorMessage) => {
+			return { counts: {}, error: errorMessage };
 		});
 	}
 
@@ -1783,6 +1803,11 @@ export interface GitCommitDetailsData {
 
 interface GitCommitComparisonData {
 	fileChanges: GitFileChange[];
+	error: ErrorInfo;
+}
+
+export interface GitCommitFileCountsData {
+	counts: { [path: string]: GitLineCounts };
 	error: ErrorInfo;
 }
 

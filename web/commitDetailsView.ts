@@ -102,6 +102,8 @@ function showCommitDetails(view: GitGraphView, commitDetails: GG.GitCommitDetail
 
 		closeCdvContextMenuIfOpen(expandedCommit);
 
+		initialiseLineCounts(view);
+
 	}
 
 	expandedCommit.avatar = avatar;
@@ -280,6 +282,8 @@ function showCommitComparison(view: GitGraphView, commitHash: string, compareWit
 
 		closeCdvContextMenuIfOpen(expandedCommit);
 
+		initialiseLineCounts(view);
+
 	}
 
 	expandedCommit.codeReview = codeReview;
@@ -301,6 +305,268 @@ function showCommitComparison(view: GitGraphView, commitHash: string, compareWit
 
 
 	renderCommitDetailsView(view, refresh);
+
+}
+
+
+/* ---------- Deferred file line counts ---------- */
+
+/**
+ * How far beyond the visible rows counts are still settled eagerly when scrolling, so a fast
+ * scroll does not land on empty `( +… | … )` placeholders.
+ */
+const LINE_COUNTS_VIEWPORT_BUFFER = 400;
+
+/**
+ * How many paths one background batch asks for. Bounded so a batch stays quick to compute and to
+ * apply, and (for the git CLI backend, where the paths travel on the command line) so the command
+ * stays comfortably within the platform's process creation limits.
+ */
+const LINE_COUNTS_CHUNK_SIZE = 200;
+
+/**
+ * The grace period before the background batches start, letting the viewport's own request land
+ * first — the rows the user is looking at settle before any of the rest are computed.
+ */
+const LINE_COUNTS_CHUNK_DELAY = 300;
+
+/**
+ * Reset the deferred-counts state for the file list that has just arrived: every path that can
+ * carry counts becomes pending, and the viewport's paths are asked for immediately.
+ */
+function initialiseLineCounts(view: GitGraphView) {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null || expandedCommit.fileChanges === null) return;
+
+	const commitOrder = getCommitOrder(view, expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
+
+	const state = expandedCommit.lineCounts;
+
+	state.requested = new Set<string>();
+
+	state.byPath = new Map<string, number>();
+
+	state.chunkInFlight = false;
+
+	if (commitOrder.to === UNCOMMITTED) {
+
+		// A comparison against the working tree reports no counts by design, so there is nothing
+		// to settle and no request to make.
+
+		state.pending = new Set<string>();
+
+		state.queue = [];
+
+		return;
+
+	}
+
+	const pending = new Set<string>(), queue: string[] = [];
+
+	for (let i = 0; i < expandedCommit.fileChanges.length; i++) {
+
+		const path = expandedCommit.fileChanges[i].newFilePath;
+
+		// Untracked files never carry counts; the rest are pending until asked for.
+
+		if (expandedCommit.fileChanges[i].type !== GG.GitFileStatus.Untracked && !pending.has(path)) {
+
+			pending.add(path);
+
+			queue.push(path);
+
+			state.byPath.set(path, i);
+
+		}
+
+	}
+
+	state.pending = pending;
+
+	state.queue = queue;
+
+	scheduleVisibleLineCounts(view);
+
+	window.setTimeout(() => pumpLineCountsChunk(view), LINE_COUNTS_CHUNK_DELAY);
+
+}
+
+/** The diff the open view's counts belong to: a comparison's two sides, a stash's base, or a commit's first parent. */
+function lineCountsFromTo(view: GitGraphView): { from: string | null, to: string } | null {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null) return null;
+
+	if (expandedCommit.compareWithHash !== null) {
+
+		const commitOrder = getCommitOrder(view, expandedCommit.commitHash, expandedCommit.compareWithHash);
+
+		return { from: commitOrder.from, to: commitOrder.to };
+
+	}
+
+	const commit = view.commits[view.commitLookup[expandedCommit.commitHash]];
+
+	if (commit !== undefined && commit.stash !== null) {
+
+		return { from: commit.stash.baseHash, to: expandedCommit.commitHash };
+
+	}
+
+	return { from: null, to: expandedCommit.commitHash };
+
+}
+
+function requestLineCounts(view: GitGraphView, paths: string[]) {
+
+	const expandedCommit = view.expandedCommit, fromTo = lineCountsFromTo(view);
+
+	if (expandedCommit === null || fromTo === null || paths.length === 0) return;
+
+	for (let i = 0; i < paths.length; i++) expandedCommit.lineCounts.requested.add(paths[i]);
+
+	sendMessage({
+
+		command: 'commitFileCounts',
+
+		repo: view.currentRepo,
+
+		commitHash: expandedCommit.commitHash,
+
+		compareWithHash: expandedCommit.compareWithHash,
+
+		from: fromTo.from,
+
+		to: fromTo.to,
+
+		paths: paths
+
+	});
+
+}
+
+/** Ask for the counts of the rows in (or near) the viewport, debounced so scrolling stays cheap. */
+function scheduleVisibleLineCounts(view: GitGraphView) {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null || expandedCommit.lineCounts.pending === null) return;
+
+	window.clearTimeout(expandedCommit.lineCounts.scrollTimer);
+
+	expandedCommit.lineCounts.scrollTimer = window.setTimeout(() => {
+
+		if (view.expandedCommit === null) return; // the view closed while debouncing
+
+		requestLineCounts(view, collectVisiblePendingPaths(view));
+
+	}, 120);
+
+}
+
+function collectVisiblePendingPaths(view: GitGraphView): string[] {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null || expandedCommit.lineCounts.pending === null || expandedCommit.fileChanges === null) return [];
+
+	const filesElem = document.getElementById('cdvFiles');
+
+	if (filesElem === null) return [];
+
+	const visible = filesElem.getBoundingClientRect();
+
+	const paths: string[] = [];
+
+	const records = filesElem.getElementsByClassName('fileTreeFileRecord');
+
+	for (let i = 0; i < records.length; i++) {
+
+		const record = <HTMLElement>records[i];
+
+		const rect = record.getBoundingClientRect();
+
+		// A zero-height row sits inside a closed folder; a row outside the buffered viewport will
+		// be settled by a later batch.
+
+		if (rect.height === 0 || rect.bottom < visible.top - LINE_COUNTS_VIEWPORT_BUFFER || rect.top > visible.bottom + LINE_COUNTS_VIEWPORT_BUFFER) continue;
+
+		const path = expandedCommit.fileChanges[parseInt(record.dataset.index!)].newFilePath;
+
+		if (!expandedCommit.lineCounts.requested.has(path)) paths.push(path);
+
+	}
+
+	return paths;
+
+}
+
+/** Send the next background batch, one batch in flight at a time so the host is never queued up. */
+function pumpLineCountsChunk(view: GitGraphView) {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null || expandedCommit.lineCounts.pending === null || expandedCommit.lineCounts.chunkInFlight) return;
+
+	const queue = expandedCommit.lineCounts.queue;
+
+	while (queue.length > 0 && expandedCommit.lineCounts.requested.has(queue[0])) queue.shift();
+
+	if (queue.length === 0) return;
+
+	expandedCommit.lineCounts.chunkInFlight = true;
+
+	requestLineCounts(view, queue.splice(0, LINE_COUNTS_CHUNK_SIZE));
+
+}
+
+/**
+ * Settle one batch of counts into the open view: the records, and the rendered rows, are patched
+ * in place; the placeholder of a binary file is dropped and its row stops being diffable, exactly
+ * as it would have rendered had the counts been known from the start.
+ */
+function applyLineCounts(view: GitGraphView, msg: GG.ResponseCommitFileCounts) {
+
+	const expandedCommit = view.expandedCommit;
+
+	if (expandedCommit === null || expandedCommit.fileChanges === null || expandedCommit.lineCounts.pending === null) return;
+
+	if (expandedCommit.commitHash !== msg.commitHash || expandedCommit.compareWithHash !== msg.compareWithHash) return; // a stale reply for a view that is no longer open
+
+	expandedCommit.lineCounts.chunkInFlight = false;
+
+	const filesElem = document.getElementById('cdvFiles');
+
+	for (const path in msg.counts) {
+
+		if (!expandedCommit.lineCounts.pending.has(path)) continue;
+
+		expandedCommit.lineCounts.pending.delete(path);
+
+		const index = expandedCommit.lineCounts.byPath !== null ? expandedCommit.lineCounts.byPath.get(path) : undefined;
+
+		if (index === undefined || index >= expandedCommit.fileChanges.length) continue;
+
+		const file = expandedCommit.fileChanges[index] as { additions: number | null, deletions: number | null };
+
+		file.additions = msg.counts[path].additions;
+
+		file.deletions = msg.counts[path].deletions;
+
+		if (filesElem !== null) {
+
+			const record = filesElem.querySelector('.fileTreeFileRecord[data-index="' + index + '"]');
+
+			if (record !== null) patchFileRowCounts(<HTMLElement>record, expandedCommit.fileChanges[index]);
+
+		}
+
+	}
+
+	pumpLineCountsChunk(view);
 
 }
 
@@ -435,7 +701,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 		}
 
-		html += '</div><div id="cdvFiles">' + generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, getFileViewType(view), commitOrder.to === UNCOMMITTED) + '</div><div id="cdvDivider"></div>';
+		html += '</div><div id="cdvFiles">' + generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, getFileViewType(view), commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending) + '</div><div id="cdvDivider"></div>';
 
 	}
 
@@ -560,6 +826,8 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 			if (view.expandedCommit === null) return;
 
 			view.expandedCommit.scrollTop.fileView = scrollTop;
+
+			scheduleVisibleLineCounts(view);
 
 			if (view.expandedCommit.contextMenuOpen.fileView > -1) {
 
@@ -1006,11 +1274,13 @@ function changeFileViewType(view: GitGraphView, type: GG.FileViewType) {
 
 	const commitOrder = getCommitOrder(view, expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 
-	filesElem.innerHTML = generateFileViewHtml(expandedCommit.fileTree, expandedCommit.fileChanges, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, type, commitOrder.to === UNCOMMITTED);
+	filesElem.innerHTML = generateFileViewHtml(expandedCommit.fileTree, expandedCommit.fileChanges, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, type, commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending);
 
 	makeCdvFileViewInteractive(view);
 
 	renderCdvFileViewTypeBtns(view);
+
+	scheduleVisibleLineCounts(view);
 
 }
 
@@ -1056,6 +1326,8 @@ function openFolders(view: GitGraphView, open: boolean) {
 	}
 
 	view.saveState();
+
+	scheduleVisibleLineCounts(view);
 
 }
 
@@ -1273,6 +1545,8 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 		alterFileTreeFolderOpen(expandedCommit.fileTree, decodeURIComponent(sourceElem.dataset.folderpath!), isOpen);
 
 		view.saveState();
+
+		scheduleVisibleLineCounts(view);
 
 	});
 

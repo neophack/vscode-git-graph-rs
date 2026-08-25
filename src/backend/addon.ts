@@ -20,6 +20,7 @@ interface NativeAddon {
 	loadCommits(path: string, optionsJson: string): Promise<string>;
 	loadRefs(path: string, optionsJson: string): Promise<string>;
 	loadCommitDetails(path: string, hash: string): Promise<string>;
+	loadLineCounts(path: string, from: string | null, to: string, pathsJson: string): Promise<string>;
 	loadUncommittedDetails(path: string): Promise<string>;
 	loadStashDetails(path: string, hash: string, stashJson: string): Promise<string>;
 	compareCommits(path: string, from: string, to: string): Promise<string>;

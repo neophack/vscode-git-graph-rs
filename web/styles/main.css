@@ -624,6 +624,10 @@ svg.openFolderIcon, svg.closedFolderIcon, svg.fileIcon{
 .fileTreeFileAddDel, .fileTreeFileType{
 	margin-left:8px;
 }
+/* The (+…|-…) placeholder shown while a file's line counts are still being computed */
+.fileTreeFileAddDel.countsPending{
+	opacity:0.6;
+}
 .fileTreeFileType{
 	cursor:help;
 }

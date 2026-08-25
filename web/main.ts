@@ -1152,6 +1152,14 @@ class GitGraphView {
 			codeReview: null,
 			lastViewedFile: null,
 			loading: true,
+			lineCounts: {
+				pending: null,
+				requested: new Set<string>(),
+				queue: [],
+				byPath: null,
+				chunkInFlight: false,
+				scrollTimer: 0
+			},
 			scrollTop: {
 				summary: 0,
 				fileView: 0
@@ -2157,6 +2165,9 @@ window.addEventListener('load', () => {
 				break;
 			case 'commitBodies':
 				gitGraph.processCommitBodies(msg);
+				break;
+			case 'commitFileCounts':
+				applyLineCounts(gitGraph, msg);
 				break;
 			case 'countCommitsBefore':
 				gitGraph.processCountCommitsBefore(msg);

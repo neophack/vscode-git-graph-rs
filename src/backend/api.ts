@@ -18,6 +18,7 @@ import {
 	GitConfigSnapshot,
 	GitFileChange,
 	GitHistoryMatch,
+	GitLineCounts,
 	GitRefData,
 	GitRepoInfo,
 	GitStash,
@@ -60,8 +61,16 @@ export interface GitBackend {
 	/** The refs of a repository, without the commits. */
 	getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData>;
 
-	/** One commit in full, with the files it changed. */
+	/** One commit in full, with the files it changed — their statuses only, without line counts. */
 	getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails>;
+
+	/**
+	 * The `+N/-M` line counts of the given paths between two revisions, keyed by the path.
+	 *
+	 * `from` is null to diff `to` against its first parent (the Commit Details view), or a revision
+	 * (the Commit Comparison view, or a stash's base). Binary files report null counts.
+	 */
+	getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }>;
 
 	/** The "Uncommitted Changes" row in full. */
 	getUncommittedDetails(repo: string): Promise<GitCommitDetails>;
@@ -204,6 +213,15 @@ export class NativeBackend implements GitBackend {
 
 	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
 		return callJson<GitCommitDetails>(() => this.addon.loadCommitDetails(repo, hash));
+	}
+
+	public getLineCounts(
+		repo: string,
+		from: string | null,
+		to: string,
+		paths: ReadonlyArray<string>
+	): Promise<{ [path: string]: GitLineCounts }> {
+		return callJson(() => this.addon.loadLineCounts(repo, from, to, JSON.stringify(paths)));
 	}
 
 	public getUncommittedDetails(repo: string): Promise<GitCommitDetails> {

@@ -34,6 +34,12 @@ declare global {
 		codeReview: GG.CodeReview | null;
 		lastViewedFile: string | null;
 		loading: boolean;
+		/**
+		 * The deferred `+N/-M` line counts of the file list. The details arrive without them (every
+		 * file costs two blob reads, which dominates the load of a many-file commit); the paths
+		 * near the viewport are settled first and the rest are filled in by background batches.
+		 */
+		lineCounts: LineCountsState;
 		scrollTop: {
 			summary: number,
 			fileView: number
@@ -42,6 +48,22 @@ declare global {
 			summary: boolean,
 			fileView: number
 		};
+	}
+
+	/** The deferred-counts state of an open Commit Details / Commit Comparison view. */
+	interface LineCountsState {
+		/** The paths whose counts have not been settled yet; null before the file list arrives. */
+		pending: Set<string> | null;
+		/** The paths already asked for, so a scroll never asks twice. */
+		requested: Set<string>;
+		/** The remaining paths, in list order, waiting for a background batch. */
+		queue: string[];
+		/** Path → index into the file list, built once per file list. */
+		byPath: Map<string, number> | null;
+		/** True while a background batch is in flight. */
+		chunkInFlight: boolean;
+		/** The debounce timer of a scroll-triggered viewport request. */
+		scrollTimer: number;
 	}
 
 	interface WebViewState {

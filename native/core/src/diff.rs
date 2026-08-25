@@ -1,12 +1,19 @@
 //! Tree diffing: the file lists behind the Commit Details and Commit Comparison views.
 //!
 //! The original extension ran two `git diff` processes per commit — one for `--name-status` and
-//! one for `--numstat` — and merged their output by path. Here one tree diff produces both the
-//! statuses and the line counts, so the whole file list costs a single pass.
+//! one for `--numstat` — and merged their output by path. Here the file *statuses* come from a
+//! single tree walk, which is cheap; the per-file line counts are the expensive part (each one
+//! reads and inflates two blobs) and are therefore answered separately, for a subset of paths,
+//! by [`line_counts`] — so a commit touching ten thousand files renders its file list immediately
+//! and fills the `+N/-M` counts in as they are computed.
+
+use std::collections::{BTreeMap, HashSet};
+
+use bstr::ByteSlice;
 
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
-use crate::types::{GitFileChange, GitFileStatus, GitStatusFiles, UNCOMMITTED};
+use crate::types::{GitFileChange, GitFileStatus, GitLineCounts, GitStatusFiles, UNCOMMITTED};
 
 /// The similarity below which two files are no longer considered a rename. Matches git's default
 /// (`-M50%`), so the rename detection the view shows agrees with the command line.
@@ -80,7 +87,7 @@ pub fn diff_commits(
         None => git.empty_tree(),
     };
 
-    collect_changes(&git, &from_tree, &to_tree)
+    collect_changes(&from_tree, &to_tree)
 }
 
 /// Compare a revision against the working tree, as `git diff <revision>` does.
@@ -91,9 +98,9 @@ pub fn diff_commits(
 ///
 /// ### Deviation
 ///
-/// A file modified in the working tree but not staged is listed, but without line counts: getting
-/// those means hashing the worktree file, which costs more than the counts are worth on the
-/// critical path of the view. Line counts for committed changes are exact.
+/// No line counts are reported for a comparison against the working tree: files modified but not
+/// staged could only be counted by hashing the worktree file, and a count that is exact for part
+/// of the list and missing for the rest reads worse than none at all.
 fn diff_against_worktree(repo: &Repo, from: &str) -> Result<Vec<GitFileChange>> {
     let from_id = repo.resolve_commit(from)?;
     let head = repo.resolve_commit("HEAD").ok();
@@ -155,12 +162,88 @@ pub fn apply_worktree_status(changes: &mut Vec<GitFileChange>, status: &GitStatu
     }
 }
 
-/// Run one tree diff and turn every change into the record the view renders.
+/// Run one tree diff and turn every change into the record the view renders — statuses only.
+///
+/// No blob is read here, which is what lets a many-file commit appear instantly. The line counts
+/// that the view shows next to modified and renamed files arrive later, through [`line_counts`].
 fn collect_changes(
-    git: &gix::Repository,
     from_tree: &gix::Tree<'_>,
     to_tree: &gix::Tree<'_>,
 ) -> Result<Vec<GitFileChange>> {
+    let mut changes = from_tree.changes().git_ctx("Could not diff the trees")?;
+    changes.options(|options| {
+        options.track_rewrites(Some(gix::diff::Rewrites {
+            copies: None,
+            percentage: Some(RENAME_SIMILARITY),
+            ..Default::default()
+        }));
+    });
+
+    let mut collected: Vec<GitFileChange> = Vec::new();
+    let outcome = changes.for_each_to_obtain_tree(to_tree, |change| {
+        if let Some(record) = classify(&change) {
+            collected.push(record);
+        }
+        Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+    });
+    outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
+
+    Ok(collected)
+}
+
+/// The `+N/-M` line counts of the given paths between two revisions, keyed by the path.
+///
+/// `from` is `None` to diff `to` against its first parent — the Commit Details view of a plain
+/// commit — or a revision, for the Commit Comparison view and a stash's base. Binary files map to
+/// an entry whose counts are `None`, exactly as `git diff --numstat` prints a dash for them.
+///
+/// The tree is walked again here (walking is cheap; it is the blob reads that cost), and only the
+/// requested paths are counted, so the caller can settle a viewport's worth of rows in a few
+/// milliseconds no matter how large the commit is.
+pub fn line_counts(
+    repo: &Repo,
+    from: Option<&str>,
+    to: &str,
+    paths: &[String],
+) -> Result<BTreeMap<String, GitLineCounts>> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let wanted: HashSet<&str> = paths.iter().map(String::as_str).collect();
+    let to_id = repo.resolve_commit(to)?;
+    let git = repo.borrow();
+    let to_tree = git
+        .find_commit(to_id)
+        .git_ctx("Could not read the commit")?
+        .tree()
+        .git_ctx("Could not read the commit tree")?;
+
+    let from_tree = match from {
+        Some(rev) => {
+            let from_id = repo.resolve_commit(rev)?;
+            git.find_commit(from_id)
+                .git_ctx("Could not read the parent commit")?
+                .tree()
+                .git_ctx("Could not read the parent tree")?
+        }
+        // `None` is the commit's first parent — or the empty tree for a root commit, so that a
+        // repository's initial commit reports its files as added rather than as unaccounted for.
+        None => match git
+            .find_commit(to_id)
+            .git_ctx("Could not read the commit")?
+            .parent_ids()
+            .next()
+        {
+            Some(parent) => git
+                .find_commit(parent)
+                .git_ctx("Could not read the parent commit")?
+                .tree()
+                .git_ctx("Could not read the parent tree")?,
+            None => git.empty_tree(),
+        },
+    };
+
     let mut changes = from_tree.changes().git_ctx("Could not diff the trees")?;
     changes.options(|options| {
         options.track_rewrites(Some(gix::diff::Rewrites {
@@ -176,23 +259,27 @@ fn collect_changes(
         .diff_resource_cache_for_tree_diff()
         .git_ctx("Could not prepare the diff")?;
 
-    let mut collected: Vec<GitFileChange> = Vec::new();
-    let outcome = changes.for_each_to_obtain_tree(to_tree, |change| {
-        if let Some(mut record) = classify(&change) {
-            // Binary files keep `None` counts, exactly as `git diff --numstat` prints `-` for them.
-            if let Ok(mut platform) = change.diff(&mut cache) {
-                if let Ok(Some(counts)) = platform.line_counts() {
-                    record.additions = Some(counts.insertions);
-                    record.deletions = Some(counts.removals);
-                }
-            }
-            collected.push(record);
+    let mut counted: BTreeMap<String, GitLineCounts> = BTreeMap::new();
+    let outcome = changes.for_each_to_obtain_tree(&to_tree, |change| {
+        if !wanted.contains(change.location().to_str_lossy().as_ref()) {
+            return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
         }
+        let mut counts = GitLineCounts {
+            additions: None,
+            deletions: None,
+        };
+        if let Ok(mut platform) = change.diff(&mut cache) {
+            if let Ok(Some(line_counts)) = platform.line_counts() {
+                counts.additions = Some(line_counts.insertions);
+                counts.deletions = Some(line_counts.removals);
+            }
+        }
+        counted.insert(change.location().to_string(), counts);
         Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
     });
     outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
 
-    Ok(collected)
+    Ok(counted)
 }
 
 /// Turn one tree change into a file change record, or `None` for changes the view does not list.

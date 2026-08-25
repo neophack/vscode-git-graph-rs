@@ -304,8 +304,15 @@ tell which one it is talking to, so any disagreement is a user-visible behaviour
 
 - **A file modified in the working tree but not staged has no line counts** when comparing an
   arbitrary revision against the working tree. Getting them means hashing the worktree file, which
-  costs more than the counts are worth on the critical path. Line counts for committed changes are
-  exact.
+  costs more than the counts are worth on the critical path. For the same reason, a comparison
+  against the working tree shows no counts at all — a number that is exact for part of the list
+  and missing for the rest reads worse than none.
+
+- **Line counts arrive after the file list.** Opening a commit (or a comparison) renders its file
+  list first and settles the `+N/-M` counts progressively — the rows in view, then the rest in
+  background batches — because every file's counts cost two blob reads, which dominates the load
+  of a commit touching thousands of files. Everywhere except a working-tree comparison the counts
+  are exact once settled.
 
 ## Building
 

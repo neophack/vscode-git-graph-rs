@@ -187,8 +187,49 @@ fn lists_the_files_a_commit_changed() {
 
     let modified = by_path("keep.txt");
     assert_eq!(modified.kind, GitFileStatus::Modified);
-    assert_eq!(modified.additions, Some(1));
-    assert_eq!(modified.deletions, Some(0));
+    // The tree walk only settles statuses; the counts are deferred to `line_counts`, so a
+    // many-file commit can render its file list before any blob is read.
+    assert_eq!(modified.additions, None);
+    assert_eq!(modified.deletions, None);
+
+    // The deferred counts of a subset of paths, as the view asks for them.
+    let counts = diff::line_counts(
+        &engine,
+        None,
+        &hash,
+        &["keep.txt".into(), "added.txt".into()],
+    )
+    .unwrap();
+    assert_eq!(counts.len(), 2, "only the asked-for paths are settled");
+    let keep = counts.get("keep.txt").copied().unwrap_or_default();
+    assert_eq!(keep.additions, Some(1));
+    assert_eq!(keep.deletions, Some(0));
+    let added = counts.get("added.txt").copied().unwrap_or_default();
+    assert_eq!(added.additions, Some(1));
+    assert_eq!(added.deletions, Some(0));
+}
+
+#[test]
+fn counts_only_the_paths_asked_for() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let first = repo.commit_file("a.txt", "one\ntwo\n", "first");
+    repo.write("a.txt", "one\nchanged\n");
+    repo.write("b.bin", "\u{0}\u{1}\u{2}\n");
+    let second = repo.commit("second");
+
+    let engine = open(&repo);
+    // An explicit `from` is the comparison-view spelling; the binary file reports null counts,
+    // exactly as `git diff --numstat` prints a dash for it.
+    let counts = diff::line_counts(&engine, Some(&first), &second, &["b.bin".into()]).unwrap();
+    assert_eq!(counts.len(), 1);
+    let binary = counts.get("b.bin").copied().unwrap_or_default();
+    assert_eq!(binary.additions, None);
+    assert_eq!(binary.deletions, None);
+
+    // A path the diff does not touch simply does not appear.
+    let counts = diff::line_counts(&engine, None, &second, &["not-there.txt".into()]).unwrap();
+    assert!(counts.is_empty());
 }
 
 #[test]

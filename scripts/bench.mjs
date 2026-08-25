@@ -81,6 +81,8 @@ async function buildOperations() {
 	// The file the per-object reads target: one the commit tree actually holds, when the page
 	// offers one, with a conventional name as the fallback.
 	const file = 'README.md';
+	// The paths the deferred-counts operation asks for: the head commit's own file list.
+	const headPaths = (await rust.getCommitDetails(repo, head)).fileChanges.map((change) => change.newFilePath);
 	const [info, refData] = await Promise.all([
 		rust.getRepoInfo(repo, { showRemoteBranches: true }),
 		rust.getRefs(repo, { showRemoteBranches: false })
@@ -94,6 +96,7 @@ async function buildOperations() {
 		{ label: 'getCommits (a page of the graph)', run: (b) => b.getCommits(repo, logOptions).then((r) => r.commits.length) },
 		{ label: 'getRefs', run: (b) => b.getRefs(repo, { showRemoteBranches: true }).then((r) => r.heads.length + r.tags.length + r.remotes.length) },
 		{ label: 'getCommitDetails', run: (b) => b.getCommitDetails(repo, head).then((r) => r.fileChanges.length) },
+		{ label: "getLineCounts (the details view's deferred counts)", run: (b) => b.getLineCounts(repo, null, head, headPaths).then((r) => Object.keys(r).length) },
 		{ label: 'getCommitBodies (50 commits)', run: (b) => b.getCommitBodies(repo, hashes).then((r) => Object.keys(r).length) },
 		{ label: 'getCommitSummaries (50 commits)', run: (b) => b.getCommitSummaries(repo, hashes).then((r) => Object.keys(r).length) },
 		{ label: 'getCommitSubject', run: (b) => b.getCommitSubject(repo, head).then((r) => r.length) },

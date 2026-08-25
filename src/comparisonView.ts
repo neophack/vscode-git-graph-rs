@@ -80,6 +80,12 @@ export class CommitComparisonView extends Disposable {
 					const session = this.hexSessions.get(msg.index);
 					if (session === undefined) return;
 					await respondHexRows(session, msg.index, msg.start, msg.count, this.hexPost());
+				} else if (msg.command === 'requestCounts') {
+					// The deferred +N/-M counts of the file list, asked for after the list itself has
+					// rendered — computing them means reading two blobs per file, which on a large
+					// range is the slow half of the load.
+					const result = await this.dataSource.getCommitFileCounts(this.repo, this.fromHash, this.toHash, msg.paths);
+					if (!this.isDisposed()) this.panel.webview.postMessage({ command: 'lineCounts', counts: result.counts });
 				} else if (msg.command === 'getImageData') {
 					const session = this.hexSession(msg.index);
 					const file = this.fileChanges[msg.index];
@@ -205,6 +211,8 @@ export class CommitComparisonView extends Disposable {
 	.treeRow .counts { font-size: 11px; margin-left: 8px; flex-shrink: 0; }
 	.counts .additions { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }
 	.counts .deletions { color: var(--vscode-gitDecoration-deletedResourceForeground, #b31d28); }
+	/* The &hellip; placeholder shown while a file's line counts are still being computed */
+	.counts.pending { opacity: 0.6; }
 	.letter { width: 13px; margin-right: 5px; text-align: center; font-weight: 600; flex-shrink: 0; }
 	#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 	#fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; gap: 8px; }
@@ -237,30 +245,37 @@ export class CommitComparisonView extends Disposable {
 	<div id="main"><div id="fileHeader"></div><div id="diffArea"><div class="status">${loading ? t('compareLoadingChanges') : escapeHtml(error !== null ? error : t('compareNoChanges'))}</div></div></div>
 </div>
 <script nonce="${nonce}">
-const vscode = acquireVsCodeApi();
-const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
+	const vscode = acquireVsCodeApi();
+	const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
+	// A comparison against the working tree reports no counts by design, so none are requested.
+	const countsPossible = ${this.toHash !== UNCOMMITTED && this.toHash !== ''};
 	const LETTERS = { A: 'A', C: 'C', D: 'D', M: 'M', R: 'R', T: 'T', U: 'U', '??': 'U' };
 	let selectedIndex = -1, requestedIndex = -1, lastDiffWasBinary = false;
 
 	/* ---------- Statistics header ---------- */
-	let totalAdditions = 0, totalDeletions = 0;
-	for (const file of changes) {
-		if (file.additions !== null) totalAdditions += file.additions;
-		if (file.deletions !== null) totalDeletions += file.deletions;
-	}
 	const filesChangedTemplate = '${t('compareFilesChanged', '{0}')}';
-	if (changes.length > 0) {
+	function renderStats() {
+		if (changes.length === 0) return;
+		let totalAdditions = 0, totalDeletions = 0;
+		for (const file of changes) {
+			if (file.additions !== null) totalAdditions += file.additions;
+			if (file.deletions !== null) totalDeletions += file.deletions;
+		}
 		document.getElementById('stats').innerHTML =
 			(changes.length === 1 ? '${t('compareOneFileChanged')}' : filesChangedTemplate.replace('{0}', String(changes.length))) +
 			(totalAdditions > 0 ? '${t('compareStatsAdditions', '{0}')}'.replace('{0}', String(totalAdditions)) : '') +
 			(totalDeletions > 0 ? '${t('compareStatsDeletions', '{0}')}'.replace('{0}', String(totalDeletions)) : '');
 	}
+	renderStats();
 
 	/* ---------- File tree sidebar ---------- */
 	// Build a nested tree from the flat list of file paths
 	const root = { name: '', folders: {}, files: [] };
+	const indexByPath = new Map();
 	changes.forEach((file, index) => {
-		const path = (file.newFilePath !== '' ? file.newFilePath : file.oldFilePath).split('/');
+		const filePath = file.newFilePath !== '' ? file.newFilePath : file.oldFilePath;
+		indexByPath.set(filePath, index);
+		const path = filePath.split('/');
 		let cur = root;
 		for (let i = 0; i < path.length - 1; i++) {
 			if (typeof cur.folders[path[i]] === 'undefined') cur.folders[path[i]] = { name: path[i], folders: {}, files: [] };
@@ -273,10 +288,14 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 	function escapeHtml(str) {
 		return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
-	function countsHtml(file) {
-		return file.additions !== null && file.deletions !== null
-			? '<span class="counts"><span class="additions">+' + file.additions + '</span> <span class="deletions">-' + file.deletions + '</span></span>'
-			: '';
+	/* The files whose counts have been computed: before that a null count means "on its way",
+	   after it a null count means "binary". */
+	const settledCounts = new Set();
+	function countsHtml(file, index) {
+		if (file.additions !== null && file.deletions !== null) {
+			return '<span class="counts"><span class="additions">+' + file.additions + '</span> <span class="deletions">-' + file.deletions + '</span></span>';
+		}
+		return !settledCounts.has(index) && (file.type === 'M' || file.type === 'R') ? '<span class="counts pending">&hellip;</span>' : '';
 	}
 	function statusColour(file) {
 		return file.type === 'D' ? 'var(--vscode-gitDecoration-deletedResourceForeground, #b31d28)'
@@ -306,7 +325,7 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 			row.style.paddingLeft = (22 + depth * 14) + 'px';
 			row.dataset.index = entry.index;
 			row.innerHTML = '<span class="letter" style="color: ' + statusColour(entry.file) + '">' + (LETTERS[entry.file.type] || '?') + '</span>' +
-				'<span class="name" title="' + escapeHtml(entry.file.newFilePath || entry.file.oldFilePath) + '">' + escapeHtml(entry.name) + '</span>' + countsHtml(entry.file);
+				'<span class="name" title="' + escapeHtml(entry.file.newFilePath || entry.file.oldFilePath) + '">' + escapeHtml(entry.name) + '</span>' + countsHtml(entry.file, entry.index);
 			row.addEventListener('click', () => selectFile(entry.index));
 			container.appendChild(row);
 		}
@@ -332,7 +351,7 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 		currentFileIsImage = isImagePath(filePath);
 		document.getElementById('fileHeader').innerHTML =
 			'<span class="letter" style="color: ' + statusColour(file) + '">' + (LETTERS[file.type] || '?') + '</span>' +
-			'<span id="filePath">' + escapeHtml(filePath) + '</span>' + countsHtml(file) +
+			'<span id="filePath">' + escapeHtml(filePath) + '</span>' + countsHtml(file, index) +
 			'<button id="openDiffBtn">${t('compareOpenDiffInEditor')}</button>';
 		// A binary file has no textual diff for the native editor: its button opens the
 		// standalone Binary Compare tab instead.
@@ -417,10 +436,49 @@ const changes = ${encodeJsonForInlineScript(JSON.stringify(this.fileChanges))};
 		if (msg.command === 'fileDiff') {
 			diffCache[msg.index] = { diff: msg.diff, error: msg.error };
 			if (msg.index === requestedIndex) showDiff(diffCache[msg.index]);
+		} else if (msg.command === 'lineCounts') {
+			applyCounts(msg.counts);
 		} else {
 			handleBinaryCompareMessage(msg);
 		}
 	});
+
+	/* ---------- Deferred line counts ---------- */
+	// The file list renders before any blob is read; the +N/-M counts are asked for afterwards and
+	// patched in — on a range touching thousands of files they are the slow half of the load.
+	function applyCounts(counts) {
+		let totalsChanged = false;
+		for (const path in counts) {
+			const index = indexByPath.get(path);
+			if (index === undefined) continue;
+			const file = changes[index];
+			file.additions = counts[path].additions;
+			file.deletions = counts[path].deletions;
+			settledCounts.add(index);
+			totalsChanged = true;
+			const row = document.querySelector('.treeRow.file[data-index="' + index + '"]');
+			if (row !== null) {
+				const existing = row.querySelector('.counts');
+				if (existing !== null) existing.remove();
+				const html = countsHtml(file, index);
+				if (html !== '') row.insertAdjacentHTML('beforeend', html);
+			}
+			if (index === selectedIndex) {
+				const header = document.querySelector('#fileHeader .counts');
+				if (header !== null) header.remove();
+				const headerHtml = countsHtml(file, index);
+				if (headerHtml !== '') document.getElementById('filePath').insertAdjacentHTML('afterend', headerHtml);
+			}
+		}
+		if (totalsChanged) renderStats();
+	}
+	if (countsPossible && changes.length > 0) {
+		const pending = [];
+		for (const file of changes) {
+			if (file.type !== 'U' && file.additions === null) pending.push(file.newFilePath !== '' ? file.newFilePath : file.oldFilePath);
+		}
+		if (pending.length > 0) vscode.postMessage({ command: 'requestCounts', paths: pending });
+	}
 
 	if (changes.length > 0) selectFile(0);
 </script>

@@ -98,7 +98,8 @@ Documented in the README's "Known deviations from git":
 | Commit signatures | reported as present but unverified (status `E`), never as valid |
 | Tag signatures | the same, and on both backends: moving `getTagDetails` behind `GitBackend` dropped the original's real `verify-tag`/gpg verification on the CLI path too |
 | Ordering | exact within a bounded window rather than over the whole history |
-| Worktree line counts | a file modified but not staged has no `additions`/`deletions` when comparing an arbitrary revision against the working tree |
+| Worktree line counts | a file modified but not staged has no `additions`/`deletions` when comparing an arbitrary revision against the working tree; a comparison against the working tree reports no counts at all, committed part included |
+| Deferred line counts | every details/comparison load renders its file list first (statuses only) and settles the `+N/-M` counts afterwards — visible rows first, then background batches — via `getLineCounts`; a working-tree comparison settles nothing |
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename existing only in the working tree is not reassembled by the engine |
 | Lightweight tags | the Tag Details dialogue hides the Tagger/Date row instead of showing an empty tagger and an invalid date (a deliberate improvement over the original) |
 | Mailmap | the engine does not apply `.mailmap`; the original honours `useMailmap` |

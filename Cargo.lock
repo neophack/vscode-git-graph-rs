@@ -407,6 +407,7 @@ dependencies = [
 name = "git-graph-core"
 version = "1.0.3"
 dependencies = [
+ "bstr",
  "gix",
  "regex",
  "serde",

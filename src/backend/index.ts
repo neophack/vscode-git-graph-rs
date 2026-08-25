@@ -21,6 +21,7 @@ import {
 	GitConfigSnapshot,
 	GitFileChange,
 	GitHistoryMatch,
+	GitLineCounts,
 	GitRefData,
 	GitRepoInfo,
 	GitStash,
@@ -108,6 +109,15 @@ class FallbackBackend implements GitBackend {
 
 	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
 		return this.attempt('getCommitDetails', (backend) => backend.getCommitDetails(repo, hash));
+	}
+
+	public getLineCounts(
+		repo: string,
+		from: string | null,
+		to: string,
+		paths: ReadonlyArray<string>
+	): Promise<{ [path: string]: GitLineCounts }> {
+		return this.attempt('getLineCounts', (backend) => backend.getLineCounts(repo, from, to, paths));
 	}
 
 	public getUncommittedDetails(repo: string): Promise<GitCommitDetails> {

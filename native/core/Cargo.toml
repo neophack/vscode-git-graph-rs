@@ -16,6 +16,7 @@ gix = { version = "0.86", default-features = true, features = [
     "parallel",
     "mailmap",
 ] }
+bstr = "1"
 thiserror.workspace = true
 regex.workspace = true
 serde.workspace = true

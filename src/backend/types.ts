@@ -119,7 +119,16 @@ export interface GitFileChange {
 	readonly oldFilePath: string;
 	readonly newFilePath: string;
 	readonly type: GitFileStatus;
-	/** NULL for binary files, where git reports a dash instead of a line count. */
+	/**
+	 * NULL for binary files, where git reports a dash instead of a line count — and until the
+	 * counts of a freshly opened view have been computed for this file.
+	 */
+	readonly additions: number | null;
+	readonly deletions: number | null;
+}
+
+/** The `+N/-M` line counts of one file; both are NULL for a binary file. */
+export interface GitLineCounts {
 	readonly additions: number | null;
 	readonly deletions: number | null;
 }

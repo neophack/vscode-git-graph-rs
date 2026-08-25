@@ -1,12 +1,12 @@
 /* File Tree Helpers (commit details view file tree / file list rendering and state) */
 
-function generateFileViewHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, type: GG.FileViewType, isUncommitted: boolean) {
+function generateFileViewHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, type: GG.FileViewType, isUncommitted: boolean, pendingCounts: ReadonlySet<string> | null) {
 	return type === GG.FileViewType.List
-		? generateFileListHtml(folder, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted)
-		: generateFileTreeHtml(folder, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, true);
+		? generateFileListHtml(folder, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, pendingCounts)
+		: generateFileTreeHtml(folder, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, pendingCounts, true);
 }
 
-function generateFileTreeHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean, topLevelFolder: boolean): string {
+function generateFileTreeHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean, pendingCounts: ReadonlySet<string> | null, topLevelFolder: boolean): string {
 	const curFolderInfo = topLevelFolder || !initialState.config.commitDetailsView.fileTreeCompactFolders
 		? { folder: folder, name: folder.name, pathSeg: folder.name }
 		: getCurrentFolderInfo(folder, folder.name, folder.name);
@@ -14,8 +14,8 @@ function generateFileTreeHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG
 	const children = sortFolderKeys(curFolderInfo.folder).map((key) => {
 		const cur = curFolderInfo.folder.contents[key];
 		return cur.type === 'folder'
-			? generateFileTreeHtml(cur, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, false)
-			: generateFileTreeLeafHtml(cur.name, cur, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted);
+			? generateFileTreeHtml(cur, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, pendingCounts, false)
+			: generateFileTreeLeafHtml(cur.name, cur, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, pendingCounts);
 	});
 
 	return (topLevelFolder ? '' : '<li' + (curFolderInfo.folder.open ? '' : ' class="closed"') + ' data-pathseg="' + encodeURIComponent(curFolderInfo.pathSeg) + '"><span class="fileTreeFolder' + (curFolderInfo.folder.reviewed ? '' : ' pendingReview') + '" title="./' + escapeHtml(curFolderInfo.folder.folderPath) + '" data-folderpath="' + encodeURIComponent(curFolderInfo.folder.folderPath) + '"><span class="fileTreeFolderIcon">' + (curFolderInfo.folder.open ? SVG_ICONS.openFolder : SVG_ICONS.closedFolder) + '</span><span class="gitFolderName">' + escapeHtml(curFolderInfo.name) + '</span></span>') +
@@ -31,7 +31,7 @@ function getCurrentFolderInfo(folder: FileTreeFolder, name: string, pathSeg: str
 		: { folder: folder, name: name, pathSeg: pathSeg };
 }
 
-function generateFileListHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean) {
+function generateFileListHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean, pendingCounts: ReadonlySet<string> | null) {
 	const sortLeaves = (folder: FileTreeFolder, folderPath: string) => {
 		let keys = sortFolderKeys(folder);
 		let items: { relPath: string, leaf: FileTreeLeaf }[] = [];
@@ -49,22 +49,51 @@ function generateFileListHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG
 	let sortedLeaves = sortLeaves(folder, '');
 	let html = '';
 	for (let i = 0; i < sortedLeaves.length; i++) {
-		html += generateFileTreeLeafHtml(sortedLeaves[i].relPath, sortedLeaves[i].leaf, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted);
+		html += generateFileTreeLeafHtml(sortedLeaves[i].relPath, sortedLeaves[i].leaf, gitFiles, lastViewedFile, fileContextMenuOpen, isUncommitted, pendingCounts);
 	}
 	return '<ul class="fileTreeFolderContents">' + html + '</ul>';
 }
 
-function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean) {
+/** The "M (a → b)" message describing what happened to a file, shown in tooltips. */
+function fileChangeTypeMessage(file: GG.GitFileChange): string {
+	return getGitFileChangeTypeName(file.type) + (file.type === GG.GitFileStatus.Renamed ? ' (' + escapeHtml(file.oldFilePath) + ' → ' + escapeHtml(file.newFilePath) + ')' : '');
+}
+
+/** Whether the file's contents can be diffed: untracked files always, others when they are text. */
+function fileDiffPossible(file: GG.GitFileChange, pending: boolean): boolean {
+	return file.type === GG.GitFileStatus.Untracked || file.additions !== null && file.deletions !== null || pending;
+}
+
+/** The tooltip of a file row: what clicking it does, then what happened to it. */
+function fileRowTitle(file: GG.GitFileChange): string {
+	return (fileDiffPossible(file, false) ? strings.clickToViewDiff : strings.unableToViewDiff + (file.type !== GG.GitFileStatus.Deleted ? strings.binaryFileSuffix : '')) + ' • ' + fileChangeTypeMessage(file);
+}
+
+/** The `(+N|-M)` counts chip of a modified or renamed text file. */
+function fileCountsChipHtml(file: GG.GitFileChange): string {
+	return '<span class="fileTreeFileAddDel">(<span class="fileTreeFileAdd" title="' + formatStr(file.additions !== 1 ? strings.additionPlural : strings.additionSingular, String(file.additions)) + '">+' + file.additions + '</span>|<span class="fileTreeFileDel" title="' + formatStr(file.deletions !== 1 ? strings.deletionPlural : strings.deletionSingular, String(file.deletions)) + '">-' + file.deletions + '</span>)</span>';
+}
+
+/** The placeholder shown in place of the counts chip while they are still being computed. */
+const PENDING_COUNTS_CHIP_HTML = '<span class="fileTreeFileAddDel countsPending">(+…|-…)</span>';
+
+function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: ReadonlyArray<GG.GitFileChange>, lastViewedFile: string | null, fileContextMenuOpen: number, isUncommitted: boolean, pendingCounts: ReadonlySet<string> | null) {
 	let encodedName = encodeURIComponent(name), escapedName = escapeHtml(name);
 	if (leaf.type === 'file') {
 		const fileTreeFile: GG.GitFileChange = gitFiles[leaf.index];
 		const type = fileTreeFile.type;
-		const textFile = fileTreeFile.additions !== null && fileTreeFile.deletions !== null;
-		const diffPossible = type === GG.GitFileStatus.Untracked || textFile;
-		const changeTypeMessage = getGitFileChangeTypeName(type) + (type === GG.GitFileStatus.Renamed ? ' (' + escapeHtml(fileTreeFile.oldFilePath) + ' → ' + escapeHtml(fileTreeFile.newFilePath) + ')' : '');
+		const pending = pendingCounts !== null && pendingCounts.has(fileTreeFile.newFilePath);
+		const diffPossible = fileDiffPossible(fileTreeFile, pending);
+		const changeTypeMessage = fileChangeTypeMessage(fileTreeFile);
+		let countsChip = '';
+		if (type !== GG.GitFileStatus.Added && type !== GG.GitFileStatus.Untracked && type !== GG.GitFileStatus.Deleted) {
+			countsChip = fileTreeFile.additions !== null && fileTreeFile.deletions !== null
+				? fileCountsChipHtml(fileTreeFile)
+				: pending ? PENDING_COUNTS_CHIP_HTML : '';
+		}
 		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile' + (diffPossible ? ' gitDiffPossible' : '') + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + (diffPossible ? strings.clickToViewDiff : strings.unableToViewDiff + (type !== GG.GitFileStatus.Deleted ? strings.binaryFileSuffix : '')) + ' • ' + changeTypeMessage + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
 			(initialState.config.enhancedAccessibility ? '<span class="fileTreeFileType" title="' + changeTypeMessage + '">' + type + '</span>' : '') +
-			(type !== GG.GitFileStatus.Added && type !== GG.GitFileStatus.Untracked && type !== GG.GitFileStatus.Deleted && textFile ? '<span class="fileTreeFileAddDel">(<span class="fileTreeFileAdd" title="' + formatStr(fileTreeFile.additions !== 1 ? strings.additionPlural : strings.additionSingular, String(fileTreeFile.additions)) + '">+' + fileTreeFile.additions + '</span>|<span class="fileTreeFileDel" title="' + formatStr(fileTreeFile.deletions !== 1 ? strings.deletionPlural : strings.deletionSingular, String(fileTreeFile.deletions)) + '">-' + fileTreeFile.deletions + '</span>)</span>' : '') +
+			countsChip +
 			(fileTreeFile.newFilePath === lastViewedFile ? '<span id="cdvLastFileViewed" title="' + strings.lastFileViewedTitle + '">' + SVG_ICONS.eyeOpen + '</span>' : '') +
 			'<span class="copyGitFile fileTreeFileAction" title="' + strings.cdvMenuCopyAbsolutePath + '">' + SVG_ICONS.copy + '</span>' +
 			(type !== GG.GitFileStatus.Deleted
@@ -74,6 +103,25 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 			) + '</span></li>';
 	} else {
 		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeRepo" data-path="' + encodeURIComponent(leaf.path) + '" title="' + strings.clickToViewRepo + '"><span class="fileTreeRepoIcon">' + SVG_ICONS.closedFolder + '</span>' + escapedName + '</span></li>';
+	}
+}
+
+/**
+ * Patch one rendered file row in place after its line counts arrived — the class, the tooltip and
+ * the counts chip — without rebuilding the list, so a background batch never disturbs the view.
+ */
+function patchFileRowCounts(record: HTMLElement, file: GG.GitFileChange) {
+	const fileElem = <HTMLElement>record.children[0]; // span.fileTreeFile
+	if (fileElem === null || !fileElem.classList.contains('fileTreeFile')) return;
+	const pendingChip = record.querySelector(':scope > .countsPending');
+	fileElem.classList.toggle('gitDiffPossible', fileDiffPossible(file, false));
+	fileElem.setAttribute('title', fileRowTitle(file));
+	if (pendingChip !== null) {
+		if (file.type !== GG.GitFileStatus.Added && file.type !== GG.GitFileStatus.Untracked && file.type !== GG.GitFileStatus.Deleted && file.additions !== null && file.deletions !== null) {
+			pendingChip.outerHTML = fileCountsChipHtml(file);
+		} else {
+			pendingChip.remove();
+		}
 	}
 }
 

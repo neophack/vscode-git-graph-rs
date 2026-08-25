@@ -392,6 +392,48 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.deepEqual(sortChanges(a), sortChanges(b));
 	});
 
+	it('settles the same deferred line counts', async () => {
+		// A commit's own diff (from null => against the first parent): the binary file reports
+		// null counts, the way `git diff --numstat` prints a dash, and an untouched path is not
+		// settled at all.
+		const [a, b] = await Promise.all([
+			rust.getLineCounts(root, null, fixture.binary, ['blob.bin', 'not-in-the-diff.txt']),
+			cli.getLineCounts(root, null, fixture.binary, ['blob.bin', 'not-in-the-diff.txt'])
+		]);
+		assert.deepEqual(a, b);
+		assert.deepEqual(a['blob.bin'], { additions: null, deletions: null });
+		assert.equal(a['not-in-the-diff.txt'], undefined, 'an untouched path is not settled');
+
+		// The rename commit: one change, carrying zero line counts because the content moved
+		// unchanged — and the pre-rename path is consumed by the rename rather than deleted.
+		const [r, s] = await Promise.all([
+			rust.getLineCounts(root, null, fixture.renamed, ['renamed.txt', 'a.txt']),
+			cli.getLineCounts(root, null, fixture.renamed, ['renamed.txt', 'a.txt'])
+		]);
+		assert.deepEqual(r, s);
+		assert.deepEqual(r['renamed.txt'], { additions: 0, deletions: 0 });
+		assert.equal(r['a.txt'], undefined);
+
+		// The comparison-view spelling, with an explicit from: a file added in that range.
+		const [c, d] = await Promise.all([
+			rust.getLineCounts(root, fixture.first, fixture.renamed, ['feature.txt']),
+			cli.getLineCounts(root, fixture.first, fixture.renamed, ['feature.txt'])
+		]);
+		assert.deepEqual(c, d);
+		assert.deepEqual(c['feature.txt'], { additions: 1, deletions: 0 });
+
+		// A root commit counts against the empty tree, exactly like its details list does.
+		const [e, f] = await Promise.all([
+			rust.getLineCounts(root, null, fixture.first, ['a.txt']),
+			cli.getLineCounts(root, null, fixture.first, ['a.txt'])
+		]);
+		assert.deepEqual(e, f);
+		assert.equal(e['a.txt'].additions, 40);
+
+		// And asking for nothing costs nothing.
+		assert.deepEqual(await rust.getLineCounts(root, null, fixture.first, []), {});
+	});
+
 	it('reports the same repository configuration', async () => {
 		const [a, b] = await Promise.all([rust.getConfig(root), cli.getConfig(root)]);
 		for (const key of ['userName', 'userEmail', 'pushDefault', 'diffTool', 'diffGuiTool']) {
