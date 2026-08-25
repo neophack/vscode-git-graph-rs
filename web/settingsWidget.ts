@@ -324,7 +324,7 @@ class SettingsWidget {
 				SettingsWidget.checkbox('settingsPullRequestsEnabled', strings.settingsPullRequestsEnabled, viewConfig.pullRequests.enabled, strings.settingsPullRequestsEnabledInfo) +
 				'</div>';
 
-			globalHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionLog + '</h3>' +
+			globalHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionLog + '</h3>' +
 				SettingsWidget.checkbox('settingsEnableLog', strings.settingsEnableLog, viewConfig.enableLog, strings.settingsEnableLogInfo) +
 				'<div class="settingsSectionButtons">' +
 				'<div id="openLogFile">' + SVG_ICONS.file + strings.settingsOpenLogFile + '</div>' +

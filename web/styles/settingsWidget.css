@@ -272,17 +272,24 @@
 	width:12px !important;
 	height:12px !important;
 }
-.settingsSectionButtons > div.addBtn svg, .settingsSectionButtons > div.removeBtn svg, #openExtensionSettings svg, #exportRepositoryConfig svg{
+.settingsSectionButtons > div.addBtn svg, .settingsSectionButtons > div.removeBtn svg, #openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg{
 	vertical-align:top;
 	width:14px !important;
 	height:14px !important;
 	margin:5px;
 }
-#openExtensionSettings svg, #exportRepositoryConfig svg{
+#openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg{
 	margin-top:6px;
 }
 #exportRepositoryConfig svg{
 	margin-right:7px;
+}
+/* SVG_ICONS.file carries the fileIcon class, whose file-tree rules in main.css
+   (position:absolute, tree fill) must not apply inside a settings button */
+#openLogFile svg{
+	position:static;
+	fill:inherit;
+	fill-opacity:inherit;
 }
 
 #settingsLoading{
