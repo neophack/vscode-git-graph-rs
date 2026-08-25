@@ -1,7 +1,7 @@
 # Git Graph (Rust)
 
-[![Visual Studio Marketplace version](https://img.shields.io/visual-studio-marketplace/v/neophack.git-graph-rs)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/neophack.git-graph-rs)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Visual Studio Marketplace version](https://vsmarketplacebadges.dev/version/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Installs](https://vsmarketplacebadges.dev/installs/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
 [![Build and test](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml/badge.svg)](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml)
 
 A rewrite of the Git Graph VS Code extension with its Git backend in Rust, loaded
