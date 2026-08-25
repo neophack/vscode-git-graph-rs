@@ -325,9 +325,11 @@ The guarded operations:
 
 - **Leaving a detached HEAD that has its own commits** — switching to a branch, checking out
   another commit, or creating a branch somewhere else with checkout. The commits are held by no
-  branch, tag or remote; after the switch they are reachable only from the local reflog, and
-  only until `git gc` prunes them. Creating the branch *at* HEAD anchors them, so it is never
-  asked.
+  branch, tag, remote or stash; after the switch they are reachable only from the local reflog,
+  and only until `git gc` prunes them. Creating the branch *at* HEAD anchors them, so it is never
+  asked. A stash anchors its base commit's history the same way — every stash entry counts, not
+  just the top one — so leaving a detached position that has a stash on it loses nothing and is
+  never asked either; only commits made *after* that stash are still stranded.
 - **A hard reset while the working tree has uncommitted changes.** Those contents are recorded
   in no reflog; at most previously staged versions might be found with `git fsck`. The
   "reset uncommitted changes" action is itself an explicit choice to discard, so it is not asked

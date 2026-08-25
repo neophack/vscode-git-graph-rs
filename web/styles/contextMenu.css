@@ -2,14 +2,21 @@
 	display:block;
 	position:fixed;
 	background-color:var(--vscode-menu-background);
-	box-shadow:0 1px 4px 1px var(--vscode-widget-shadow);
+	box-shadow:var(--gg-shadow-2, 0 3px 10px 2px var(--vscode-widget-shadow));
 	color:var(--vscode-menu-foreground);
 	list-style-type:none;
 	margin:0;
 	padding:4px 0;
+	border-radius:5px;
 	z-index:13;
 	-webkit-user-select:none;
 	user-select:none;
+	transform-origin:top left;
+	animation:contextMenuEnter var(--gg-dur-fast, 120ms) var(--gg-ease, cubic-bezier(0.215, 0.61, 0.355, 1));
+}
+@keyframes contextMenuEnter{
+	from{ opacity:0; transform:scale(0.97) translateY(-3px); }
+	to{ opacity:1; transform:none; }
 }
 body.vscode-high-contrast .contextMenu{
 	outline:1px solid var(--vscode-menu-border, transparent);
@@ -24,6 +31,7 @@ body.vscode-high-contrast .contextMenu{
 
 .contextMenu li.contextMenuItem{
 	padding:6px 20px;
+	transition:background-color 0.1s var(--gg-ease, ease-out), color 0.1s var(--gg-ease, ease-out);
 }
 
 .contextMenu li.contextMenuItem:hover{

@@ -10,7 +10,7 @@
 	padding:0 10px 4px 10px;
 	z-index:31;
 	background-color:var(--vscode-editorWidget-background);
-	box-shadow:0 2px 8px var(--vscode-widget-shadow);
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
 	line-height:17px;
 	font-size:13px;
 	color:var(--vscode-editorSuggestWidget-foreground);
@@ -26,7 +26,7 @@
 	top:0;
 }
 #settingsWidget.transition{
-	transition:top .2s linear;
+	transition:top var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
 }
 
 #settingsWidget h2{

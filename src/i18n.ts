@@ -25,7 +25,7 @@ const EN = {
 
 	/* Command palette / quick picks & notifications */
 	selectRepoForCommand: 'Select the repository to run the command on:',
-	leavingCommitsBehind: 'Data loss risk: HEAD is currently detached with {0} commit(s) that no branch, tag or remote keeps reachable. Switching now leaves them behind, recoverable from the local reflog only until git gc prunes them. Create a branch at HEAD to keep them.',
+	leavingCommitsBehind: 'Data loss risk: HEAD is currently detached with {0} commit(s) that no branch, tag, remote or stash keeps reachable. Switching now leaves them behind, recoverable from the local reflog only until git gc prunes them. Create a branch at HEAD to keep them (a stash made on them keeps them too).',
 	leavingCommitsBehindProceed: 'Switch Anyway',
 	hardResetLosesChanges: 'Data loss risk: a hard reset discards all uncommitted changes in the working tree, and they cannot be recovered — uncommitted contents are recorded in no reflog, and at most previously staged versions might be found with git fsck.',
 	hardResetLosesChangesProceed: 'Discard Changes',
@@ -190,7 +190,7 @@ type MessageKey = keyof typeof EN;
 const ZH_CN: Record<MessageKey, string> = {
 	/* Git 可执行文件与版本要求 */
 	unableToFindGit: '找不到 Git 可执行文件。请：将 Visual Studio Code 设置 "git.path" 设为现有 Git 可执行文件的路径和文件名，或安装 Git 并重启 Visual Studio Code。',
-	leavingCommitsBehind: '数据丢失风险：HEAD 当前处于游离状态，有 {0} 个提交没有被任何分支、标签或远端保住。现在切换会使它们脱离所有视图，在被 git gc 清理前只能从本机 reflog 找回。建议先在 HEAD 上创建分支来保留它们。',
+	leavingCommitsBehind: '数据丢失风险：HEAD 当前处于游离状态，有 {0} 个提交没有被任何分支、标签、远端或贮藏（stash）保住。现在切换会使它们脱离所有视图，在被 git gc 清理前只能从本机 reflog 找回。建议先在 HEAD 上创建分支来保留它们（在它们之上做一次贮藏同样能保住）。',
 	leavingCommitsBehindProceed: '仍要切换',
 	hardResetLosesChanges: '数据丢失风险：硬重置会丢弃工作树中所有未提交的更改，且无法恢复——未提交的内容不会记录在任何 reflog 中，至多只有曾暂存过的版本可能通过 git fsck 找回。',
 	hardResetLosesChangesProceed: '丢弃更改',

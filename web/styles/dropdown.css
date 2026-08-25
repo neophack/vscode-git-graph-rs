@@ -71,6 +71,7 @@
 	text-overflow:ellipsis;
 	white-space:nowrap;
 	overflow:hidden;
+	transition:background-color 0.1s var(--gg-ease, ease-out), color 0.1s var(--gg-ease, ease-out);
 }
 .dropdown.multi .dropdownOption{
 	padding-left:30px;
@@ -127,6 +128,13 @@ body.vscode-high-contrast .dropdownOption:hover{
 }
 .dropdown.dropdownOpen .dropdownMenu{
 	display:block;
+	box-shadow:var(--gg-shadow-2, 0 3px 10px 2px var(--vscode-widget-shadow));
+	transform-origin:top left;
+	animation:dropdownEnter var(--gg-dur-fast, 120ms) var(--gg-ease, cubic-bezier(0.215, 0.61, 0.355, 1));
+}
+@keyframes dropdownEnter{
+	from{ opacity:0; transform:translateY(-4px); }
+	to{ opacity:1; transform:none; }
 }
 
 .dropdownFilter{

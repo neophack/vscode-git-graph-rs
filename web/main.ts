@@ -1031,7 +1031,7 @@ class GitGraphView {
 
 		this.renderRefreshButton();
 		if (this.commits.length === 0) {
-			this.tableElem.innerHTML = '<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2>';
+			this.tableElem.innerHTML = '<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2><div class="skeletonRows">' + '<div class="skeletonRow"></div>'.repeat(10) + '</div>';
 		}
 
 		if (skipRepoInfo) {

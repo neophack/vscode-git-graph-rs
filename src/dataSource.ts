@@ -885,9 +885,11 @@ export class DataSource extends Disposable {
 	/**
 	 * Checkout a branch in a repository.
 	 *
-	 * When HEAD is currently detached with commits that no branch, tag or remote keeps reachable,
-	 * a data-loss warning is returned for the view to confirm first: switching would leave them
-	 * behind, recoverable from the local reflog only until git gc prunes them.
+	 * When HEAD is currently detached with commits that no branch, tag, remote or stash keeps
+	 * reachable, a data-loss warning is returned for the view to confirm first: switching would
+	 * leave them behind, recoverable from the local reflog only until git gc prunes them. A stash
+	 * anchors its base commit's history — leaving with a stash on the detached commits loses
+	 * nothing, so it is never asked.
 	 * @param repo The path of the repository.
 	 * @param branchName The name of the branch to checkout.
 	 * @param remoteBranch The name of the remote branch to check out (if not NULL).
@@ -911,19 +913,27 @@ export class DataSource extends Disposable {
 
 	/**
 	 * Count the commits that moving HEAD away from its current position would leave behind:
-	 * commits reachable from HEAD but from no branch, tag or remote. Non-zero only while HEAD is
-	 * detached and has commits of its own.
+	 * commits reachable from HEAD but from no branch, tag, remote or stash. Non-zero only while
+	 * HEAD is detached and has commits of its own.
 	 */
-	private countDetachedOnlyCommits(repo: string): Promise<number> {
+	private async countDetachedOnlyCommits(repo: string): Promise<number> {
+		// A stash keeps its base commit's whole history reachable exactly as a branch does, so every
+		// stash entry counts as an anchor — not just the refs/stash tip: older entries live only in
+		// its reflog. (--all cannot stand in for the explicit roots: it includes HEAD itself, which
+		// would silence the guard entirely.) `git stash list` exits 0 with no output when nothing
+		// is stashed, so the fallback only masks a git that cannot be spawned at all.
+		const stashRoots = await this.gitOutput<string[]>(['stash', 'list', '--format=%H'], repo, (out) =>
+			out.split('\n').map((line) => line.trim()).filter((line) => line !== '')
+		).catch(() => [] as string[]);
 		return this.gitOutput<number>(
-			['rev-list', 'HEAD', '--not', '--branches', '--tags', '--remotes', '--count'],
+			['rev-list', 'HEAD', '--not', '--branches', '--tags', '--remotes', ...stashRoots, '--count'],
 			repo,
 			(out) => parseInt(out, 10)
 		).catch(() => 0);
 	}
 
 	/**
-	 * The data-loss warning for moving HEAD away from detached commits that no ref keeps
+	 * The data-loss warning for moving HEAD away from detached commits that no ref or stash keeps
 	 * reachable, or NULL when nothing can be lost.
 	 * @param anchoredAt A revision that, when it is the current HEAD, anchors the detached
 	 *                   commits (a branch being created right at HEAD): nothing is stranded.
@@ -969,7 +979,11 @@ export class DataSource extends Disposable {
 
 		// `checkout -b` moves HEAD to the new branch: when it points anywhere other than the
 		// current HEAD, a detached position's own commits are stranded exactly as by a checkout.
-		if (checkout && !force && !confirmed) {
+		// The guard must run before ANY command whatever `force` is: with force the checkout runs
+		// as a second step, and a warning returned there would sit at statuses[1] — behind the
+		// successful branch creation — where the view's warning forwarding (which reads the first
+		// element) would miss it and show the warning object as an error string instead.
+		if (checkout && !confirmed) {
 			const warning = await this.detachedCommitsLossWarning(repo, commitHash);
 			if (warning !== null) return [warning];
 		}

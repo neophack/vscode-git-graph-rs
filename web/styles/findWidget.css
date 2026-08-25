@@ -10,7 +10,7 @@
 	padding:0 10px;
 	z-index:21;
 	background-color:var(--vscode-editorWidget-background);
-	box-shadow:0 2px 8px var(--vscode-widget-shadow);
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
 	font-size:13px;
 	color:var(--vscode-editorSuggestWidget-foreground);
 	fill:var(--vscode-editorSuggestWidget-foreground);
@@ -21,7 +21,7 @@
 	top:0;
 }
 .findWidget.transition{
-	transition:top .2s linear;
+	transition:top var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
 }
 .findWidget[data-error] #findInput, .findWidget[data-error]:after{
 	outline:1px solid var(--vscode-inputValidation-errorBorder) !important;

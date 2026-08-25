@@ -327,11 +327,6 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
-	 * Handle a message sent from the front-end.
-	 * Any error thrown by a handler is caught and logged by `respondToMessage`.
-	 * @param msg The message that was received.
-	 */
-	/**
 	 * Forward a data-loss warning returned by an action to the view: its standard warning dialog
 	 * shows the message (with the mascot image), and confirming re-sends the original request
 	 * with its confirmed flag set.
@@ -346,6 +341,11 @@ export class GitGraphView extends Disposable {
 		return true;
 	}
 
+	/**
+	 * Handle a message sent from the front-end.
+	 * Any error thrown by a handler is caught and logged by `respondToMessage`.
+	 * @param msg The message that was received.
+	 */
 	private async handleMessage(msg: RequestMessage) {
 		let errorInfos: ErrorInfo[];
 

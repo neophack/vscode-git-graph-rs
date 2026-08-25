@@ -231,10 +231,12 @@ class Dialog {
 			return '<tr' + (input.type === DialogInputType.Radio ? ' class="mediumField"' : input.type !== DialogInputType.Checkbox ? ' class="largeField"' : '') + '>' + (multiElement && !multiCheckbox ? '<td>' + input.name + ': </td>' : '') + inputHtml + '</tr>';
 		});
 
-		const html = message + (includeLineBreak ? '<br>' : '') +
-			'<table class="dialogForm ' + (multiElement ? multiCheckbox ? 'multiCheckbox' : 'multi' : 'single') + '">' +
-			inputRowsHtml.join('') +
-			'</table>';
+		const html = inputs.length > 0
+			? message + (includeLineBreak ? '<br>' : '') +
+				'<table class="dialogForm ' + (multiElement ? multiCheckbox ? 'multiCheckbox' : 'multi' : 'single') + '">' +
+				inputRowsHtml.join('') +
+				'</table>'
+			: message;
 
 		const areFormValuesInvalid = () => this.elem === null || this.elem.classList.contains(CLASS_DIALOG_NO_INPUT) || this.elem.classList.contains(CLASS_DIALOG_INPUT_INVALID);
 		const getFormValues = () => inputs.map((input, index) => {
@@ -394,6 +396,8 @@ class Dialog {
 	 */
 	private show(type: DialogType, html: string, actionName: string | null, secondaryActionName: string, actioned: (() => void) | null, secondaryActioned: (() => void) | null, target: DialogTarget | null) {
 		closeDialogAndContextMenu();
+		// A dialog being replaced is fading out: remove it immediately so it doesn't overlap the new one
+		Array.prototype.forEach.call(document.querySelectorAll('.dialog.closing'), (elem: Element) => elem.remove());
 
 		this.type = type;
 		this.target = target;
@@ -430,7 +434,9 @@ class Dialog {
 	public close() {
 		eventOverlay.remove();
 		if (this.elem !== null) {
-			this.elem.remove();
+			const elem = this.elem;
+			elem.classList.add('closing');
+			window.setTimeout(() => elem.remove(), 180);
 			this.elem = null;
 		}
 		alterClassOfCollection(<HTMLCollectionOf<HTMLElement>>document.getElementsByClassName(CLASS_DIALOG_ACTIVE), CLASS_DIALOG_ACTIVE, false);

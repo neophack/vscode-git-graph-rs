@@ -505,7 +505,7 @@ export class CliBackend implements GitBackend {
 			})
 			.join('')
 			.replace(/\n$/m, '');
-}
+	}
 
 	/* ---------- On-demand reads ---------- */
 
@@ -1086,7 +1086,7 @@ function diffHeaderNewPath(header: string): string | null {
 	return marker === -1 ? null : header.slice(marker + 3);
 }
 
-function mergeStatusFiles(	changes: ReadonlyArray<GitFileChange>,
+function mergeStatusFiles(changes: ReadonlyArray<GitFileChange>,
 	status: { deleted: ReadonlyArray<string>; untracked: ReadonlyArray<string> }
 ): GitFileChange[] {
 	const merged = [...changes];
