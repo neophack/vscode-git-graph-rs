@@ -7,7 +7,7 @@ import { getConfig } from './config';
 import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
 import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -155,6 +155,18 @@ export class DataSource extends Disposable {
 		this.backend.openRepository(repo).catch((error) => {
 			this.logger.log('The Git backend could not open the repository ' + repo + ': ' + (error instanceof Error ? error.message : String(error)));
 		});
+	}
+
+	/**
+	 * Close the repository handle in the Git backend, and drop the repository's cached Git config
+	 * data. Every engine call caches a handle for the path it is given (that residency is where the
+	 * engine's speed comes from), so a repository that leaves the workspace must be closed here or
+	 * its pack indexes and caches stay resident until the editor does.
+	 * @param repo The path of the repository.
+	 */
+	public closeRepository(repo: string) {
+		this.backend.closeRepository(repo);
+		this.invalidateConfigCache(repo);
 	}
 
 	/* Get Data Methods - Core */
@@ -787,9 +799,15 @@ export class DataSource extends Disposable {
 	 * @param mode The mode of the push.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public pushBranch(repo: string, branchName: string, remote: string, setUpstream: boolean, mode: GitPushBranchMode) {
+	public async pushBranch(repo: string, branchName: string, remote: string, setUpstream: boolean, mode: GitPushBranchMode, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['branchName', branchName, 'ref'], ['remote', remote, 'ref']);
-		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+		if (unsafeArgs !== null) return unsafeArgs;
+		// A force push rewrites the remote's history: what the remote has that the push does not
+		// contain becomes unreachable there. (--force-with-lease is the guarded variant, asked for
+		// as such, and is not confirmed a second time.)
+		if (mode === GitPushBranchMode.Force && !confirmed) {
+			return { message: t('forcePushOverwrites', branchName, remote) };
+		}
 
 		let args = ['push'];
 		args.push(remote, branchName);
@@ -808,14 +826,14 @@ export class DataSource extends Disposable {
 	 * @param mode The mode of the push.
 	 * @returns The ErrorInfo's from the executed commands.
 	 */
-	public async pushBranchToMultipleRemotes(repo: string, branchName: string, remotes: string[], setUpstream: boolean, mode: GitPushBranchMode): Promise<ErrorInfo[]> {
+	public async pushBranchToMultipleRemotes(repo: string, branchName: string, remotes: string[], setUpstream: boolean, mode: GitPushBranchMode, confirmed: boolean = false): Promise<(ErrorInfo | LossWarning)[]> {
 		if (remotes.length === 0) {
 			return ['No remote(s) were specified to push the branch ' + branchName + ' to.'];
 		}
 
-		const results: ErrorInfo[] = [];
+		const results: (ErrorInfo | LossWarning)[] = [];
 		for (let i = 0; i < remotes.length; i++) {
-			const result = await this.pushBranch(repo, branchName, remotes[i], setUpstream, mode);
+			const result = await this.pushBranch(repo, branchName, remotes[i], setUpstream, mode, confirmed);
 			results.push(result);
 			if (result !== null) break;
 		}
@@ -866,20 +884,74 @@ export class DataSource extends Disposable {
 
 	/**
 	 * Checkout a branch in a repository.
+	 *
+	 * When HEAD is currently detached with commits that no branch, tag or remote keeps reachable,
+	 * a data-loss warning is returned for the view to confirm first: switching would leave them
+	 * behind, recoverable from the local reflog only until git gc prunes them.
 	 * @param repo The path of the repository.
 	 * @param branchName The name of the branch to checkout.
 	 * @param remoteBranch The name of the remote branch to check out (if not NULL).
-	 * @returns The ErrorInfo from the executed command.
+	 * @param confirmed TRUE when the user already insisted through the warning dialog.
+	 * @returns The ErrorInfo from the executed command, or the warning to confirm.
 	 */
-	public checkoutBranch(repo: string, branchName: string, remoteBranch: string | null) {
+	public async checkoutBranch(repo: string, branchName: string, remoteBranch: string | null, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['branchName', branchName, 'ref'], ['remoteBranch', remoteBranch, 'ref']);
-		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+		if (unsafeArgs !== null) return unsafeArgs;
+		if (!confirmed) {
+			const warning = await this.detachedCommitsLossWarning(repo);
+			if (warning !== null) return warning;
+		}
 
 		let args = ['checkout'];
 		if (remoteBranch === null) args.push(branchName);
 		else args.push('-b', branchName, remoteBranch);
 
 		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Count the commits that moving HEAD away from its current position would leave behind:
+	 * commits reachable from HEAD but from no branch, tag or remote. Non-zero only while HEAD is
+	 * detached and has commits of its own.
+	 */
+	private countDetachedOnlyCommits(repo: string): Promise<number> {
+		return this.gitOutput<number>(
+			['rev-list', 'HEAD', '--not', '--branches', '--tags', '--remotes', '--count'],
+			repo,
+			(out) => parseInt(out, 10)
+		).catch(() => 0);
+	}
+
+	/**
+	 * The data-loss warning for moving HEAD away from detached commits that no ref keeps
+	 * reachable, or NULL when nothing can be lost.
+	 * @param anchoredAt A revision that, when it is the current HEAD, anchors the detached
+	 *                   commits (a branch being created right at HEAD): nothing is stranded.
+	 */
+	private async detachedCommitsLossWarning(repo: string, anchoredAt: string | null = null): Promise<LossWarning | null> {
+		if (anchoredAt !== null) {
+			const head = await this.gitOutput<string>(['rev-parse', 'HEAD'], repo, (out) => out.trim())
+				.catch(() => '');
+			if (head !== '' && head === anchoredAt) return null;
+		}
+		const count = await this.countDetachedOnlyCommits(repo);
+		if (count <= 0) return null;
+		return { message: t('leavingCommitsBehind', count) };
+	}
+
+	/**
+	 * The data-loss warning for a hard reset while the working tree has uncommitted changes (they
+	 * are discarded irrecoverably), or NULL when the tree is clean. The 'HEAD' sentinel is the
+	 * "reset uncommitted changes" action itself, which is already an explicit choice to discard.
+	 */
+	private async hardResetLossWarning(repo: string): Promise<LossWarning | null> {
+		const dirty = await this.gitOutput<number>(
+			['status', '--porcelain'],
+			repo,
+			(out) => (out.trim() === '' ? 0 : 1)
+		).catch(() => 0);
+		if (dirty === 0) return null;
+		return { message: t('hardResetLosesChanges') };
 	}
 
 	/**
@@ -891,9 +963,16 @@ export class DataSource extends Disposable {
 	 * @param force Force create the branch, replacing an existing branch with the same name (if it exists).
 	 * @returns The ErrorInfo's from the executed command(s).
 	 */
-	public async createBranch(repo: string, branchName: string, commitHash: string, checkout: boolean, force: boolean) {
+	public async createBranch(repo: string, branchName: string, commitHash: string, checkout: boolean, force: boolean, confirmed: boolean = false): Promise<(ErrorInfo | LossWarning)[]> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['branchName', branchName, 'ref'], ['commitHash', commitHash, 'hash']);
 		if (unsafeArgs !== null) return [unsafeArgs];
+
+		// `checkout -b` moves HEAD to the new branch: when it points anywhere other than the
+		// current HEAD, a detached position's own commits are stranded exactly as by a checkout.
+		if (checkout && !force && !confirmed) {
+			const warning = await this.detachedCommitsLossWarning(repo, commitHash);
+			if (warning !== null) return [warning];
+		}
 
 		const args = [];
 		if (checkout && !force) {
@@ -906,9 +985,9 @@ export class DataSource extends Disposable {
 		}
 		args.push(branchName, commitHash);
 
-		const statuses = [await this.runGitCommand(args, repo)];
+		const statuses: (ErrorInfo | LossWarning)[] = [await this.runGitCommand(args, repo)];
 		if (statuses[0] === null && checkout && force) {
-			statuses.push(await this.checkoutBranch(repo, branchName, null));
+			statuses.push(await this.checkoutBranch(repo, branchName, null, confirmed));
 		}
 		return statuses;
 	}
@@ -1126,9 +1205,15 @@ export class DataSource extends Disposable {
 	 * @param commitHash The hash of the commit to check out.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public checkoutCommit(repo: string, commitHash: string) {
+	public async checkoutCommit(repo: string, commitHash: string, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
-		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+		if (unsafeArgs !== null) return unsafeArgs;
+		// Moving to another commit strands the current detached position's own commits just as
+		// switching to a branch does.
+		if (!confirmed) {
+			const warning = await this.detachedCommitsLossWarning(repo);
+			if (warning !== null) return warning;
+		}
 
 		return this.runGitCommand(['checkout', commitHash], repo);
 	}
@@ -1188,11 +1273,16 @@ export class DataSource extends Disposable {
 	 * @param resetMode The mode of the reset.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public resetToCommit(repo: string, commit: string, resetMode: GitResetMode) {
+	public async resetToCommit(repo: string, commit: string, resetMode: GitResetMode, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		if (commit !== 'HEAD') {
 			// 'HEAD' is the sentinel used to reset uncommitted changes, and isn't a commit hash
 			const unsafeArgs = DataSource.checkUnsafeGitArgs(['commit', commit, 'hash']);
-			if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+			if (unsafeArgs !== null) return unsafeArgs;
+			// A hard reset to a commit throws away whatever the working tree holds, unasked
+			if (resetMode === GitResetMode.Hard && !confirmed) {
+				const warning = await this.hardResetLossWarning(repo);
+				if (warning !== null) return warning;
+			}
 		}
 
 		return this.runGitCommand(['reset', '--' + resetMode, commit], repo);

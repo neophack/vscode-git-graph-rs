@@ -6,15 +6,25 @@ import { Disposable } from './utils/disposable';
 const DOUBLE_QUOTE_REGEXP = /"/g;
 
 /**
+ * The maximum size the log file may grow to within one session. Logging exists to analyse the
+ * performance of a (typically short) session, so past this size the file is reset rather than
+ * rotated: the most recent lines are the relevant ones once it is full, and a long editor session
+ * cannot grow it without bound.
+ */
+const LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
  * Manages the Git Graph Logger, which writes log information to the Git Graph Output Channel.
  *
  * When a log file path is given, every line is also mirrored there — one file per editor session,
- * starting empty on each activation — so the log can be opened from the view's settings widget and
- * read back for performance analysis without hunting for the Output Channel.
+ * starting empty on each activation and capped at `LOG_FILE_MAX_BYTES` — so the log can be opened
+ * from the view's settings widget and read back for performance analysis without hunting for the
+ * Output Channel.
  */
 export class Logger extends Disposable {
 	private readonly channel: vscode.OutputChannel;
 	private logFile: string | null;
+	private logFileBytes: number = 0;
 	private enabled: boolean = false;
 
 	/**
@@ -41,6 +51,7 @@ export class Logger extends Disposable {
 				const directory = path.dirname(this.logFile);
 				if (!fs.existsSync(directory)) fs.mkdirSync(directory);
 				fs.writeFileSync(this.logFile, '');
+				this.logFileBytes = 0;
 			} catch {
 				// A read-only or missing storage location: the Output Channel still works.
 				this.logFile = null;
@@ -74,7 +85,12 @@ export class Logger extends Disposable {
 		this.channel.appendLine(line);
 		if (this.logFile !== null) {
 			try {
+				if (this.logFileBytes >= LOG_FILE_MAX_BYTES) {
+					fs.writeFileSync(this.logFile, '');
+					this.logFileBytes = 0;
+				}
 				fs.appendFileSync(this.logFile, line + '\n');
+				this.logFileBytes += Buffer.byteLength(line) + 1;
 			} catch { /* the Output Channel line has already been written */ }
 		}
 	}

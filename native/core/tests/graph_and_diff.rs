@@ -233,6 +233,154 @@ fn counts_only_the_paths_asked_for() {
 }
 
 #[test]
+fn settles_the_line_counts_of_a_stash_against_its_base() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let base = repo.commit_file("a.txt", "one\ntwo\nthree\n", "first");
+
+    repo.write("a.txt", "one\nchanged\nthree\n");
+    repo.git(&["stash", "push", "--quiet", "-m", "the stash"]);
+    let stash_hash = repo.rev_parse("refs/stash");
+
+    let engine = open(&repo);
+    let stashes = stash::read_stashes(&engine).unwrap();
+    assert_eq!(stashes[0].base_hash, base);
+
+    // The stash's own file list arrives as statuses only, like every other details load.
+    let commit_stash = git_graph_core::types::GitCommitStash {
+        selector: stashes[0].selector.clone(),
+        base_hash: stashes[0].base_hash.clone(),
+        untracked_files_hash: None,
+    };
+    let details = details::stash_details(&engine, &stashes[0].hash, &commit_stash).unwrap();
+    let modified = details
+        .file_changes
+        .iter()
+        .find(|change| change.new_file_path == "a.txt")
+        .expect("the stashed file is missing from the stash details");
+    assert_eq!(modified.kind, GitFileStatus::Modified);
+    assert_eq!(modified.additions, None);
+    assert_eq!(modified.deletions, None);
+
+    // The stash spelling of the deferred counts: `from` is the commit the stash was taken from,
+    // not the stash commit's own first parent.
+    let counts = diff::line_counts(
+        &engine,
+        Some(&stashes[0].base_hash),
+        &stash_hash,
+        &["a.txt".into()],
+    )
+    .unwrap();
+    assert_eq!(counts.len(), 1);
+    let settled = counts.get("a.txt").copied().unwrap_or_default();
+    assert_eq!(settled.additions, Some(1));
+    assert_eq!(settled.deletions, Some(1));
+}
+
+#[test]
+fn counts_the_files_under_a_renamed_directory() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let contents = (0..40).map(|n| format!("line {n}\n")).collect::<String>();
+    let notes = (0..10).map(|n| format!("note {n}\n")).collect::<String>();
+    repo.commit_file("old/guide.txt", &contents, "first");
+    repo.commit_file("old/notes.txt", &notes, "second");
+
+    repo.git(&["mv", "old", "new"]);
+    // A file edited while the folder moves must survive as one rename, not an add plus a delete.
+    repo.write(
+        "new/notes.txt",
+        "note 0\nchanged 1\nnote 2\nnote 3\nnote 4\nnote 5\nnote 6\nnote 7\nnote 8\nchanged 9\n",
+    );
+    let hash = repo.commit("move the folder");
+
+    let engine = open(&repo);
+    let counts = diff::line_counts(
+        &engine,
+        None,
+        &hash,
+        &["new/guide.txt".into(), "new/notes.txt".into()],
+    )
+    .unwrap();
+    assert_eq!(counts.len(), 2, "both moved files are settled: {counts:?}");
+    let guide = counts.get("new/guide.txt").copied().unwrap_or_default();
+    assert_eq!(guide.additions, Some(0));
+    assert_eq!(guide.deletions, Some(0));
+    let notes = counts.get("new/notes.txt").copied().unwrap_or_default();
+    assert_eq!(notes.additions, Some(2));
+    assert_eq!(notes.deletions, Some(2));
+
+    // The pre-move paths are consumed by the renames, and the directory itself — which the
+    // rewrite tracker also pairs — settles nothing.
+    let none = diff::line_counts(
+        &engine,
+        None,
+        &hash,
+        &["old/guide.txt".into(), "old/notes.txt".into(), "new".into()],
+    )
+    .unwrap();
+    assert!(
+        none.is_empty(),
+        "nothing but the new paths are settled: {none:?}"
+    );
+}
+
+#[test]
+fn reports_statuses_only_against_the_working_tree() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let first = repo.commit_file("a.txt", "one\n", "first");
+    repo.commit_file("b.txt", "two\n", "second");
+    repo.write("a.txt", "changed\n");
+    repo.write("c.txt", "uncommitted\n");
+
+    let engine = open(&repo);
+    let changes = diff::diff_revisions(&engine, &first, UNCOMMITTED).unwrap();
+
+    // Counting a worktree-touched file means hashing the file on disk, so a comparison against
+    // the working tree reports no counts at all rather than exact ones beside uncounted ones.
+    assert!(changes.len() >= 2);
+    for change in &changes {
+        assert_eq!(change.additions, None, "{}", change.new_file_path);
+        assert_eq!(change.deletions, None, "{}", change.new_file_path);
+    }
+}
+
+#[test]
+fn drops_a_type_change_like_the_cli_filter_does() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("keep.txt", "one\n", "first");
+    repo.write("gone.txt", "regular contents\n");
+    repo.commit("second");
+
+    // Replace gone.txt with a symlink through plumbing (no working-tree symlink needed on
+    // Windows): a symlink's blob content is the path it points at.
+    repo.write("link-target.txt", "gone.txt\n");
+    let blob = repo
+        .git(&["hash-object", "-w", "link-target.txt"])
+        .trim()
+        .to_string();
+    repo.git(&[
+        "update-index",
+        "--cacheinfo",
+        &format!("120000,{blob},gone.txt"),
+    ]);
+    // Commit the index as it stands — `add -A` would undo the plumbing (the worktree has no file).
+    repo.git(&["commit", "--quiet", "-m", "turn gone.txt into a symlink"]);
+    let hash = repo.head();
+
+    let engine = open(&repo);
+    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    assert!(
+        !changes
+            .iter()
+            .any(|change| change.new_file_path == "gone.txt"),
+        "a regular-file-to-symlink type change is not one of the listed statuses: {changes:?}"
+    );
+}
+
+#[test]
 fn detects_renames() {
     require_git!();
     let mut repo = TestRepo::new();

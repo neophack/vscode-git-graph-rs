@@ -56,6 +56,9 @@ const MAX_BUFFER = 100 * 1024 * 1024;
 export class CliBackend implements GitBackend {
 	public readonly name = 'git-cli';
 
+	/** The whole-diff numstat counts of the last counts request, settled in batches. */
+	private numStatCache: { repo: string; base: string; to: string; counts: { [path: string]: GitLineCounts } } | null = null;
+
 	constructor(private readonly gitPath: string = 'git') {}
 
 	/* ---------- Lifecycle ---------- */
@@ -246,9 +249,13 @@ export class CliBackend implements GitBackend {
 
 	public async getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
 		// `git diff HEAD` sees neither untracked files nor files deleted from the working tree, so
-		// the status scan is layered on top of it — as the original extension does.
+		// the status scan is layered on top of it — as the original extension does. An unborn HEAD
+		// (a fresh repository with no commits) cannot be diffed against at all: everything the
+		// status scan reports — untracked files — is then the whole difference.
+		const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
+			.then((out) => out.trim() !== '', () => false);
 		const [changes, status] = await Promise.all([
-			this.getFileChanges(repo, 'HEAD', ''),
+			headExists ? this.getFileChanges(repo, 'HEAD', '') : Promise.resolve(<GitFileChange[]>[]),
 			this.getStatusFiles(repo)
 		]);
 		return {
@@ -319,8 +326,13 @@ export class CliBackend implements GitBackend {
 	}
 
 	/**
-	 * The `+N/-M` line counts of the given paths, as `git diff --numstat` reports them, limited to
-	 * the paths asked for — the deferred second half of a details load, settled a viewport at a time.
+	 * The `+N/-M` line counts of the given paths, as `git diff --numstat` reports them — the
+	 * deferred second half of a details load, settled a viewport at a time.
+	 *
+	 * The counts cannot be limited to the asked-for paths by a pathspec: a rename's old path would
+	 * fall outside the limit, so the pair would never be made and a moved file would count as a
+	 * wholesale addition. The whole diff is counted instead — the cost the original extension paid
+	 * on every details load — and kept for the batches that follow, which settle from memory.
 	 */
 	public async getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }> {
 		if (paths.length === 0) return {};
@@ -331,7 +343,26 @@ export class CliBackend implements GitBackend {
 			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => EMPTY_TREE);
 		}
 
-		const numStat = await this.run(['diff', '--numstat', '--find-renames', '-z', base, to, '--', ...paths], repo);
+		const counts = await this.numStatCounts(repo, base, to);
+		const wanted: { [path: string]: GitLineCounts } = {};
+		for (let i = 0; i < paths.length; i++) {
+			const counted = counts[paths[i]];
+			if (typeof counted !== 'undefined') wanted[paths[i]] = counted;
+		}
+		return wanted;
+	}
+
+	/**
+	 * The numstat counts of a whole diff, keyed by each file's new path. Cached for the last
+	 * (repo, base, to): the callers settle one commit's file list in batches, and a diff between
+	 * two fixed revisions cannot change under the cache.
+	 */
+	private async numStatCounts(repo: string, base: string, to: string): Promise<{ [path: string]: GitLineCounts }> {
+		if (this.numStatCache !== null && this.numStatCache.repo === repo && this.numStatCache.base === base && this.numStatCache.to === to) {
+			return this.numStatCache.counts;
+		}
+
+		const numStat = await this.run(['diff', '--numstat', '--find-renames', '-z', base, to], repo);
 		const counts: { [path: string]: GitLineCounts } = {};
 
 		const fields = numStat.split('\0');
@@ -350,6 +381,8 @@ export class CliBackend implements GitBackend {
 			};
 			i += parts[2] !== '' ? 1 : 3;
 		}
+
+		this.numStatCache = { repo, base, to, counts };
 		return counts;
 	}
 
@@ -457,21 +490,22 @@ export class CliBackend implements GitBackend {
 	public async getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
 		// A root commit has no first parent: git diff would fail on `hash^`, so the empty tree —
 		// whose hash is fixed by the object format — stands in as the base, exactly as
-		// `git show <root>` diffs against it.
+		// `git show <root>` diffs against it. `core.quotepath=false` keeps non-ASCII paths raw in
+		// the headers instead of C-quoted octal escapes (a pathspec could not be used instead: it
+		// would exclude the old side of a rename and break its pairing).
 		const parent = await this.run(['rev-parse', '--verify', '--quiet', `${hash}^`], repo)
 			.then((out) => out.trim())
 			.catch(() => '4b825dc642cb6eb9a060e54bf8d69288fbee4904');
-		const out = await this.run(['diff', '--no-color', '--find-renames', parent, hash], repo);
-		const wanted = `b/${file}`;
+		const out = await this.run(['-c', 'core.quotepath=false', 'diff', '--no-color', '--find-renames', parent, hash], repo);
 		return out
 			.split(/(?=^diff --git )/m)
 			.filter((section) => {
 				const header = section.slice(0, section.indexOf('\n'));
-				return header.includes(` ${wanted}`) || header.endsWith(wanted);
+				return diffHeaderNewPath(header) === file;
 			})
 			.join('')
 			.replace(/\n$/m, '');
-	}
+}
 
 	/* ---------- On-demand reads ---------- */
 
@@ -719,38 +753,35 @@ export class CliBackend implements GitBackend {
 	}
 
 	/**
-	 * The distinct commit authors of the current branch's history — `git shortlog -s -n -e`,
-	 * parsed and reduced exactly the way the extension always reduced it (de-duplicated by name,
-	 * the most-prolific spelling first, then sorted by name).
+	 * The distinct commit authors of the current branch's history: counted per (name, email)
+	 * spelling over HEAD's history, de-duplicated by name (the most-prolific spelling first, then
+	 * sorted by name) — the same reduce the engine performs. `git shortlog` is deliberately not
+	 * used: it applies `.mailmap` by default, which would disagree with both the engine and the
+	 * author names the commit rows themselves display.
 	 */
 	public async getAuthors(repo: string): Promise<GitAuthor[]> {
-		const out = await this.run(['shortlog', '-e', '-s', '-n', 'HEAD'], repo).catch((error) => {
-			const message = String(error instanceof Error ? error.message : error).toLowerCase();
-			// A machine without the global configuration file makes shortlog fail; the extension
-			// has always treated that as "no authors".
-			if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
-				return '';
-			}
-			throw error;
-		});
+		const out = await this.run(['log', '--format=%an%x1f%ae', 'HEAD'], repo);
+		const counts = new Map<string, { name: string; email: string; count: number }>();
+		for (const line of out.split(EOL)) {
+			const separator = line.indexOf('\x1f');
+			if (line === '' || separator === -1) continue;
+			const name = line.slice(0, separator), email = line.slice(separator + 1);
+			const entry = counts.get(name + '\x00' + email);
+			if (entry === undefined) counts.set(name + '\x00' + email, { name, email, count: 1 });
+			else entry.count++;
+		}
+		const ordered = [...counts.values()].sort(
+			(a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : a.email < b.email ? -1 : 1)
+		);
 		const seen = new Set<string>();
 		const authors: GitAuthor[] = [];
-		for (const raw of out.split(EOL)) {
-			const line = raw.trim();
-			if (line === '') continue;
-			const entry = line.substring(line.indexOf('\t') + 1);
-			const separator = entry.indexOf('<');
-			const author =
-				separator === -1
-					? { name: entry.trim(), email: '' }
-					: {
-							name: entry.substring(0, separator).trim(),
-							email: entry.substring(separator + 1, entry.length - (entry.endsWith('>') ? 1 : 0)).trim()
-						};
-			if (seen.has(author.name)) continue;
-			seen.add(author.name);
-			authors.push(author);
+		for (const entry of ordered) {
+			if (seen.has(entry.name)) continue;
+			seen.add(entry.name);
+			authors.push({ name: entry.name, email: entry.email });
 		}
+		// The list itself is sorted by name; the count ordering only decided which spelling of a
+		// repeated name wins.
 		authors.sort((a, b) => (a.name > b.name ? 1 : -1));
 		return authors;
 	}
@@ -1037,8 +1068,25 @@ export class CliBackend implements GitBackend {
  * A file deleted in the working tree but still in the index shows as deleted rather than
  * unchanged, and untracked files are appended — neither is visible to `git diff`.
  */
-function mergeStatusFiles(
-	changes: ReadonlyArray<GitFileChange>,
+/**
+ * The new path of a `diff --git a/… b/…` header: the file the section belongs to, matched exactly
+ * so that a file whose name is a prefix of another's cannot catch its section. Git only C-quotes
+ * paths that contain quotes, backslashes or control characters (spaces and, with
+ * `core.quotepath=false`, non-ASCII stay raw); the quoted form is unquoted here.
+ */
+function diffHeaderNewPath(header: string): string | null {
+	const quoted = /^diff --git "(?:[^"\\]|\\.)*" "b\/((?:[^"\\]|\\.)*)"$/.exec(header);
+	if (quoted !== null) {
+		return quoted[1].replace(/\\(\\|"|[0-7]{1,3})/g, (_, escape: string) =>
+			escape === '\\' || escape === '"' ? escape : String.fromCharCode(parseInt(escape, 8))
+		);
+	}
+	// Unquoted: the new path is the last ' b/'-introduced token of the header
+	const marker = header.lastIndexOf(' b/');
+	return marker === -1 ? null : header.slice(marker + 3);
+}
+
+function mergeStatusFiles(	changes: ReadonlyArray<GitFileChange>,
 	status: { deleted: ReadonlyArray<string>; untracked: ReadonlyArray<string> }
 ): GitFileChange[] {
 	const merged = [...changes];

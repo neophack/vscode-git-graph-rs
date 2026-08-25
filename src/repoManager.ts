@@ -335,6 +335,9 @@ export class RepoManager extends Disposable {
 	 */
 	private removeRepo(repo: string) {
 		delete this.repos[repo];
+		// Release the engine's handle and the cached config data of the removed repository: both
+		// would otherwise stay resident for the rest of the editor session
+		this.dataSource.closeRepository(repo);
 		this.extensionState.saveRepos(this.repos);
 		this.logger.log('Removed repo: ' + repo);
 	}
@@ -477,6 +480,8 @@ export class RepoManager extends Disposable {
 	private transferRepoState(oldRepo: string, newRepo: string) {
 		this.repos[newRepo] = this.repos[oldRepo];
 		delete this.repos[oldRepo];
+		// The old path no longer names the repository, so its engine handle must not stay resident
+		this.dataSource.closeRepository(oldRepo);
 		this.updateReposWorkspaceFolderIndex(newRepo);
 		this.extensionState.saveRepos(this.repos);
 		this.extensionState.transferRepo(oldRepo, newRepo);

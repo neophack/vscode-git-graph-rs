@@ -714,6 +714,26 @@ export interface ResponseWithMultiErrorInfo extends BaseMessage {
 	readonly errors: ErrorInfo[];
 }
 
+
+/**
+ * A data-loss warning an action returns instead of running: the view shows it through its
+ * standard warning dialog (the mascot image above the message), and re-sends the action with
+ * its confirmed flag set once the user insists.
+ */
+export interface LossWarning {
+	/** The localised warning text. */
+	readonly message: string;
+}
+
+/**
+ * A data-loss warning for the view: the standard warning dialog shows `message`; confirming
+ * re-sends `retry` — the original request with `confirmed` set.
+ */
+export interface ResponseLossWarning {
+	readonly command: 'lossWarning';
+	readonly message: string;
+	readonly retry: RequestMessage;
+}
 export type ErrorInfo = string | null; // null => no error, otherwise => error message
 
 export const enum ErrorInfoExtensionPrefix {
@@ -770,6 +790,8 @@ export interface ResponseBranchFromStash extends ResponseWithErrorInfo {
 }
 
 export interface RequestCheckoutBranch extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'checkoutBranch';
 	readonly branchName: string;
 	readonly remoteBranch: string | null;
@@ -789,6 +811,8 @@ export interface ResponseCheckoutBranch extends ResponseWithMultiErrorInfo {
 }
 
 export interface RequestCheckoutCommit extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'checkoutCommit';
 	readonly commitHash: string;
 }
@@ -908,6 +932,8 @@ export interface ResponseCreateArchive extends ResponseWithErrorInfo {
 }
 
 export interface RequestCreateBranch extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'createBranch';
 	readonly commitHash: string;
 	readonly branchName: string;
@@ -1267,6 +1293,8 @@ export interface ResponsePullBranch extends ResponseWithErrorInfo {
 }
 
 export interface RequestPushBranch extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'pushBranch';
 	readonly branchName: string;
 	readonly remotes: string[];
@@ -1347,6 +1375,8 @@ export interface ResponseResetFileToRevision extends ResponseWithErrorInfo {
 }
 
 export interface RequestResetToCommit extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'resetToCommit';
 	readonly commit: string;
 	readonly resetMode: GitResetMode;
@@ -1591,6 +1621,7 @@ export type RequestMessage =
 export type ResponseMessage =
 	ResponseAddRemote
 	| ResponseAddTag
+	| ResponseLossWarning
 	| ResponseApplyStash
 	| ResponseBranchFromStash
 	| ResponseCheckoutBranch

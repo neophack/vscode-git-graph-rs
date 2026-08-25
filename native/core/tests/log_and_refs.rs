@@ -387,5 +387,7 @@ fn an_empty_repository_reports_no_head_rather_than_failing() {
 
     let snapshot = read_refs(&engine, &RefReadOptions::default()).unwrap();
     assert_eq!(snapshot.ref_data.head, None);
-    assert!(snapshot.branches.is_empty());
+    // The unborn branch has no ref, but its name is still listed — as the CLI backend and
+    // `git status` report it — so the view names the branch the first commit will land on.
+    assert_eq!(snapshot.branches, vec!["main"]);
 }

@@ -10,6 +10,13 @@ import { Disposable, toDisposable } from './utils/disposable';
 import { EventEmitter } from './utils/event';
 
 /**
+ * How long after its last refresh an avatar is expired at startup. An avatar's timestamp is
+ * refreshed whenever its email appears in a loaded view, so an expired avatar belongs to a
+ * contributor no open repository has shown for that long (it is re-fetched if it appears again).
+ */
+const AVATAR_EXPIRY_MS = 15552000000; // 180 days x 24 hours x 60 minutes x 60 seconds x 1000 milliseconds
+
+/**
  * Manages fetching and caching Avatars.
  */
 export class AvatarManager extends Disposable {
@@ -129,8 +136,60 @@ export class AvatarManager extends Disposable {
 	 * @param email The email address identifying the avatar.
 	 */
 	private removeAvatarFromCache(email: string) {
+		const avatar = this.avatars[email];
+		if (avatar !== undefined) this.deleteAvatarImage(avatar);
 		delete this.avatars[email];
 		this.extensionState.removeAvatarFromCache(email);
+	}
+
+	/**
+	 * Remove avatars that have not been used for 180 days, and delete any avatar image file that no
+	 * remaining cache entry references — the folder would otherwise only ever grow (a re-fetch of
+	 * the same email overwrites its file, but a removed or failed fetch leaves the file behind).
+	 */
+	public expireOldAvatars() {
+		const expireBefore = (new Date()).getTime() - AVATAR_EXPIRY_MS;
+		const expired: string[] = [];
+		for (const email of Object.keys(this.avatars)) {
+			if (this.avatars[email].timestamp < expireBefore) expired.push(email);
+		}
+		if (expired.length > 0) {
+			for (const email of expired) {
+				this.deleteAvatarImage(this.avatars[email]);
+				delete this.avatars[email];
+			}
+			this.extensionState.removeAvatarsFromCache(expired);
+			this.logger.log('Expired ' + expired.length + ' avatar' + (expired.length === 1 ? '' : 's') + ' that had not been used for 180 days');
+		}
+		this.deleteOrphanAvatarImages();
+	}
+
+	/**
+	 * Delete the image file of an avatar from the Avatar Storage Folder. The cache entry is always
+	 * removed with the file, so a file that is already gone (or cannot be deleted) is ignored.
+	 * @param avatar The avatar whose image file should be deleted.
+	 */
+	private deleteAvatarImage(avatar: Avatar) {
+		if (avatar.image) fs.unlink(this.avatarStorageFolder + '/' + avatar.image, () => { });
+	}
+
+	/**
+	 * Delete any image file in the Avatar Storage Folder that no avatar in the cache references.
+	 * Such files are orphaned by failed downloads and by cache entries removed in earlier sessions.
+	 */
+	private deleteOrphanAvatarImages() {
+		// Safe to run at activation only: avatar downloads are queued by view loads, and no view
+		// has requested anything before activation finishes
+		fs.readdir(this.avatarStorageFolder, (err, files) => {
+			if (err) return;
+			const referenced = new Set<string>();
+			for (const email of Object.keys(this.avatars)) {
+				if (this.avatars[email].image) referenced.add(this.avatars[email].image);
+			}
+			for (let i = 0; i < files.length; i++) {
+				if (!referenced.has(files[i])) fs.unlink(this.avatarStorageFolder + '/' + files[i], () => { });
+			}
+		});
 	}
 
 	/**

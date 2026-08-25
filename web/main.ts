@@ -2169,6 +2169,11 @@ window.addEventListener('load', () => {
 			case 'commitFileCounts':
 				applyLineCounts(gitGraph, msg);
 				break;
+			case 'lossWarning':
+				// The standard data-loss warning: confirm re-sends the original request with its
+				// confirmed flag set, so the action runs without asking again
+				dialog.showDataLossWarning(msg.message, () => sendMessage(msg.retry));
+				break;
 			case 'countCommitsBefore':
 				gitGraph.processCountCommitsBefore(msg);
 				break;

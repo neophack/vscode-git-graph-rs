@@ -32,7 +32,7 @@ plus the on-demand reads behind the Find dialogue, the tag details, submodule an
 lookups, and the commit counting the view's jump-to-commit uses — is served by the Rust engine,
 falling back to the `git` CLI wherever the engine does not reach.
 The write path (checkout, merge, rebase and the rest) still goes through the `git` CLI, behind
-the same interface. See [GAPS.md](GAPS.md) and [Roadmap](#roadmap).
+the same interface, with the destructive corner of it guarded by [data-loss warnings](#data-loss-protection). See [GAPS.md](GAPS.md) and [Roadmap](#roadmap).
 
 ## Why it is faster
 
@@ -313,6 +313,34 @@ tell which one it is talking to, so any disagreement is a user-visible behaviour
   background batches — because every file's counts cost two blob reads, which dominates the load
   of a commit touching thousands of files. Everywhere except a working-tree comparison the counts
   are exact once settled.
+
+## Data-loss protection
+
+Some write operations can lose work that no ref keeps reachable — silently, because the `git`
+command that does it exits successfully (its "you are leaving commits behind" warning goes to
+stderr, which a successful command discards). Those operations do not run on the first click:
+the view shows its standard data-loss dialog — a warning banner, the mascot, and a single
+"I understand the risk" button — and only re-sends the action when the user presses it.
+The guarded operations:
+
+- **Leaving a detached HEAD that has its own commits** — switching to a branch, checking out
+  another commit, or creating a branch somewhere else with checkout. The commits are held by no
+  branch, tag or remote; after the switch they are reachable only from the local reflog, and
+  only until `git gc` prunes them. Creating the branch *at* HEAD anchors them, so it is never
+  asked.
+- **A hard reset while the working tree has uncommitted changes.** Those contents are recorded
+  in no reflog; at most previously staged versions might be found with `git fsck`. The
+  "reset uncommitted changes" action is itself an explicit choice to discard, so it is not asked
+  again.
+- **A force push.** The commits the remote has that the push does not contain become unreachable
+  *there*; whether they can be recovered depends on the remote — hosted services usually only
+  keep them accessible by hash, for a while. `--force-with-lease` is the guarded variant and is
+  not confirmed a second time.
+
+The dialog wording states the actual recoverability of each case, verified against real
+repositories: which things the reflog keeps (and for how long), which need `git fsck` (dropping
+a stash deletes its reflog with it; so does force-deleting an unmerged branch), and which depend
+on the remote.
 
 ## Building
 

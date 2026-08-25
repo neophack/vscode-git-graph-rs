@@ -103,6 +103,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	logger.log('Started Git Graph - Ready to use!');
 
 	extensionState.expireOldCodeReviews();
+	avatarManager.expireOldAvatars();
 }
 
 /**

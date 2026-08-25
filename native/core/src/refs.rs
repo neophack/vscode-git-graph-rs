@@ -108,11 +108,16 @@ pub fn read_refs(repo: &Repo, options: &RefReadOptions) -> Result<RefSnapshot> {
 
     /* The checked-out branch is listed first, as `git branch` lists it */
     if let Some(head) = &branch_head {
-        if let Some(index) = branches.iter().position(|branch| branch == head) {
-            if index != 0 {
+        match branches.iter().position(|branch| branch == head) {
+            Some(0) => {}
+            Some(index) => {
                 let name = branches.remove(index);
                 branches.insert(0, name);
             }
+            // An unborn branch (a fresh repository, no commits yet): the ref does not exist, but
+            // the checked-out name is still listed first — as the CLI backend and `git status`
+            // report it, and as the view names the branch the first commit will land on.
+            None => branches.insert(0, head.clone()),
         }
     }
 

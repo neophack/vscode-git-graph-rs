@@ -304,6 +304,19 @@ export class ExtensionState extends Disposable {
 	}
 
 	/**
+	 * Removes multiple avatars from the cache of avatars known to Git Graph, in one state write.
+	 * @param emails The email addresses of the avatars to remove.
+	 */
+	public removeAvatarsFromCache(emails: string[]) {
+		if (emails.length === 0) return;
+		let avatars = this.getAvatarCache();
+		for (let i = 0; i < emails.length; i++) {
+			delete avatars[emails[i]];
+		}
+		this.updateGlobalState(AVATAR_CACHE, avatars);
+	}
+
+	/**
 	 * Clear all avatars from the cache of avatars known to Git Graph.
 	 * @returns A Thenable resolving to the ErrorInfo that resulted from executing this method.
 	 */

@@ -261,6 +261,12 @@ pub fn line_counts(
 
     let mut counted: BTreeMap<String, GitLineCounts> = BTreeMap::new();
     let outcome = changes.for_each_to_obtain_tree(&to_tree, |change| {
+        // `classify` holds the definition of a path the view lists as a file — in particular it
+        // drops the directory-level tree rewrites, which must never settle a folder path here
+        // even if one is asked for.
+        if classify(&change).is_none() {
+            return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
+        }
         if !wanted.contains(change.location().to_str_lossy().as_ref()) {
             return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
         }
@@ -325,9 +331,18 @@ fn classify(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<GitF
         Change::Modification {
             location,
             entry_mode,
+            previous_entry_mode,
             ..
         } => {
             if entry_mode.is_tree() {
+                return None;
+            }
+            // A type change (regular file ↔ symlink ↔ gitlink) is what git spells `T`; it is not
+            // one of the statuses the view lists (`--diff-filter=AMDR` drops it on the CLI side),
+            // so it is dropped here as well to keep the two backends in agreement.
+            if entry_mode.is_link() != previous_entry_mode.is_link()
+                || entry_mode.is_commit() != previous_entry_mode.is_commit()
+            {
                 return None;
             }
             let path = location.to_string();

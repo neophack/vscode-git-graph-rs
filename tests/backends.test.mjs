@@ -434,6 +434,32 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.deepEqual(await rust.getLineCounts(root, null, fixture.first, []), {});
 	});
 
+	it('settles the same deferred counts of a merge, against its first parent', async () => {
+		// A merge's own diff runs against its first parent: the feature side's file is in it, the
+		// main side's file (which the merge carries unchanged from its second parent's sibling) is
+		// not — a backend diffing against the wrong parent would swap the two answers.
+		const merge = git(['rev-parse', `${fixture.renamed}^`]).trim();
+		const [a, b] = await Promise.all([
+			rust.getLineCounts(root, null, merge, ['feature.txt', 'main.txt']),
+			cli.getLineCounts(root, null, merge, ['feature.txt', 'main.txt'])
+		]);
+		assert.deepEqual(a, b);
+		assert.deepEqual(a['feature.txt'], { additions: 1, deletions: 0 });
+		assert.equal(a['main.txt'], undefined, "the first parent already carries the main side's file");
+	});
+
+	it('settles the same deferred counts of a stash, against its base', async () => {
+		// A stash is counted against the commit it was taken from — its base — not against its own
+		// first parent; the stash replaced renamed.txt's 40 lines with a single one.
+		const stash = (await rust.getStashes(root))[0];
+		const [a, b] = await Promise.all([
+			rust.getLineCounts(root, stash.baseHash, stash.hash, ['renamed.txt']),
+			cli.getLineCounts(root, stash.baseHash, stash.hash, ['renamed.txt'])
+		]);
+		assert.deepEqual(a, b);
+		assert.deepEqual(a['renamed.txt'], { additions: 1, deletions: 40 });
+	});
+
 	it('reports the same repository configuration', async () => {
 		const [a, b] = await Promise.all([rust.getConfig(root), cli.getConfig(root)]);
 		for (const key of ['userName', 'userEmail', 'pushDefault', 'diffTool', 'diffGuiTool']) {
@@ -581,6 +607,23 @@ describe('the Rust engine and the git CLI agree', () => {
 		// The fixture's working tree modifies renamed.txt and adds untracked.txt on top of HEAD.
 		const paths = a.map((change) => change.newFilePath).sort();
 		assert.ok(paths.includes('renamed.txt'));
+	});
+
+	it('reports no counts against the working tree, on either side', async () => {
+		// Counting a worktree-touched file means hashing the file on disk, so a comparison against
+		// the working tree reports no counts at all — exact numbers beside uncounted ones would
+		// read worse than none. The Uncommitted Changes row is statuses-only for the same reason.
+		const [a, b] = await Promise.all([
+			rust.compareCommits(root, fixture.renamed, ''),
+			cli.compareCommits(root, fixture.renamed, '')
+		]);
+		const [u, v] = await Promise.all([rust.getUncommittedDetails(root), cli.getUncommittedDetails(root)]);
+		for (const [changes, context] of [[a, 'compareCommits'], [b, 'compareCommits'], [u.fileChanges, 'uncommitted'], [v.fileChanges, 'uncommitted']]) {
+			for (const change of changes) {
+				assert.equal(change.additions, null, `${context}: ${change.newFilePath} additions`);
+				assert.equal(change.deletions, null, `${context}: ${change.newFilePath} deletions`);
+			}
+		}
 	});
 
 	it('keeps the repository handle open across requests', async () => {
@@ -884,6 +927,241 @@ describe('unusual remote names', () => {
 			rust.closeAllRepositories();
 			fs.rmSync(repoPath, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('a renamed directory', () => {
+	// `git mv` of a folder: the engine's rewrite tracker pairs the deleted tree with the added one
+	// as a rewrite of the directory itself, which must not surface as a file row anywhere — and
+	// the deferred counts of the files under it must settle by their new paths, on both backends.
+	let rust;
+	let cli;
+	let root;
+	let repoDir;
+	let moved;
+	let gitIn;
+
+	before(async () => {
+		repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-movedir-'));
+		gitIn = (args) =>
+			execFileSync('git', args, {
+				cwd: repoDir,
+				encoding: 'utf8',
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoDir }
+			});
+		const writeIn = (file, contents) => {
+			const full = path.join(repoDir, file);
+			fs.mkdirSync(path.dirname(full), { recursive: true });
+			fs.writeFileSync(full, contents);
+		};
+		const commitIn = (message) => {
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '--allow-empty', '-m', message]);
+			return gitIn(['rev-parse', 'HEAD']).trim();
+		};
+
+		gitIn(['init', '--quiet', '--initial-branch=main']);
+		gitIn(['config', 'user.name', 'Test User']);
+		gitIn(['config', 'user.email', 'test@example.com']);
+		gitIn(['config', 'commit.gpgsign', 'false']);
+
+		const lines = (prefix, count, changed) =>
+			Array.from({ length: count }, (_, n) => `${prefix} ${changed.includes(n) ? 'changed' : n}\n`).join('');
+		writeIn('docs/guide.txt', lines('line', 40, []));
+		writeIn('docs/notes.txt', lines('note', 10, []));
+		writeIn('docs/notes.txt.bak', lines('backup', 10, []));
+		writeIn('with space.txt', 'one\ntwo\nthree\n');
+		commitIn('the first commit');
+
+		gitIn(['mv', 'docs', 'manual']);
+		// Re-writing the moved files keeps them renames (most lines are shared), not add-plus-delete.
+		writeIn('manual/notes.txt', lines('note', 10, [1, 9]));
+		writeIn('manual/notes.txt.bak', lines('backup', 10, [1, 9]));
+		writeIn('with space.txt', 'one\nTWO\nthree\n');
+		writeIn('manual/added.txt', 'brand new\n');
+		moved = commitIn('move the folder');
+
+		rust = new NativeBackend();
+		cli = new CliBackend();
+		root = await rust.openRepository(repoDir);
+		await cli.openRepository(repoDir);
+	});
+
+	after(() => {
+		rust?.closeAllRepositories();
+		if (repoDir) fs.rmSync(repoDir, { recursive: true, force: true });
+	});
+
+	it('lists only the files under it, not the directory itself', async () => {
+		const [a, b] = await Promise.all([rust.getCommitDetails(root, moved), cli.getCommitDetails(root, moved)]);
+		assert.deepEqual(sortChanges(a.fileChanges), sortChanges(b.fileChanges));
+		for (const details of [a, b]) {
+			const paths = details.fileChanges.map((change) => change.newFilePath);
+			assert.ok(!paths.includes('docs') && !paths.includes('manual'), `a directory must not be a file row: ${paths}`);
+			// The details arrive as statuses only; the counts are the deferred second load.
+			for (const change of details.fileChanges) {
+				assert.equal(change.additions, null, `${change.newFilePath} additions`);
+				assert.equal(change.deletions, null, `${change.newFilePath} deletions`);
+			}
+		}
+		const guide = a.fileChanges.find((change) => change.newFilePath === 'manual/guide.txt');
+		assert.equal(guide.type, 'R');
+		assert.equal(guide.oldFilePath, 'docs/guide.txt');
+	});
+
+	it('settles the same deferred counts for the moved files', async () => {
+		const paths = [
+			'manual/guide.txt', // moved unchanged: a rename with zero counts
+			'manual/notes.txt', // moved and edited: the edit's counts on the rename
+			'manual/added.txt', // a plain addition under the moved folder
+			'docs/guide.txt', // the pre-move path: consumed by the rename
+			'with space.txt' // a path with a space, through both backends' spellings
+		];
+		const [a, b] = await Promise.all([
+			rust.getLineCounts(root, null, moved, paths),
+			cli.getLineCounts(root, null, moved, paths)
+		]);
+		assert.deepEqual(a, b);
+		assert.deepEqual(a['manual/guide.txt'], { additions: 0, deletions: 0 });
+		assert.deepEqual(a['manual/notes.txt'], { additions: 2, deletions: 2 });
+		assert.deepEqual(a['manual/added.txt'], { additions: 1, deletions: 0 });
+		assert.equal(a['docs/guide.txt'], undefined, 'the counts are keyed by the new path only');
+		assert.deepEqual(a['with space.txt'], { additions: 1, deletions: 1 });
+	});
+
+	it('settles only the exact path asked for, not a longer name sharing it', async () => {
+		const [a, b] = await Promise.all([
+			rust.getLineCounts(root, null, moved, ['manual/notes.txt']),
+			cli.getLineCounts(root, null, moved, ['manual/notes.txt'])
+		]);
+		assert.deepEqual(a, b);
+		assert.deepEqual(Object.keys(a), ['manual/notes.txt'], 'notes.txt.bak must not ride along');
+	});
+});
+
+describe('git semantics the fixtures do not cover', () => {
+	// Four shapes taken straight from the git documentation, where the two backends disagreed
+	// until each of these pinned them: diff headers that quote or share prefixes, .mailmap,
+	// type changes, and --author being a regular expression.
+	let rust;
+	let cli;
+	let root;
+	let repoDir;
+	let changed;
+	let mailmapped;
+	let alice;
+
+	before(async () => {
+		repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-docsem-'));
+		const gitIn = (args, options = {}) =>
+			execFileSync('git', args, {
+				cwd: repoDir,
+				encoding: 'utf8',
+				input: options.input,
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoDir }
+			});
+		const writeIn = (file, contents) => fs.writeFileSync(path.join(repoDir, file), contents);
+		const commitIn = (message, author) => {
+			const identity = author === undefined ? [] : ['-c', `user.name=${author[0]}`, '-c', `user.email=${author[1]}`];
+			gitIn([...identity, 'add', '-A']);
+			gitIn([...identity, 'commit', '--quiet', '--allow-empty', '-m', message]);
+			return gitIn(['rev-parse', 'HEAD']).trim();
+		};
+
+		gitIn(['init', '--quiet', '--initial-branch=main']);
+		gitIn(['config', 'user.name', 'Test User']);
+		gitIn(['config', 'user.email', 'test@example.com']);
+		gitIn(['config', 'commit.gpgsign', 'false']);
+		writeIn('a.txt', 'one\n');
+		writeIn('a.txt.bak', 'backup\n');
+		writeIn('ünïcode.txt', 'u\n');
+		writeIn('with space.txt', 's\n');
+		commitIn('the first commit');
+
+		writeIn('a.txt', 'two\n');
+		writeIn('a.txt.bak', 'backup2\n');
+		writeIn('ünïcode.txt', 'ü2\n');
+		writeIn('with space.txt', 's2\n');
+		changed = commitIn('change everything');
+
+		// A mailmap that renames Test User: `git shortlog` applies it by default; the author list
+		// must not, or it would disagree with the names the commit rows themselves display.
+		writeIn('.mailmap', 'Mapped Name <test@example.com> Test User <test@example.com>\n');
+		mailmapped = commitIn('add the mailmap');
+
+		alice = commitIn('by alice', ['Alice (ops)', 'ops@example.com']);
+
+		rust = new NativeBackend();
+		cli = new CliBackend();
+		root = await rust.openRepository(repoDir);
+		await cli.openRepository(repoDir);
+	});
+
+	after(() => {
+		rust?.closeAllRepositories();
+		if (repoDir) fs.rmSync(repoDir, { recursive: true, force: true });
+	});
+
+	it("returns only the asked file's diff, not a longer name sharing it", async () => {
+		// The engine normalises the `index`/similarity lines away; what must agree is the change
+		// itself (the same comparison the fixture's single-file diff test makes).
+		const body = (diff) =>
+			diff
+				.trim()
+				.split('\n')
+				.filter((line) => !/^(index |similarity index |--- |\+\+\+ |new file mode |diff --git )/.test(line))
+				.join('\n');
+		for (const file of ['a.txt', 'a.txt.bak', 'ünïcode.txt', 'with space.txt']) {
+			const [a, b] = await Promise.all([
+				rust.getCommitFileDiff(root, changed, file),
+				cli.getCommitFileDiff(root, changed, file)
+			]);
+			assert.equal(body(a), body(b), `getCommitFileDiff: ${file}`);
+			const sections = (diff) => (diff.match(/^diff --git /gm) ?? []).length;
+			assert.equal(sections(a), 1, `${file}: exactly one file's diff, not every section mentioning it`);
+			assert.ok(a.length > 0, `${file}: the diff must not be empty`);
+		}
+	});
+
+	it('lists raw author identities, ignoring .mailmap', async () => {
+		const [a, b] = await Promise.all([rust.getAuthors(root), cli.getAuthors(root)]);
+		assert.deepEqual(a, b);
+		const names = a.map((author) => author.name);
+		assert.ok(names.includes('Test User'), `the raw spelling must be kept: ${names}`);
+		assert.ok(!names.includes('Mapped Name'), '.mailmap must not be applied');
+	});
+
+	it('agrees a type change is not a listed status', async () => {
+		// Replace a.txt.bak with a symlink through plumbing (a symlink's blob is its target path)
+		const gitIn = (args, options = {}) =>
+			execFileSync('git', args, {
+				cwd: repoDir,
+				encoding: 'utf8',
+				input: options.input,
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoDir }
+			});
+		const blob = gitIn(['hash-object', '-w', '--stdin'], { input: 'a.txt' }).trim();
+		gitIn(['update-index', '--cacheinfo', `120000,${blob},a.txt.bak`]);
+		gitIn(['commit', '--quiet', '-m', 'turn a.txt.bak into a symlink']);
+		const typeChange = gitIn(['rev-parse', 'HEAD']).trim();
+
+		const [a, b] = await Promise.all([rust.getCommitDetails(root, typeChange), cli.getCommitDetails(root, typeChange)]);
+		assert.deepEqual(sortChanges(a.fileChanges), sortChanges(b.fileChanges));
+		assert.ok(
+			![...a.fileChanges, ...b.fileChanges].some((change) => change.newFilePath === 'a.txt.bak'),
+			'both backends drop the T status (--diff-filter=AMDR semantics)'
+		);
+	});
+
+	it('filters by an author whose name contains regular-expression metacharacters', async () => {
+		const options = { maxCommits: 50, authors: ['Alice (ops)'] };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'authors=Alice (ops)');
+		assert.deepEqual(
+			a.commits.filter((commit) => commit.stash === null).map((commit) => commit.hash),
+			[alice],
+			'the parenthesised name must match literally, not as a regex group'
+		);
 	});
 });
 

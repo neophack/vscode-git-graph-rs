@@ -359,3 +359,4 @@ body.vscode-high-contrast .customSelectOptions > .customSelectOption.focussed{
 	fill:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
 	opacity:0.85;
 }
+

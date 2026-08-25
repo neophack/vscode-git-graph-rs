@@ -21,8 +21,15 @@ const LABEL_FOOTER_REGEX = /^Label: ([A-Za-z0-9-]+)\s*=\s*([+-]?\d+)\s*$/gm;
 
 /** The maximum number of NoteDb meta histories parsed by concurrent Git commands. */
 const META_PARSE_CONCURRENCY = 8;
-/** The maximum number of parsed NoteDb meta states retained in the in-memory cache (LRU). */
+/** The maximum number of parsed NoteDb states retained in the in-memory cache (LRU). */
 const META_CACHE_LIMIT = 500;
+/**
+ * The refspec budget of one `git fetch` command line. Windows caps a process command line at
+ * ~32k characters, which a few hundred change refspecs exceed (the `gerrit.fetchLimit` setting
+ * allows up to 10000 changes = 20000 refspecs), so large fetches are split into batches that stay
+ * well inside every platform's limit.
+ */
+const FETCH_REFSPEC_BUDGET = 8000;
 
 /** The default timeout of remote Gerrit operations (ls-remote / fetch), in milliseconds (<= 0 => disabled). */
 const DEFAULT_REMOTE_TIMEOUT_MS = 60000;
@@ -118,6 +125,29 @@ export function buildKeepPatterns(changes: ReadonlyArray<number>, remote: string
 	return changes.map((change) => 'refs/remotes/' + remote + '/changes/' + changeShard(change) + '/' + change + '/');
 }
 
+/**
+ * Split fetch refspecs into batches whose command line stays well inside the platform limits.
+ * @param refspecs The refspecs to batch.
+ * @param budget The maximum total refspec length (plus separators) of one batch.
+ * @returns The batches, in order; a single refspec longer than the budget still gets its own batch.
+ */
+export function chunkFetchRefspecs(refspecs: ReadonlyArray<string>, budget: number = FETCH_REFSPEC_BUDGET): string[][] {
+	const max = Math.max(1, budget);
+	const batches: string[][] = [];
+	let current: string[] = [], length = 0;
+	for (const refspec of refspecs) {
+		if (current.length > 0 && length + refspec.length + 1 > max) {
+			batches.push(current);
+			current = [];
+			length = 0;
+		}
+		current.push(refspec);
+		length += refspec.length + 1;
+	}
+	if (current.length > 0) batches.push(current);
+	return batches;
+}
+
 /* NoteDb Meta Parsing */
 
 export interface MetaCommitRecord {
@@ -207,6 +237,11 @@ export function parseMetaCommit(record: MetaCommitRecord): ParsedMetaCommit | nu
 	} else if (/^Create change/.test(header)) {
 		event.type = 'created';
 		event.patchset = result.patchset = 1;
+	} else if (/Start Work In Progress|^Uploaded patch set \d+ \(WIP\)/.test(header)) {
+		// The WIP shapes of an upload must be classified before the generic "Uploaded patch set"
+		// one, which would otherwise swallow them (the WIP flag itself comes from the footer).
+		event.type = 'wip';
+		result.wip = true;
 	} else if (/^Uploaded patch set \d+/.test(header)) {
 		event.type = 'patchset';
 	} else if (/^Change has been successfully (merged|cherry-picked|pushed)/.test(header) || result.status === 'merged') {
@@ -215,12 +250,12 @@ export function parseMetaCommit(record: MetaCommitRecord): ParsedMetaCommit | nu
 	} else if (/^Abandoned$/.test(header) || result.status === 'abandoned') {
 		event.type = 'abandoned';
 		result.status = 'abandoned';
-	} else if (/^Restore(d| Ready for Review)?$/.test(header) || /^Restored$/.test(header) || (result.status === 'new' && /^Unabor/.test(header))) {
+	} else if (/Restore(d| Ready for Review)?$/.test(header) || /^Restored$/.test(header) || (result.status === 'new' && /^Unabor/.test(header))) {
 		event.type = 'restored';
 		result.status = 'new';
-	} else if (/Start Work In Progress|^Uploaded patch set \d+ \(WIP\)/.test(header) || result.wip === true) {
+	} else if (result.wip === true) {
+		// A WIP transition carried only by the footer of an otherwise generic record
 		event.type = 'wip';
-		result.wip = true;
 	} else if (/Restore Ready for Review|^Remove WIP|^Ready for review change/.test(header)) {
 		event.type = 'ready';
 		result.wip = false;
@@ -259,10 +294,13 @@ export function parseMetaHistory(change: number, records: MetaCommitRecord[]): G
 	let status: GerritChangeStatus = 'new';
 	let wip = false;
 	let latestPatchset = 0;
-	let headHash: string | null = null;
 	let statusDetermined = false, wipDetermined = false;
 	const crVotes: GerritChangeEvent[] = [];
 	const vVotes: GerritChangeEvent[] = [];
+	// The first-seen (i.e. newest) `Commit:` hash of each patchset. The head hash cannot be picked
+	// in passing: a record referencing an OLDER patchset (a late vote on it) can be newer than the
+	// latest patchset's upload, and must not win over the latest patchset's own hash.
+	const commitByPatchset = new Map<number, string>();
 
 	for (const record of records) {
 		const parsed = parseMetaCommit(record);
@@ -279,9 +317,8 @@ export function parseMetaHistory(change: number, records: MetaCommitRecord[]): G
 			wip = parsed.wip;
 			wipDetermined = true;
 		}
-		// The head hash of the latest patchset is the `Commit:` of the newest commit referencing it
-		if (parsed.commitHash !== null && parsed.patchset === latestPatchset && headHash === null) {
-			headHash = parsed.commitHash;
+		if (parsed.commitHash !== null && !commitByPatchset.has(parsed.patchset)) {
+			commitByPatchset.set(parsed.patchset, parsed.commitHash);
 		}
 		if (parsed.event.type === 'vote' && parsed.event.labels !== undefined) {
 			for (const label of parsed.event.labels) {
@@ -291,6 +328,8 @@ export function parseMetaHistory(change: number, records: MetaCommitRecord[]): G
 		}
 	}
 
+	// The head hash of the change is the newest `Commit:` referencing the latest patchset.
+	let headHash: string | null = commitByPatchset.get(latestPatchset) ?? null;
 	if (headHash === null) {
 		// Fall back to any commit hash found in the history
 		for (const record of records) {
@@ -417,13 +456,19 @@ export class GerritDataSource {
 
 	/**
 	 * Fetch the specified change refspecs from a remote into `refs/remotes/<remote>/changes/`.
+	 * The refspecs are fetched in command-line-sized batches (see [`chunkFetchRefspecs`]), stopping
+	 * at the first batch that fails.
 	 */
-	public fetchChanges(repo: string, remote: string, refspecs: string[]) {
-		if (refspecs.length === 0) return Promise.resolve(null);
-		return this.withTimeout(
-			this.git.runGitCommand(['fetch', '--no-tags', remote].concat(refspecs), repo),
-			<ErrorInfo>'Fetching the Gerrit changes from the remote timed out.'
-		);
+	public async fetchChanges(repo: string, remote: string, refspecs: string[]): Promise<ErrorInfo> {
+		if (refspecs.length === 0) return null;
+		for (const batch of chunkFetchRefspecs(refspecs)) {
+			const error = await this.withTimeout(
+				this.git.runGitCommand(['fetch', '--no-tags', remote].concat(batch), repo),
+				<ErrorInfo>'Fetching the Gerrit changes from the remote timed out.'
+			);
+			if (error !== null) return error;
+		}
+		return null;
 	}
 
 	/**

@@ -43,7 +43,7 @@ Module._load = function (request, parent, isMain) {
 
 const {
 	parseChangeRef, changeShard, parseLsRemoteChanges, limitChanges, buildFetchRefspecs, buildKeepPatterns,
-	parseMetaCommit, parseMetaHistory, filterChangeStates, GerritDataSource
+	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, GerritDataSource
 } = await import('../out/gerrit.js');
 
 describe('change ref parsing', () => {
@@ -109,6 +109,62 @@ describe('fetch refspecs', () => {
 	});
 });
 
+describe('fetch command batching', () => {
+	/** A GitRunner that records every command and answers `runGitCommand` from the scripted errors. */
+	function recordingRunner(errors = []) {
+		const commands = [];
+		return {
+			commands,
+			runner: {
+				gitOutput: async () => { throw new Error('unexpected gitOutput call'); },
+				runGitCommand: async (args) => { commands.push(args); return errors[commands.length - 1] ?? null; },
+				runGitCommandWithInput: async () => null
+			}
+		};
+	}
+
+	// 300 realistic refspecs (~29k characters): far over one command line's budget on Windows
+	const manyRefspecs = Array.from({ length: 300 }, (_, i) => {
+		const shard = String(i % 100).padStart(2, '0'), change = 10000 + i, patchset = (i % 7) + 1;
+		const ref = `refs/changes/${shard}/${change}/${patchset}`;
+		return `+${ref}:refs/remotes/origin/changes/${shard}/${change}/${patchset}`;
+	});
+
+	it('batches refspecs by command-line budget, losing none', () => {
+		assert.deepEqual(chunkFetchRefspecs(['a'.repeat(30), 'b'.repeat(30), 'c'.repeat(30)], 65).map((batch) => batch.length), [2, 1]);
+		// A refspec longer than the budget still gets its own batch rather than being dropped or split
+		assert.deepEqual(chunkFetchRefspecs(['x'.repeat(10), 'y'.repeat(40)], 20), [['x'.repeat(10)], ['y'.repeat(40)]]);
+		assert.deepEqual(chunkFetchRefspecs(['a', 'b']), [['a', 'b']]);
+		assert.deepEqual(chunkFetchRefspecs([]), []);
+	});
+
+	it('splits a large fetch into several command-line-sized git fetch commands', async () => {
+		const { commands, runner } = recordingRunner();
+		const gerrit = new GerritDataSource(runner);
+		assert.equal(await gerrit.fetchChanges('/repo', 'origin', manyRefspecs), null);
+		assert.ok(commands.length > 1, 'the refspecs must be split into several commands');
+		for (const args of commands) {
+			assert.deepEqual(args.slice(0, 3), ['fetch', '--no-tags', 'origin']);
+			assert.ok(args.slice(3).join(' ').length <= 8100, 'a batch must stay well inside the ~32k platform limit');
+		}
+		// Nothing lost, nothing duplicated, order kept
+		assert.deepEqual(commands.flatMap((args) => args.slice(3)), manyRefspecs);
+	});
+
+	it('fetches nothing when there is nothing to fetch', async () => {
+		const { commands, runner } = recordingRunner();
+		assert.equal(await new GerritDataSource(runner).fetchChanges('/repo', 'origin', []), null);
+		assert.equal(commands.length, 0);
+	});
+
+	it('stops at the first failing batch', async () => {
+		const { commands, runner } = recordingRunner([null, 'the second batch failed']);
+		const gerrit = new GerritDataSource(runner);
+		assert.equal(await gerrit.fetchChanges('/repo', 'origin', manyRefspecs), 'the second batch failed');
+		assert.equal(commands.length, 2, 'the batches after the failure must not run');
+	});
+});
+
 describe('NoteDb meta commit parsing', () => {
 	const record = (message, committer = 'Gerrit User 1000018', timestamp = 1700000000) => ({ committer, timestamp, message });
 
@@ -139,6 +195,9 @@ describe('NoteDb meta commit parsing', () => {
 
 	it('recognises work-in-progress transitions', () => {
 		assert.equal(parseMetaCommit(record('Start Work In Progress\n\nPatch-set: 1\n'))?.event.type, 'wip');
+		// A WIP upload must not be classified by the generic "Uploaded patch set" shape it starts with
+		assert.equal(parseMetaCommit(record('Uploaded patch set 2 (WIP)\n\nPatch-set: 2\nWork-in-progress: true\n'))?.event.type, 'wip');
+		assert.equal(parseMetaCommit(record('Uploaded patch set 2.\n\nPatch-set: 2\n'))?.event.type, 'patchset');
 		assert.equal(parseMetaCommit(record('Remove WIP\n\nPatch-set: 1\nWork-in-progress: false\n'))?.event.type, 'ready');
 	});
 
@@ -164,6 +223,20 @@ describe('NoteDb meta history parsing', () => {
 		assert.equal(state.verified, 1);
 		assert.equal(state.headHash, 'b'.repeat(40)); // the Commit of the newest record of the latest patchset
 		assert.equal(state.events.length, 3);
+	});
+
+	it('picks the latest patchset\'s head even when a newer record references an older patchset', () => {
+		// Gerrit allows voting on an old patchset after a newer one was uploaded; the vote carries
+		// the OLD patchset's Commit footer and is the newest record, but the change's head is still
+		// the latest patchset's commit.
+		const state = parseMetaHistory(41466, [
+			{ committer: 'Voter', timestamp: 4, message: 'Patch Set 2: Code-Review+2\n\nPatch-set: 2\nCommit: ' + 'b'.repeat(40) + '\nLabel: Code-Review=+2\n' },
+			{ committer: 'Uploader', timestamp: 3, message: 'Uploaded patch set 3.\n\nPatch-set: 3\nCommit: ' + 'c'.repeat(40) + '\n' },
+			{ committer: 'Uploader', timestamp: 2, message: 'Uploaded patch set 2.\n\nPatch-set: 2\nCommit: ' + 'b'.repeat(40) + '\n' },
+			{ committer: 'Owner', timestamp: 1, message: 'Create change\n\nPatch-set: 1\nCommit: ' + 'a'.repeat(40) + '\n' }
+		]);
+		assert.equal(state.patchset, 3);
+		assert.equal(state.headHash, 'c'.repeat(40));
 	});
 
 	it('keeps a new change new and prefers the strongest vote even when recorded earlier', () => {

@@ -21,7 +21,7 @@ import { Logger } from './logger';
 import { PullRequestDataSource } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { ErrorInfo, GerritChangeState, GerritStatusFilter, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
@@ -331,6 +331,21 @@ export class GitGraphView extends Disposable {
 	 * Any error thrown by a handler is caught and logged by `respondToMessage`.
 	 * @param msg The message that was received.
 	 */
+	/**
+	 * Forward a data-loss warning returned by an action to the view: its standard warning dialog
+	 * shows the message (with the mascot image), and confirming re-sends the original request
+	 * with its confirmed flag set.
+	 * @param result The action result: a warning, or an array that may hold one.
+	 * @param request The original request, replayed on confirmation.
+	 * @returns TRUE when a warning was forwarded and the action must not report a result.
+	 */
+	private sendLossWarning(result: ErrorInfo | LossWarning | ReadonlyArray<ErrorInfo | LossWarning>, request: RequestMessage): boolean {
+		const warning = Array.isArray(result) ? result[0] : result;
+		if (warning === null || typeof warning !== 'object' || !('message' in warning)) return false;
+		this.sendMessage({ command: 'lossWarning', message: warning.message, retry: { ...request, confirmed: true } as RequestMessage });
+		return true;
+	}
+
 	private async handleMessage(msg: RequestMessage) {
 		let errorInfos: ErrorInfo[];
 
@@ -367,8 +382,10 @@ export class GitGraphView extends Disposable {
 					error: await this.dataSource.branchFromStash(msg.repo, msg.selector, msg.branchName)
 				});
 				break;
-			case 'checkoutBranch':
-				errorInfos = [await this.dataSource.checkoutBranch(msg.repo, msg.branchName, msg.remoteBranch)];
+			case 'checkoutBranch': {
+				const checkoutResult = await this.dataSource.checkoutBranch(msg.repo, msg.branchName, msg.remoteBranch, msg.confirmed === true);
+				if (this.sendLossWarning(checkoutResult, msg)) break;
+				errorInfos = [<ErrorInfo>checkoutResult];
 				if (errorInfos[0] === null && msg.pullAfterwards !== null) {
 					errorInfos.push(await this.dataSource.pullBranch(msg.repo, msg.pullAfterwards.branchName, msg.pullAfterwards.remote, msg.pullAfterwards.createNewCommit, msg.pullAfterwards.squash));
 				}
@@ -378,12 +395,16 @@ export class GitGraphView extends Disposable {
 					errors: errorInfos
 				});
 				break;
-			case 'checkoutCommit':
+			}
+			case 'checkoutCommit': {
+				const checkoutResult = await this.dataSource.checkoutCommit(msg.repo, msg.commitHash, msg.confirmed === true);
+				if (this.sendLossWarning(checkoutResult, msg)) break;
 				this.sendMessage({
 					command: 'checkoutCommit',
-					error: await this.dataSource.checkoutCommit(msg.repo, msg.commitHash)
+					error: <ErrorInfo>checkoutResult
 				});
 				break;
+			}
 			case 'cherrypickCommit':
 				errorInfos = [await this.dataSource.cherrypickCommit(msg.repo, msg.commitHash, msg.parentIndex, msg.recordOrigin, msg.noCommit)];
 				if (errorInfos[0] === null && msg.noCommit) {
@@ -464,14 +485,17 @@ export class GitGraphView extends Disposable {
 					error: await archive(msg.repo, msg.ref, this.dataSource)
 				});
 				break;
-			case 'createBranch':
+			case 'createBranch': {
+				const createResult = await this.dataSource.createBranch(msg.repo, msg.branchName, msg.commitHash, msg.checkout, msg.force, msg.confirmed === true);
+				if (this.sendLossWarning(createResult, msg)) break;
 				this.sendMessage({
 					command: 'createBranch',
-					errors: await this.dataSource.createBranch(msg.repo, msg.branchName, msg.commitHash, msg.checkout, msg.force)
+					errors: <ErrorInfo[]>createResult
 				});
 				break;
+			}
 			case 'createPullRequest':
-				errorInfos = [msg.push ? await this.dataSource.pushBranch(msg.repo, msg.sourceBranch, msg.sourceRemote, true, GitPushBranchMode.Normal) : null];
+				errorInfos = [<ErrorInfo>(msg.push ? await this.dataSource.pushBranch(msg.repo, msg.sourceBranch, msg.sourceRemote, true, GitPushBranchMode.Normal) : null)];
 				if (errorInfos[0] === null) {
 					errorInfos.push(await createPullRequest(msg.config, msg.sourceOwner, msg.sourceRepo, msg.sourceBranch));
 				}
@@ -806,13 +830,16 @@ export class GitGraphView extends Disposable {
 					error: await this.dataSource.pullBranch(msg.repo, msg.branchName, msg.remote, msg.createNewCommit, msg.squash)
 				});
 				break;
-			case 'pushBranch':
+			case 'pushBranch': {
+				const pushResult = await this.dataSource.pushBranchToMultipleRemotes(msg.repo, msg.branchName, msg.remotes, msg.setUpstream, msg.mode, msg.confirmed === true);
+				if (this.sendLossWarning(pushResult, msg)) break;
 				this.sendMessage({
 					command: 'pushBranch',
 					willUpdateBranchConfig: msg.willUpdateBranchConfig,
-					errors: await this.dataSource.pushBranchToMultipleRemotes(msg.repo, msg.branchName, msg.remotes, msg.setUpstream, msg.mode)
+					errors: <ErrorInfo[]>pushResult
 				});
 				break;
+			}
 			case 'pushStash':
 				this.sendMessage({
 					command: 'pushStash',
@@ -854,12 +881,15 @@ export class GitGraphView extends Disposable {
 					error: await this.dataSource.resetFileToRevision(msg.repo, msg.commitHash, msg.filePath)
 				});
 				break;
-			case 'resetToCommit':
+			case 'resetToCommit': {
+				const resetResult = await this.dataSource.resetToCommit(msg.repo, msg.commit, msg.resetMode, msg.confirmed === true);
+				if (this.sendLossWarning(resetResult, msg)) break;
 				this.sendMessage({
 					command: 'resetToCommit',
-					error: await this.dataSource.resetToCommit(msg.repo, msg.commit, msg.resetMode)
+					error: <ErrorInfo>resetResult
 				});
 				break;
+			}
 			case 'revertCommit':
 				this.sendMessage({
 					command: 'revertCommit',
