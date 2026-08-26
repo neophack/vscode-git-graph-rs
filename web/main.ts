@@ -2383,9 +2383,10 @@ window.addEventListener('load', () => {
 
 	/**
 	 * A checkout moved HEAD, so the current-position marker must follow immediately. The refresh is
-	 * HARD on purpose: it bypasses the render dedupe of an unchanged commit list AND the extension's
-	 * commit cache (a hard `loadCommits` request is served fresh), so nothing between the checkout
-	 * and the re-render can serve the pre-checkout state.
+	 * SOFT on purpose: the rendered table stays on screen (no loading state) while fresh data is
+	 * fetched in the background — the extension drops its commit cache when the checkout command
+	 * completes, so the reloaded data is always post-checkout, and the changed HEAD defeats the
+	 * unchanged-commit-list render dedupe, re-rendering in place once the data arrives.
 	 */
 	function refreshAfterCheckout(errors: GG.ErrorInfo[], errorMessage: string) {
 		const reducedErrors = reduceErrorInfos(errors);
@@ -2393,7 +2394,7 @@ window.addEventListener('load', () => {
 			dialog.showError(errorMessage, reducedErrors.error, null, null);
 		}
 		if (reducedErrors.partialOrCompleteSuccess) {
-			gitGraph.refresh(true);
+			gitGraph.refresh(false);
 		}
 	}
 
