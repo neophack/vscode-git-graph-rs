@@ -321,6 +321,7 @@ const STRINGS_EN = {
 	gerritNoReviewInfo: 'No Gerrit review information is available for this commit. Only commits of changes whose NoteDb meta ref was parsed have review information.',
 	gerritToggleNoteDb: 'Click to toggle the full NoteDb record of this event',
 	gerritEventsHint: 'Click an event to show its full NoteDb record (patchset, commit hash, labels and status footers).',
+	gerritTimelineLabel: 'Review Activity',
 
 	/* Settings columns */
 	settingsColumnRepo: 'Repository Settings',
@@ -1107,6 +1108,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	gerritNoReviewInfo: '该提交没有可用的 Gerrit 评审信息。只有其变更的 NoteDb meta 引用被解析过的提交才有评审信息。',
 	gerritToggleNoteDb: '点击切换显示该事件的完整 NoteDb 记录',
 	gerritEventsHint: '点击事件可显示其完整的 NoteDb 记录（补丁集、提交哈希、标签和状态页脚）。',
+	gerritTimelineLabel: '评审记录',
 
 	/* Settings columns */
 	settingsColumnRepo: '仓库设置',

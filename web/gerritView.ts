@@ -79,7 +79,8 @@ function showGerritReviewInfo(view: GitGraphView, hash: string) {
 
 function showGerritDialog(state: GG.GerritChangeState) {
 	const score = formatGerritScore;
-	const statusText = state.status === 'merged' ? strings.gerritStatusMerged : state.status === 'abandoned' ? strings.gerritStatusAbandoned : (state.wip ? strings.gerritStatusWip : strings.gerritStatusOpen);
+	const statusClass = state.status === 'merged' ? 'st-merged' : state.status === 'abandoned' ? 'st-abandoned' : (state.wip ? 'st-wip' : 'st-open');
+	const statusText = statusClass === 'st-merged' ? strings.gerritStatusMerged : statusClass === 'st-abandoned' ? strings.gerritStatusAbandoned : (statusClass === 'st-wip' ? strings.gerritStatusWip : strings.gerritStatusOpen);
 	const icons = GERRIT_EVENT_ICONS;
 
 	// state.events is newest → oldest: the change author is the actor of the oldest "Create change" event
@@ -105,12 +106,29 @@ function showGerritDialog(state: GG.GerritChangeState) {
 	}
 
 	dialog.showMessage(
-		'<b>' + formatStr(strings.gerritChangeHeader, String(state.change)) + '</b> &middot; ' + formatStr(strings.gerritPatchSetLabel, String(state.patchset)) + ' &middot; <b>' + statusText + '</b>' +
-		(owner !== null ? ' &middot; ' + formatStr(strings.gerritOwnerLabel, escapeHtml(owner)) : '') +
-		(state.url !== null ? ' &middot; <a class="' + CLASS_EXTERNAL_URL + '" href="' + escapeHtml(state.url) + '" tabindex="-1">' + strings.gerritOpenInGerrit + '</a>' : '') +
-		'<br><b>' + strings.gerritCodeReviewLabel + ':</b> ' + score(state.codeReview) + ' &nbsp; <b>' + strings.gerritVerifiedLabel + ':</b> ' + score(state.verified) +
+		'<div class="gg-dialog">' +
+		'<div class="gg-head">' +
+		'<span class="gg-head-icon">' + SVG_ICONS.review + '</span>' +
+		'<div class="gg-head-main">' +
+		'<div class="gg-title">' + formatStr(strings.gerritChangeHeader, String(state.change)) + '</div>' +
+		'<div class="gg-meta">' +
+		'<span class="gg-pill ' + statusClass + '">' + statusText + '</span>' +
+		'<span class="gg-meta-item">' + formatStr(strings.gerritPatchSetLabel, String(state.patchset)) + '</span>' +
+		(owner !== null ? '<span class="gg-meta-item">' + formatStr(strings.gerritOwnerLabel, escapeHtml(owner)) + '</span>' : '') +
+		'</div>' +
+		'</div>' +
+		(state.url !== null
+			? '<a class="gg-open-btn ' + CLASS_EXTERNAL_URL + '" href="' + escapeHtml(state.url) + '" tabindex="-1">' + SVG_ICONS.linkExternal + strings.gerritOpenInGerrit + '</a>'
+			: '') +
+		'</div>' +
+		'<div class="gg-scores">' +
+		'<div class="gg-score"><span class="gg-score-name">' + strings.gerritCodeReviewLabel + '</span><span class="gg-score-value cr' + state.codeReview + '">' + score(state.codeReview) + '</span></div>' +
+		'<div class="gg-score"><span class="gg-score-name">' + strings.gerritVerifiedLabel + '</span><span class="gg-score-value v' + state.verified + '">' + score(state.verified) + '</span></div>' +
+		'</div>' +
+		'<div class="gg-section">' + strings.gerritTimelineLabel + '</div>' +
 		'<div class="gg-timeline">' + timeline + '</div>' +
-		(hasDetails ? '<span class="gg-hint">' + strings.gerritEventsHint + '</span>' : '')
+		(hasDetails ? '<span class="gg-hint">' + strings.gerritEventsHint + '</span>' : '') +
+		'</div>'
 	);
 
 	// Show an ✕ close icon in the top-right corner instead of the bottom Close button

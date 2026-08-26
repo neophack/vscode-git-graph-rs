@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.9",
+	"version": "1.0.10",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
@@ -136,31 +136,49 @@
 			{
 				"category": "Git Graph RS",
 				"command": "git-graph-rs.amendLastCommit",
-				"title": "%command.git-graph-rs.amendLastCommit.title%",
+				"title": "Amend Last Commit",
+				"icon": "$(edit)"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.amendLastCommit.zhCn",
+				"title": "修正上一次提交",
 				"icon": "$(edit)"
 			},
 			{
 				"category": "Git Graph RS",
 				"command": "git-graph-rs.resetCurrentBranchToRemote",
-				"title": "%command.git-graph-rs.resetCurrentBranchToRemote.title%",
+				"title": "Reset Current Branch to Remote (Soft)",
+				"icon": "$(discard)"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.resetCurrentBranchToRemote.zhCn",
+				"title": "将当前分支重置到远程(软重置)",
 				"icon": "$(discard)"
 			},
 			{
 				"category": "Git Graph RS",
 				"command": "git-graph-rs.gerritPushRef",
-				"title": "%command.git-graph-rs.gerritPushRef.title%",
+				"title": "Push to Gerrit Ref for Current Branch (refs/for/...)",
 				"icon": "$(cloud-upload)"
 			},
 			{
 				"category": "Git Graph RS",
-				"command": "git-graph-rs.gerritAmendChangeId",
-				"title": "%command.git-graph-rs.gerritAmendChangeId.title%",
-				"icon": "$(symbol-scope)"
+				"command": "git-graph-rs.gerritPushRef.zhCn",
+				"title": "推送当前分支到 Gerrit 审阅引用 (refs/for/...)",
+				"icon": "$(cloud-upload)"
 			},
 			{
 				"category": "Git Graph RS",
 				"command": "git-graph-rs.gerritFetchCommitMsgHook",
-				"title": "%command.git-graph-rs.gerritFetchCommitMsgHook.title%",
+				"title": "Fetch commit-msg Hook (Gerrit)",
+				"icon": "$(cloud-download)"
+			},
+			{
+				"category": "Git Graph RS",
+				"command": "git-graph-rs.gerritFetchCommitMsgHook.zhCn",
+				"title": "获取 commit-msg 钩子 (Gerrit)",
 				"icon": "$(cloud-download)"
 			}
 		],
@@ -1341,6 +1359,38 @@
 				{
 					"command": "git-graph-rs.filterByFile",
 					"when": "false"
+				},
+				{
+					"command": "git-graph-rs.amendLastCommit",
+					"when": "!git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.amendLastCommit.zhCn",
+					"when": "git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.gerritPushRef",
+					"when": "!git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.gerritPushRef.zhCn",
+					"when": "git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.gerritFetchCommitMsgHook",
+					"when": "!git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.gerritFetchCommitMsgHook.zhCn",
+					"when": "git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.resetCurrentBranchToRemote",
+					"when": "!git-graph-rs:interfaceZhCn"
+				},
+				{
+					"command": "git-graph-rs.resetCurrentBranchToRemote.zhCn",
+					"when": "git-graph-rs:interfaceZhCn"
 				}
 			],
 			"explorer/context": [
@@ -1380,8 +1430,13 @@
 			],
 			"git.pullpush": [
 				{
-					"when": "scmProvider == git",
+					"when": "scmProvider == git && !git-graph-rs:interfaceZhCn",
 					"command": "git-graph-rs.gerritPushRef",
+					"group": "3_push@5"
+				},
+				{
+					"when": "scmProvider == git && git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.gerritPushRef.zhCn",
 					"group": "3_push@5"
 				}
 			],
@@ -1397,24 +1452,34 @@
 					"group": "inline"
 				},
 				{
-					"when": "scmProvider == git",
+					"when": "scmProvider == git && !git-graph-rs:interfaceZhCn",
 					"command": "git-graph-rs.amendLastCommit",
 					"group": "git-graph-rs@1"
 				},
 				{
-					"when": "scmProvider == git",
-					"command": "git-graph-rs.resetCurrentBranchToRemote",
+					"when": "scmProvider == git && git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.amendLastCommit.zhCn",
+					"group": "git-graph-rs@1"
+				},
+				{
+					"when": "scmProvider == git && !git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.gerritFetchCommitMsgHook",
 					"group": "git-graph-rs@2"
 				},
 				{
-					"when": "scmProvider == git",
-					"command": "git-graph-rs.gerritAmendChangeId",
-					"group": "2_main@3.5"
+					"when": "scmProvider == git && git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.gerritFetchCommitMsgHook.zhCn",
+					"group": "git-graph-rs@2"
 				},
 				{
-					"when": "scmProvider == git",
-					"command": "git-graph-rs.gerritFetchCommitMsgHook",
-					"group": "2_main@3.5"
+					"when": "scmProvider == git && !git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.resetCurrentBranchToRemote",
+					"group": "git-graph-rs@3"
+				},
+				{
+					"when": "scmProvider == git && git-graph-rs:interfaceZhCn",
+					"command": "git-graph-rs.resetCurrentBranchToRemote.zhCn",
+					"group": "git-graph-rs@3"
 				}
 			]
 		}

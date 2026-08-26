@@ -8,7 +8,7 @@ import { DiffDocProvider, decodeDiffDocUri } from './diffDocProvider';
 import { CodeReviewData, CodeReviews, ExtensionState } from './extensionState';
 import { extractChangeId, generateChangeId } from './gerrit';
 import { GitGraphView } from './gitGraphView';
-import { t } from './i18n';
+import { isZhCn, t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { ErrorInfo } from './types';
@@ -37,9 +37,10 @@ export class CommandManager extends Disposable {
 	 * @param repoManager The Git Graph RepoManager instance.
 	 * @param gitExecutable The Git executable available to Git Graph at startup.
 	 * @param onDidChangeGitExecutable The Event emitting the Git executable for Git Graph to use.
+	 * @param onDidChangeConfiguration The Event emitting Visual Studio Code Configuration Change Events.
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, dataSource: DataSource, extensionState: ExtensionState, repoManager: RepoManager, gitExecutable: GitExecutable | null, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, logger: Logger) {
+	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, dataSource: DataSource, extensionState: ExtensionState, repoManager: RepoManager, gitExecutable: GitExecutable | null, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
 		super();
 		this.context = context;
 		this.avatarManager = avatarManager;
@@ -65,8 +66,15 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-graph-rs.amendLastCommit', (arg) => this.amendLastCommit(arg));
 		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote', (arg) => this.resetCurrentBranchToRemote(arg));
 		this.registerCommand('git-graph-rs.gerritPushRef', (arg) => this.gerritPushRef(arg));
-		this.registerCommand('git-graph-rs.gerritAmendChangeId', (arg) => this.gerritAmendChangeId(arg));
 		this.registerCommand('git-graph-rs.gerritFetchCommitMsgHook', (arg) => this.gerritFetchCommitMsgHook(arg));
+		// A command's title cannot follow an Extension Setting, so every command offered in the
+		// Source Control view's menus also ships under a ".zhCn" variant titled in Simplified
+		// Chinese; the "git-graph-rs:interfaceZhCn" Context set below decides which variant the
+		// menus and the Command Palette offer.
+		this.registerCommand('git-graph-rs.amendLastCommit.zhCn', (arg) => this.amendLastCommit(arg));
+		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote.zhCn', (arg) => this.resetCurrentBranchToRemote(arg));
+		this.registerCommand('git-graph-rs.gerritPushRef.zhCn', (arg) => this.gerritPushRef(arg));
+		this.registerCommand('git-graph-rs.gerritFetchCommitMsgHook.zhCn', (arg) => this.gerritFetchCommitMsgHook(arg));
 
 		this.registerDisposable(
 			onDidChangeGitExecutable((gitExecutable) => {
@@ -80,6 +88,12 @@ export class CommandManager extends Disposable {
 		} catch (_) {
 			this.logger.logError('Unable to set Visual Studio Code Context "git-graph-rs:codiconsSupported"');
 		}
+		this.updateInterfaceLanguageContext();
+		this.registerDisposable(
+			onDidChangeConfiguration((event) => {
+				if (event.affectsConfiguration('git-graph-rs.interfaceLanguage')) this.updateInterfaceLanguageContext();
+			})
+		);
 	}
 
 	/**
@@ -116,6 +130,15 @@ export class CommandManager extends Disposable {
 			() => this.logger.log('Successfully set Visual Studio Code Context "' + key + '" to "' + JSON.stringify(value) + '"'),
 			() => this.logger.logError('Failed to set Visual Studio Code Context "' + key + '" to "' + JSON.stringify(value) + '"')
 		);
+	}
+
+	/**
+	 * Set the "git-graph-rs:interfaceZhCn" Context to the currently configured interface language,
+	 * deciding whether the Source Control view's menus and the Command Palette offer each command's
+	 * English- or Simplified-Chinese-titled variant.
+	 */
+	private updateInterfaceLanguageContext() {
+		this.registerContext('git-graph-rs:interfaceZhCn', isZhCn());
 	}
 
 
@@ -259,31 +282,6 @@ export class CommandManager extends Disposable {
 			}
 		} catch (errorMessage) {
 			showErrorMessage(t('gerritPushFailed', String(errorMessage)));
-		}
-	}
-
-	/**
-	 * The method run when the `git-graph-rs.gerritAmendChangeId` command is invoked.
-	 * Amends a newly generated Gerrit Change-Id onto HEAD, but only when it is safe to do so:
-	 * HEAD must have no Change-Id yet, and must not have been pushed to any remote.
-	 * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
-	 */
-	private async gerritAmendChangeId(arg: any) {
-		if (this.gitExecutable === null) {
-			showErrorMessage(unableToFindGitMsg());
-			return;
-		}
-
-		const repo = await this.getRepoFromCommandArg(arg);
-		if (repo === null) return;
-
-		const result = await this.ensureHeadChangeId(repo, false);
-		if (result.error !== null) {
-			showErrorMessage(result.error);
-		} else if (result.amended) {
-			showInformationMessage(t('gerritChangeIdAmended', result.changeId!));
-		} else {
-			showInformationMessage(t('gerritChangeIdAlreadyPresent', result.changeId!));
 		}
 	}
 
