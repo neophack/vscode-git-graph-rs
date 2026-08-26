@@ -2,12 +2,13 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
-import { GitBackend, createBackend } from './backend';
+import { GitBackend, NativeBackend, createBackend } from './backend';
+import { isAddonAvailable } from './backend/addon';
 import { getConfig } from './config';
 import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
 import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -32,6 +33,8 @@ export class DataSource extends Disposable {
 	private readonly askpassEnv: AskpassEnvironment;
 	/** The engine-backed reader: the Rust engine when available, the `git` CLI otherwise. */
 	private backend!: GitBackend;
+	/** The Rust engine on its own, when its binary loaded: it serves the Gerrit meta parsing. */
+	private gerritEngine: NativeBackend | null = null;
 	private gitExecutable!: GitExecutable | null;
 	/** Cache of Git config data per repository, to avoid repeated Git spawns on every view load. */
 	private readonly configCache = new Map<string, { remotesSignature: string, promise: Promise<GitRepoConfigData> }>();
@@ -131,6 +134,13 @@ export class DataSource extends Disposable {
 				this.logger.log('The Rust engine could not answer ' + method + ' (' + error.message + '); falling back to the git CLI.');
 			}
 		});
+		// A separate handle onto the engine (the addon load is memoised, so this costs nothing): the
+		// Gerrit meta parsing is asked of the Rust engine directly, whatever the read backend is.
+		try {
+			this.gerritEngine = isAddonAvailable() ? new NativeBackend() : null;
+		} catch {
+			this.gerritEngine = null;
+		}
 		this.logger.log('Using the ' + this.backend.name + ' backend.');
 	}
 
@@ -248,6 +258,26 @@ export class DataSource extends Disposable {
 			showUntrackedFiles: config.showUntrackedFiles,
 			showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags
 		}).then((data) => data as unknown as GitCommitData, (errorMessage) => <GitCommitData>{ commits: [], head: null, tags: [], moreCommitsAvailable: false, error: errorMessage });
+	}
+
+	/**
+	 * Parse the NoteDb meta histories of Gerrit changes with the Rust engine: one native call over
+	 * the warm repository handle, instead of the one `git log` process per change that the Git
+	 * runner pool of the Gerrit integration spawns otherwise.
+	 * @param repo The path of the repository.
+	 * @param remote The remote the changes were fetched from.
+	 * @param changes The change numbers to parse.
+	 * @param urlBase The base URL of the Gerrit instance (or NULL: the states get no URL).
+	 * @returns The states keyed by change number (NULL entries when a meta ref is missing), or NULL
+	 *          when no engine is available or it failed — the caller then runs its Git CLI fallback.
+	 */
+	public parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<Map<number, GerritChangeState | null> | null> {
+		if (this.gerritEngine === null) return Promise.resolve(null);
+		return this.gerritEngine.parseGerritMetas(repo, remote, changes, urlBase).then((states) => {
+			const parsed = new Map<number, GerritChangeState | null>();
+			states.forEach((state, index) => parsed.set(changes[index], state));
+			return parsed;
+		}, () => null); // any engine failure (including a version-skewed binary without the export) degrades to the Git CLI path
 	}
 
 	/**

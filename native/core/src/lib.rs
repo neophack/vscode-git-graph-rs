@@ -10,6 +10,7 @@ pub mod config;
 pub mod details;
 pub mod diff;
 pub mod error;
+pub mod gerrit;
 pub mod graph;
 pub mod log;
 pub mod refs;

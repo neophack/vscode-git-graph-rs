@@ -174,11 +174,22 @@ class SettingsWidget {
 			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionGerrit + '</h3>' +
 				SettingsWidget.checkbox('settingsGerritFetchRefs', strings.settingsGerritFetchRefs, this.repo.gerritFetchRefs, strings.settingsGerritFetchRefsInfo);
 			if (this.repo.gerritFetchRefs) {
+				// The per-repository fetch limit: how many of the most recent changes are fetched.
+				// NULL (the default) follows the gerrit.fetchLimit Extension Setting, which the row
+				// names so the effective value is always visible.
+				const gerritFetchLimit = this.repo.gerritFetchLimit ?? null;
+				const globalFetchLimit = this.view.config.gerrit.fetchLimit;
+				const fetchLimitStr = gerritFetchLimit !== null
+					? String(gerritFetchLimit)
+					: formatStr(strings.settingsGerritFetchLimitGlobal, String(globalFetchLimit));
 				repoHtml += '<div class="settingsSubLabel">' + strings.settingsGerritStatusFilterLabel + '</div>' +
 					SettingsWidget.checkbox('settingsGerritStatusNew', strings.settingsGerritStatusOpen, this.repo.gerritStatusFilter.new, null) +
 					SettingsWidget.checkbox('settingsGerritStatusMerged', strings.settingsGerritStatusMerged, this.repo.gerritStatusFilter.merged, null) +
 					SettingsWidget.checkbox('settingsGerritStatusAbandoned', strings.settingsGerritStatusAbandoned, this.repo.gerritStatusFilter.abandoned, null) +
-					SettingsWidget.checkbox('settingsGerritStatusWip', strings.settingsGerritStatusWip, this.repo.gerritStatusFilter.wip, null);
+					SettingsWidget.checkbox('settingsGerritStatusWip', strings.settingsGerritStatusWip, this.repo.gerritStatusFilter.wip, null) +
+					'<table><tr class="lineAbove"><td class="left">' + strings.settingsGerritFetchLimitLabel + '<span class="settingsWidgetInfo" title="' + escapeHtml(strings.settingsGerritFetchLimitInfo) + '">' + SVG_ICONS.info + '</span></td>' +
+					'<td class="leftWithEllipsis" title="' + escapeHtml(fetchLimitStr) + '">' + escapeHtml(fetchLimitStr) + '</td>' +
+					'<td class="btns right"><div id="editGerritFetchLimit" title="' + strings.settingsGerritFetchLimitEditTitle + ELLIPSIS + '">' + SVG_ICONS.pencil + '</div></td></tr></table>';
 			}
 			repoHtml += '</div>';
 
@@ -512,6 +523,30 @@ class SettingsWidget {
 					// The badges re-render instantly from the loaded states; the graph reload (which
 					// change refs are injected) follows in the background
 					this.view.applyGerritFilterChange(field.status);
+				});
+			}
+
+			const editGerritFetchLimitElem = document.getElementById('editGerritFetchLimit');
+			if (editGerritFetchLimitElem !== null) {
+				editGerritFetchLimitElem.addEventListener('click', () => {
+					if (this.currentRepo === null || this.repo === null) return;
+					const current = this.repo.gerritFetchLimit ?? null;
+					dialog.showForm(strings.settingsGerritFetchLimitEditTitle, [
+						{ type: DialogInputType.Text, name: strings.settingsGerritFetchLimitInput, default: current !== null ? String(current) : '', placeholder: strings.settingsGerritFetchLimitPlaceholder }
+					], strings.settingsSave, (values) => {
+						if (this.currentRepo === null) return;
+						// An empty input (or anything not a positive number) clears the override,
+						// following the gerrit.fetchLimit Extension Setting again; a value is clamped
+						// into the 1..10000 range the setting allows
+						const raw = String(values[0]).trim();
+						const parsed = parseInt(raw, 10);
+						const limit = raw !== '' && Number.isFinite(parsed) && parsed >= 1 ? Math.min(Math.floor(parsed), 10000) : null;
+						this.view.saveRepoStateValue(this.currentRepo, 'gerritFetchLimit', limit);
+						this.render();
+						// The set of fetched changes changes with the limit: reload, so the Gerrit
+						// pipeline re-fetches under it (the staged load updates the view as it arrives)
+						this.view.refresh(false);
+					}, null);
 				});
 			}
 

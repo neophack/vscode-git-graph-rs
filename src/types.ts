@@ -147,6 +147,12 @@ export interface GerritChangeState {
 	wip: boolean;
 	headHash: string; // code commit of the latest patchset (badge/anchor target)
 	events: GerritChangeEvent[];
+	/**
+	 * True while the event timelines are still on their way: the staged Gerrit load sends the
+	 * light part of the states (everything the badges show) first, and the timelines last. A
+	 * review dialog opened in between shows a loading hint instead of an empty timeline.
+	 */
+	eventsPending?: boolean;
 	url: string | null; // change web URL (derived from the remote URL), NULL => unknown
 }
 
@@ -176,6 +182,11 @@ export interface GitRepoState {
 	commitOrdering: RepoCommitOrdering;
 	fileViewType: FileViewType;
 	gerritFetchRefs: boolean;
+	/**
+	 * How many of the most recent Gerrit changes this repository fetches (NULL => the
+	 * `gerrit.fetchLimit` Extension Setting). Set in the Repository Settings.
+	 */
+	gerritFetchLimit: number | null;
 	gerritStatusFilter: GerritStatusFilter;
 	hideRemotes: string[];
 	includeCommitsMentionedByReflogs: BooleanOverride;
@@ -1110,6 +1121,7 @@ export interface RequestLoadCommits extends RepoRequest {
 	readonly hideRemotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;
 	readonly gerritFetchRefs: boolean; // false => the Gerrit integration is disabled for this repository
+	readonly gerritFetchLimit: number | null; // how many of the most recent changes to fetch (NULL => the gerrit.fetchLimit Extension Setting)
 	readonly gerritStatusFilter: GerritStatusFilter; // which change statuses may appear in the graph
 	readonly filterPath?: string | null; // only show commits that modified the file(s) at this path (relative to the repository root); null/undefined => no path filter
 }

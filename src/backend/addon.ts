@@ -50,6 +50,7 @@ interface NativeAddon {
 	authors(path: string): Promise<string>;
 	configList(path: string, local: boolean): Promise<string>;
 	currentBranchName(path: string): Promise<string | null>;
+	parseGerritMetas(path: string, remote: string, changes: number[], urlBase: string | null): Promise<string>;
 	engineVersion(): string;
 }
 

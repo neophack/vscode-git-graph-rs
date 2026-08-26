@@ -233,7 +233,7 @@
 	"config.git-graph-rs.sourceCodeProviderIntegrationLocation.enumDescription1": "Show the 'View Git Graph' action in the 'More Actions...' menu on the title of SCM Providers",
 	"config.git-graph-rs.pullRequests.enabled.description": "Show the GitHub / GitLab pull (merge) request status of the checked-out branch in the Git Graph View. Uses the GITHUB_TOKEN / GITLAB_TOKEN environment variables for authentication when set.",
 	"config.git-graph-rs.gerrit.remote.description": "The remote Gerrit change refs are fetched from and pruned against, when the fetching of change refs is enabled for a repository in its Repository Settings.",
-	"config.git-graph-rs.gerrit.fetchLimit.description": "The maximum number of Gerrit changes (the most recent, by change number) fetched into the repository when the fetching of change refs is enabled. Each change is fetched with its latest patchset and NoteDb meta ref, under refs/remotes/<gerrit.remote>/changes/.",
+	"config.git-graph-rs.gerrit.fetchLimit.description": "The maximum number of Gerrit changes (the most recent, by change number) fetched into the repository when the fetching of change refs is enabled. Each change is fetched with its latest patchset and NoteDb meta ref, under refs/remotes/<gerrit.remote>/changes/. The Repository Settings of the Git Graph View can override this limit per repository.",
 	"config.git-graph-rs.gerrit.showReviewProgress.description": "Show the Code-Review (CR) and Verified (V) scores as part of the Gerrit change badge of a commit.",
 	"config.git-graph-rs.stickyHeader.description": "Keeps the header visible when the view is scrolled",
 	"config.git-graph-rs.tabIconColourTheme.description": "Specifies the colour theme of the icon displayed on the Git Graph tab.",

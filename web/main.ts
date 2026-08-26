@@ -825,12 +825,22 @@ class GitGraphView {
 			if (refreshState.loadCommitsRefreshId === msg.refreshId) {
 				// The Gerrit states ride along every loadCommits response: swap the map in and force
 				// a re-render when it changed (the extension serves ALL cached states, so the status
-				// filter of the Repository Settings is applied locally by this view)
-				if (msg.gerritStates !== null) {
+				// filter of the Repository Settings is applied locally by this view). The array is
+				// checked (not merely non-null): a response from a mismatched extension build that
+				// omits the field entirely (undefined) must keep the current states, never crash.
+				//
+				// The staged Gerrit load delivers the states in two parts: the light part the badges
+				// render (arriving with the change refs), then the event timelines (which only the
+				// review dialog reads). A change confined to the timelines therefore swaps the map
+				// without re-rendering the commit table, refreshing an open review dialog in place.
+				if (Array.isArray(msg.gerritStates)) {
 					const newStates: { [hash: string]: GG.GerritChangeState } = {};
 					for (const state of msg.gerritStates) newStates[state.headHash] = state;
-					this.gerritStatesDirty = !gerritStatesEqual(this.gerritStates, newStates);
+					const changed = !gerritStatesEqual(this.gerritStates, newStates);
+					const badgesChanged = !gerritStatesEqual(this.gerritStates, newStates, false);
+					this.gerritStatesDirty = badgesChanged;
 					this.gerritStates = newStates;
+					if (changed) refreshGerritReviewDialog(this);
 				} else if (Object.keys(this.gerritStates).length > 0) {
 					this.gerritStatesDirty = true;
 					this.gerritStates = {};
@@ -1006,6 +1016,7 @@ class GitGraphView {
 			hideRemotes: repoState.hideRemotes,
 			stashes: this.gitStashes,
 			gerritFetchRefs: repoState.gerritFetchRefs,
+			gerritFetchLimit: repoState.gerritFetchLimit ?? null,
 			gerritStatusFilter: repoState.gerritStatusFilter,
 			filterPath: this.commitPathFilter
 		});
@@ -2071,10 +2082,10 @@ window.addEventListener('load', () => {
 				refreshOrDisplayError(msg.error, strings.errBranchFromStash);
 				break;
 			case 'checkoutBranch':
-				refreshAndDisplayErrors(msg.errors, msg.pullAfterwards !== null ? strings.errCheckoutBranchPull : strings.errCheckoutBranch);
+				refreshAfterCheckout(msg.errors, msg.pullAfterwards !== null ? strings.errCheckoutBranchPull : strings.errCheckoutBranch);
 				break;
 			case 'checkoutCommit':
-				refreshOrDisplayError(msg.error, strings.errCheckoutCommit);
+				refreshAfterCheckout([msg.error], strings.errCheckoutCommit);
 				break;
 			case 'cherrypickCommit':
 				refreshAndDisplayErrors(msg.errors, strings.errCherryPick);
@@ -2367,6 +2378,22 @@ window.addEventListener('load', () => {
 			gitGraph.refresh(false, configChanges);
 		} else if (configChanges) {
 			gitGraph.requestLoadConfig();
+		}
+	}
+
+	/**
+	 * A checkout moved HEAD, so the current-position marker must follow immediately. The refresh is
+	 * HARD on purpose: it bypasses the render dedupe of an unchanged commit list AND the extension's
+	 * commit cache (a hard `loadCommits` request is served fresh), so nothing between the checkout
+	 * and the re-render can serve the pre-checkout state.
+	 */
+	function refreshAfterCheckout(errors: GG.ErrorInfo[], errorMessage: string) {
+		const reducedErrors = reduceErrorInfos(errors);
+		if (reducedErrors.error !== null) {
+			dialog.showError(errorMessage, reducedErrors.error, null, null);
+		}
+		if (reducedErrors.partialOrCompleteSuccess) {
+			gitGraph.refresh(true);
 		}
 	}
 

@@ -8,6 +8,7 @@
  */
 
 import { call, callJson, loadAddon } from './addon';
+import { GerritChangeState } from '../types';
 import {
 	GitAuthor,
 	GitCommitData,
@@ -335,5 +336,13 @@ export class NativeBackend implements GitBackend {
 
 	public currentBranchName(repo: string): Promise<string | null> {
 		return call(() => this.addon.currentBranchName(repo));
+	}
+
+	/**
+	 * The Gerrit NoteDb change states of the given changes, parsed in one in-process pass, aligned
+	 * with the input order. An entry is NULL when the change's meta ref is not available locally.
+	 */
+	public parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<(GerritChangeState | null)[]> {
+		return callJson(() => this.addon.parseGerritMetas(repo, remote, [...changes], urlBase));
 	}
 }

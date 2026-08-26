@@ -293,7 +293,7 @@ const STRINGS_EN = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit Change Refs',
 	settingsGerritFetchRefs: 'Fetch Gerrit change refs (refs/changes/*)',
-	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each, as many as the git-graph-rs.gerrit.fetchLimit setting allows). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
+	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each, as many as the fetch limit allows - set it below, or globally via the git-graph-rs.gerrit.fetchLimit setting). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
 	settingsGerritStatusFilterLabel: 'Show changes with status:',
 	settingsGerritStatusOpen: 'Open',
 	settingsGerritStatusMerged: 'Merged',
@@ -322,6 +322,13 @@ const STRINGS_EN = {
 	gerritToggleNoteDb: 'Click to toggle the full NoteDb record of this event',
 	gerritEventsHint: 'Click an event to show its full NoteDb record (patchset, commit hash, labels and status footers).',
 	gerritTimelineLabel: 'Review Activity',
+	gerritEventsPending: 'The review activity is still being loaded …',
+	settingsGerritFetchLimitLabel: 'Fetch limit',
+	settingsGerritFetchLimitInfo: 'How many of the most recent Gerrit changes are fetched into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each). Range 1–10000; leaving the input empty follows the git-graph-rs.gerrit.fetchLimit setting.',
+	settingsGerritFetchLimitEditTitle: 'Edit the Gerrit fetch limit',
+	settingsGerritFetchLimitInput: 'Changes to fetch',
+	settingsGerritFetchLimitPlaceholder: 'empty = the global setting',
+	settingsGerritFetchLimitGlobal: 'Global setting ({0})',
 
 	/* Settings columns */
 	settingsColumnRepo: 'Repository Settings',
@@ -1080,7 +1087,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit 变更引用',
 	settingsGerritFetchRefs: '获取 Gerrit 变更引用 (refs/changes/*)',
-	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用，数量上限由 git-graph-rs.gerrit.fetchLimit 设置决定）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
+	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用，数量上限可在下方设置，或通过 git-graph-rs.gerrit.fetchLimit 设置全局默认）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
 	settingsGerritStatusFilterLabel: '显示以下状态的变更：',
 	settingsGerritStatusOpen: '开放',
 	settingsGerritStatusMerged: '已合并',
@@ -1109,6 +1116,13 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	gerritToggleNoteDb: '点击切换显示该事件的完整 NoteDb 记录',
 	gerritEventsHint: '点击事件可显示其完整的 NoteDb 记录（补丁集、提交哈希、标签和状态页脚）。',
 	gerritTimelineLabel: '评审记录',
+	gerritEventsPending: '评审记录仍在加载中 …',
+	settingsGerritFetchLimitLabel: '获取上限',
+	settingsGerritFetchLimitInfo: '将最近多少个 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/ 下（每个变更的最新补丁集与 NoteDb meta 引用）。范围 1–10000；输入留空时跟随 git-graph-rs.gerrit.fetchLimit 设置。',
+	settingsGerritFetchLimitEditTitle: '编辑 Gerrit 获取上限',
+	settingsGerritFetchLimitInput: '获取的变更数量',
+	settingsGerritFetchLimitPlaceholder: '留空 = 全局设置',
+	settingsGerritFetchLimitGlobal: '全局设置（{0}）',
 
 	/* Settings columns */
 	settingsColumnRepo: '仓库设置',

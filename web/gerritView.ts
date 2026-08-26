@@ -28,8 +28,12 @@ function gerritChangeEventsEqual(a: ReadonlyArray<GG.GerritChangeEvent>, b: Read
  * Are two Gerrit change state maps equal. Short-circuits on the first difference found, avoiding
  * the cost of JSON.stringify-ing the full (potentially large) event history of every change just
  * to detect whether anything actually changed.
+ *
+ * The event timelines can be left out of the comparison (`compareEvents` FALSE): the staged Gerrit
+ * load delivers them separately from the light part the badges render, and a timeline-only change
+ * must not re-render the commit table.
  */
-function gerritStatesEqual(a: { [hash: string]: GG.GerritChangeState }, b: { [hash: string]: GG.GerritChangeState }) {
+function gerritStatesEqual(a: { [hash: string]: GG.GerritChangeState }, b: { [hash: string]: GG.GerritChangeState }, compareEvents: boolean = true) {
 	const aHashes = Object.keys(a);
 	if (aHashes.length !== Object.keys(b).length) return false;
 	return aHashes.every((hash) => {
@@ -38,7 +42,7 @@ function gerritStatesEqual(a: { [hash: string]: GG.GerritChangeState }, b: { [ha
 			x.change === y.change && x.patchset === y.patchset && x.codeReview === y.codeReview &&
 			x.verified === y.verified && x.status === y.status && x.wip === y.wip &&
 			x.headHash === y.headHash && x.url === y.url &&
-			gerritChangeEventsEqual(x.events, y.events);
+			(!compareEvents || gerritChangeEventsEqual(x.events, y.events));
 	});
 }
 
@@ -104,9 +108,12 @@ function showGerritDialog(state: GG.GerritChangeState) {
 			detail +
 			'</div>';
 	}
+	// The staged Gerrit load sends the badges' part of the states first and the timelines last: a
+	// dialog opened in between says so, rather than showing a silently empty timeline
+	const timelinePending = state.events.length === 0 && state.eventsPending === true;
 
 	dialog.showMessage(
-		'<div class="gg-dialog">' +
+		'<div class="gg-dialog" data-change="' + state.change + '">' +
 		'<div class="gg-head">' +
 		'<span class="gg-head-icon">' + SVG_ICONS.review + '</span>' +
 		'<div class="gg-head-main">' +
@@ -126,8 +133,8 @@ function showGerritDialog(state: GG.GerritChangeState) {
 		'<div class="gg-score"><span class="gg-score-name">' + strings.gerritVerifiedLabel + '</span><span class="gg-score-value v' + state.verified + '">' + score(state.verified) + '</span></div>' +
 		'</div>' +
 		'<div class="gg-section">' + strings.gerritTimelineLabel + '</div>' +
-		'<div class="gg-timeline">' + timeline + '</div>' +
-		(hasDetails ? '<span class="gg-hint">' + strings.gerritEventsHint + '</span>' : '') +
+		'<div class="gg-timeline">' + (timelinePending ? '<span class="gg-hint">' + SVG_ICONS.loading + strings.gerritEventsPending + '</span>' : timeline) + '</div>' +
+		(hasDetails && !timelinePending ? '<span class="gg-hint">' + strings.gerritEventsHint + '</span>' : '') +
 		'</div>'
 	);
 
@@ -136,4 +143,22 @@ function showGerritDialog(state: GG.GerritChangeState) {
 
 	// Expand/collapse the detailed NoteDb record of an event when its row is clicked
 	dialog.onClick('.gg-event-expandable', (elem) => elem.classList.toggle('expanded'));
+}
+
+/**
+ * Refresh the review information dialog of a change whose events just arrived (the last stage of
+ * the Gerrit load), in place. Does nothing when no review dialog is open: any other dialog that
+ * replaced it removed its marker element from the DOM.
+ */
+function refreshGerritReviewDialog(view: GitGraphView) {
+	const elem = document.querySelector<HTMLElement>('.dialog .gg-dialog[data-change]');
+	if (elem === null) return;
+	const change = parseInt(elem.dataset.change!, 10);
+	for (const hash of Object.keys(view.gerritStates)) {
+		const state = view.gerritStates[hash];
+		if (state.change === change && !state.eventsPending) {
+			showGerritDialog(state);
+			return;
+		}
+	}
 }

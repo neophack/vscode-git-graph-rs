@@ -81,7 +81,8 @@ compile clean, under the `git-graph-rs` prefix.
 
 **Gerrit, re-ported in part:** the original's Gerrit integration was initially removed wholesale;
 this project now carries its display and fetch path — `src/gerrit.ts` (change ref parsing, the
-NoteDb meta history parser, the status filter, and `GerritDataSource` over the CLI), the change
+status filter, and `GerritDataSource`, whose NoteDb meta parsing runs on the Rust engine in one
+call — one `git log` process per change is the CLI fallback), the change
 badge + review info dialog (`web/gerritView.ts`), and a Repository Settings section holding the
 per-repository "Fetch Gerrit change refs" checkbox (unchecking deletes the locally fetched change
 refs and stops the fetching) and the open/merged/abandoned/WIP status filter. The engine's

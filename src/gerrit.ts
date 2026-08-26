@@ -14,6 +14,12 @@ export interface GitRunner {
 	gitOutput: <T>(args: string[], repo: string, resolveValue: { (stdout: string): T }) => Promise<T>;
 	runGitCommand: (args: string[], repo: string) => Promise<ErrorInfo>;
 	runGitCommandWithInput: (args: string[], repo: string, input: string) => Promise<ErrorInfo>;
+	/**
+	 * The Rust-engine NoteDb meta parser of a `DataSource`: one native call parses every requested
+	 * meta history in-process. Optional (absent in stand-in runners, e.g. the tests'): without it —
+	 * or when it resolves NULL — the `git log` pool below serves the parse.
+	 */
+	parseGerritMetas?: (repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null) => Promise<Map<number, GerritChangeState | null> | null>;
 }
 
 export interface ParsedChangeRef {
@@ -662,12 +668,15 @@ export class GerritDataSource {
 	/**
 	 * Parse the NoteDb meta refs of many changes into their states, concurrently.
 	 *
-	 * A single Git command resolves the hash of every local change ref (so already-parsed metas
-	 * are served from the cache without any further Git command), and the meta histories of the
-	 * remaining changes are each parsed by their own Git command, run by a pool of concurrent
-	 * workers (each parse is an independent read-only Git operation). This avoids the cost of
-	 * running 2 sequential Git processes per change, which dominated the Git Graph View load time
-	 * on large Gerrit repositories.
+	 * The Rust engine answers first when one is available: a single native call walks and parses
+	 * every requested meta history in-process, over the repository handle the engine keeps warm.
+	 * Otherwise — no engine binary, or it failed — the Git fallback runs: a single Git command
+	 * resolves the hash of every local change ref (so already-parsed metas are served from the
+	 * cache without any further Git command), and the meta histories of the remaining changes are
+	 * each parsed by their own Git command, run by a pool of concurrent workers (each parse is an
+	 * independent read-only Git operation). This avoids the cost of running 2 sequential Git
+	 * processes per change, which dominated the Git Graph View load time on large Gerrit
+	 * repositories.
 	 * @param repo The repository.
 	 * @param remote The remote the changes were fetched from.
 	 * @param changes The change numbers to parse.
@@ -676,6 +685,12 @@ export class GerritDataSource {
 	 *          in the order of the `changes` input.
 	 */
 	public async parseMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<Map<number, GerritChangeState | null>> {
+		const engine = this.git.parseGerritMetas;
+		if (engine !== undefined) {
+			const parsed = await engine.call(this.git, repo, remote, changes, urlBase);
+			if (parsed !== null) return parsed;
+		}
+
 		const hashes = await this.listLocalChangeRefHashes(repo, remote);
 		const results = new Map<number, GerritChangeState | null>();
 		const pending: { change: number, metaRef: string, hash: string }[] = [];

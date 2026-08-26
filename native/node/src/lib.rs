@@ -14,7 +14,8 @@ use napi_derive::napi;
 
 use git_graph_core::types::{LogOptions, RefReadOptions};
 use git_graph_core::{
-    blob, config, details, diff, graph, log, refs, stash, status, Error, ErrorKind, RepoManager,
+    blob, config, details, diff, gerrit, graph, log, refs, stash, status, Error, ErrorKind,
+    RepoManager,
 };
 
 /// Open a repository and keep it open.
@@ -370,6 +371,30 @@ pub async fn current_branch_name(path: String) -> Result<Option<String>> {
     run(move || {
         let repo = RepoManager::global().get(&path)?;
         config::current_branch_name(&repo)
+    })
+    .await
+}
+
+/// The review states of the given Gerrit changes, parsed from their NoteDb meta histories in one
+/// in-process pass, as a JSON array aligned with the input order.
+///
+/// An entry is NULL when the change's meta ref is not available locally. `url_base`, when given,
+/// is prefixed onto each change number to produce the state's web URL.
+#[napi]
+pub async fn parse_gerrit_metas(
+    path: String,
+    remote: String,
+    changes: Vec<i64>,
+    url_base: Option<String>,
+) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&gerrit::parse_gerrit_metas(
+            &repo,
+            &remote,
+            &changes,
+            url_base.as_deref(),
+        )?)
     })
     .await
 }

@@ -45,6 +45,7 @@ const {
 	parseChangeRef, changeShard, parseLsRemoteChanges, limitChanges, buildFetchRefspecs, buildKeepPatterns,
 	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, GerritDataSource
 } = await import('../out/gerrit.js');
+const { NativeBackend } = await import('../out/backend/index.js');
 
 describe('change ref parsing', () => {
 	it('parses remote change refs and NoteDb meta refs', () => {
@@ -403,5 +404,103 @@ describe('GerritDataSource over a throwaway repository', () => {
 		assert.equal(error, null);
 		const refs = await source.listLocalChangeRefs(repo, 'origin');
 		assert.deepEqual(refs, ['refs/remotes/origin/changes/34/1234/1']); // 9999 was pruned, 1234 kept
+	});
+});
+
+describe('the Rust engine parses the NoteDb metas', () => {
+	const repos = [];
+
+	/** A synchronous GitRunner over execFileSync, standing in for DataSource's spawned Git. */
+	const runnerFor = (repo) => ({
+		gitOutput: (args, cwd, resolveValue) => Promise.resolve(resolveValue(execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))),
+		runGitCommand: () => Promise.resolve(null),
+		runGitCommandWithInput: () => Promise.resolve(null)
+	});
+
+	const git = (repo, args) => execFileSync('git', args, {
+		cwd: repo,
+		encoding: 'utf8',
+		maxBuffer: 64 * 1024 * 1024,
+		env: Object.assign({}, process.env, {
+			GIT_AUTHOR_NAME: 'Dev', GIT_AUTHOR_EMAIL: 'dev@example.com',
+			GIT_COMMITTER_NAME: 'Gerrit User 1000018', GIT_COMMITTER_EMAIL: 'gerrit@example.com'
+		})
+	});
+
+	/** One NoteDb meta commit, parented onto the previous one. */
+	const metaCommit = (repo, parent, message) => parent === null
+		? git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-m', message]).trim()
+		: git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', parent, '-m', message]).trim();
+
+	after(() => {
+		for (const repo of repos) {
+			for (let attempt = 0; ; attempt++) {
+				try {
+					fs.rmSync(repo, { recursive: true, force: true, maxRetries: 1 });
+					break;
+				} catch (error) {
+					if (attempt >= 50 || !['EBUSY', 'EPERM'].includes(error.code)) throw error;
+					Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+				}
+			}
+		}
+	});
+
+	/**
+	 * The engine and the `git log` pool must agree on every record shape Gerrit writes — the view
+	 * must not change with the backend that answered. The fixture's meta commits all share the
+	 * same committer timestamp (the clock only advances per process spawn), which is exactly the
+	 * ordering corner the engine's parent-chain walk exists for.
+	 */
+	it('agrees with the Git CLI pool, state for state and event for event', async () => {
+		let engine;
+		try {
+			engine = new NativeBackend();
+		} catch {
+			return; // no engine binary on this machine: the Git CLI pool is the only implementation
+		}
+
+		const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-gerrit-engine-'));
+		repos.push(repo);
+		git(repo, ['init', '--quiet', '--initial-branch=main']);
+
+		// Two patchsets of change 2234 (created, voted, uploaded, merged), an abandoned change
+		// 2235, and a change whose meta ref was never fetched (2236: the NULL entries)
+		const base = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-m', 'Base']).trim();
+		const ps1 = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', base, '-m', 'Change 2234 ps1\n\nChange-Id: I' + '3'.repeat(40)]).trim();
+		const ps2 = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', base, '-m', 'Change 2234 ps2\n\nChange-Id: I' + '3'.repeat(40)]).trim();
+		const other = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', base, '-m', 'Change 2235 ps1\n\nChange-Id: I' + '4'.repeat(40)]).trim();
+
+		let meta = metaCommit(repo, null, 'Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\nStatus: new\nCommit: ' + ps1 + '\n');
+		meta = metaCommit(repo, meta, 'Patch Set 1: Code-Review+2\n\nPatch-set: 1\nLabel: Code-Review=+2\n');
+		meta = metaCommit(repo, meta, 'Uploaded patch set 2.\n\nPatch-set: 2\nCommit: ' + ps2 + '\n');
+		meta = metaCommit(repo, meta, 'Update patch set 2\n\nChange has been successfully merged by Alice Developer <alice@example.com>\n\nPatch-set: 1\nStatus: merged\n');
+		git(repo, ['update-ref', 'refs/remotes/origin/changes/34/2234/meta', meta]);
+
+		let meta2 = metaCommit(repo, null, 'Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\nStatus: new\nCommit: ' + other + '\n');
+		meta2 = metaCommit(repo, meta2, 'Abandoned\n\nPatch-set: 1\nStatus: abandoned\n');
+		git(repo, ['update-ref', 'refs/remotes/origin/changes/35/2235/meta', meta2]);
+
+		const changes = [2234, 2235, 2236];
+		const urlBase = 'https://gerrit.example.com/c/proj/+/';
+		const cliStates = await new GerritDataSource(runnerFor(repo)).parseMetas(repo, 'origin', changes, urlBase);
+		let engineStates;
+		try {
+			engineStates = await engine.parseGerritMetas(repo, 'origin', changes, urlBase);
+		} catch {
+			return; // a binary predating parseGerritMetas (version skew): nothing to compare
+		}
+
+		const keyed = (states) => Object.fromEntries(changes.map((change, index) => [change, states.get !== undefined ? states.get(change) : states[index]]));
+		assert.deepEqual(keyed(engineStates), keyed(cliStates));
+
+		// The merged record's stale "Patch-set: 1" footer must not win the head hash from the
+		// latest patchset's own record, and the URL base joins onto both engines' answers alike
+		const state = keyed(cliStates)[2234];
+		assert.equal(state.status, 'merged');
+		assert.equal(state.patchset, 2);
+		assert.equal(state.headHash, ps2);
+		assert.equal(state.url, urlBase + '2234');
+		assert.equal(keyed(cliStates)[2236], null);
 	});
 });
