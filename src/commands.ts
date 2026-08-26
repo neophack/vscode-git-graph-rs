@@ -6,11 +6,13 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider, decodeDiffDocUri } from './diffDocProvider';
 import { CodeReviewData, CodeReviews, ExtensionState } from './extensionState';
+import { extractChangeId, generateChangeId } from './gerrit';
 import { GitGraphView } from './gitGraphView';
 import { t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
-import { GitExecutable, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
+import { ErrorInfo } from './types';
+import { GitExecutable, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, isSafeRefName, openExternalUrl, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 
@@ -62,6 +64,9 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-graph-rs.openFile', (arg) => this.openFile(arg));
 		this.registerCommand('git-graph-rs.amendLastCommit', (arg) => this.amendLastCommit(arg));
 		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote', (arg) => this.resetCurrentBranchToRemote(arg));
+		this.registerCommand('git-graph-rs.gerritPushRef', (arg) => this.gerritPushRef(arg));
+		this.registerCommand('git-graph-rs.gerritAmendChangeId', (arg) => this.gerritAmendChangeId(arg));
+		this.registerCommand('git-graph-rs.gerritFetchCommitMsgHook', (arg) => this.gerritFetchCommitMsgHook(arg));
 
 		this.registerDisposable(
 			onDidChangeGitExecutable((gitExecutable) => {
@@ -201,6 +206,154 @@ export class CommandManager extends Disposable {
 			showErrorMessage(t('unableToResetToRemote', errorInfo));
 		} else {
 			showInformationMessage(t('resetToRemoteDone', upstream));
+		}
+	}
+
+	/**
+	 * The method run when the `git-graph-rs.gerritPushRef` command is invoked.
+	 * Pushes HEAD to `refs/for/<current branch>` on the configured Gerrit remote for review,
+	 * amending a Change-Id onto HEAD first if it has none (after asking).
+	 * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
+	 */
+	private async gerritPushRef(arg: any) {
+		if (this.gitExecutable === null) {
+			showErrorMessage(unableToFindGitMsg());
+			return;
+		}
+
+		const repo = await this.getRepoFromCommandArg(arg);
+		if (repo === null) return;
+
+		const branch = await this.dataSource.gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'], repo, (stdout) => stdout.trim()).catch(() => null);
+		if (branch === null || branch === '') {
+			showErrorMessage(t('gerritNoCommits'));
+			return;
+		}
+		if (branch === 'HEAD') {
+			showErrorMessage(t('gerritDetachedHead'));
+			return;
+		}
+		if (!isSafeRefName(branch)) {
+			showErrorMessage(t('gerritInvalidBranch', branch));
+			return;
+		}
+
+		const amend = await this.ensureHeadChangeId(repo, true);
+		if (amend.error !== null) {
+			showErrorMessage(amend.error);
+			return;
+		}
+
+		const remote = getConfig().gerrit.remote;
+		try {
+			const url = await this.dataSource.gitOutput(['push', remote, 'HEAD:refs/for/' + branch], repo, (stdout) => {
+				const match = /(https?:\/\/\S*\/c\/\S*\/\+?\/?\d+)/.exec(stdout.replace(/\r?\n/g, ' '));
+				return match !== null ? match[1] : null;
+			});
+			if (url !== null) {
+				vscode.window.showInformationMessage(t('gerritPushedWithUrl', url), t('gerritOpenChange')).then((action) => {
+					if (action === t('gerritOpenChange')) openExternalUrl(url);
+				}, () => { });
+			} else {
+				showInformationMessage(t('gerritPushed', branch, remote));
+			}
+		} catch (errorMessage) {
+			showErrorMessage(t('gerritPushFailed', String(errorMessage)));
+		}
+	}
+
+	/**
+	 * The method run when the `git-graph-rs.gerritAmendChangeId` command is invoked.
+	 * Amends a newly generated Gerrit Change-Id onto HEAD, but only when it is safe to do so:
+	 * HEAD must have no Change-Id yet, and must not have been pushed to any remote.
+	 * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
+	 */
+	private async gerritAmendChangeId(arg: any) {
+		if (this.gitExecutable === null) {
+			showErrorMessage(unableToFindGitMsg());
+			return;
+		}
+
+		const repo = await this.getRepoFromCommandArg(arg);
+		if (repo === null) return;
+
+		const result = await this.ensureHeadChangeId(repo, false);
+		if (result.error !== null) {
+			showErrorMessage(result.error);
+		} else if (result.amended) {
+			showInformationMessage(t('gerritChangeIdAmended', result.changeId!));
+		} else {
+			showInformationMessage(t('gerritChangeIdAlreadyPresent', result.changeId!));
+		}
+	}
+
+	/**
+	 * The method run when the `git-graph-rs.gerritFetchCommitMsgHook` command is invoked.
+	 * Downloads the commit-msg hook from the Gerrit server of the configured remote and installs
+	 * it into the repository's hooks directory (so new commits get a Change-Id automatically).
+	 * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
+	 */
+	private async gerritFetchCommitMsgHook(arg: any) {
+		if (this.gitExecutable === null) {
+			showErrorMessage(unableToFindGitMsg());
+			return;
+		}
+
+		const repo = await this.getRepoFromCommandArg(arg);
+		if (repo === null) return;
+
+		const result = await this.dataSource.gerrit.installHook(repo, getConfig().gerrit.remote, 'commit-msg');
+		if (result.error !== null) {
+			showErrorMessage(t('gerritHookFailed', result.error));
+		} else if (result.installed) {
+			showInformationMessage(t('gerritHookInstalled'));
+		} else {
+			showInformationMessage(t('gerritHookUpToDate'));
+		}
+	}
+
+	/**
+	 * Ensure that HEAD has a Gerrit Change-Id footer, amending the commit if (and only if) it is
+	 * safe to do so: HEAD must have no Change-Id yet, and must not have been pushed to any remote
+	 * (amending an already-published commit would rewrite its history).
+	 * @param repo The path of the repository.
+	 * @param confirm Ask the user to confirm the amend before performing it (used by the push flow,
+	 * where amending is a side effect of another action, rather than the action itself).
+	 * @returns The error of the operation (NULL => HEAD already had a Change-Id, or one was amended),
+	 *          the Change-Id of HEAD, and whether it was newly amended.
+	 */
+	private async ensureHeadChangeId(repo: string, confirm: boolean): Promise<{ error: ErrorInfo, changeId: string | null, amended: boolean }> {
+		try {
+			const message = await this.dataSource.gitOutput(['log', '-1', '--format=%B', 'HEAD', '--'], repo, (stdout) => stdout);
+			const existing = extractChangeId(message);
+			if (existing !== null) return { error: null, changeId: existing, amended: false }; // nothing to amend
+
+			const remotes = await this.dataSource.gitOutput(['branch', '-r', '--no-color', '--contains=HEAD'], repo, (stdout) =>
+				stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
+			);
+			if (remotes.length > 0) return { error: t('gerritChangeIdPushedError', remotes[0]), changeId: null, amended: false };
+
+			// Generate the Change-Id Gerrit would assign to HEAD (same construction as the commit-msg hook)
+			const changeId = await this.dataSource.gitOutput(['show', '-s', '--format=%T%n%P%n%an <%ae> %at%n%cn <%ce> %ct%n%B', 'HEAD'], repo, (stdout) => {
+				const lines = stdout.split(/\r?\n/);
+				return generateChangeId(lines[0], lines[1], lines[2], lines[3], lines.slice(4).join('\n'));
+			});
+
+			if (confirm) {
+				const action = await vscode.window.showInformationMessage(
+					t('gerritAmendConfirm', changeId.substring(0, 12)),
+					t('gerritAmendAndPushButton'),
+					t('gerritCancel')
+				);
+				if (action !== t('gerritAmendAndPushButton')) return { error: t('gerritAmendAborted'), changeId: null, amended: false };
+			}
+
+			const args = ['commit', '--amend', '-m', message.replace(/\s+$/, '') + '\n\nChange-Id: ' + changeId];
+			if (getConfig().signCommits) args.push('-S');
+			const error = await this.dataSource.runGitCommand(args, repo);
+			return { error: error, changeId: changeId, amended: error === null };
+		} catch (errorMessage) {
+			return { error: String(errorMessage), changeId: null, amended: false };
 		}
 	}
 
