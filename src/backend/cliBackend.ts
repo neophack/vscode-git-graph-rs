@@ -112,6 +112,10 @@ export class CliBackend implements GitBackend {
 
 	public async getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
 		try {
+			// A deferred load skips the remote-tracking refs, exactly as the engine does (see
+			// `LogOptions.deferRemoteRefs`): the log walks the local branches only, and the refs
+			// scan leaves `refs/remotes/` alone.
+			if (options.deferRemoteRefs) options = { ...options, showRemoteBranches: false };
 			// The log, the refs and the working-tree scan are independent, so all three processes
 			// are started before any of them is awaited.
 			const logPromise = this.getLog(repo, options);

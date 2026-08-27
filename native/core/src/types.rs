@@ -403,6 +403,10 @@ pub struct LogOptions {
     pub show_tags: bool,
     pub show_remote_branches: bool,
     pub show_remote_heads: bool,
+    /// Skip the `refs/remotes/` scan in this load: the response carries the local refs (and the
+    /// tags) only, and the caller follows up with a complete load. The remote pass dominates the
+    /// scan time on repositories with many remote-tracking refs — a Gerrit one above all.
+    pub defer_remote_refs: bool,
     pub include_commits_mentioned_by_reflogs: bool,
     pub only_follow_first_parent: bool,
     pub commit_ordering: CommitOrdering,

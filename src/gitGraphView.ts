@@ -666,12 +666,17 @@ export class GitGraphView extends Disposable {
 			case 'loadCommits': {
 				this.loadCommitsRefreshId = msg.refreshId;
 				const startTime = Date.now();
+				// Remote-tracking refs dominate the ref scan on repositories with many of them (a
+				// Gerrit one above all), so the first response is sent WITHOUT them: the local
+				// branch and tag pills render immediately, and the complete ref set follows
+				// asynchronously (see `sendRemoteRefsFollowUp`).
+				const deferRemoteRefs = msg.showRemoteBranches;
 				// A hard refresh (e.g. the Refresh button) must observe fresh repository state even if
 				// the commit cache is still warm (e.g. a watcher event swallowed by the watcher's
 				// post-action suppression window): bypass the commit cache
 				if (!msg.gerritFetchRefs) {
 					// Gerrit integration disabled for this repository: load the commits without any Gerrit data
-					const commitData = await this.getCommitsCached(msg, null, true, msg.hard);
+					const commitData = await this.getCommitsCached(msg, null, true, msg.hard, deferRemoteRefs);
 					this.sendMessage({
 						command: 'loadCommits',
 						refreshId: msg.refreshId,
@@ -681,12 +686,13 @@ export class GitGraphView extends Disposable {
 						...commitData
 					});
 					this.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (Date.now() - startTime) + ' ms');
-					this.sendUncommittedChangesFollowUp(msg, commitData); // runs asynchronously (never awaited)
+					// runs asynchronously (never awaited): the remote refs first, then the "Uncommitted Changes" status on top of the complete data
+					void this.sendRemoteRefsFollowUp(msg, null, commitData, null, true, msg.hard).then((complete) => this.sendUncommittedChangesFollowUp(msg, complete));
 				} else if (this.gerritCache.has(msg.repo) && msg.hard !== true && !this.gerritStaleRepos.has(msg.repo)
 					&& this.gerritCache.get(msg.repo)!.fetchLimit === this.gerritFetchLimitOf(msg)) {
 					// The Gerrit data is already cached (under the requested fetch limit): serve it instantly from the cache
 					const gerritData = this.buildGerritViewData(this.gerritCache.get(msg.repo)!, msg.gerritStatusFilter);
-					const commitData = await this.getCommitsCached(msg, gerritData.refs, true, msg.hard);
+					const commitData = await this.getCommitsCached(msg, gerritData.refs, true, msg.hard, deferRemoteRefs);
 					this.sendMessage({
 						command: 'loadCommits',
 						refreshId: msg.refreshId,
@@ -696,20 +702,21 @@ export class GitGraphView extends Disposable {
 						...commitData
 					});
 					this.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (Date.now() - startTime) + ' ms');
-					this.sendUncommittedChangesFollowUp(msg, commitData, gerritData.states); // runs asynchronously (never awaited)
+					// runs asynchronously (never awaited): the remote refs first, then the "Uncommitted Changes" status on top of the complete data
+					void this.sendRemoteRefsFollowUp(msg, gerritData.refs, commitData, gerritData.states, true, msg.hard).then((complete) => this.sendUncommittedChangesFollowUp(msg, complete, gerritData.states));
 				} else {
 					// No fresh Gerrit data (the extension just started, the repository was marked
 					// stale, or a hard refresh was requested): render the branch graph IMMEDIATELY
 					// with the stale Gerrit data (if any) — the first paint must never wait for the
 					// Gerrit pipeline (the meta parsing and, on a refresh, the network fetch).
 					// This response is marked `gerritPending`, and the pipeline completes
-					// asynchronously in stages: the badges once the metas are parsed (usually by
-					// the Rust engine, in one call), then the review timelines on top.
+					// asynchronously in stages: the remote refs, then the badges once the metas are
+					// parsed (usually by the Rust engine, in one call), then the review timelines on top.
 					const staleGerritData = this.gerritCache.has(msg.repo)
 						? this.buildGerritViewData(this.gerritCache.get(msg.repo)!, msg.gerritStatusFilter)
 						: null;
 					const staleRefs = staleGerritData !== null ? staleGerritData.refs : null;
-					const commitData = await this.getCommitsCached(msg, staleRefs, false, msg.hard);
+					const commitData = await this.getCommitsCached(msg, staleRefs, false, msg.hard, deferRemoteRefs);
 					this.sendMessage({
 						command: 'loadCommits',
 						refreshId: msg.refreshId,
@@ -718,7 +725,8 @@ export class GitGraphView extends Disposable {
 						gerritStates: staleGerritData !== null ? staleGerritData.states : null,
 						...commitData
 					});
-					this.loadCommitsGerritFollowUp(msg, staleRefs, commitData); // runs asynchronously (never awaited)
+					// runs asynchronously (never awaited): the remote refs first, then the Gerrit pipeline on top of the complete data
+					void this.sendRemoteRefsFollowUp(msg, staleRefs, commitData, staleGerritData !== null ? staleGerritData.states : null, false, msg.hard).then((complete) => this.loadCommitsGerritFollowUp(msg, staleRefs, complete));
 				}
 				break;
 			}
@@ -1588,21 +1596,70 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Complete a `loadCommits` request whose first response was sent without the remote-tracking
+	 * refs (a `refs/remotes/` scan that dominates the load time on repositories with many of them —
+	 * Gerrit ones above all). Loads the complete data and sends a final `loadCommits` response
+	 * carrying the remote branch pills, which the view merges into the already-rendered graph in
+	 * place. Nothing is sent when the remote annotations did not change (the deferred load raced a
+	 * warm cache, or the repository has no remote refs on screen) — the responses are idempotent.
+	 * @param msg The original `loadCommits` request message.
+	 * @param gerritRefs The Gerrit change refs of the initial response (NULL => Gerrit integration disabled).
+	 * @param commitData The commit data already sent in the initial response.
+	 * @param gerritStates The Gerrit states already sent in the initial response (resent verbatim,
+	 *                    so the remote update never disturbs the rendered badges).
+	 * @param deferUncommittedChanges Whether the "Uncommitted Changes" status is still pending (the
+	 *                                response then keeps the row rendered with its stale count).
+	 * @param forceFresh Bypass the commit cache, exactly as the initial response did (a hard refresh
+	 *                    must not serve the follow-up a stale complete entry).
+	 * @returns The complete commit data (the freshly loaded one, or `commitData` when nothing changed).
+	 */
+	private async sendRemoteRefsFollowUp(msg: RequestLoadCommits, gerritRefs: ReadonlyArray<string> | null, commitData: GitCommitData, gerritStates: GerritChangeState[] | null, deferUncommittedChanges: boolean, forceFresh: boolean): Promise<GitCommitData> {
+		if (!msg.showRemoteBranches || commitData.error !== null) return commitData;
+		const complete = await this.getCommitsCached(msg, gerritRefs, deferUncommittedChanges, forceFresh, false);
+		if (this.loadCommitsRefreshId !== msg.refreshId) return complete; // superseded by a newer load request
+
+		const remotesChanged = complete.commits.length !== commitData.commits.length || complete.commits.some((commit, index) => {
+			const previous = commitData.commits[index];
+			return commit.remotes.length !== previous.remotes.length ||
+				commit.remotes.some((remote, remoteIndex) => remote.name !== previous.remotes[remoteIndex].name || remote.remote !== previous.remotes[remoteIndex].remote);
+		});
+		if (remotesChanged) {
+			this.sendMessage({
+				command: 'loadCommits',
+				refreshId: msg.refreshId,
+				onlyFollowFirstParent: msg.onlyFollowFirstParent,
+				gerritStates: gerritStates,
+				...(deferUncommittedChanges ? { uncommittedPending: true } : {}),
+				...complete
+			});
+			this.logger.log('Loaded the remote refs of ' + msg.repo + ' in a follow-up response');
+		}
+		return complete;
+	}
+
+	/**
 	 * Load the commits of a `loadCommits` request, serving identical requests from the commit cache
 	 * instead of re-running Git (see `commitCache`).
 	 * @param msg The `loadCommits` request message.
 	 * @param gerritRefs The Gerrit change refs allowed into the graph (NULL => Gerrit integration disabled).
 	 * @param deferUncommittedChanges Skip computing the "Uncommitted Changes" row in the initial response.
 	 * @param forceFresh Bypass the cache (forced refresh) and refresh the cached entry.
+	 * @param deferRemoteRefs Skip the remote-tracking refs (see `sendRemoteRefsFollowUp`); a cached
+	 *                        complete entry is served instead — deferral only pays when there is
+	 *                        nothing complete to serve.
 	 * @returns The commits in the repository.
 	 */
-	private async getCommitsCached(msg: RequestLoadCommits, gerritRefs: ReadonlyArray<string> | null, deferUncommittedChanges: boolean, forceFresh: boolean): Promise<GitCommitData> {
-		const key = JSON.stringify([msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges]);
+	private async getCommitsCached(msg: RequestLoadCommits, gerritRefs: ReadonlyArray<string> | null, deferUncommittedChanges: boolean, forceFresh: boolean, deferRemoteRefs: boolean = false): Promise<GitCommitData> {
+		if (!forceFresh && deferRemoteRefs) {
+			const complete = this.commitCache.get(this.commitsCacheKey(msg, gerritRefs, deferUncommittedChanges, false));
+			if (complete !== undefined) return complete;
+		}
+		const key = this.commitsCacheKey(msg, gerritRefs, deferUncommittedChanges, deferRemoteRefs);
 		if (!forceFresh) {
 			const cached = this.commitCache.get(key);
 			if (cached !== undefined) return cached;
 		}
-		const promise: Promise<GitCommitData> = this.dataSource.getCommits(msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, false, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges).then((commitData) => {
+		const promise: Promise<GitCommitData> = this.dataSource.getCommits(msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, false, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs).then((commitData) => {
 			if (commitData.error !== null && this.commitCache.get(key) === promise) {
 				// Don't cache error results (they may be transient): allow the next call to retry
 				this.commitCache.delete(key);
@@ -1614,6 +1671,14 @@ export class GitGraphView extends Disposable {
 		}
 		this.commitCache.set(key, promise);
 		return promise;
+	}
+
+	/**
+	 * The cache key of a `loadCommits` request: everything of the request that changes what Git
+	 * returns (the deferral flags included — a deferred response is a strictly smaller answer).
+	 */
+	private commitsCacheKey(msg: RequestLoadCommits, gerritRefs: ReadonlyArray<string> | null, deferUncommittedChanges: boolean, deferRemoteRefs: boolean): string {
+		return JSON.stringify([msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs]);
 	}
 
 	/**

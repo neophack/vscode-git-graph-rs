@@ -49,9 +49,14 @@ pub fn repo_info(
 }
 
 /// Load a page of the graph.
+///
+/// With `options.defer_remote_refs` the page is loaded from a local-only ref scan (see
+/// `LogOptions::defer_remote_refs`): the walk starts from the local branches and tags alone, and
+/// the commits carry no remote labels — the caller sends this page straight away and follows up
+/// with a complete one.
 pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> {
     let ref_options = RefReadOptions {
-        show_remote_branches: options.show_remote_branches,
+        show_remote_branches: options.show_remote_branches && !options.defer_remote_refs,
         show_remote_heads: options.show_remote_heads,
         hide_remotes: options.hide_remotes.clone(),
         show_change_refs: options.gerrit_show_change_refs,

@@ -179,6 +179,8 @@ export interface LogOptions {
 	showTags?: boolean;
 	showRemoteBranches?: boolean;
 	showRemoteHeads?: boolean;
+	/** Skip the `refs/remotes/` scan: the response carries the local refs only (the caller follows up with a complete load). */
+	deferRemoteRefs?: boolean;
 	includeCommitsMentionedByReflogs?: boolean;
 	onlyFollowFirstParent?: boolean;
 	commitOrdering?: CommitOrdering;

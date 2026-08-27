@@ -259,6 +259,31 @@ describe('the Rust engine and the git CLI agree', () => {
 		assertSameCommits(a.commits, b.commits, 'getCommits');
 	});
 
+	it('defers the remote refs the same way', async () => {
+		// The first response of a view load skips `refs/remotes/` (see
+		// `LogOptions.deferRemoteRefs`): both backends must agree on that smaller graph — the local
+		// and tag labels still annotated, and not a single remote label in sight.
+		const options = {
+			maxCommits: 100,
+			showTags: true,
+			showRemoteBranches: true,
+			showUncommittedChanges: true,
+			showUntrackedFiles: true,
+			remotes: ['origin'],
+			commitOrdering: 'date',
+			deferRemoteRefs: true
+		};
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+
+		assert.equal(a.error, null, `the engine failed: ${a.error}`);
+		assert.equal(b.error, null, `the CLI failed: ${b.error}`);
+		assertSameCommits(a.commits, b.commits, 'getCommits (remote refs deferred)');
+		for (const commits of [a.commits, b.commits]) {
+			assert.ok(commits.every((commit) => commit.remotes.length === 0), 'a deferred load must not carry remote labels');
+			assert.ok(commits.some((commit) => commit.heads.length > 0), 'the local branch labels must still be annotated');
+		}
+	});
+
 	it('builds the same graph in every ordering', async () => {
 		for (const commitOrdering of ['date', 'author-date', 'topo']) {
 			const options = {
