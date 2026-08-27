@@ -231,6 +231,7 @@ export class CliBackend implements GitBackend {
 				commits: nodes,
 				head,
 				tags: unique(refs.refData.tags.map((tag) => tag.name)),
+				branches: refs.branches,
 				moreCommitsAvailable,
 				error: null
 			};

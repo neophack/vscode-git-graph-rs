@@ -327,7 +327,7 @@ class GitGraphView {
 		this.refresh(true);
 	}
 
-	private loadRepoInfo(branchOptions: ReadonlyArray<string>, branchHead: string | null, remotes: ReadonlyArray<string>, stashes: ReadonlyArray<GG.GitStash>, isRepo: boolean) {
+	private loadRepoInfo(branchOptions: ReadonlyArray<string>, branchHead: string | null, remotes: ReadonlyArray<string>, stashes: ReadonlyArray<GG.GitStash>, isRepo: boolean, remoteRefsPending: boolean = false) {
 		// Changes to this.gitStashes are reflected as changes to the commits when loadCommits is run
 		this.gitStashes = stashes;
 
@@ -345,13 +345,17 @@ class GitGraphView {
 		// Update the state of the fetch button
 		this.renderFetchButton();
 
+		// While the remote-tracking refs are still being scanned, a `remotes/...` name cannot be
+		// validated against the (local-only) branch list — such selections and configured branches
+		// are kept until the complete list arrives with a loadCommits response.
+		const keepRemoteSelections = (branch: string) => remoteRefsPending && branch.startsWith('remotes/');
 		const filterCurrentBranches = () => {
 			// Configure current branches
 			if (this.currentBranches !== null && !(this.currentBranches.length === 1 && this.currentBranches[0] === SHOW_ALL_BRANCHES)) {
 				// Filter any branches that are currently selected, but no longer exist
 				const globPatterns = this.config.customBranchGlobPatterns.map((pattern: { glob: string; }) => pattern.glob);
 				this.currentBranches = this.currentBranches.filter((branch) =>
-					this.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD'
+					this.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD' || keepRemoteSelections(branch)
 				);
 			}
 		};
@@ -365,8 +369,8 @@ class GitGraphView {
 			if (onRepoLoadShowSpecificBranches.length > 0) {
 				// Show specific branches if they exist in the repository
 				const globPatterns = this.config.customBranchGlobPatterns.map((pattern: { glob: string; }) => pattern.glob);
-				this.currentBranches.push(...onRepoLoadShowSpecificBranches.filter((branch: string) =>
-					this.gitBranches.includes(branch) || globPatterns.includes(branch)
+				this.currentBranches.push(...onRepoLoadShowSpecificBranches.filter((branch) =>
+					this.gitBranches.includes(branch) || globPatterns.includes(branch) || keepRemoteSelections(branch)
 				));
 			}
 			if (onRepoLoadShowCheckedOutBranch && this.gitBranchHead !== null && !this.currentBranches.includes(this.gitBranchHead)) {
@@ -396,6 +400,26 @@ class GitGraphView {
 		}
 
 		this.finaliseLoadRepoInfo(true, isRepo);
+	}
+
+	/**
+	 * Apply a branch list that arrived with a `loadCommits` response (the complete list, once the
+	 * remote-tracking refs have been scanned): update the dropdown in place and drop selections
+	 * that no longer exist — the same validation the `loadRepoInfo` response performs, arriving
+	 * late. This never re-triggers the load chain: the commits of the same response are already it.
+	 */
+	private applyBranches(branchOptions: ReadonlyArray<string>) {
+		if (arraysStrictlyEqual(this.gitBranches, branchOptions)) return;
+		this.gitBranches = branchOptions;
+		if (this.currentBranches !== null && !(this.currentBranches.length === 1 && this.currentBranches[0] === SHOW_ALL_BRANCHES)) {
+			const globPatterns = this.config.customBranchGlobPatterns.map((pattern: { glob: string; }) => pattern.glob);
+			this.currentBranches = this.currentBranches.filter((branch) =>
+				this.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD'
+			);
+			if (this.currentBranches.length === 0) this.currentBranches = [SHOW_ALL_BRANCHES];
+		}
+		this.branchDropdown.setOptions(this.getBranchOptions(true), this.currentBranches);
+		this.saveState();
 	}
 
 	private finaliseLoadRepoInfo(repoInfoChanges: boolean, isRepo: boolean) {
@@ -759,7 +783,7 @@ class GitGraphView {
 
 	public processLoadRepoInfoResponse(msg: GG.ResponseLoadRepoInfo) {
 		if (msg.error === null) {
-			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo);
+			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo, msg.remoteRefsPending === true);
 			this.requestPullRequestStatus();
 		} else {
 			this.displayLoadDataError(strings.errLoadRepoInfo, msg.error);
@@ -845,6 +869,10 @@ class GitGraphView {
 					this.gerritStatesDirty = true;
 					this.gerritStates = {};
 				}
+				// The branch list of the ref scan this page was built from: the deferred view load
+				// delivers the remote-tracking entries here (they are the same scan the remote
+				// pills come from), completing the branch dropdown without another request.
+				if (Array.isArray(msg.branches)) this.applyBranches(msg.branches);
 				this.loadCommits(msg.commits, msg.head, msg.tags, msg.moreCommitsAvailable, msg.onlyFollowFirstParent, msg.uncommittedPending === true);
 			}
 		} else {

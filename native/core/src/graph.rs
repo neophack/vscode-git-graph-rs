@@ -69,6 +69,7 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         // A repository with no commits yet renders an empty graph rather than an error.
         return Ok(GitCommitData {
             head: snapshot.ref_data.head,
+            branches: Some(snapshot.branches),
             ..Default::default()
         });
     }
@@ -120,6 +121,7 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         commits,
         head: snapshot.ref_data.head,
         tags,
+        branches: Some(snapshot.branches),
         more_commits_available,
         error: None,
     })

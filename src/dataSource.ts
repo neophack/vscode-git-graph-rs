@@ -210,9 +210,9 @@ export class DataSource extends Disposable {
 		})));
 	}
 
-	public getRepoInfo(repo: string, showRemoteBranches: boolean, showStashes: boolean, hideRemotes: ReadonlyArray<string>): Promise<GitRepoInfo> {
+	public getRepoInfo(repo: string, showRemoteBranches: boolean, showStashes: boolean, hideRemotes: ReadonlyArray<string>, deferRemoteRefs: boolean = false): Promise<GitRepoInfo> {
 		return this.backend.getRepoInfo(repo, {
-			showRemoteBranches: showRemoteBranches,
+			showRemoteBranches: showRemoteBranches && !deferRemoteRefs,
 			showRemoteHeads: getConfig().showRemoteHeads,
 			hideRemotes: hideRemotes,
 			showChangeRefs: false,
@@ -1927,6 +1927,12 @@ export interface GitCommitData {
 	commits: GitCommit[];
 	head: string | null;
 	tags: string[];
+	/**
+	 * The branch name list of the ref scan this page was built from — the same list `getRepoInfo`
+	 * returns, riding along so a deferred view load can complete the branch dropdown without a
+	 * second scan. Absent on error.
+	 */
+	branches?: string[];
 	moreCommitsAvailable: boolean;
 	error: ErrorInfo;
 }

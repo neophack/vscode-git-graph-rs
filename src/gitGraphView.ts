@@ -123,17 +123,6 @@ export class GitGraphView extends Disposable {
 	private loadRepoInfoRefreshId: number = 0;
 	private loadCommitsRefreshId: number = 0;
 
-	/**
-	 * The background change poll: every 30 seconds the repository's signature (branches, HEAD,
-	 * remotes, stashes) is compared against the last observation, and a change the file watcher
-	 * missed (watcher events can be dropped by the platform, e.g. on some network filesystems)
-	 * still refreshes the view.
-	 */
-	private static readonly BACKGROUND_POLL_INTERVAL_MS = 30000;
-	private backgroundRefreshTimer: NodeJS.Timer | null = null;
-	/** The last repository signature the background poll observed (NULL => record a baseline first). */
-	private lastRepoSignature: string | null = null;
-
 	private readonly pullRequests: PullRequestDataSource = new PullRequestDataSource();
 
 	/**
@@ -150,8 +139,9 @@ export class GitGraphView extends Disposable {
 	/**
 	 * The cached Gerrit change data of each repository (UNFILTERED, so switching the status filter
 	 * re-renders instantly). Rebuilt from the locally fetched change refs without any network
-	 * access, and only refreshed from the remote by `fetchGerritChanges` (a hard refresh, or the
-	 * first load of a repository whose fetching is enabled but has no local change refs yet).
+	 * access, and only refreshed from the remote by `fetchGerritChanges` for a repository the user
+	 * explicitly asked to fetch (the Fetch button, enabling the integration, or changing its fetch
+	 * settings) — a plain view load or a hard refresh never touches the network.
 	 */
 	private readonly gerritCache: Map<string, GerritCacheEntry> = new Map();
 	/** The Gerrit fetch currently in progress per repository, so concurrent loads share one fetch. */
@@ -247,10 +237,6 @@ export class GitGraphView extends Disposable {
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
 				this.repoFileWatcher.stop();
-				if (this.backgroundRefreshTimer !== null) {
-					clearInterval(this.backgroundRefreshTimer);
-					this.backgroundRefreshTimer = null;
-				}
 			}),
 
 			// Dispose this Git Graph View when the Webview Panel is disposed
@@ -323,18 +309,12 @@ export class GitGraphView extends Disposable {
 			if (this.panel.visible) {
 				// The repository changed on disk: any cached commit data is now stale
 				this.commitCache.clear();
-				// The change is being handled here, so the background poll must re-record its baseline
-				// instead of detecting the same change again on its next tick
-				this.lastRepoSignature = null;
 				this.sendMessage({ command: 'refresh' });
 			}
 		}, () => {
 			// The repository's Git config changed: drop the cached config data so the next load is fresh
 			this.dataSource.invalidateConfigCache(this.repoFileWatcher.getRepo());
 		});
-
-		// Poll the repository for changes the file watcher may have missed (every 30 seconds)
-		this.backgroundRefreshTimer = setInterval(() => void this.checkForBackgroundChanges(), GitGraphView.BACKGROUND_POLL_INTERVAL_MS);
 
 		// Render the content of the Webview
 		this.update();
@@ -708,25 +688,35 @@ export class GitGraphView extends Disposable {
 					// No fresh Gerrit data (the extension just started, the repository was marked
 					// stale, or a hard refresh was requested): render the branch graph IMMEDIATELY
 					// with the stale Gerrit data (if any) — the first paint must never wait for the
-					// Gerrit pipeline (the meta parsing and, on a refresh, the network fetch).
+					// Gerrit pipeline (the local meta parsing and, only for a repository the user
+					// asked to fetch, the network fetch) NOR for the working-tree status scan, which
+					// on a large working tree costs seconds and is deferred exactly as in the
+					// Gerrit-less path above.
 					// This response is marked `gerritPending`, and the pipeline completes
 					// asynchronously in stages: the remote refs, then the badges once the metas are
-					// parsed (usually by the Rust engine, in one call), then the review timelines on top.
+					// parsed (usually by the Rust engine, in one call), then the review timelines,
+					// and the "Uncommitted Changes" row last.
 					const staleGerritData = this.gerritCache.has(msg.repo)
 						? this.buildGerritViewData(this.gerritCache.get(msg.repo)!, msg.gerritStatusFilter)
 						: null;
 					const staleRefs = staleGerritData !== null ? staleGerritData.refs : null;
-					const commitData = await this.getCommitsCached(msg, staleRefs, false, msg.hard, deferRemoteRefs);
+					const commitData = await this.getCommitsCached(msg, staleRefs, true, msg.hard, deferRemoteRefs);
 					this.sendMessage({
 						command: 'loadCommits',
 						refreshId: msg.refreshId,
 						onlyFollowFirstParent: msg.onlyFollowFirstParent,
 						gerritPending: true,
 						gerritStates: staleGerritData !== null ? staleGerritData.states : null,
+						uncommittedPending: true,
 						...commitData
 					});
-					// runs asynchronously (never awaited): the remote refs first, then the Gerrit pipeline on top of the complete data
-					void this.sendRemoteRefsFollowUp(msg, staleRefs, commitData, staleGerritData !== null ? staleGerritData.states : null, false, msg.hard).then((complete) => this.loadCommitsGerritFollowUp(msg, staleRefs, complete));
+					// runs asynchronously (never awaited): the remote refs, then the Gerrit pipeline
+					// on top of the complete data, then the "Uncommitted Changes" status last (on
+					// the commit data the Gerrit stages actually rendered, which may be fresher)
+					void this.sendRemoteRefsFollowUp(msg, staleRefs, commitData, staleGerritData !== null ? staleGerritData.states : null, true, msg.hard).then(async (complete) => {
+						const result = await this.loadCommitsGerritFollowUp(msg, staleRefs, complete);
+						await this.sendUncommittedChangesFollowUp(msg, result.commitData, result.states);
+					});
 				}
 				break;
 			}
@@ -767,7 +757,12 @@ export class GitGraphView extends Disposable {
 			case 'loadRepoInfo': {
 				this.loadRepoInfoRefreshId = msg.refreshId;
 				const startTime = Date.now();
-				let repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes), isRepo = true;
+				// The remote-tracking refs are NOT scanned for this response (see
+				// `deferRemoteRefs`): the branch dropdown starts local-only, and the complete list
+				// rides along the follow-up `loadCommits` response that carries the remote pills —
+				// the branch list and the pills come from the same ref scan, so it is run once.
+				const repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, msg.showRemoteBranches);
+				let isRepo = true;
 				if (repoInfo.error) {
 					// If an error occurred, check to make sure the repo still exists
 					isRepo = (await this.dataSource.repoRoot(msg.repo)) !== null;
@@ -777,15 +772,14 @@ export class GitGraphView extends Disposable {
 					command: 'loadRepoInfo',
 					refreshId: msg.refreshId,
 					...repoInfo,
-					isRepo: isRepo
+					isRepo: isRepo,
+					remoteRefsPending: msg.showRemoteBranches || undefined
 				});
 				this.logger.log('Loaded repository info in ' + (Date.now() - startTime) + ' ms (' + repoInfo.branches.length + ' branches)');
 				if (msg.repo !== this.currentRepo) {
 					this.currentRepo = msg.repo;
 					this.extensionState.setLastActiveRepo(msg.repo);
 					this.repoFileWatcher.start(msg.repo);
-					// The signature of the previous repository says nothing about this one
-					this.lastRepoSignature = null;
 				}
 				break;
 			}
@@ -1032,32 +1026,6 @@ export class GitGraphView extends Disposable {
 	 */
 	private update() {
 		this.panel.webview.html = this.getHtmlForWebview();
-	}
-
-	/**
-	 * One tick of the background change poll: read the repository's signature (branches, HEAD,
-	 * remotes, stashes) and compare it with the previous tick. A difference means the repository
-	 * changed without the file watcher reporting it (dropped events, unusual filesystems), so the
-	 * cached commit data is dropped and the view is asked to refresh — exactly what the watcher
-	 * callback does. A NULL baseline (start, repository switch, or a watcher-handled change) is
-	 * recorded without refreshing.
-	 */
-	private async checkForBackgroundChanges() {
-		const repo = this.currentRepo;
-		if (repo === null || !this.panel.visible || this.isDisposed()) return;
-		try {
-			const info = await this.dataSource.getRepoInfo(repo, true, true, []);
-			if (this.isDisposed() || repo !== this.currentRepo) return; // the view moved on while reading
-			const signature = JSON.stringify([info.branches, info.head, info.remotes, info.stashes, info.tags]);
-			if (this.lastRepoSignature !== null && signature !== this.lastRepoSignature) {
-				this.logger.log('Background poll detected a repository change in ' + repo);
-				this.commitCache.clear();
-				this.sendMessage({ command: 'refresh' });
-			}
-			this.lastRepoSignature = signature;
-		} catch (_) {
-			// The repository is momentarily unreadable (e.g. mid-rebase file churn): try again next tick
-		}
 	}
 
 	/**
@@ -1315,6 +1283,7 @@ export class GitGraphView extends Disposable {
 				: commitData.commits,
 			head: commitData.head,
 			tags: commitData.tags,
+			branches: commitData.branches ?? null,
 			moreCommitsAvailable: commitData.moreCommitsAvailable,
 			error: null
 		});
@@ -1429,22 +1398,28 @@ export class GitGraphView extends Disposable {
 	 * Load the Gerrit change states of a repository: serve the cache when it is fresh, and run the
 	 * fetch pipeline (reusing an in-progress fetch) when a refresh is required. Any failure
 	 * degrades to the previously cached data (or NULL, the plain view without Gerrit data).
+	 *
+	 * The remote is contacted ONLY for a repository marked stale (the user fetched from the remote,
+	 * enabled the integration, or changed its fetch settings) — a plain view load or a hard refresh
+	 * re-reads the LOCAL change refs and metas and never touches the network.
 	 * @param repo The path of the repository.
 	 * @param statusFilter The status filter of the repository.
 	 * @param fetchLimit The fetch limit to select the changes under; a cache built under a
 	 *                   different limit is refreshed, because the fetched set of changes differs.
-	 * @param forceRefresh Whether the Gerrit data must be re-fetched from the remote, ignoring the cache.
+	 * @param rebuildFromLocal Whether the cache must be re-derived from the local change refs
+	 *                        (a hard refresh: the repository may have changed behind the cache's
+	 *                        back, e.g. a fetch run from a terminal).
 	 */
-	private async loadGerritData(repo: string, statusFilter: GerritStatusFilter, fetchLimit: number, forceRefresh: boolean): Promise<{ states: GerritChangeState[], refs: string[] } | null> {
+	private async loadGerritData(repo: string, statusFilter: GerritStatusFilter, fetchLimit: number, rebuildFromLocal: boolean): Promise<{ states: GerritChangeState[], refs: string[] } | null> {
 		let cache = this.gerritCache.get(repo) || null;
-		if (cache === null) {
-			// No cached data (e.g. the extension just started): rebuild the cache from the locally
-			// cached change refs, WITHOUT any network access, so the Gerrit data is displayed
-			// instantly and works offline
+		if (cache === null || rebuildFromLocal) {
+			// No cached data (e.g. the extension just started), or a hard refresh: (re)build the cache
+			// from the locally cached change refs, WITHOUT any network access, so the Gerrit data is
+			// displayed instantly and works offline
 			cache = await this.buildLocalGerritEntry(repo, fetchLimit);
 			if (cache !== null) this.gerritCache.set(repo, cache);
 		}
-		if (forceRefresh || this.gerritStaleRepos.has(repo) || cache === null || cache.fetchLimit !== fetchLimit) {
+		if (this.gerritStaleRepos.has(repo) || cache === null || cache.fetchLimit !== fetchLimit) {
 			// Reuse a fetch that is already in progress for this repository
 			let fetch = this.gerritFetches.get(repo);
 			if (fetch === undefined) {
@@ -1541,15 +1516,19 @@ export class GitGraphView extends Disposable {
 	 * @param msg The original `loadCommits` request message.
 	 * @param previousRefs The change refs the pending response was rendered with (NULL => none).
 	 * @param pendingCommitData The commit data already sent in the pending response.
+	 * @returns What the caller's final follow-up must build on: the Gerrit states the last sent
+	 *          response carried (NULL when the pipeline failed or was superseded), and the commit
+	 *          data of that response — which stage 1 may have reloaded with fresher change refs
+	 *          than `pendingCommitData`.
 	 */
-	private async loadCommitsGerritFollowUp(msg: RequestLoadCommits, previousRefs: string[] | null, pendingCommitData: GitCommitData) {
+	private async loadCommitsGerritFollowUp(msg: RequestLoadCommits, previousRefs: string[] | null, pendingCommitData: GitCommitData): Promise<{ states: GerritChangeState[] | null, commitData: GitCommitData }> {
 		const gerritData = await this.loadGerritData(msg.repo, msg.gerritStatusFilter, this.gerritFetchLimitOf(msg), msg.hard === true);
-		if (this.loadCommitsRefreshId !== msg.refreshId) return; // superseded by a newer load request
+		if (this.loadCommitsRefreshId !== msg.refreshId) return { states: null, commitData: pendingCommitData }; // superseded by a newer load request
 
 		if (gerritData === null) {
 			// The Gerrit pipeline failed: degrade to the plain view (as before)
 			await this.sendGerritLoadStage(msg, null, null, pendingCommitData);
-			return;
+			return { states: null, commitData: pendingCommitData };
 		}
 
 		// Stage 1 (badges): the light part of the states — everything the badges render. A change
@@ -1562,10 +1541,11 @@ export class GitGraphView extends Disposable {
 			refsUnchanged ? null : gerritData.refs,
 			refsUnchanged ? pendingCommitData : null
 		);
-		if (this.loadCommitsRefreshId !== msg.refreshId) return; // superseded by a newer load request
+		if (this.loadCommitsRefreshId !== msg.refreshId) return { states: null, commitData: badgesCommitData }; // superseded by a newer load request
 
 		// Stage 2 (review information): the event timelines arrive last, on the unchanged graph
 		await this.sendGerritLoadStage(msg, gerritData.states, null, badgesCommitData);
+		return { states: gerritData.states, commitData: badgesCommitData };
 	}
 
 	/**
@@ -1581,15 +1561,20 @@ export class GitGraphView extends Disposable {
 	 * Send one `loadCommits` response of the staged Gerrit follow-up: either the states on their own
 	 * (when `commitData` is provided, reusing the already-rendered commit graph), or a full reload
 	 * with the given change refs injected into the graph.
+	 *
+	 * Every load defers the working-tree status scan (it costs seconds on a large working tree, and
+	 * no stage of the Gerrit pipeline needs it): the responses are marked `uncommittedPending`, and
+	 * the "Uncommitted Changes" row arrives with the final follow-up.
 	 * @returns The commit data the response carried (the freshly loaded one, or `commitData`).
 	 */
 	private async sendGerritLoadStage(msg: RequestLoadCommits, states: GerritChangeState[] | null, refs: string[] | null, commitData: GitCommitData | null): Promise<GitCommitData> {
-		const data = commitData !== null ? commitData : await this.getCommitsCached(msg, refs, false, false);
+		const data = commitData !== null ? commitData : await this.getCommitsCached(msg, refs, true, false);
 		this.sendMessage({
 			command: 'loadCommits',
 			refreshId: msg.refreshId,
 			onlyFollowFirstParent: msg.onlyFollowFirstParent,
 			gerritStates: states,
+			uncommittedPending: true,
 			...data
 		});
 		return data;

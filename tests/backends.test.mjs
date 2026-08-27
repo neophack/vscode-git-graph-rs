@@ -256,6 +256,13 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.equal(a.head, b.head);
 		assert.equal(a.moreCommitsAvailable, b.moreCommitsAvailable);
 		assert.deepEqual([...a.tags].sort(), [...b.tags].sort());
+		// The complete load carries the complete branch list (local branches first, then the
+		// `remotes/...` entries) — the same list getRepoInfo returns.
+		assert.deepEqual([...a.branches].sort(), [...b.branches].sort());
+		assert.ok(
+			[...a.branches].some((branch) => branch.startsWith('remotes/')),
+			'the complete load must list the remote branches'
+		);
 		assertSameCommits(a.commits, b.commits, 'getCommits');
 	});
 
@@ -282,6 +289,14 @@ describe('the Rust engine and the git CLI agree', () => {
 			assert.ok(commits.every((commit) => commit.remotes.length === 0), 'a deferred load must not carry remote labels');
 			assert.ok(commits.some((commit) => commit.heads.length > 0), 'the local branch labels must still be annotated');
 		}
+		// The deferred response carries the LOCAL branch list only; the complete one (with the
+		// `remotes/...` entries) rides along the complete load, completing the dropdown without a
+		// second scan.
+		assert.deepEqual([...a.branches].sort(), [...b.branches].sort());
+		assert.ok(
+			![...a.branches, ...b.branches].some((branch) => branch.startsWith('remotes/')),
+			'a deferred load must not list remote branches'
+		);
 	});
 
 	it('builds the same graph in every ordering', async () => {

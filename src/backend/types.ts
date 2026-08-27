@@ -49,6 +49,12 @@ export interface GitCommitData {
 	readonly commits: ReadonlyArray<GitCommit>;
 	readonly head: string | null;
 	readonly tags: ReadonlyArray<string>;
+	/**
+	 * The branch name list of the ref scan this page was built from — the same list `getRepoInfo`
+	 * returns, riding along so a deferred view load can complete the branch dropdown without a
+	 * second scan. Absent on error.
+	 */
+	readonly branches?: ReadonlyArray<string>;
 	/** TRUE => the page was truncated, and the view should offer "Load More". */
 	readonly moreCommitsAvailable: boolean;
 	readonly error: string | null;

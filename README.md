@@ -27,7 +27,9 @@ This is a working VS Code extension: the webview and extension host layer are po
 original (including a Gerrit integration of its own: per-repository change-ref fetching with a
 change badge, a review-info dialog, an open/merged/abandoned status filter and a per-repository
 fetch limit, loaded in stages — the branch graph renders first, the change badges follow once the
-engine has parsed the NoteDb metas, and the review timelines arrive last), and **every
+engine has parsed the NoteDb metas, and the review timelines arrive last; the remote is contacted
+only when the user asks for it — the Fetch button, enabling the integration or changing its fetch
+settings — while every view load and refresh reads the locally cached refs), and **every
 repository read** — the view load,
 commit, stash and uncommitted details, comparisons, config, file contents and single-file diffs,
 plus the on-demand reads behind the Find dialogue, the tag details, submodule and upstream

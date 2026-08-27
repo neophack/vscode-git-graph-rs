@@ -1136,6 +1136,7 @@ export interface ResponseLoadCommits extends ResponseWithErrorInfo {
 	readonly gerritStates: GerritChangeState[] | null; // NULL => the Gerrit integration is disabled for this repository
 	readonly gerritPending?: boolean; // true => the Gerrit data is still loading asynchronously: a final loadCommits response with the fresh states follows
 	readonly uncommittedPending?: boolean; // true => the "Uncommitted Changes" status is still loading asynchronously: a final loadCommits response with the fresh status follows
+	readonly branches?: ReadonlyArray<string> | null; // the branch name list of the ref scan this page was built from (the complete one once the remote-tracking refs were scanned); absent when the response carries none
 }
 
 /**
@@ -1191,6 +1192,7 @@ export interface ResponseLoadRepoInfo extends ResponseWithErrorInfo {
 	readonly remotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;
 	readonly isRepo: boolean;
+	readonly remoteRefsPending?: boolean; // true => the branch list is local-only: the remote-tracking refs are still being scanned and follow with a loadCommits response
 }
 
 export interface RequestLoadRepos extends BaseMessage {

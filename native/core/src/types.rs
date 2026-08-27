@@ -146,6 +146,11 @@ pub struct GitCommitData {
     pub commits: Vec<GitCommit>,
     pub head: Option<String>,
     pub tags: Vec<String>,
+    /// The branch name list of the ref scan this page was built from — the same list `loadRepoInfo`
+    /// returns, riding along so a deferred view load can complete the branch dropdown without a
+    /// second scan. `None` on error (and for callers that did not ask for it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branches: Option<Vec<String>>,
     pub more_commits_available: bool,
     pub error: Option<String>,
 }
