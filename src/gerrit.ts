@@ -435,7 +435,42 @@ export function generateChangeId(tree: string, parent: string, author: string, c
 /* Hook Installation */
 
 /**
+ * The Gerrit server a remote's URL names: the scheme its web interface is served over (NULL when
+ * the remote itself doesn't say), the host (with its web port, if the remote gave one), and the
+ * project path.
+ *
+ * Both of Git's ssh forms are understood — `ssh://[user@]host[:port]/project` on ANY port (29418
+ * is only Gerrit's default; a deployment is free to move it) and the scp-style `[user@]host:project`
+ * — and neither says anything about the web interface's scheme, so the caller picks it. Any
+ * credentials in the URL are dropped: they belong to the Git transport, not to a web link or a
+ * download. A local path (`/srv/git/repo`, `C:/repos/repo`) names no server.
+ * @returns The parts of the server, or NULL if the remote is not an http(s) or ssh URL.
+ */
+export function gerritRemoteServer(remoteUrl: string): { scheme: string | null; host: string; project: string } | null {
+	const url = remoteUrl.trim();
+	const http = /^(https?):\/\/(?:[^\/@]*@)?([^\/]+)(?:\/(.*))?$/i.exec(url);
+	if (http !== null) return { scheme: http[1].toLowerCase(), host: http[2], project: gerritProjectPath(http[3]) };
+
+	const ssh = /^ssh:\/\/(?:[^\/@]*@)?([^\/:@]+)(?::\d+)?(?:\/(.*))?$/i.exec(url);
+	if (ssh !== null) return { scheme: null, host: ssh[1], project: gerritProjectPath(ssh[2]) };
+
+	// The scp-style form has no port, and a single-letter host is a Windows drive, not a host
+	const scp = /^(?:[^\/@]*@)?([A-Za-z0-9_][A-Za-z0-9._-]*):(?!\/)(.*)$/.exec(url);
+	if (scp !== null && scp[1].length > 1) return { scheme: null, host: scp[1], project: gerritProjectPath(scp[2]) };
+
+	return null;
+}
+
+/** The project a remote URL's path names, without the surrounding slashes or the `.git` suffix. */
+function gerritProjectPath(path: string | undefined): string {
+	return (path === undefined ? '' : path).replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
+}
+
+/**
  * Download a file over HTTP(S), following up to HTTP_REDIRECT_LIMIT redirects.
+ *
+ * A redirect may not step down from https to http: the caller chose a channel that
+ * authenticates the server, and the server's own answer cannot revoke that choice.
  * @param url The URL to download.
  * @param redirectsRemaining The remaining redirect budget.
  * @returns The file contents.
@@ -449,7 +484,12 @@ function downloadFile(url: string, redirectsRemaining: number): Promise<Buffer> 
 				if (redirectsRemaining <= 0) {
 					reject('too many redirects');
 				} else {
-					downloadFile(resolveUrl(response.headers.location, url), redirectsRemaining - 1).then(resolve, reject);
+					const target = resolveUrl(response.headers.location, url);
+					if (/^https:/i.test(url) && !/^https:/i.test(target)) {
+						reject('the server redirected the download off HTTPS (to ' + target + ')');
+						return;
+					}
+					downloadFile(target, redirectsRemaining - 1).then(resolve, reject);
 				}
 				return;
 			}
@@ -622,13 +662,16 @@ export class GerritDataSource {
 	public async installHook(repo: string, remote: string, hook: string): Promise<{ error: ErrorInfo; installed: boolean }> {
 		if (!GERRIT_HOOK_FILES.includes(hook)) return { error: 'The hook "' + hook + '" cannot be downloaded from the Gerrit server.', installed: false };
 
-		// Derive the Gerrit server's base URL (e.g. "http://gerrit.example.com") from the remote's URL
+		// Derive the Gerrit server's base URL (e.g. "https://gerrit.example.com") from the remote's
+		// URL. A hook is an executable script this extension installs into the repository, so for an
+		// ssh remote — which says nothing about the web interface's scheme — it is downloaded over
+		// HTTPS and never over plain HTTP: the ssh remote the user chose authenticates the server,
+		// and a hook fetched in the clear could be anything a network attacker wanted to run. An
+		// http remote keeps its own scheme: its repository contents already arrive over that channel.
 		const origin = await this.git.gitOutput(['remote', 'get-url', remote], repo, (stdout) => {
-			let url = stdout.trim();
-			const sshMatch = /^(?:ssh:\/\/)?([^\/:]+)(?::29418)?\/(.+?)(?:\.git)?$/i.exec(url);
-			if (sshMatch !== null) url = 'http://' + sshMatch[1];
-			const match = /^(https?:\/\/[^\/]+)/i.exec(url);
-			return match !== null ? match[1] : null;
+			const server = gerritRemoteServer(stdout);
+			if (server === null) return null;
+			return (server.scheme !== null ? server.scheme : 'https') + '://' + server.host;
 		}).catch(() => null);
 		if (origin === null) return { error: 'Unable to derive the Gerrit server URL from the remote "' + remote + '" (only http(s) and ssh remotes are supported).', installed: false };
 
@@ -650,6 +693,7 @@ export class GerritDataSource {
 			if (existing === content) return { error: null, installed: false }; // an identical hook is already installed
 			if (!fs.existsSync(hooksDir)) fs.mkdirSync(hooksDir);
 			fs.writeFileSync(hookPath, content, { mode: 0o755 });
+			fs.chmodSync(hookPath, 0o755); // the mode above is only applied when the file is created
 		} catch (errorMessage) {
 			return { error: 'Unable to write the ' + hook + ' hook to ' + hookPath + ': ' + errorMessage, installed: false };
 		}
@@ -758,15 +802,14 @@ export class GerritDataSource {
 	 */
 	public getChangeUrlBase(repo: string, remote: string) {
 		return this.git.gitOutput(['remote', 'get-url', remote], repo, (stdout) => {
-			let url = stdout.trim();
-			const sshMatch = /^(?:ssh:\/\/)?([^\/:]+)(?::29418)?\/(.+?)(?:\.git)?$/i.exec(url);
-			if (sshMatch !== null) url = 'http://' + sshMatch[1] + '/' + sshMatch[2].replace(/^\//, '');
-			if (!/^https?:\/\//i.test(url)) return null;
-			const match = /^(https?:\/\/[^\/]+)\/?(.+?)(?:\.git)?\/?$/i.exec(url);
-			if (match === null) return null;
+			const server = gerritRemoteServer(stdout);
+			if (server === null || server.project === '') return null;
 			// Strip Gerrit's authenticated prefix ("a/") from the project path; it is not part of the web UI URL
-			const project = match[2].replace(/^a\//, '');
-			return match[1] + '/c/' + project + '/+/';
+			const project = server.project.replace(/^a\//, '');
+			// An ssh remote names no web scheme: the link is followed by the user's browser, which an
+			// http-serving Gerrit answers and an https-only one redirects, so http stays the guess it
+			// has always been here (the hook download above cannot take that risk, and does not)
+			return (server.scheme !== null ? server.scheme : 'http') + '://' + server.host + '/c/' + project + '/+/';
 		}).catch(() => null);
 	}
 }
