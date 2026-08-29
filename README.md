@@ -21,16 +21,45 @@ The source lives at [github.com/neophack/vscode-git-graph-rs](https://github.com
 bug reports, feature requests and questions go to
 [the issue tracker](https://github.com/neophack/vscode-git-graph-rs/issues).
 
+## What this fork adds
+
+Beyond the Rust engine (below), these features are new relative to the original
+[mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph):
+
+- **A Gerrit integration, rebuilt.** Per-repository change-ref fetching (bounded by a configurable
+  fetch limit, overridable per repository), a change badge on every commit carrying its
+  change/patchset number and Code-Review/Verified scores, a structured review dialog with the full
+  NoteDb event timeline and an "Open in Gerrit" button, and an open/merged/abandoned/WIP status
+  filter that re-renders instantly from cached states. The NoteDb meta histories are parsed
+  in-process by the engine — not one `git log` spawn per change. The remote is contacted only when
+  the user asks (the Fetch button, enabling the integration, changing its fetch settings); every
+  plain view load reads the locally cached refs and works offline.
+- **Gerrit commands in the Source Control view**, each offered in English and Simplified Chinese:
+  push the current branch for review to `refs/for/<branch>` (amending a Change-Id onto HEAD first,
+  with the same construction Gerrit's commit-msg hook uses, and never amending a commit already
+  pushed to a remote), and download & install the commit-msg hook from the Gerrit server.
+- **Data-loss protection** on the write path's silent-loss corners — see
+  [Data-loss protection](#data-loss-protection).
+- **A Simplified Chinese interface** (`git-graph-rs.interfaceLanguage`: auto / English / 简体中文),
+  covering the webview, the extension host messages and the Source Control menus, with the two
+  language dictionaries held to key parity by a build-time check.
+- **Instant first paint, progressive completion.** A view load renders the local branch and tag
+  pills immediately from a local-only ref scan, merges the remote pills in place when the full scan
+  arrives, and chains the "Uncommitted Changes" row and the Gerrit stages onto the same pipeline —
+  no stage waits on a slower one. Commit details render their file list first and settle the
+  `+N/-M` line counts progressively (rows in view, then background batches).
+- **Binary file comparison** in the comparison view: a streaming hex view that byte-compares the
+  matched equal suffix, and a picture mode that dyes differing pixels and reports PSNR.
+- **Amend Last Commit** and **Reset Current Branch to Remote (soft)** commands in the Source
+  Control view.
+- **Runs without Git installed** — the whole read path is served in-process by the engine; write
+  operations report that they need Git. Conversely, on a platform with no prebuilt engine binary
+  the extension runs entirely over the `git` CLI.
+
 ## Status
 
 This is a working VS Code extension: the webview and extension host layer are ported from the
-original (including a Gerrit integration of its own: per-repository change-ref fetching with a
-change badge, a review-info dialog, an open/merged/abandoned status filter and a per-repository
-fetch limit, loaded in stages — the branch graph renders first, the change badges follow once the
-engine has parsed the NoteDb metas, and the review timelines arrive last; the remote is contacted
-only when the user asks for it — the Fetch button, enabling the integration or changing its fetch
-settings — while every view load and refresh reads the locally cached refs), and **every
-repository read** — the view load,
+original, and **every repository read** — the view load,
 commit, stash and uncommitted details, comparisons, config, file contents and single-file diffs,
 plus the on-demand reads behind the Find dialogue, the tag details, submodule and upstream
 lookups, and the commit counting the view's jump-to-commit uses — is served by the Rust engine,
@@ -486,7 +515,7 @@ The phases below follow the rewrite plan this project was started from.
 | 7–8 | Stash operations, rebase, interactive rebase | not started (the stash is *read* today) |
 | 9–10 | Bisect, reflog, Git Undo | not started |
 | 11 | Plumbing (objects, refs, index) | partial — the read side exists internally |
-| 12 | Gerrit changes and patchsets | partial — change refs are fetched, filtered and displayed with review badges |
+| 12 | Gerrit changes and patchsets | **done** — change refs fetched and cached locally, NoteDb metas parsed in-process, badges, review dialog, status filter, SCM push/hook commands |
 | 13–14 | Large-repository work, cache invalidation | partial — handles and object caches are warm; no incremental invalidation yet |
 
 The **whole read path** is on `GitBackend`, implemented twice — engine and CLI — and asserted to
