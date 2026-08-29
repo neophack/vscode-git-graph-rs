@@ -43,6 +43,35 @@ import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createP
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**
+ * Whether the complete (remote-refs-included) response of `sendRemoteRefsFollowUp` differs from
+ * the deferred (local-only) response already sent, and is therefore worth sending as a follow-up.
+ *
+ * Comparing only each commit's `remotes` labels (as this once did) misses two real differences:
+ * a commit can differ at the same index without any `remotes` label changing (the local-only walk
+ * and the complete walk can disagree on which commits fill a `maxCommits`-truncated window without
+ * either window's visible commits gaining a label), and the branch dropdown's option list — driven
+ * by `branches`, not by any commit's `remotes` — can gain remote-tracking branches whose tip commit
+ * never entered the loaded window at all. Either case must still trigger the follow-up, or the
+ * webview is left rendering the deferred, local-only data for the rest of the session.
+ */
+export function remoteRefsFollowUpChanged(deferred: GitCommitData, complete: GitCommitData): boolean {
+	if (!stringArraysEqual(deferred.branches, complete.branches)) return true;
+	if (deferred.commits.length !== complete.commits.length) return true;
+	return complete.commits.some((commit, index) => {
+		const previous = deferred.commits[index];
+		return commit.hash !== previous.hash ||
+			commit.remotes.length !== previous.remotes.length ||
+			commit.remotes.some((remote, remoteIndex) => remote.name !== previous.remotes[remoteIndex].name || remote.remote !== previous.remotes[remoteIndex].remote);
+	});
+}
+
+function stringArraysEqual(a: ReadonlyArray<string> | undefined, b: ReadonlyArray<string> | undefined): boolean {
+	if (a === b) return true;
+	if (a === undefined || b === undefined || a.length !== b.length) return false;
+	return a.every((value, index) => value === b[index]);
+}
+
+/**
  * The Global (User) Settings that the Settings Widget is allowed to write, and the validator of
  * each value. Requests naming a setting that isn't a key of this record are rejected, so a
  * compromised webview can't write arbitrary VS Code settings.
@@ -1603,12 +1632,7 @@ export class GitGraphView extends Disposable {
 		const complete = await this.getCommitsCached(msg, gerritRefs, deferUncommittedChanges, forceFresh, false);
 		if (this.loadCommitsRefreshId !== msg.refreshId) return complete; // superseded by a newer load request
 
-		const remotesChanged = complete.commits.length !== commitData.commits.length || complete.commits.some((commit, index) => {
-			const previous = commitData.commits[index];
-			return commit.remotes.length !== previous.remotes.length ||
-				commit.remotes.some((remote, remoteIndex) => remote.name !== previous.remotes[remoteIndex].name || remote.remote !== previous.remotes[remoteIndex].remote);
-		});
-		if (remotesChanged) {
+		if (remoteRefsFollowUpChanged(commitData, complete)) {
 			this.sendMessage({
 				command: 'loadCommits',
 				refreshId: msg.refreshId,

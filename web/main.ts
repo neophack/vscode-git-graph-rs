@@ -411,15 +411,24 @@ class GitGraphView {
 	private applyBranches(branchOptions: ReadonlyArray<string>) {
 		if (arraysStrictlyEqual(this.gitBranches, branchOptions)) return;
 		this.gitBranches = branchOptions;
+		let selectionReset = false;
 		if (this.currentBranches !== null && !(this.currentBranches.length === 1 && this.currentBranches[0] === SHOW_ALL_BRANCHES)) {
 			const globPatterns = this.config.customBranchGlobPatterns.map((pattern: { glob: string; }) => pattern.glob);
 			this.currentBranches = this.currentBranches.filter((branch) =>
 				this.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD'
 			);
-			if (this.currentBranches.length === 0) this.currentBranches = [SHOW_ALL_BRANCHES];
+			if (this.currentBranches.length === 0) {
+				this.currentBranches = [SHOW_ALL_BRANCHES];
+				selectionReset = true;
+			}
 		}
 		this.branchDropdown.setOptions(this.getBranchOptions(true), this.currentBranches);
 		this.saveState();
+		if (selectionReset) {
+			// The commits of this response were loaded with the now-dropped selection: reload so the
+			// graph matches the "Show All Branches" the dropdown now shows.
+			this.requestLoadRepoInfoAndCommits(false, true);
+		}
 	}
 
 	private finaliseLoadRepoInfo(repoInfoChanges: boolean, isRepo: boolean) {
@@ -782,6 +791,10 @@ class GitGraphView {
 	}
 
 	public processLoadRepoInfoResponse(msg: GG.ResponseLoadRepoInfo) {
+		// A response superseded by a newer loadRepoInfo request (e.g. the repository changed while
+		// this one was in flight) must not apply the old repository's branches/head/remotes to the
+		// current view.
+		if (this.currentRepoRefreshState.loadRepoInfoRefreshId !== msg.refreshId) return;
 		if (msg.error === null) {
 			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo, msg.remoteRefsPending === true);
 			this.requestPullRequestStatus();
@@ -839,8 +852,8 @@ class GitGraphView {
 	}
 
 	public processLoadCommitsResponse(msg: GG.ResponseLoadCommits) {
+		const refreshState = this.currentRepoRefreshState;
 		if (msg.error === null) {
-			const refreshState = this.currentRepoRefreshState;
 			// A loadCommits request can be answered by MULTIPLE responses with the same refresh id:
 			// the deferred "Uncommitted Changes" follow-up of a cold-cache load arrives after the
 			// first response finalised the refresh (inProgress === false). The refresh id alone
@@ -875,7 +888,10 @@ class GitGraphView {
 				if (Array.isArray(msg.branches)) this.applyBranches(msg.branches);
 				this.loadCommits(msg.commits, msg.head, msg.tags, msg.moreCommitsAvailable, msg.onlyFollowFirstParent, msg.uncommittedPending === true);
 			}
-		} else {
+		} else if (refreshState.loadCommitsRefreshId === msg.refreshId) {
+			// A stale error response (superseded by a newer load whose data is already rendered)
+			// must not clear the view or abort the in-flight sequence - the same guard the success
+			// path applies above.
 			const error = this.gitBranches.length === 0 && msg.error.indexOf('bad revision \'HEAD\'') > -1
 				? strings.noCommitsInRepo
 				: msg.error;
@@ -884,15 +900,17 @@ class GitGraphView {
 	}
 
 	public processLoadConfig(msg: GG.ResponseLoadConfig) {
-		this.currentRepoRefreshState.requestingConfig = false;
-		if (msg.config !== null && this.currentRepo === msg.repo) {
-			this.gitConfig = msg.config;
-			this.saveState();
+		if (this.currentRepo === msg.repo) {
+			this.currentRepoRefreshState.requestingConfig = false;
+			if (msg.config !== null) {
+				this.gitConfig = msg.config;
+				this.saveState();
 
-			renderCdvExternalDiffBtn(this);
+				renderCdvExternalDiffBtn(this);
+			}
+			this.settingsWidget.refresh();
+			this.authorDropdown.setOptions(this.getAuthorOptions(), this.currentAuthors);
 		}
-		this.settingsWidget.refresh();
-		this.authorDropdown.setOptions(this.getAuthorOptions(), this.currentAuthors);
 	}
 
 	private displayLoadDataError(message: string, reason: string) {
@@ -1061,6 +1079,12 @@ class GitGraphView {
 				refreshState.loadCommitsRefreshId++;
 			}
 		} else {
+			// A deferred load's follow-ups (remote refs, Gerrit, "Uncommitted Changes") can still be
+			// in flight carrying the previous refresh id even though inProgress is false: the first
+			// response already finalised the sequence. Invalidate them before the new sequence starts,
+			// otherwise they would render the previous repository's data over the new one and
+			// finalise it, leaving the new repository's commits never requested.
+			refreshState.loadCommitsRefreshId++;
 			refreshState.hard = hard;
 			refreshState.inProgress = true;
 			refreshState.repoInfoChanges = false;
