@@ -1136,6 +1136,7 @@ export interface ResponseLoadCommits extends ResponseWithErrorInfo {
 	readonly gerritStates: GerritChangeState[] | null; // NULL => the Gerrit integration is disabled for this repository
 	readonly gerritPending?: boolean; // true => the Gerrit data is still loading asynchronously: a final loadCommits response with the fresh states follows
 	readonly uncommittedPending?: boolean; // true => the "Uncommitted Changes" status is still loading asynchronously: a final loadCommits response with the fresh status follows
+	readonly uncommittedCount?: number; // the exact "Uncommitted Changes" file count (sent by the final follow-up; absent while pending)
 	readonly branches?: ReadonlyArray<string> | null; // the branch name list of the ref scan this page was built from (the complete one once the remote-tracking refs were scanned); absent when the response carries none
 }
 

@@ -11,6 +11,12 @@ class GitGraphView {
 	public commitLookup: { [hash: string]: number } = {};
 	public onlyFollowFirstParent: boolean = false;
 	private avatars: AvatarImageCollection = {};
+	/**
+	 * The "Uncommitted Changes" file count the view last knew about (NULL => not known yet, no
+	 * final follow-up has arrived). Kept as view state so the row can be kept rendered (and its
+	 * number updated in place) across responses whose commit list doesn't carry the row.
+	 */
+	private uncommittedCount: number | null = null;
 	private currentBranches: string[] | null = null;
 	private currentAuthors: string[] | null = null;
 
@@ -453,12 +459,28 @@ class GitGraphView {
 		const tagsChanged = !arraysStrictlyEqual(this.gitTags, tags);
 		this.gitTags = tags;
 
-		if (uncommittedPending && commits.length > 0 && commits[0].hash !== UNCOMMITTED &&
-			this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED && commitHead !== null) {
+		if (uncommittedPending && commits.length > 0 && commits[0].hash !== UNCOMMITTED && commitHead !== null
+			&& this.uncommittedCount !== null && this.uncommittedCount > 0) {
 			// Deferred response: the "Uncommitted Changes" status arrives in a follow-up response.
-			// Keep the row rendered (with its stale count) so it doesn't flicker away and back on
-			// every refresh - the follow-up just updates its count.
-			commits = [{ ...this.commits[0], parents: [commitHead] }, ...commits];
+			// Keep the row rendered so it never flickers away and back on a refresh - the follow-up
+			// just updates its number in place. The row is reused when it is already rendered, and
+			// synthesized from the last known count otherwise: any response of the load pipeline
+			// (initial, remote refs, Gerrit stages) carries a list without the row, and none of
+			// them may drop it.
+			commits = [this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED
+				? { ...this.commits[0], parents: [commitHead] }
+				: {
+					hash: UNCOMMITTED,
+					parents: [commitHead],
+					author: '*',
+					email: '',
+					date: Math.round(Date.now() / 1000),
+					message: formatStr(strings.uncommittedChangesRow, String(this.uncommittedCount)),
+					heads: [],
+					tags: [],
+					remotes: [],
+					stash: null
+				}, ...commits];
 		}
 
 		if (!this.currentRepoLoading && !this.currentRepoRefreshState.hard && this.moreCommitsAvailable === moreAvailable && this.onlyFollowFirstParent === onlyFollowFirstParent && this.commitHead === commitHead && commits.length > 0 && arraysEqual(this.commits, commits, (a, b) =>
@@ -746,6 +768,7 @@ class GitGraphView {
 		this.commits = [];
 		this.commitHead = null;
 		this.commitLookup = {};
+		this.uncommittedCount = null;
 		this.renderedGitBranchHead = null;
 		this.gerritStates = {};
 		this.gerritStatesDirty = false;
@@ -886,6 +909,9 @@ class GitGraphView {
 				// delivers the remote-tracking entries here (they are the same scan the remote
 				// pills come from), completing the branch dropdown without another request.
 				if (Array.isArray(msg.branches)) this.applyBranches(msg.branches);
+				// The exact "Uncommitted Changes" count arrives with the final follow-up: record it
+				// as view state so subsequent deferred responses can keep the row rendered
+				if (typeof msg.uncommittedCount === 'number') this.uncommittedCount = msg.uncommittedCount;
 				this.loadCommits(msg.commits, msg.head, msg.tags, msg.moreCommitsAvailable, msg.onlyFollowFirstParent, msg.uncommittedPending === true);
 			}
 		} else if (refreshState.loadCommitsRefreshId === msg.refreshId) {
@@ -931,7 +957,7 @@ class GitGraphView {
 		const escapedEmail = email.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 		const avatarElems = document.querySelectorAll<HTMLElement>('.avatar[data-email="' + escapedEmail + '"]');
 		for (let i = 0; i < avatarElems.length; i++) {
-			avatarElems[i].innerHTML = '<img class="avatarImg" src="' + image + '">';
+			avatarElems[i].innerHTML = '<img class="avatarImg" decoding="sync" src="' + image + '">';
 		}
 	}
 
@@ -1548,7 +1574,7 @@ class GitGraphView {
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + getResizeColHtml(2) + date.formatted + '</td>' : '') +
-			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
+			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" decoding="sync" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
 			(colVisibility.commit ? '<td class="text" title="' + escapeHtml(commit.hash) + '">' + getResizeColHtml(4) + abbrevCommit(commit.hash) + '</td>' : '') +
 			'</tr>';
 

@@ -152,6 +152,19 @@ export class GitGraphView extends Disposable {
 	private loadRepoInfoRefreshId: number = 0;
 	private loadCommitsRefreshId: number = 0;
 
+	/**
+	 * The background change poll: the repository's signature (branches, HEAD, remotes, stashes,
+	 * tags) is compared against the last observation, so a change the file watcher missed (watcher
+	 * events can be dropped by the platform, e.g. on network or synced filesystems, or swallowed
+	 * by the watcher's mute window) still refreshes the view promptly. The interval is a few
+	 * seconds: a commit made outside this extension must appear on the graph without a noticeable
+	 * wait, and the signature read is a cheap in-process ref scan.
+	 */
+	private static readonly BACKGROUND_POLL_INTERVAL_MS = 5000;
+	private backgroundRefreshTimer: NodeJS.Timer | null = null;
+	/** The last repository signature the background poll observed (NULL => record a baseline first). */
+	private lastRepoSignature: string | null = null;
+
 	private readonly pullRequests: PullRequestDataSource = new PullRequestDataSource();
 
 	/**
@@ -266,6 +279,10 @@ export class GitGraphView extends Disposable {
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
 				this.repoFileWatcher.stop();
+				if (this.backgroundRefreshTimer !== null) {
+					clearInterval(this.backgroundRefreshTimer);
+					this.backgroundRefreshTimer = null;
+				}
 			}),
 
 			// Dispose this Git Graph View when the Webview Panel is disposed
@@ -348,12 +365,18 @@ export class GitGraphView extends Disposable {
 			if (this.panel.visible) {
 				// The repository changed on disk: any cached commit data is now stale
 				this.commitCache.clear();
+				// The change is being handled here, so the background poll must re-record its baseline
+				// instead of detecting the same change again on its next tick
+				this.lastRepoSignature = null;
 				this.sendMessage({ command: 'refresh' });
 			}
 		}, () => {
 			// The repository's Git config changed: drop the cached config data so the next load is fresh
 			this.dataSource.invalidateConfigCache(this.repoFileWatcher.getRepo());
 		});
+
+		// Poll the repository for changes the file watcher may have missed
+		this.backgroundRefreshTimer = setInterval(() => void this.checkForBackgroundChanges(), GitGraphView.BACKGROUND_POLL_INTERVAL_MS);
 
 		// Render the content of the Webview
 		this.update();
@@ -819,6 +842,8 @@ export class GitGraphView extends Disposable {
 					this.currentRepo = msg.repo;
 					this.extensionState.setLastActiveRepo(msg.repo);
 					this.repoFileWatcher.start(msg.repo);
+					// The signature of the previous repository says nothing about this one
+					this.lastRepoSignature = null;
 				}
 				break;
 			}
@@ -1063,6 +1088,32 @@ export class GitGraphView extends Disposable {
 	/**
 	 * Update the HTML document loaded in the Webview.
 	 */
+	/**
+	 * One tick of the background change poll: read the repository's signature (branches, HEAD,
+	 * remotes, stashes, tags) and compare it with the previous tick. A difference means the
+	 * repository changed without the file watcher reporting it (dropped events, unusual
+	 * filesystems), so the cached commit data is dropped and the view is asked to refresh —
+	 * exactly what the watcher callback does. A NULL baseline (start, repository switch, or a
+	 * watcher-handled change) is recorded without refreshing.
+	 */
+	private async checkForBackgroundChanges() {
+		const repo = this.currentRepo;
+		if (repo === null || !this.panel.visible || this.isDisposed()) return;
+		try {
+			const info = await this.dataSource.getRepoInfo(repo, true, true, []);
+			if (this.isDisposed() || repo !== this.currentRepo) return; // the view moved on while reading
+			const signature = JSON.stringify([info.branches, info.head, info.remotes, info.stashes, info.tags]);
+			if (this.lastRepoSignature !== null && signature !== this.lastRepoSignature) {
+				this.logger.log('Background poll detected a repository change in ' + repo);
+				this.commitCache.clear();
+				this.sendMessage({ command: 'refresh' });
+			}
+			this.lastRepoSignature = signature;
+		} catch (_) {
+			// The repository is momentarily unreadable (e.g. mid-rebase file churn): try again next tick
+		}
+	}
+
 	private update() {
 		this.panel.webview.html = this.getHtmlForWebview();
 	}
@@ -1306,6 +1357,9 @@ export class GitGraphView extends Disposable {
 			refreshId: msg.refreshId,
 			onlyFollowFirstParent: msg.onlyFollowFirstParent,
 			gerritStates: gerritStates,
+			// The exact count, so the view can keep the row rendered (and update its number in
+			// place) even across responses whose commit list doesn't carry the row
+			uncommittedCount: numUncommittedChanges,
 			commits: numUncommittedChanges > 0
 				? [{
 					hash: UNCOMMITTED,

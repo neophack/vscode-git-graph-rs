@@ -118,14 +118,18 @@ export class RepoFileWatcher {
 		}
 		if (this.muteCount > 0) return;
 		if (!relativePath.match(FILE_CHANGE_REGEX)) return;
-		if ((new Date()).getTime() < this.resumeAt) return;
 
+		// An event arriving inside the post-action suppression window is DEFERRED until after the
+		// window, never dropped: whether the event was caused by one of this extension's own Git
+		// actions or by the user committing at just the wrong moment cannot be told apart here, and
+		// a dropped event means a repository change that nothing else will detect.
+		const delay = Math.max(750, this.resumeAt - (new Date()).getTime());
 		if (this.refreshTimeout !== null) {
 			clearTimeout(this.refreshTimeout);
 		}
 		this.refreshTimeout = setTimeout(() => {
 			this.refreshTimeout = null;
 			this.repoChangeCallback();
-		}, 750);
+		}, delay);
 	}
 }
