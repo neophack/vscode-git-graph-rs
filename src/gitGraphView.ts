@@ -275,7 +275,17 @@ export class GitGraphView extends Disposable {
 			this.panel.onDidChangeViewState(() => {
 				if (this.panel.visible !== this.isPanelVisible) {
 					if (this.panel.visible) {
-						this.update();
+						if (this.isGraphViewLoaded) {
+							// The webview is already rendered: refresh its data in place instead of
+							// regenerating the HTML, which would reload the page and re-render the
+							// entire graph from scratch (a blank flash on every tab switch). The
+							// webview's soft refresh keeps the rendered commits, the loadRepoInfo
+							// request it sends restores this.currentRepo and the repo file watcher,
+							// and the extension's commit cache serves the commits without rescanning.
+							this.sendMessage({ command: 'refresh' });
+						} else {
+							this.update();
+						}
 					} else {
 						this.currentRepo = null;
 						this.repoFileWatcher.stop();
