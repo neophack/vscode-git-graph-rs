@@ -525,6 +525,17 @@ class GitGraphView {
 			return;
 		}
 
+		// Incremental refresh with commits added at the top (e.g. a commit was made while the user
+		// is scrolled down the history): instead of re-rendering the whole table - which would make
+		// the view jump, since the same scrollTop would then point k rows further into the history -
+		// only the new rows are inserted and the scroll position is shifted by exactly the height
+		// they add, keeping the visible rows perfectly still. The new commits appear when the user
+		// scrolls back up to the top.
+		if (this.canPrependCommits(commits, onlyFollowFirstParent)) {
+			this.prependCommits(commits, commitHead, moreAvailable);
+			return;
+		}
+
 		const currentRepoLoading = this.currentRepoLoading;
 		this.currentRepoLoading = false;
 		this.moreCommitsAvailable = moreAvailable;
@@ -639,6 +650,113 @@ class GitGraphView {
 		// width, otherwise the absolutely positioned SVG overlaps the Description text
 		applyGraphColumnAutoLayout(this);
 		if (uncommittedChanged) this.renderUncommittedChanges();
+		this.finaliseLoadCommits();
+		this.requestAvatars(avatarsNeeded);
+	}
+
+	/**
+	 * Determine whether an incoming commit list is the currently rendered history with new commits
+	 * strictly prepended above it (e.g. a background refresh picked up new commits on the checked
+	 * out branch), so it can be applied incrementally instead of requiring a full re-render.
+	 * @returns TRUE if the previously rendered commits are unchanged and form the tail of the new
+	 * list, and all view state that affects row rendering is unchanged.
+	 */
+	private canPrependCommits(commits: GG.GitCommit[], onlyFollowFirstParent: boolean) {
+		if (this.currentRepoLoading || this.currentRepoRefreshState.hard) return false;
+		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return false;
+		if (this.renderedGitBranchHead !== this.gitBranchHead) return false;
+		if (commits.length <= this.commits.length || this.commits.length === 0) return false;
+		if (this.commits[0].hash === UNCOMMITTED ? commits[0].hash !== UNCOMMITTED : commits[0].hash === UNCOMMITTED) return false;
+		// The head is allowed to change here (a new commit above the old head is the whole point),
+		// but every previously rendered commit must still be present, unchanged, at the END of the
+		// new list: otherwise its row would need to be re-rendered
+		return arraysEqual(this.commits, commits.slice(commits.length - this.commits.length), (a, b) =>
+			a.hash === b.hash &&
+			arraysStrictlyEqual(a.heads, b.heads) &&
+			arraysEqual(a.tags, b.tags, (a: GG.GitCommitTag, b: GG.GitCommitTag) => a.name === b.name && a.annotated === b.annotated) &&
+			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
+			arraysStrictlyEqual(a.parents, b.parents) &&
+			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector))
+		);
+	}
+
+	/**
+	 * Apply a refresh response whose new commits sit strictly above the rendered history: insert
+	 * only the new rows and shift the scroll position by the height they add, so the rows the user
+	 * is looking at stay exactly where they are (no jump, no flicker) - scrolling back up to the
+	 * top reveals the new commits.
+	 */
+	private prependCommits(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean) {
+		const numPrepended = commits.length - this.commits.length;
+		const prevMoreAvailable = this.moreCommitsAvailable;
+		this.moreCommitsAvailable = moreAvailable;
+		this.commits = commits;
+		this.commitHead = commitHead;
+
+		const avatarsNeeded: { [email: string]: string[] } = {};
+		this.commitLookup = {};
+		for (let i = 0; i < commits.length; i++) {
+			this.commitLookup[commits[i].hash] = i;
+		}
+		for (let i = 0; i < numPrepended; i++) {
+			const commit = commits[i];
+			if (this.config.fetchAvatars && typeof this.avatars[commit.email] !== 'string' && commit.email !== '') {
+				if (typeof avatarsNeeded[commit.email] === 'undefined') {
+					avatarsNeeded[commit.email] = [commit.hash];
+				} else {
+					avatarsNeeded[commit.email].push(commit.hash);
+				}
+			}
+		}
+
+		this.saveState();
+		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
+
+		if (this.renderedRange !== null) {
+			// Windowed rendering: rows have a uniform height, so the prepended rows add exactly
+			// numPrepended * rowHeight; shifting scrollTop by that keeps the visible window on the
+			// same commits, and re-rendering the (small) window updates the spacers and scroll height
+			this.viewElem.scrollTop += numPrepended * this.config.graph.rowHeight;
+			this.renderTable();
+		} else {
+			// Full render is active (variable row heights are possible, e.g. inline commit bodies):
+			// insert the new rows above the existing ones and shift the scroll position by the
+			// height they actually add, measured across the insertion
+			const scrollHeightBefore = this.viewElem.scrollHeight;
+			const ctx = this.createRowRenderingContext();
+			let html = '';
+			for (let i = 0; i < numPrepended; i++) {
+				html += this.getCommitRowHtml(i, ctx);
+			}
+			const headerRow = this.tableElem.children[0].querySelector('#tableColHeaders')!;
+			headerRow.insertAdjacentHTML('afterend', html);
+			// The already rendered rows shifted down by numPrepended indices: update their data-id
+			// (and color) in place instead of re-rendering them
+			const vertexColours = ctx.vertexColours;
+			this.tableElem.querySelectorAll('tr.commit').forEach((row, i) => {
+				(row as HTMLElement).dataset.id = String(i);
+				(row as HTMLElement).dataset.color = String(vertexColours[i]);
+			});
+			this.viewElem.scrollTop += this.viewElem.scrollHeight - scrollHeightBefore;
+			this.findWidget.refresh();
+			this.requestCommitBodiesForRows(0, numPrepended);
+			if (prevMoreAvailable !== moreAvailable) {
+				// e.g. the whole repository history just became loaded: drop the "Load More Commits"
+				// button (or restore it)
+				this.footerElem.innerHTML = moreAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>' : '';
+				if (moreAvailable) {
+					document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
+						this.loadMoreCommits();
+					});
+				}
+			}
+		}
+		this.renderedGitBranchHead = this.gitBranchHead;
+		this.gerritStatesDirty = false;
+		this.renderGraph();
+		// The prepended commits can open branch lanes further right than before, widening the
+		// graph: re-apply the graph column layout so the Graph column tracks the new width
+		applyGraphColumnAutoLayout(this);
 		this.finaliseLoadCommits();
 		this.requestAvatars(avatarsNeeded);
 	}
