@@ -26,14 +26,15 @@ bug reports, feature requests and questions go to
 Beyond the Rust engine (below), these features are new relative to the original
 [mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph):
 
-- **A Gerrit integration, rebuilt.** Per-repository change-ref fetching (bounded by a configurable
-  fetch limit, overridable per repository), a change badge on every commit carrying its
+- **A Gerrit integration, rebuilt.** Per-repository change-ref fetching, a change badge on every commit carrying its
   change/patchset number and Code-Review/Verified scores, a structured review dialog with the full
   NoteDb event timeline and an "Open in Gerrit" button, and an open/merged/abandoned/WIP status
   filter that re-renders instantly from cached states. The NoteDb meta histories are parsed
   in-process by the engine — not one `git log` spawn per change. The remote is contacted only when
   the user asks (the Fetch button, enabling the integration, changing its fetch settings); every
-  plain view load reads the locally cached refs and works offline.
+  plain view load reads the locally cached refs and works offline. Configured through
+  `git-graph-rs.gerrit.remote`, `git-graph-rs.gerrit.fetchLimit` (default 20, overridable per
+  repository) and `git-graph-rs.gerrit.showReviewProgress`.
 - **Gerrit commands in the Source Control view**, each offered in English and Simplified Chinese:
   push the current branch for review to `refs/for/<branch>` (amending a Change-Id onto HEAD first,
   with the same construction Gerrit's commit-msg hook uses, and never amending a commit already
@@ -48,6 +49,12 @@ Beyond the Rust engine (below), these features are new relative to the original
   arrives, and chains the "Uncommitted Changes" row and the Gerrit stages onto the same pipeline —
   no stage waits on a slower one. Commit details render their file list first and settle the
   `+N/-M` line counts progressively (rows in view, then background batches).
+- **A graph that stays current by itself.** A repository file watcher plus a 5-second background
+  poll of the ref/HEAD/stash signature means a commit made outside the extension — a terminal, another
+  tool — appears on the graph within seconds. Events that arrive while the extension's own Git action
+  is settling are deferred and merged rather than dropped, and re-showing an already-rendered view
+  soft-refreshes it instead of regenerating the HTML, so switching tabs back never blank-flashes; the
+  "Uncommitted Changes" row is likewise kept rendered across every stage of the load pipeline.
 - **Binary file comparison** in the comparison view: a streaming hex view that byte-compares the
   matched equal suffix, and a picture mode that dyes differing pixels and reports PSNR.
 - **Amend Last Commit** and **Reset Current Branch to Remote (soft)** commands in the Source

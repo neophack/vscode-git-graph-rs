@@ -61,6 +61,7 @@
 		"@types/node": "^8.10.66",
 		"@types/vscode": "1.38.0",
 		"@vscode/vsce": "^2.19.0",
+		"jsdom": "^29.1.1",
 		"sharp": "^0.35.3",
 		"typescript": "^5.4.0",
 		"uglify-js": "^3.19.3"
