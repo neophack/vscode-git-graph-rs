@@ -311,7 +311,7 @@ function rebaseAction(view: GitGraphView, obj: string, name: string, actionOn: G
 }
 
 
-function amendCommitAction(view: GitGraphView, target: DialogTarget & CommitTarget) {
+function editCommitMessageAction(view: GitGraphView, target: DialogTarget & CommitTarget) {
 
 	const hash = target.hash;
 
@@ -359,7 +359,7 @@ function amendCommitAction(view: GitGraphView, target: DialogTarget & CommitTarg
 
 			runAction({
 
-				command: 'amendCommit',
+				command: 'editCommitMessage',
 
 				repo: view.currentRepo,
 

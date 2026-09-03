@@ -2710,10 +2710,6 @@ window.addEventListener('load', () => {
 				refreshOrDisplayError(msg.error, strings.errEditCommitMessage);
 				break;
 
-			case 'amendCommit':
-				refreshOrDisplayError(msg.error, strings.errAmendCommit);
-				break;
-
 			case 'setGlobalViewState':
 				finishOrDisplayError(msg.error, strings.errSaveGlobalViewState);
 				break;

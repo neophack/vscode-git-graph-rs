@@ -205,7 +205,7 @@ export class GitGraphView extends Disposable {
 		'cleanUntrackedFiles', 'createBranch', 'createPullRequest', 'deleteBranch', 'deleteRemote', 'deleteRemoteBranch',
 		'deleteTag', 'dropCommit', 'dropStash', 'editRemote', 'editUserDetails', 'fetch', 'fetchIntoLocalBranch', 'gerritSetFetchRefs', 'merge',
 		'popStash', 'pruneRemote', 'pullBranch', 'pushBranch', 'pushStash', 'pushTag', 'rebase', 'renameBranch',
-		'resetFileToRevision', 'resetToCommit', 'revertCommit', 'editCommitMessage', 'amendCommit', 'undoLastCommit'
+		'resetFileToRevision', 'resetToCommit', 'revertCommit', 'editCommitMessage', 'undoLastCommit'
 	]);
 
 	/**
@@ -987,13 +987,6 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({
 					command: 'editCommitMessage',
 					error: await this.dataSource.editCommitMessage(msg.repo, msg.commitHash, msg.message)
-				});
-				break;
-
-			case 'amendCommit':
-				this.sendMessage({
-					command: 'amendCommit',
-					error: await this.dataSource.amendCommit(msg.repo, msg.commitHash, msg.message)
 				});
 				break;
 
