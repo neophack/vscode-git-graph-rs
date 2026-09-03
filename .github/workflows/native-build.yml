@@ -150,6 +150,11 @@ jobs:
       - name: Build the TypeScript
         run: npm run build:ts
 
+      # The jsdom webview tests load media/out.min.js; it is a build product (media/ is
+      # gitignored), so it must be compiled here too or those tests fail on CI.
+      - name: Build the webview assets
+        run: npm run compile-web
+
       - name: Test
         run: npm run test:node
 

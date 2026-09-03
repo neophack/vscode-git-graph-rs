@@ -167,52 +167,65 @@ export async function bootRealView(repo) {
 	GitGraphView.createOrShow(rootDir, dataSource, extensionState, avatarManager, repoManager, new Logger(), null);
 	assert.ok(panel.webview.html.length > 0, 'the webview html was generated');
 
+	// The extension (and its AskpassManager HTTP servers) is live from here on: anything that
+	// fails below must still tear it down, or the open servers keep the test process alive and
+	// `node --test` never exits (CI then hangs on an already-failed test file).
+	const dispose = () => {
+		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
+		for (const server of createdServers.splice(0)) server.close();
+	};
+
 	/* Boot the html in jsdom: the inline initialState script runs during parsing (acquireVsCodeApi
 	 * is injected beforehand via beforeParse); the external out.min.js is then evaluated manually,
 	 * exactly like the standalone harness does. */
-	const dom = new JSDOM(panel.webview.html, {
-		runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.invalid/',
-		beforeParse: (window) => {
-			window.acquireVsCodeApi = () => window.__api;
-		}
-	});
-	const { window } = dom;
-	const document = window.document;
-	window.__api = {
-		getState: () => null,
-		setState: () => {},
-		postMessage: (message) => { onDidReceiveMessageHandler(message); }
-	};
-	extensionToWebview = (message) => {
-		setTimeout(() => {
-			window.dispatchEvent(new window.MessageEvent('message', { data: message }));
-			if (afterDeliver !== null) afterDeliver(message);
-		}, 5);
-	};
-
-	// jsdom has no layout engine: emulate the scroll container (same model as the standalone harness)
-	const viewElem = document.getElementById('view');
+	let window, document;
 	let scrollTopValue = 0;
-	Object.defineProperty(viewElem, 'scrollTop', { get: () => scrollTopValue, set: (v) => { scrollTopValue = Math.max(0, v); } });
-	Object.defineProperty(viewElem, 'scrollHeight', { get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT });
-	Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT });
-	Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200 });
-	window.Element.prototype.scroll = function () {};
-	window.Element.prototype.scrollTo = function () {};
+	try {
+		const dom = new JSDOM(panel.webview.html, {
+			runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.invalid/',
+			beforeParse: (w) => {
+				w.acquireVsCodeApi = () => w.__api;
+			}
+		});
+		window = dom.window;
+		document = window.document;
+		window.__api = {
+			getState: () => null,
+			setState: () => {},
+			postMessage: (message) => { onDidReceiveMessageHandler(message); }
+		};
+		extensionToWebview = (message) => {
+			setTimeout(() => {
+				window.dispatchEvent(new window.MessageEvent('message', { data: message }));
+				if (afterDeliver !== null) afterDeliver(message);
+			}, 5);
+		};
 
-	window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.min.js'), 'utf8'));
-	window.dispatchEvent(new window.Event('load'));
+		// jsdom has no layout engine: emulate the scroll container (same model as the standalone harness)
+		const viewElem = document.getElementById('view');
+		Object.defineProperty(viewElem, 'scrollTop', { get: () => scrollTopValue, set: (v) => { scrollTopValue = Math.max(0, v); } });
+		Object.defineProperty(viewElem, 'scrollHeight', { get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT });
+		Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT });
+		Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200 });
+		window.Element.prototype.scroll = function () {};
+		window.Element.prototype.scrollTo = function () {};
 
+		window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.min.js'), 'utf8'));
+		window.dispatchEvent(new window.Event('load'));
+	} catch (error) {
+		extensionToWebview = null;
+		dispose();
+		if (window !== undefined) window.close(); // drop the jsdom timers
+		throw error;
+	}
+
+	const viewElem = document.getElementById('view');
 	const scrollTo = async (row) => {
 		scrollTopValue = row * ROW_HEIGHT;
 		viewElem.dispatchEvent(new window.Event('scroll'));
 		await sleep(120); // let the rAF-debounced window update run
 	};
 	const rows = () => Array.from(document.querySelectorAll('#commitTable tr.commit'));
-	const dispose = () => {
-		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
-		for (const server of createdServers.splice(0)) server.close();
-	};
 	return { window, document, viewElem, scrollTo, rows, GitGraphView, dispose, sleep };
 }
 
