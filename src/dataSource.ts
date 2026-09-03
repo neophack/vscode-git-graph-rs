@@ -1,4 +1,6 @@
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
@@ -1414,6 +1416,76 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Amend the commit message of any local commit that has not been pushed to a remote.
+	 *
+	 * HEAD is amended directly (`git commit --amend -m`); an earlier commit is reworded through an
+	 * automated `git rebase -i`: the sequence editor replaces the commit's `pick` line with `reword`
+	 * and the commit-message editor writes the new message, so no interactive terminal is needed and
+	 * the surrounding history is preserved verbatim. The rebase is aborted (restoring the previous
+	 * state, and with --autostash the working tree) if it fails part-way.
+	 * @param repo The path of the repository.
+	 * @param commitHash The commit hash to amend the message of.
+	 * @param message The new commit message.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public async amendCommit(repo: string, commitHash: string, message: string): Promise<ErrorInfo> {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
+		if (unsafeArgs !== null) return unsafeArgs;
+
+		try {
+			const headCommit = await this.spawnGit(['rev-parse', 'HEAD'], repo, (stdout) => stdout.trim());
+
+			if (headCommit === commitHash) {
+				const args = ['commit', '--amend', '-m', message];
+				if (getConfig().signCommits) {
+					args.push('-S');
+				}
+				return this.runGitCommand(args, repo);
+			}
+
+			// The commit must be part of the current branch's history for the rebase to reach it
+			const isAncestor = await this._spawnGit(['merge-base', '--is-ancestor', commitHash, 'HEAD'], repo, () => true).then(() => true, () => false);
+			if (!isAncestor) return t('amendNotAncestor');
+
+			// Merge commits cannot be reworded by a linear `pick`/`reword` todo
+			const parents = await this.spawnGit(['rev-list', '--parents', '-n', '1', commitHash], repo, (stdout) => stdout.trim().split(/\s+/));
+			if (parents.length > 2) return t('amendMergeCommit');
+
+			// Amending a commit any remote already contains would rewrite published history
+			const knownRemotes = await this.getRemotes(repo);
+			const containingRemotes = await this.getRemotesContainingCommit(repo, commitHash, knownRemotes);
+			if (containingRemotes.length > 0) return t('amendPushedCommit', containingRemotes.join(', '));
+
+			const rebaseArgs = parents.length === 1 ? ['rebase', '-i', '--autostash', '--root'] : ['rebase', '-i', '--autostash', commitHash + '^'];
+
+			// Editor scripts git invokes with the todo / commit-message file path appended as the last argument
+			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${Date.now()}.js`);
+			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${Date.now()}.js`);
+			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${Date.now()}.txt`);
+			fs.writeFileSync(seqEditorFile, 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);');
+			fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
+			fs.writeFileSync(messageFile, message);
+			const node = `"${process.execPath}"`;
+			const extraEnv = {
+				GIT_SEQUENCE_EDITOR: `${node} "${seqEditorFile}" ${commitHash}`,
+				GIT_EDITOR: `${node} "${msgEditorFile}" "${messageFile}"`
+			};
+
+			try {
+				return await this._spawnGit(rebaseArgs, repo, () => null, false, extraEnv);
+			} catch (errorMessage) {
+				// Restore the repository to the pre-rebase state (and the autostashed working tree)
+				await this._spawnGit(['rebase', '--abort'], repo, () => null, true);
+				return errorMessage as ErrorInfo;
+			} finally {
+				for (const file of [seqEditorFile, msgEditorFile, messageFile]) fs.unlink(file, () => null);
+			}
+		} catch (error) {
+			return error as ErrorInfo;
+		}
+	}
+
+	/**
 	 * Edit a commit message using git commit --amend.
 	 * @param repo The path of the repository.
 	 * @param commitHash The commit hash to edit.
@@ -1877,7 +1949,7 @@ export class DataSource extends Disposable {
 	 * @param resolveValue A callback invoked to resolve the data from `stdout` and `stderr`.
 	 * @param ignoreExitCode Ignore the exit code returned by Git (default: `FALSE`).
 	 */
-	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false) {
+	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, extraEnv: { [key: string]: string } | null = null) {
 		return new Promise<T>((resolve, reject) => {
 			if (this.gitExecutable === null) {
 				return reject(unableToFindGitMsg());
@@ -1888,7 +1960,7 @@ export class DataSource extends Disposable {
 			const started = Date.now();
 			resolveSpawnOutput(cp.spawn(this.gitExecutable.path, args, {
 				cwd: repo,
-				env: Object.assign({}, process.env, this.askpassEnv)
+				env: Object.assign({}, process.env, this.askpassEnv, extraEnv)
 			})).then((values) => {
 				this.logger.logCmd('git', args, Date.now() - started);
 				const status = values[0], stdout = values[1], stderr = values[2];

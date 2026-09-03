@@ -376,3 +376,70 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 	);
 
 }
+
+
+function amendCommitAction(view: GitGraphView, target: DialogTarget & CommitTarget) {
+
+	const hash = target.hash;
+
+	const commit = view.commits[view.commitLookup[hash]];
+
+	if (commit === undefined) return; // The commit is no longer loaded (e.g. after a refresh)
+
+
+
+	dialog.showForm(
+
+		formatStr(strings.editCommitMessagePrompt, abbrevCommit(hash)),
+
+		[{
+
+			type: DialogInputType.Textarea, lines: 5,
+
+			name: strings.commitMessageInput,
+
+			default: commit.message,
+
+			placeholder: strings.commitMessagePlaceholder
+
+		}],
+
+		strings.updateMessageAction,
+
+		(values) => {
+
+			const newMessage = <string>values[0];
+
+			if (newMessage.trim() === '') {
+
+				dialog.showError(strings.commitMessageEmptyError, null, null, null);
+
+				return;
+
+			}
+
+			if (newMessage === commit.message) {
+
+				return; // No change needed
+
+			}
+
+			runAction({
+
+				command: 'amendCommit',
+
+				repo: view.currentRepo,
+
+				commitHash: hash,
+
+				message: newMessage
+
+			}, strings.editingCommitMessage);
+
+		},
+
+		target
+
+	);
+
+}

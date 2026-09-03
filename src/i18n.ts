@@ -120,6 +120,9 @@ const EN = {
 	invalidRefName: 'Invalid reference name was provided for "{0}"',
 	pruneTagsRequiresPrune: 'In order to Prune Tags, pruning must also be enabled when fetching from remote(s).',
 	editMessageNonHead: 'Editing commit messages for non-HEAD commits is not yet supported.',
+	amendNotAncestor: 'Only commits in the current branch\'s history can be amended. Checkout a branch containing this commit and try again.',
+	amendMergeCommit: 'The commit message of a merge commit cannot be amended.',
+	amendPushedCommit: 'This commit has already been pushed to the following remotes and can therefore not be amended: {0}',
 
 	/* File / diff / terminal helpers */
 	archiveSaveLabel: 'Create Archive',
@@ -317,6 +320,9 @@ const ZH_CN: Record<MessageKey, string> = {
 	invalidRefName: '为“{0}”提供的引用名称无效',
 	pruneTagsRequiresPrune: '清理标签时，从远程拉取必须同时启用清理。',
 	editMessageNonHead: '尚不支持编辑非 HEAD 提交的提交信息。',
+	amendNotAncestor: '只能修改当前分支历史中的提交。请先检出包含此提交的分支，然后重试。',
+	amendMergeCommit: '无法修改合并提交的提交信息。',
+	amendPushedCommit: '此提交已推送到以下远程，因此无法修改：{0}',
 
 	/* 文件 / 差异 / 终端辅助 */
 	archiveSaveLabel: '创建归档',

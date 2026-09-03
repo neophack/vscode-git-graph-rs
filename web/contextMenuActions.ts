@@ -551,6 +551,22 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 		}, {
 
+			title: strings.menuAmend + ELLIPSIS,
+
+			// HEAD keeps its dedicated Edit Message item (a plain git commit --amend); any earlier
+
+			// non-merge commit in the loaded history can be amended through an automated rebase
+
+			// reword - the host validates that the commit is local-only (not on any remote) before
+
+			// rewriting it, and shows an error dialog otherwise
+
+			visible: visibility.amend && hash !== view.commitHead && commit.parents.length < 2,
+
+			onClick: () => amendCommitAction(view, target)
+
+		}, {
+
 
 
 			title: strings.menuDrop + ELLIPSIS,
