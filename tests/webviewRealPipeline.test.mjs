@@ -80,11 +80,25 @@ describe('the real extension pipeline keeps the viewport still in a long reposit
 		assert.equal(coords.get(anchorKey), anchorYStart, anchorKey + ' ends exactly where the user scrolled it');
 	}, 180000);
 
-	after(() => {
+	after(async () => {
 		if (context !== null) {
 			context.dispose();
 			context.window.close(); // drop the jsdom timers so the test process can exit
 		}
-		fs.rmSync(repoDir, { recursive: true, force: true });
+		/* Disposing the panel does not wait for the extension's in-flight git spawns, which can
+		 * still hold the repository's pack files open: on Windows that makes rmSync fail with
+		 * EPERM. Retry for a while until every git child has exited and the files are unlocked. */
+		let lastError = null;
+		for (let i = 0; i < 40; i++) {
+			try {
+				fs.rmSync(repoDir, { recursive: true, force: true });
+				lastError = null;
+				break;
+			} catch (error) {
+				lastError = error;
+				await sleep(250);
+			}
+		}
+		if (lastError !== null) throw lastError;
 	});
 });

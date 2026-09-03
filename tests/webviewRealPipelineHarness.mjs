@@ -172,6 +172,9 @@ export async function bootRealView(repo) {
 	// `node --test` never exits (CI then hangs on an already-failed test file).
 	const dispose = () => {
 		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
+		// Release the engine's repository handle (the inverse of what suite 29 asserts must stay
+		// open across requests): the harness owns this RepoManager, nobody else will close it.
+		repoManager.removeRepo(repo);
 		for (const server of createdServers.splice(0)) server.close();
 	};
 
