@@ -51,6 +51,7 @@ interface NativeAddon {
 	configList(path: string, local: boolean): Promise<string>;
 	currentBranchName(path: string): Promise<string | null>;
 	parseGerritMetas(path: string, remote: string, changes: number[], urlBase: string | null): Promise<string>;
+	listChangeRefs(path: string, remote: string): Promise<string>;
 	engineVersion(): string;
 }
 

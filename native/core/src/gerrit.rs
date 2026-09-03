@@ -79,6 +79,33 @@ pub fn parse_gerrit_metas(
     Ok(states)
 }
 
+/// The local change refs of a remote (`refs/remotes/<remote>/changes/**`), each with the hash it
+/// points at, read in one in-process scan of the ref store.
+///
+/// This is the engine counterpart of `git for-each-ref refs/remotes/<remote>/changes/`, which the
+/// Gerrit integration runs both to list the locally cached changes (the offline cache rebuild, and
+/// the "ls-remote returned nothing" unreachable-remote check) and to resolve every NoteDb meta ref
+/// hash in bulk — each use costing one child process on the extension host otherwise.
+///
+/// Symbolic refs under the prefix are skipped: change refs are always direct, and the common
+/// symbolic ref of a remote (`refs/remotes/<remote>/HEAD`) lives outside the `changes/` tree.
+pub fn list_change_refs(repo: &Repo, remote: &str) -> Result<Vec<(String, String)>> {
+    let git = repo.borrow();
+    let prefix = format!("refs/remotes/{remote}/changes/");
+    let platform = git.references().git_ctx("Could not read references")?;
+    let mut refs = Vec::new();
+    for reference in platform
+        .prefixed(prefix.as_str())
+        .git_ctx("Could not read the Gerrit change refs")?
+        .filter_map(std::result::Result::ok)
+    {
+        if let gix::refs::TargetRef::Object(id) = reference.target() {
+            refs.push((reference.name().as_bstr().to_string(), id.to_string()));
+        }
+    }
+    Ok(refs)
+}
+
 /// Read one NoteDb meta history, newest first, as `git log <meta-ref>` would print it.
 ///
 /// NoteDb histories are linear chains Gerrit appends to, so the history is walked parent by

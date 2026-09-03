@@ -13,7 +13,7 @@ use std::process::Command;
 
 use common::TestRepo;
 use git_graph_core::gerrit::{
-    parse_gerrit_metas, parse_meta_commit, parse_meta_history, MetaCommitRecord,
+    list_change_refs, parse_gerrit_metas, parse_meta_commit, parse_meta_history, MetaCommitRecord,
 };
 use git_graph_core::repository::Repo;
 
@@ -365,4 +365,56 @@ fn joins_the_url_base_when_there_is_none() {
     let state = states[0].as_ref().expect("the change has a state");
     assert_eq!(state.url, None);
     assert_eq!(state.status, "new");
+}
+
+#[test]
+fn lists_the_local_change_refs_with_their_hashes() {
+    require_git!();
+    let repo = TestRepo::new();
+    let mut clock = 1_600_000_000_i64;
+    let ps1 = commit_meta(
+        &repo,
+        None,
+        "Dev",
+        &mut clock,
+        "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\n",
+    );
+    let ps2 = commit_meta(
+        &repo,
+        None,
+        "Dev",
+        &mut clock,
+        "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\n",
+    );
+    let meta = commit_meta(
+        &repo,
+        None,
+        "Dev",
+        &mut clock,
+        "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\n",
+    );
+    repo.update_ref("refs/remotes/origin/changes/34/1234/1", &ps1);
+    repo.update_ref("refs/remotes/origin/changes/34/1234/2", &ps2);
+    repo.update_ref("refs/remotes/origin/changes/34/1234/meta", &meta);
+    // Refs of other remotes and non-change refs must not leak into the listing
+    repo.update_ref("refs/remotes/origin/main", &ps1);
+    repo.update_ref("refs/remotes/upstream/changes/34/1234/1", &ps1);
+    repo.update_ref("refs/heads/main", &ps1);
+
+    let engine = Repo::discover(repo.path()).expect("could not open the fixture repository");
+    let refs = list_change_refs(&engine, "origin").expect("the change refs are readable");
+    let mut refs = refs;
+    refs.sort();
+    assert_eq!(
+        refs,
+        vec![
+            ("refs/remotes/origin/changes/34/1234/1".to_string(), ps1),
+            ("refs/remotes/origin/changes/34/1234/2".to_string(), ps2),
+            ("refs/remotes/origin/changes/34/1234/meta".to_string(), meta),
+        ]
+    );
+
+    // A remote with no change refs yields an empty listing (not an error)
+    let empty = list_change_refs(&engine, "other").expect("any remote is scannable");
+    assert!(empty.is_empty());
 }

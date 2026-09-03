@@ -399,6 +399,19 @@ pub async fn parse_gerrit_metas(
     .await
 }
 
+/// The local Gerrit change refs of a remote (`refs/remotes/<remote>/changes/**`), as a JSON array
+/// of `[refname, hash]` pairs — one in-process scan of the ref store replacing a
+/// `git for-each-ref` child process.
+#[napi]
+pub async fn list_change_refs(path: String, remote: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        let refs = gerrit::list_change_refs(&repo, &remote)?;
+        encode(&refs)
+    })
+    .await
+}
+
 /// The engine's version, so the extension can report which backend it is running.
 #[napi]
 pub fn engine_version() -> String {

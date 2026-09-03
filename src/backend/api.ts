@@ -345,4 +345,12 @@ export class NativeBackend implements GitBackend {
 	public parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<(GerritChangeState | null)[]> {
 		return callJson(() => this.addon.parseGerritMetas(repo, remote, [...changes], urlBase));
 	}
+
+	/**
+	 * The local Gerrit change refs of a remote (`refs/remotes/<remote>/changes/**`), as
+	 * `[refname, hash]` pairs from one in-process scan of the ref store.
+	 */
+	public listChangeRefs(repo: string, remote: string): Promise<[string, string][]> {
+		return callJson(() => this.addon.listChangeRefs(repo, remote));
+	}
 }

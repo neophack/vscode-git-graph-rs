@@ -164,3 +164,36 @@ describe('on-screen row coordinates stay frozen while the repository moves (full
 		assert.equal(coords.get('commit 30'), 0, 'commit 30 is still at the very top of the viewport where the user scrolled it');
 	});
 });
+
+describe('a mid-history rewrite (rebase/amend) forces the full re-render path - the viewport stays anchored', () => {
+	it('a commit deep in the middle of the windowed history getting a new hash keeps every visible row still', async () => {
+		const h = await bootView(300, { window: 300 });
+		await h.scrollTo(150);
+		const before = measureRowCoordinates(h);
+
+		// Rebase/amend: commit at index 150 (inside the viewport) is replaced by an equivalent
+		// commit with a different hash - every fast path (no-op, append, prepend, patch) rejects
+		// this, so the refresh goes through the full re-render with scroll re-anchoring
+		const rewritten = { ...h.state.history[150], hash: 'f' + String(150).padStart(4, '0') + 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' };
+		h.state.history[150] = rewritten;
+		h.state.history[149].parents = [rewritten.hash]; // 149 is the newer child referencing 150
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'mid-history rewrite (windowed)');
+	});
+
+	it('same in a short fully-rendered repository', async () => {
+		const h = await bootView(60);
+		await h.scrollTo(30);
+		const before = measureRowCoordinates(h);
+
+		const rewritten = { ...h.state.history[30], hash: 'f' + String(30).padStart(4, '0') + 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' };
+		h.state.history[30] = rewritten;
+		h.state.history[29].parents = [rewritten.hash]; // 29 is the newer child referencing 30
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'mid-history rewrite (full render)');
+	});
+});

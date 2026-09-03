@@ -282,6 +282,25 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Resolve the local Gerrit change refs of a repository (`refs/remotes/<remote>/changes/**`) with
+	 * the Rust engine: one native scan of the ref store over the warm repository handle, instead of
+	 * the `git for-each-ref` child process (whose startup dominates its runtime, especially on
+	 * Windows) the Gerrit integration spawns otherwise.
+	 * @param repo The path of the repository.
+	 * @param remote The remote the changes were fetched from.
+	 * @returns The refs as refname → hash pairs, or NULL when no engine is available or it failed —
+	 *          the caller then runs its Git CLI fallback.
+	 */
+	public listChangeRefHashes(repo: string, remote: string): Promise<Map<string, string> | null> {
+		if (this.gerritEngine === null) return Promise.resolve(null);
+		return this.gerritEngine.listChangeRefs(repo, remote).then((refs) => {
+			const hashes = new Map<string, string>();
+			for (const [ref, hash] of refs) hashes.set(ref, hash);
+			return hashes;
+		}, () => null); // any engine failure (including a version-skewed binary without the export) degrades to the Git CLI path
+	}
+
+	/**
 	 * Get various Git config variables for a repository that are consumed by the Git Graph View.
 	 * The result is cached per repository (and invalidated when the set of remotes changes, the
 	 * repository's `.git/config` is modified, or `invalidateConfigCache` is called), because it

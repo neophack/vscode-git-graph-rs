@@ -503,4 +503,54 @@ describe('the Rust engine parses the NoteDb metas', () => {
 		assert.equal(state.url, urlBase + '2234');
 		assert.equal(keyed(cliStates)[2236], null);
 	});
+
+	/**
+	 * The dual-track of listLocalChangeRefs/listLocalChangeRefHashes: with an engine-backed
+	 * listChangeRefHashes on the runner (what DataSource provides), the Gerrit data source serves
+	 * the refs from it and agrees with the `git for-each-ref` fallback answer for answer.
+	 */
+	it('serves the local change refs from the engine, hash for hash with the Git CLI', async () => {
+		let engine;
+		try {
+			engine = new NativeBackend();
+		} catch {
+			return; // no engine binary on this machine: the Git CLI pool is the only implementation
+		}
+
+		const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-gerrit-refs-'));
+		repos.push(repo);
+		git(repo, ['init', '--quiet', '--initial-branch=main']);
+		const base = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-m', 'Base']).trim();
+		const ps1 = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', base, '-m', 'Change 3234 ps1']).trim();
+		const ps2 = git(repo, ['commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-p', base, '-m', 'Change 3234 ps2']).trim();
+		const meta = metaCommit(repo, null, 'Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\nCommit: ' + ps1 + '\n');
+		git(repo, ['update-ref', 'refs/remotes/origin/changes/34/3234/1', ps1]);
+		git(repo, ['update-ref', 'refs/remotes/origin/changes/34/3234/2', ps2]);
+		git(repo, ['update-ref', 'refs/remotes/origin/changes/34/3234/meta', meta]);
+		git(repo, ['update-ref', 'refs/remotes/origin/main', base]); // not a change ref: must not leak in
+
+		let pairs;
+		try {
+			pairs = await engine.listChangeRefs(repo, 'origin');
+		} catch {
+			return; // a binary predating listChangeRefs (version skew): nothing to compare
+		}
+		const engineRunner = Object.assign(runnerFor(repo), {
+			listChangeRefHashes: () => Promise.resolve(new Map(pairs))
+		});
+
+		const cliRefs = await new GerritDataSource(runnerFor(repo)).listLocalChangeRefs(repo, 'origin');
+		const engineRefs = await new GerritDataSource(engineRunner).listLocalChangeRefs(repo, 'origin');
+		assert.deepEqual(engineRefs.sort(), cliRefs.sort());
+		assert.deepEqual(cliRefs.sort(), [
+			'refs/remotes/origin/changes/34/3234/1',
+			'refs/remotes/origin/changes/34/3234/2',
+			'refs/remotes/origin/changes/34/3234/meta'
+		]);
+
+		const hashes = await new GerritDataSource(engineRunner).listLocalChangeRefHashes(repo, 'origin');
+		assert.equal(hashes.get('refs/remotes/origin/changes/34/3234/1'), ps1);
+		assert.equal(hashes.get('refs/remotes/origin/changes/34/3234/meta'), meta);
+		assert.equal(hashes.has('refs/remotes/origin/main'), false);
+	});
 });

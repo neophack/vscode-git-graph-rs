@@ -20,6 +20,13 @@ export interface GitRunner {
 	 * or when it resolves NULL — the `git log` pool below serves the parse.
 	 */
 	parseGerritMetas?: (repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null) => Promise<Map<number, GerritChangeState | null> | null>;
+	/**
+	 * The Rust-engine change-ref scan of a `DataSource`: one native call resolves every
+	 * `refs/remotes/<remote>/changes/**` refname and hash in-process. Optional (absent in stand-in
+	 * runners, e.g. the tests'): without it — or when it resolves NULL — the `git for-each-ref`
+	 * commands below serve the listing.
+	 */
+	listChangeRefHashes?: (repo: string, remote: string) => Promise<Map<string, string> | null>;
 }
 
 export interface ParsedChangeRef {
@@ -601,8 +608,13 @@ export class GerritDataSource {
 
 	/**
 	 * List the local change refs (under `refs/remotes/<remote>/changes/`) of a repository.
+	 *
+	 * The Rust engine serves the refnames from a single in-process scan when available; the Git
+	 * CLI (`git for-each-ref`) is only spawned as the fallback.
 	 */
-	public listLocalChangeRefs(repo: string, remote: string) {
+	public async listLocalChangeRefs(repo: string, remote: string): Promise<string[]> {
+		const engine = this.git.listChangeRefHashes !== undefined ? await this.git.listChangeRefHashes(repo, remote) : null;
+		if (engine !== null) return Array.from(engine.keys());
 		return this.git.gitOutput(['for-each-ref', 'refs/remotes/' + remote + '/changes/', '--format=%(refname)'], repo, (stdout) =>
 			stdout.split(/\r?\n/).map((ref) => ref.trim()).filter((ref) => ref !== '')
 		).catch(() => <string[]>[]);
@@ -611,8 +623,13 @@ export class GerritDataSource {
 	/**
 	 * Resolve the current hash of every local change ref of a repository in a SINGLE Git command
 	 * (used to look up NoteDb meta hashes in bulk, instead of one `rev-parse` process per ref).
+	 *
+	 * The Rust engine resolves them all in one in-process scan when available; the Git CLI
+	 * (`git for-each-ref`) is only spawned as the fallback.
 	 */
-	public listLocalChangeRefHashes(repo: string, remote: string) {
+	public async listLocalChangeRefHashes(repo: string, remote: string): Promise<Map<string, string>> {
+		const engine = this.git.listChangeRefHashes !== undefined ? await this.git.listChangeRefHashes(repo, remote) : null;
+		if (engine !== null) return engine;
 		return this.git.gitOutput(['for-each-ref', 'refs/remotes/' + remote + '/changes/', '--format=%(refname)%00%(objectname)'], repo, (stdout) => {
 			const hashes = new Map<string, string>();
 			for (const line of stdout.split(/\r?\n/)) {

@@ -256,7 +256,7 @@ pub fn tag_details(repo: &Repo, tag_name: &str) -> Result<GitTagDetails> {
                 // The decoded message excludes the signature, which is what the message the
                 // dialogue shows must exclude.
                 message: strip_trailing_blank_lines(tag.message.to_string()),
-                signature: tag.pgp_signature.map(|_| unverified_signature()),
+                signature: tag.signature.map(|_| unverified_signature()),
             })
         }
         gix::object::Kind::Commit => {

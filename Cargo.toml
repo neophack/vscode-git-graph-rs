@@ -3,13 +3,13 @@ resolver = "2"
 members = ["native/core", "native/node"]
 
 [workspace.package]
-version = "1.0.13"
+version = "1.0.15"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
-gix = { version = "0.86", default-features = false }
+gix = { version = "0.87", default-features = false }
 regex = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
