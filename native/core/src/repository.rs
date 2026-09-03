@@ -50,6 +50,15 @@ impl Repo {
             .workdir()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| git_dir.clone());
+        // Declined before anything is read: an openable-looking repository whose refs cannot be
+        // seen would render as an empty graph, which the caller cannot tell from an empty
+        // repository.
+        if uses_reftable(&git_dir) {
+            return Err(Error::unsupported(format!(
+                "{} stores its refs in the reftable format, which this engine cannot read",
+                git_dir.display()
+            )));
+        }
         Ok(Repo {
             inner: repo.into_sync(),
             root,
@@ -94,6 +103,48 @@ impl Repo {
     /// Resolve a revision specification (`HEAD`, a branch name, a hash, `HEAD~2`, ...) to a commit.
     pub fn resolve_commit(&self, rev: &str) -> Result<gix::ObjectId> {
         resolve_commit_in(&self.borrow(), rev)
+    }
+}
+
+/// Does the repository store its refs in the [reftable] format?
+///
+/// gitoxide reads only the files backend (loose refs and `packed-refs`); a reftable repository
+/// opens without complaint but reports no refs and no HEAD at all, which the view renders as an
+/// empty graph — indistinguishable from an empty repository. Answering `Unsupported` instead
+/// hands the repository to the extension's `git` CLI backend, which reads reftable natively.
+///
+/// The layout is detected from the shapes only git's reftable backend produces, in both of its
+/// arrangements: the default *dirtree* layout keeps the tables in `<git-dir>/reftable/` and
+/// replaces `refs/heads` with a regular file saying so, while the rare *embedded* layout makes
+/// `refs` itself a file pointing at the tables. A linked worktree keeps its refs in the main
+/// repository's reftable, reached through the `commondir` file.
+///
+/// [reftable]: https://git-scm.com/docs/reftable
+fn uses_reftable(git_dir: &Path) -> bool {
+    fn markers(dir: &Path) -> bool {
+        dir.join("refs").is_file()
+            || dir.join("refs").join("heads").is_file()
+            || dir.join("reftable").join("tables.list").is_file()
+    }
+
+    if markers(git_dir) {
+        return true;
+    }
+    match std::fs::read_to_string(git_dir.join("commondir")) {
+        Ok(common) => {
+            let common = common.trim();
+            if common.is_empty() {
+                return false;
+            }
+            let common = Path::new(common);
+            let common_dir = if common.is_absolute() {
+                common.to_path_buf()
+            } else {
+                git_dir.join(common)
+            };
+            markers(&common_dir)
+        }
+        Err(_) => false,
     }
 }
 

@@ -34,6 +34,28 @@ impl TestRepo {
         repo
     }
 
+    /// Create an empty repository whose refs are stored in a non-default backend, when the local
+    /// git supports it (`git init --ref-format=` arrived in git 2.45).
+    pub fn new_with_ref_format(ref_format: &str) -> TestRepo {
+        let dir = tempfile::tempdir().expect("could not create a temporary directory");
+        let repo = TestRepo {
+            dir,
+            clock: 1_600_000_000,
+        };
+        repo.git(&[
+            "init",
+            "--quiet",
+            "--initial-branch=main",
+            "--ref-format",
+            ref_format,
+        ]);
+        repo.git(&["config", "user.name", "Test User"]);
+        repo.git(&["config", "user.email", "test@example.com"]);
+        repo.git(&["config", "commit.gpgsign", "false"]);
+        repo.git(&["config", "gc.auto", "0"]);
+        repo
+    }
+
     pub fn path(&self) -> &Path {
         self.dir.path()
     }

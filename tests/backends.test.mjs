@@ -1079,6 +1079,82 @@ describe('a renamed directory', () => {
 	});
 });
 
+describe('reftable repositories', () => {
+	// A repository created with `git init --ref-format=reftable` keeps its refs in the reftable
+	// binary format, which the engine's gitoxide cannot read: without the decline it would open
+	// the repository and report no branches and no commits — an empty graph that looks like an
+	// empty repository. The engine declares the repository Unsupported, and every call for it is
+	// answered by the git CLI backend, which reads reftable natively.
+	// The block reuses the module-level fixture path and clock that `git()` and `commit()`
+	// close over; the main fixture's own repository is gone by the time this block runs.
+	function reftableSupported() {
+		try {
+			// Probed in a throwaway subdirectory so the probe cannot seed the fixture's branch name.
+			const probe = path.join(repoPath, 'probe');
+			fs.mkdirSync(probe);
+			execFileSync('git', ['init', '--quiet', '--ref-format=reftable', '.'], {
+				cwd: probe,
+				encoding: 'utf8',
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoPath }
+			});
+			fs.rmSync(probe, { recursive: true, force: true });
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	before(() => {
+		repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-reftable-'));
+	});
+
+	after(() => {
+		fs.rmSync(repoPath, { recursive: true, force: true });
+	});
+
+	it('serves the whole repository over the CLI when the engine declines it', async () => {
+		if (!reftableSupported()) {
+			console.log('skipping: this git does not support --ref-format (needs git 2.45+)');
+			return;
+		}
+		const { createBackend } = await import('../out/backend/index.js');
+
+		git(['init', '--quiet', '--initial-branch=main', '--ref-format', 'reftable']);
+		git(['config', 'user.name', 'Test User']);
+		git(['config', 'user.email', 'test@example.com']);
+		git(['config', 'commit.gpgsign', 'false']);
+		commit('the only commit');
+
+		// The engine declines the repository before reading anything — the decline is what routes
+		// every later call to the CLI, so it must be an error and not an empty answer.
+		const rust = new NativeBackend();
+		await assert.rejects(
+			rust.getRepoInfo(repoPath, { showRemoteBranches: true }),
+			(error) => error.kind === 'Unsupported'
+		);
+
+		const fallbacks = [];
+		const backend = createBackend({ onFallback: (method) => fallbacks.push(method) });
+		const info = await backend.getRepoInfo(repoPath, { showRemoteBranches: true, showStashes: true });
+		assert.deepEqual([...info.branches], ['main']);
+		assert.equal(info.head, git(['rev-parse', 'HEAD']).trim());
+
+		const options = {
+			maxCommits: 100,
+			showTags: true,
+			showRemoteBranches: true,
+			showUncommittedChanges: false,
+			commitOrdering: 'date'
+		};
+		const graph = await backend.getCommits(repoPath, options);
+		assert.equal(graph.error, null);
+		assert.equal(graph.commits.length, 1);
+		assert.equal(graph.commits[0].hash, info.head);
+		assert.deepEqual([...graph.commits[0].heads], ['main']);
+		assert.ok(fallbacks.includes('getRepoInfo') && fallbacks.includes('getCommits'));
+	});
+});
+
 describe('git semantics the fixtures do not cover', () => {
 	// Four shapes taken straight from the git documentation, where the two backends disagreed
 	// until each of these pinned them: diff headers that quote or share prefixes, .mailmap,
