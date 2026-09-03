@@ -284,21 +284,36 @@ code{
 	width:100%;
 	max-width:0;
 }
+/* The Date and Author columns are given a MATCHING min-width and max-width (a fixed width, not
+ * just a cap) so that table-layout:auto - which otherwise sizes a column from the natural content
+ * width of whichever rows currently happen to be in the DOM - cannot make them (and with them, the
+ * flexible Description column right next to them) grow or shrink as the virtualized window scrolls
+ * past commits with longer/shorter author names or date strings, or as an off-screen commit list
+ * update patches a handful of rows in place: every row, mounted or not, reserves the exact same
+ * column width, so nothing to its right can ever shift. */
+#commitTable.autoLayout td.dateCol, #commitTable.autoLayout th.dateCol{
+	min-width:160px;
+	max-width:160px;
+}
 #commitTable.autoLayout td.authorCol, #commitTable.autoLayout th.authorCol{
+	min-width:124px;
 	max-width:124px;
 }
 @media screen and (min-width: 775px) and (max-width: 850px) {
 	#commitTable.autoLayout td.dateCol, #commitTable.autoLayout th.dateCol, #commitTable.autoLayout td.authorCol, #commitTable.autoLayout th.authorCol{
+		min-width:100px;
 		max-width:100px;
 	}
 }
 @media screen and (min-width: 700px) and (max-width: 775px) {
 	#commitTable.autoLayout td.dateCol, #commitTable.autoLayout th.dateCol, #commitTable.autoLayout td.authorCol, #commitTable.autoLayout th.authorCol{
+		min-width:90px;
 		max-width:90px;
 	}
 }
 @media screen and (max-width: 700px) {
 	#commitTable.autoLayout td.dateCol, #commitTable.autoLayout th.dateCol, #commitTable.autoLayout td.authorCol, #commitTable.autoLayout th.authorCol{
+		min-width:80px;
 		max-width:80px;
 	}
 }

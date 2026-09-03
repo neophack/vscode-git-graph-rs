@@ -82,16 +82,6 @@ function showCommitDetails(view: GitGraphView, commitDetails: GG.GitCommitDetail
 
 
 
-	if (!isCdvDocked(view)) {
-
-		const elem = document.getElementById('cdv');
-
-		if (elem !== null) elem.remove();
-
-	}
-
-
-
 	expandedCommit.commitDetails = commitDetails;
 
 	if (haveFilesChanged(expandedCommit.fileChanges, commitDetails.fileChanges)) {
@@ -615,7 +605,29 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 		}
 
+	} else if (!isDocked && elem.previousElementSibling !== expandedCommit.commitElem) {
+
+		// The row identity changed under it (e.g. a table rebuild elsewhere) - move the EXISTING
+		// element to sit after the (possibly new) commit row instead of destroying and recreating
+		// it: a plain refresh of the same open commit (unrelated data elsewhere changing) never hits
+		// this branch, so its scroll position, event listeners and DOM identity are left completely
+		// untouched - what used to look like the commit "reopening" on every background refresh.
+
+		insertAfter(elem, expandedCommit.commitElem);
+
 	}
+
+
+
+	// The fade-in animation (see #cdv.inline / #cdv.docked in main.css) restarts whenever the
+	// element is disconnected and reconnected to the document - which happens even when its DOM
+	// reference is carefully preserved and reinserted (a table rebuild replaces the WHOLE table
+	// element the row used to belong to). Let it play once, on the render that actually opens the
+	// commit; every later render of the same open commit explicitly disables it, so no amount of
+	// background refreshing can make the panel visibly flash again.
+	elem.style.animation = expandedCommit.entered ? 'none' : '';
+
+	expandedCommit.entered = true;
 
 
 

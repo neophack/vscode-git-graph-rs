@@ -47,6 +47,18 @@ function observeWindowSizeChanges(view: GitGraphView) {
 }
 
 
+// The graph column header element, and the graph content / viewport width, this function last
+// actually applied a layout to (see the early-out below): this call runs after EVERY commit list
+// update, including a background refresh that only prepends off-screen rows (a file edited, a
+// commit landing while the user is scrolled down the history) - resetting and re-measuring the
+// column's padding on every one of those, even though the graph's rendered width hasn't changed,
+// was visible as the Description column (the very next, flexible column) jittering left/right on
+// each such refresh. The element is part of the cache key because a full table re-render replaces
+// it with a fresh, unpadded header - that always needs the padding (re-)applied, whatever the width.
+let lastAppliedGraphColElem: HTMLElement | null = null;
+let lastAppliedGraphColumnWidth: number | null = null;
+let lastAppliedGraphColumnViewportWidth: number | null = null;
+
 function applyGraphColumnAutoLayout(view: GitGraphView) {
 
 	if (typeof view.currentRepo === 'undefined' || view.tableElem.className.indexOf('autoLayout') === -1) return; // only the automatic layout depends on the view width
@@ -61,13 +73,21 @@ function applyGraphColumnAutoLayout(view: GitGraphView) {
 
 
 
+	const graphContentWidth = view.graph.getContentWidth(), viewportWidth = view.viewElem.clientWidth;
+	if (graphColElem === lastAppliedGraphColElem && graphContentWidth === lastAppliedGraphColumnWidth && viewportWidth === lastAppliedGraphColumnViewportWidth) return;
+	lastAppliedGraphColElem = graphColElem;
+	lastAppliedGraphColumnWidth = graphContentWidth;
+	lastAppliedGraphColumnViewportWidth = viewportWidth;
+
+
+
 	// Reset any padding this function applied on a previous call before measuring: otherwise
 	// colWidth reflects that stale, JS-inflated padding instead of the column's base CSS
 	// padding, and deriving new padding from it makes the graph column width oscillate between
 	// calls while the window is being resized.
 	graphColElem.style.padding = '';
 
-	let colWidth = graphColElem.offsetWidth, graphWidth = view.graph.getContentWidth();
+	let colWidth = graphColElem.offsetWidth, graphWidth = graphContentWidth;
 
 	let maxWidth = Math.round(view.viewElem.clientWidth * 0.333);
 

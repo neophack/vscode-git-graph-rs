@@ -531,8 +531,19 @@ class GitGraphView {
 		// only the new rows are inserted and the scroll position is shifted by exactly the height
 		// they add, keeping the visible rows perfectly still. The new commits appear when the user
 		// scrolls back up to the top.
-		if (this.canPrependCommits(commits, onlyFollowFirstParent)) {
-			this.prependCommits(commits, commitHead, moreAvailable);
+		const prepend = this.canPrependCommits(commits, onlyFollowFirstParent);
+		if (prepend !== null) {
+			this.prependCommits(commits, commitHead, moreAvailable, prepend.numNewCommits);
+			return;
+		}
+
+		// Same commits, same order (e.g. a background `git fetch` moved a remote-tracking branch on
+		// a commit that isn't at the top, or HEAD moved to a commit already in the list): nothing
+		// about the table's shape or scroll position is affected, so only the specific rows whose
+		// ref/tag/remote/stash labels actually changed are patched in place, wherever they sit -
+		// every other row, in the DOM or not, is left completely untouched.
+		if (this.canPatchCommitsMetadata(commits, onlyFollowFirstParent)) {
+			this.patchCommitsMetadata(commits, commitHead, moreAvailable);
 			return;
 		}
 
@@ -659,18 +670,22 @@ class GitGraphView {
 	 * (or removed) strictly at the top (e.g. a commit was made while the user is scrolled down the
 	 * history, or the working tree became dirty / clean so the "Uncommitted Changes" row appeared
 	 * or vanished), so it can be applied incrementally instead of requiring a full re-render.
-	 * @returns TRUE if the previously rendered commits form the tail of the new list (ignoring the
-	 * Uncommitted Changes row, which may appear or disappear at the very top). A new commit on the
-	 * checked-out branch also moves the `heads` label off the previous head commit: the FIRST
-	 * old-core commit is therefore allowed to differ (its row is patched in place, not in view),
-	 * while every commit below it must be unchanged.
+	 * @returns The number of commits new at the top (and how many old commits dropped out of the
+	 * truncated bottom of the loading window), or NULL if the previously rendered commits are not
+	 * the tail of the new list (ignoring the Uncommitted Changes row, which may appear or disappear
+	 * at the very top). A new commit on the checked-out branch also moves the `heads` label off the
+	 * previous head commit: the FIRST old-core commit is therefore allowed to differ (its row is
+	 * patched in place, not in view), while every commit below it must be unchanged. In a
+	 * repository longer than the loading window (moreCommitsAvailable), a commit landing at the top
+	 * also slides the window: the oldest LOADED commit drops out at the bottom - far below the
+	 * viewport - which is just as prependable.
 	 */
-	private canPrependCommits(commits: GG.GitCommit[], onlyFollowFirstParent: boolean) {
-		if (this.currentRepoLoading || this.currentRepoRefreshState.hard) return false;
-		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return false;
+	private canPrependCommits(commits: GG.GitCommit[], onlyFollowFirstParent: boolean): { numNewCommits: number } | null {
+		if (this.currentRepoLoading || this.currentRepoRefreshState.hard) return null;
+		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return null;
 		const oldCore = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? this.commits.slice(1) : this.commits;
 		const newCore = commits.length > 0 && commits[0].hash === UNCOMMITTED ? commits.slice(1) : commits;
-		if (oldCore.length === 0 || newCore.length < oldCore.length) return false;
+		if (oldCore.length === 0 || newCore.length === 0) return null;
 		// The head is allowed to change here (a new commit above the old head is the whole point);
 		// the previous head commit may lose its branch label to the new commit (same hash, same
 		// parents - only its refs can move), but every commit below it must be unchanged
@@ -681,9 +696,21 @@ class GitGraphView {
 			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
 			arraysStrictlyEqual(a.parents, b.parents) &&
 			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector));
-		const tail = newCore.slice(newCore.length - oldCore.length);
-		if (oldCore.length === 1) return oldCore[0].hash === tail[0].hash && arraysStrictlyEqual(oldCore[0].parents, tail[0].parents);
-		return arraysEqual(oldCore.slice(1), tail.slice(1), unchanged) && oldCore[0].hash === tail[0].hash && arraysStrictlyEqual(oldCore[0].parents, tail[0].parents);
+		const firstUnchanged = (a: GG.GitCommit, b: GG.GitCommit) => a.hash === b.hash && arraysStrictlyEqual(a.parents, b.parents);
+		/* numNewCommits = commits new at the top; the remaining oldCore.length - dropped commits
+		 * must appear in newCore starting at that offset. dropped > 0 (the window slid) is only
+		 * possible while the loading window is active - with the full history loaded, nothing can
+		 * disappear from the bottom. */
+		for (let numNewCommits = Math.max(0, newCore.length - oldCore.length);; numNewCommits++) {
+			const dropped = numNewCommits + oldCore.length - newCore.length;
+			if (dropped > 0 && !this.moreCommitsAvailable) return null;
+			const retained = oldCore.length - dropped;
+			if (retained <= 0) return null;
+			if (firstUnchanged(oldCore[0], newCore[numNewCommits]) &&
+				(retained === 1 || arraysEqual(oldCore.slice(1, retained), newCore.slice(numNewCommits + 1, numNewCommits + retained), unchanged))) {
+				return { numNewCommits: numNewCommits };
+			}
+		}
 	}
 
 	/**
@@ -693,11 +720,13 @@ class GitGraphView {
 	 * position by the height they add or remove, so the rows the user is looking at stay exactly
 	 * where they are (no jump, no flicker) - scrolling back up to the top reveals the new rows.
 	 */
-	private prependCommits(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean) {
+	private prependCommits(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean, numNewCommits: number) {
 		const oldHasUncommitted = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED;
 		const newHasUncommitted = commits.length > 0 && commits[0].hash === UNCOMMITTED;
 		const oldCoreLength = this.commits.length - (oldHasUncommitted ? 1 : 0);
-		const numNewCommits = commits.length - (newHasUncommitted ? 1 : 0) - oldCoreLength;
+		// Commits that slid out of the truncated bottom of the loading window (far below the
+		// viewport): they must leave the table without disturbing anything above them
+		const droppedTail = oldCoreLength + numNewCommits - (commits.length - (newHasUncommitted ? 1 : 0));
 		// Rows that are new at the very top of the table, in order: the new commits, then the
 		// Uncommitted Changes row if it just appeared (it always sits at index 0 when present)
 		let numInsertedRows = numNewCommits + (newHasUncommitted && !oldHasUncommitted ? 1 : 0);
@@ -730,11 +759,43 @@ class GitGraphView {
 		if (this.renderedRange !== null) {
 			// Windowed rendering: rows have a uniform height, so the top-row changes shift the
 			// content by exactly delta * rowHeight; shifting scrollTop by that keeps the visible
-			// window on the same commits, and re-rendering the (small) window updates the spacers
-			// and scroll height (the browser clamps the scrollTop if it shrank past the bottom)
+			// window on the same commits.
 			const delta = numInsertedRows - removedRows;
+			const oldRange = this.renderedRange;
 			this.viewElem.scrollTop = Math.max(0, this.viewElem.scrollTop + delta * this.config.graph.rowHeight);
-			this.renderTable();
+			const newRange = this.canVirtualize() ? this.computeVisibleRange() : null;
+			// The row whose branch label just moved (the previous head, immediately below the
+			// inserted rows) needs its HTML patched, not just its data-id - only relevant if it
+			// actually fell inside the rendered window (near the very top of the history)
+			const headRowIndex = numInsertedRows;
+			const headRowNeedsContent = numNewCommits > 0 && newRange !== null && headRowIndex >= newRange.start && headRowIndex < newRange.end;
+			if (newRange !== null && !headRowNeedsContent && newRange.start === oldRange.start + delta && newRange.end === oldRange.end + delta) {
+				// Every change happened strictly outside the rendered window (the common case while
+				// viewing well within the history): patch the existing rows' identity in place
+				// instead of tearing down and rebuilding the whole table. A full rebuild forces the
+				// browser to redo the (auto-layout) column widths on every background refresh, even
+				// though nothing on screen actually changed - perceptible as the Description column
+				// jittering left/right on every file edit or commit happening off-screen.
+				this.renderedRange = newRange;
+				const ctx = this.createRowRenderingContext();
+				const vertexColours = ctx.vertexColours;
+				this.tableElem.querySelectorAll('tr.commit').forEach((row, i) => {
+					const id = newRange.start + i;
+					(row as HTMLElement).dataset.id = String(id);
+					(row as HTMLElement).dataset.color = String(vertexColours[id]);
+					row.classList.toggle('current', this.commits[id].hash === ctx.currentHash);
+				});
+				const rowHeight = this.config.graph.rowHeight;
+				const topSpacerTd = this.tableElem.querySelector('#tableColHeaders + tr.virtSpacer td');
+				if (topSpacerTd !== null) (topSpacerTd as HTMLElement).style.height = (newRange.start * rowHeight) + 'px';
+				const bottomSpacerTd = this.tableElem.querySelector('tr.virtSpacer:last-child td');
+				if (bottomSpacerTd !== null) (bottomSpacerTd as HTMLElement).style.height = ((this.commits.length - newRange.end) * rowHeight) + 'px';
+				this.findWidget.refresh();
+			} else {
+				// The change reaches into (or right up against) the rendered window - fall back to a
+				// full re-render of the window, which is always correct
+				this.renderTable();
+			}
 		} else {
 			// Full render is active (variable row heights are possible, e.g. inline commit bodies):
 			// apply the top-row changes above the existing rows and shift the scroll position by the
@@ -744,6 +805,13 @@ class GitGraphView {
 			if (removedRows > 0) {
 				const uncommittedElem = document.getElementById('uncommittedChanges');
 				if (uncommittedElem !== null && uncommittedElem.parentElement !== null) uncommittedElem.parentElement.removeChild(uncommittedElem);
+			}
+			if (droppedTail > 0) {
+				// The loading window slid (a commit landed at the top of a repository longer than
+				// the window): the oldest loaded commits left the list at the bottom, far below the
+				// viewport - drop their rows without touching anything above them
+				const commitRows = this.tableElem.querySelectorAll('tr.commit');
+				for (let i = commitRows.length - droppedTail; i < commitRows.length; i++) commitRows[i].remove();
 			}
 			if (numInsertedRows > 0) {
 				// The rows new at the top are exactly the first numInsertedRows entries of the new
@@ -794,6 +862,73 @@ class GitGraphView {
 		applyGraphColumnAutoLayout(this);
 		this.finaliseLoadCommits();
 		this.requestAvatars(avatarsNeeded);
+	}
+
+	/**
+	 * TRUE if `commits` is exactly the same commits, in exactly the same order, as currently
+	 * rendered - only their ref/tag/remote/stash labels (and/or the uncommitted change count) may
+	 * differ, anywhere in the list, not just at the top (e.g. a background `git fetch` moving a
+	 * remote-tracking branch on a commit deep in the history, well below the top-only changes
+	 * `canPrependCommits` handles). Every row's array index is therefore unaffected: nothing about
+	 * the table's shape or scroll position needs to change, only the content of specific rows.
+	 */
+	private canPatchCommitsMetadata(commits: GG.GitCommit[], onlyFollowFirstParent: boolean) {
+		if (this.currentRepoLoading || this.currentRepoRefreshState.hard || this.gerritStatesDirty) return false;
+		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return false;
+		if (this.expandedCommit !== null) return false; // keep the existing commitElem-refresh handling in renderTable() for this rarer case
+		if (this.commits.length !== commits.length || this.commits.length === 0) return false;
+		for (let i = 0; i < commits.length; i++) {
+			if (this.commits[i].hash !== commits[i].hash || !arraysStrictlyEqual(this.commits[i].parents, commits[i].parents)) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Apply a refresh response that carries the exact same commits, in the exact same order, as
+	 * currently rendered (see `canPatchCommitsMetadata`): patches only the rows whose content
+	 * actually changed - wherever they sit in the table, in the DOM or not - leaving every other
+	 * row, the scroll position and the rendered window completely untouched.
+	 */
+	private patchCommitsMetadata(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean) {
+		const metadataUnchanged = (a: GG.GitCommit, b: GG.GitCommit) =>
+			a.message === b.message &&
+			arraysStrictlyEqual(a.heads, b.heads) &&
+			arraysEqual(a.tags, b.tags, (a: GG.GitCommitTag, b: GG.GitCommitTag) => a.name === b.name && a.annotated === b.annotated) &&
+			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
+			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector));
+
+		const changedIds = new Set<number>();
+		for (let i = 0; i < commits.length; i++) {
+			if (!metadataUnchanged(this.commits[i], commits[i])) changedIds.add(i);
+		}
+		const prevCurrentHash = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? UNCOMMITTED : this.commitHead;
+
+		this.moreCommitsAvailable = moreAvailable;
+		this.commits = commits;
+		this.commitHead = commitHead;
+		this.commitLookup = {};
+		for (let i = 0; i < commits.length; i++) this.commitLookup[commits[i].hash] = i;
+		this.saveState();
+		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
+		this.renderedGitBranchHead = this.gitBranchHead;
+		this.gerritStatesDirty = false;
+
+		const newCurrentHash = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? UNCOMMITTED : this.commitHead;
+		if (changedIds.size > 0 || prevCurrentHash !== newCurrentHash) {
+			const ctx = this.createRowRenderingContext();
+			this.tableElem.querySelectorAll('tr.commit').forEach((row) => {
+				const id = parseInt((row as HTMLElement).dataset.id!);
+				if (changedIds.has(id)) {
+					(row as HTMLElement).outerHTML = this.getCommitRowHtml(id, ctx);
+				} else if (prevCurrentHash !== newCurrentHash) {
+					row.classList.toggle('current', this.commits[id].hash === ctx.currentHash);
+				}
+			});
+			this.findWidget.refresh();
+		}
+		this.renderGraph();
+		applyGraphColumnAutoLayout(this);
+		this.finaliseLoadCommits();
 	}
 
 	private finaliseLoadCommits() {
@@ -1394,6 +1529,7 @@ class GitGraphView {
 			codeReview: null,
 			lastViewedFile: null,
 			loading: true,
+			entered: false,
 			lineCounts: {
 				pending: null,
 				requested: new Set<string>(),
@@ -1798,6 +1934,15 @@ class GitGraphView {
 	}
 
 	private renderTable() {
+		// The expanded Commit Details View (a <tr> living inside this table, in the non-docked
+		// layout) is about to be destroyed by the innerHTML rebuild below along with every commit
+		// row - detach it first and re-insert it after the rebuild instead of letting
+		// showCommitDetails() recreate it from scratch a few lines later: recreating it would
+		// discard its scroll position, its file-tree open/closed DOM state and every event
+		// listener, which is what makes an unrelated background refresh look like the commit
+		// "closing and reopening" while the user is looking at it.
+		const cdvElem = this.expandedCommit !== null && !isCdvDocked(this) ? document.getElementById('cdv') : null;
+
 		const ctx = this.createRowRenderingContext();
 		const colVisibility = ctx.colVisibility;
 
@@ -1832,6 +1977,13 @@ class GitGraphView {
 			html += this.getSpacerRowHtml(this.commits.length - to);
 		}
 		this.tableElem.innerHTML = '<table>' + html + '</table>';
+		if (cdvElem !== null) {
+			// Re-attach it now, before the expandedCommit handling below runs: showCommitDetails()
+			// / renderCommitDetailsView() find it via document.getElementById('cdv') and reuse it in
+			// place (only repositioning it if its row moved) instead of creating a new one.
+			const commitElem = findCommitElemWithId(this.getCommitId(this.expandedCommit!.commitHash));
+			if (commitElem !== null) insertAfter(cdvElem, commitElem);
+		}
 		this.footerElem.innerHTML = this.moreCommitsAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>' : '';
 		makeTableResizable(this);
 		this.findWidget.refresh();

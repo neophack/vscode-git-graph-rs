@@ -35,6 +35,16 @@ declare global {
 		lastViewedFile: string | null;
 		loading: boolean;
 		/**
+		 * TRUE once the entrance (fade-in) animation has played for this open commit. A CSS
+		 * animation tied to `#cdv`'s connection to the document restarts whenever the element is
+		 * disconnected and reconnected - which a table rebuild does even when the SAME element
+		 * reference is carefully preserved and reinserted (see renderTable's cdvElem handling). Once
+		 * `entered` is true, `renderCommitDetailsView` suppresses the animation via an inline style
+		 * on every subsequent render of the same open commit, so a background refresh - however it
+		 * happens to be implemented - can never make the panel visibly "flash" again.
+		 */
+		entered: boolean;
+		/**
 		 * The deferred `+N/-M` line counts of the file list. The details arrive without them (every
 		 * file costs two blob reads, which dominates the load of a many-file commit); the paths
 		 * near the viewport are settled first and the rest are filled in by background batches.
