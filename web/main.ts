@@ -552,14 +552,25 @@ class GitGraphView {
 		// user (a commit inserted/removed anywhere, a rebase rewriting mid-history, the Gerrit
 		// states arriving) - and scrollTop is a pixel offset, not tied to any commit, so the same
 		// scrollTop after the rebuild points k rows away from what the user was looking at: the
-		// mid-history up/down jump. Anchor the rebuild instead: remember the commit currently at
-		// the top of the viewport (and the exact pixels into its row), and restore the scroll so
-		// that commit sits at the same position again after the render.
+		// mid-history up/down jump. Anchor the rebuild instead: remember the commit row currently
+		// at the top of the viewport (and how far it is scrolled past that edge) measured straight
+		// from the DOM - getHeaderHeight() does not include the sticky table column headers, so
+		// any index*rowHeight arithmetic built on it is off by their height - and restore the
+		// scroll so that commit sits at the same position again after the render.
 		let scrollAnchorHash: string | null = null, scrollAnchorOffset = 0;
-		if (!currentRepoLoading && this.config.graph.rowHeight > 0 && this.commits.length > 0 && this.viewElem.clientHeight > 0) {
-			const oldIndex = Math.min(this.commits.length - 1, Math.max(0, Math.floor((this.viewElem.scrollTop - this.getHeaderHeight()) / this.config.graph.rowHeight)));
-			scrollAnchorHash = this.commits[oldIndex].hash;
-			scrollAnchorOffset = this.viewElem.scrollTop - (this.getHeaderHeight() + oldIndex * this.config.graph.rowHeight);
+		if (!currentRepoLoading && this.viewElem.clientHeight > 0) {
+			const viewRect = this.viewElem.getBoundingClientRect();
+			for (const elem of <HTMLElement[]><any>this.tableElem.querySelectorAll('tr.commit')) {
+				const top = elem.getBoundingClientRect().top;
+				if (top + elem.offsetHeight > viewRect.top + 1) { // the first row intersecting the viewport
+					const index = parseInt(elem.dataset.id!);
+					if (!isNaN(index) && index >= 0 && index < this.commits.length) {
+						scrollAnchorHash = this.commits[index].hash;
+						scrollAnchorOffset = viewRect.top - top; // pixels of this row scrolled past the viewport top
+					}
+					break;
+				}
+			}
 		}
 		this.currentRepoLoading = false;
 		this.moreCommitsAvailable = moreAvailable;
@@ -601,17 +612,17 @@ class GitGraphView {
 		if (scrollAnchorHash !== null && typeof this.commitLookup[scrollAnchorHash] === 'number') {
 			// The anchored commit survived the refresh: put it back at the exact viewport position
 			// it had before the rebuild (works whether rows above were added or removed, and
-			// absorbs header-height changes like the Pinned row appearing/disappearing). Prefer
-			// the row's real DOM position when it is rendered - in a non-virtualized render with
-			// the Commit Details View open, the CDV <tr> inserted above shifts every row below it
-			// by its (variable) height, which the index*rowHeight arithmetic cannot know.
-			const anchorElem = findCommitElemWithId(this.getCommitId(scrollAnchorHash));
-			const newScrollTop = anchorElem !== null
-				? this.viewElem.scrollTop + anchorElem.getBoundingClientRect().top - this.viewElem.getBoundingClientRect().top + scrollAnchorOffset
-				: this.getHeaderHeight() + this.commitLookup[scrollAnchorHash] * this.config.graph.rowHeight + scrollAnchorOffset;
-			if (this.viewElem.scrollTop !== newScrollTop) {
-				this.viewElem.scrollTop = newScrollTop;
-				this.updateVirtualWindow(); // re-render the window around the restored position
+			// absorbs header-height changes like the Pinned row appearing/disappearing). Measured
+			// from the row's real DOM position, so it also holds in a non-virtualized render with
+			// the Commit Details View open, where the CDV <tr> inserted above shifts every row
+			// below it by its (variable) height.
+			const anchorElem = findCommitElemWithId(this.commitLookup[scrollAnchorHash]);
+			if (anchorElem !== null) {
+				const newScrollTop = this.viewElem.scrollTop + anchorElem.getBoundingClientRect().top - this.viewElem.getBoundingClientRect().top + scrollAnchorOffset;
+				if (this.viewElem.scrollTop !== newScrollTop) {
+					this.viewElem.scrollTop = newScrollTop;
+					this.updateVirtualWindow(); // re-render the window around the restored position
+				}
 			}
 		}
 

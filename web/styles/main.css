@@ -55,6 +55,11 @@ body #view{
 	background-color:var(--vscode-editor-background);
 	overflow-x:hidden;
 	overflow-y:auto;
+	/* The view manages its own scroll position across re-renders (anchoring the commit that sits
+	 * at the top of the viewport): Chromium's native scroll anchoring would adjust scrollTop a
+	 * second time after those explicit adjustments - on top of our compensation - visibly jumping
+	 * the rows the user is looking at. */
+	overflow-anchor:none;
 }
 body #view:focus{
 	outline:none;

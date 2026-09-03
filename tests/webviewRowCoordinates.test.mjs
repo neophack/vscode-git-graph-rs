@@ -197,3 +197,55 @@ describe('a mid-history rewrite (rebase/amend) forces the full re-render path - 
 		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'mid-history rewrite (full render)');
 	});
 });
+
+describe('rows removed above the viewport force the full re-render path - the DOM-rect anchoring keeps the viewport still', () => {
+	it('the newest commits disappearing (history truncated / rebased away) moves no visible row (windowed)', async () => {
+		const h = await bootView(300, { window: 300 });
+		await h.scrollTo(150);
+		const before = measureRowCoordinates(h);
+
+		// The 3 newest commits vanish (e.g. a reset of the branch head): the list shrinks ABOVE
+		// the viewport - no fast path accepts a removal, so the full re-render runs
+		h.state.history.splice(0, 3);
+		h.state.head = h.state.history[0].hash;
+		h.state.history[0].heads = ['main'];
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'rows removed above viewport (windowed)');
+	});
+
+	it('the Uncommitted Changes row vanishing above the viewport moves no visible row', async () => {
+		const h = await bootView(300, { window: 300 });
+		h.state.uncommitted = 3;
+		h.state.uncommittedCount = 3;
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+		await h.scrollTo(150);
+		const before = measureRowCoordinates(h);
+		assert.ok(before.has('UNCOMMITTED') === false, 'the Uncommitted row sits above the scrolled viewport');
+
+		// The working tree becomes clean (e.g. a stash) without any new commit landing: only the
+		// Uncommitted row disappears - a removal at the top, full re-render
+		h.state.uncommitted = null;
+		h.state.uncommittedCount = null;
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'uncommitted row vanishing');
+	});
+
+	it('rows removed above the viewport in a short fully-rendered repository move no visible row', async () => {
+		const h = await bootView(60);
+		await h.scrollTo(30);
+		const before = measureRowCoordinates(h);
+
+		h.state.history.splice(0, 3);
+		h.state.head = h.state.history[0].hash;
+		h.state.history[0].heads = ['main'];
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		assertViewportUnchanged(h, before, measureRowCoordinates(h), 'rows removed above viewport (full render)');
+	});
+});

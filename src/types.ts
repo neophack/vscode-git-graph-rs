@@ -513,7 +513,6 @@ export interface ContextMenuActionsVisibility {
 		readonly reset: boolean;
 			readonly undo: boolean;
 			readonly editMessage: boolean;
-			readonly amend: boolean;
 			readonly copyHash: boolean;
 		readonly copySubject: boolean;
 	};

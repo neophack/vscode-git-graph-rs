@@ -585,6 +585,19 @@ class Graph {
 		return isPossible(this.vertices[i]) || false;
 	}
 
+	/**
+	 * Determine whether a commit has been published to a remote: it counts as pushed when it, or
+	 * any of its descendants, carries a remote-tracking ref. The descendants are exactly the newer
+	 * commits, which the top-down loaded window always contains, so the walk over the loaded graph
+	 * is complete. Used to hide the message-editing actions for commits already on a remote.
+	 * @param i Index of the commit to test.
+	 * @returns TRUE => Commit is on a remote (or unknown, in which case editing is not offered)
+	 */
+	public commitOnRemote(i: number): boolean {
+		if (this.vertices[i] === undefined) return true;
+		return this.getAllChildren(i).some((id) => this.commits[id].remotes.length > 0);
+	}
+
 	private getAllChildren(i: number) {
 		let visited: { [id: string]: number } = {};
 		const rec = (vertex: Vertex) => {

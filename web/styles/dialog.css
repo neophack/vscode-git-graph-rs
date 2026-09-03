@@ -142,6 +142,23 @@ body.vscode-high-contrast .dialog{
 	color:var(--vscode-menu-foreground);
 	opacity:0.4;
 }
+/* The textarea (multi-line inputs, e.g. the commit message editor) has no UA default that follows
+   the theme - without this rule it renders the browser-default pure white, glaring in dark themes */
+.dialogContent > table.dialogForm textarea{
+	padding:4px 6px;
+	box-sizing:border-box;
+	outline-style:none;
+	background-color:rgba(128,128,128,0.1);
+	border:1px solid rgba(128,128,128,0.5);
+	border-radius:4px;
+	color:var(--vscode-menu-foreground);
+	font-family:var(--vscode-font-family);
+	font-size:13px;
+	line-height:17px;
+}
+.dialogContent > table.dialogForm textarea:focus{
+	border-color:var(--vscode-focusBorder);
+}
 
 .dialog .roundedBtn{
 	display:inline-block;

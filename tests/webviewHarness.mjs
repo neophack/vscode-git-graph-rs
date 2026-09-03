@@ -213,6 +213,34 @@ export async function bootView(total, options = {}) {
 	window.Element.prototype.scroll = function () {};
 	window.Element.prototype.scrollTo = function () {};
 
+	// jsdom has no layout engine, so getBoundingClientRect is all zeros - but the view's
+	// scroll-anchoring across a full re-render measures the viewport-top commit row straight
+	// from the DOM rects. Emulate them with the same model the row-coordinate assertions use:
+	// header (controls, 65px) + sticky column headers (31px) + top spacer + uniform rows,
+	// offset by the emulated scrollTop.
+	const HEADER_HEIGHT = 96; // headerRow (65) + tableColHeaders (31), as in the real webview
+	window.Element.prototype.getBoundingClientRect = function () {
+		if (this.classList !== undefined && this.classList.contains('commit') && this.id !== 'uncommittedChanges' && this.closest !== undefined && this.closest('#commitTable') !== null) {
+			let y = 0;
+			for (const tr of document.querySelectorAll('#commitTable tr')) {
+				if (tr === this) break;
+				if (tr.id === 'tableColHeaders') continue;
+				if (tr.classList.contains('virtSpacer')) y += parseInt(tr.querySelector('td').style.height, 10) || 0;
+				else if (tr.classList.contains('commit')) y += ROW_HEIGHT;
+			}
+			const top = HEADER_HEIGHT + y - scrollTopValue;
+			return { top: top, right: 1200, bottom: top + ROW_HEIGHT, left: 0, width: 1200, height: ROW_HEIGHT, x: 0, y: top, toJSON() { return this; } };
+		}
+		if (this === viewElem) return { top: 0, right: 1200, bottom: VIEWPORT_HEIGHT, left: 0, width: 1200, height: VIEWPORT_HEIGHT, x: 0, y: 0, toJSON() { return this; } };
+		return { top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, x: 0, y: 0, toJSON() { return this; } };
+	};
+	try {
+		Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', {
+			get() { return this.classList !== undefined && this.classList.contains('commit') ? ROW_HEIGHT : 0; },
+			configurable: true
+		});
+	} catch (e) { /* jsdom variant without a configurable offsetHeight: the rect emulation above carries the tests */ }
+
 	window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.min.js'), 'utf8'));
 	window.dispatchEvent(new window.Event('load'));
 
