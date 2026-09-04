@@ -151,12 +151,16 @@ pub fn read_commit(commit: &gix::Commit<'_>) -> Result<CommitRecord> {
     })
 }
 
-/// `git log --author=<name>` matches a case-insensitive substring of "Name <email>".
+/// `git log --author=<name>` runs as `--author=<name> <`, so the CLI backend matches a literal
+/// "Name <" prefix of "Name <email>" rather than "Name" as a free-floating substring — without the
+/// trailing "<", a name that is a textual prefix of another author's name (e.g. "Bob" inside
+/// "Bobby <bobby@x.com>") would match commits it should not. This mirrors that exactly, case-
+/// insensitively (case sensitivity is the one place this still deviates from a bare `git log`).
 fn matches_author(record: &CommitRecord, authors: &[String]) -> bool {
     let haystack = format!("{} <{}>", record.author, record.email).to_lowercase();
     authors
         .iter()
-        .any(|author| haystack.contains(&author.to_lowercase()))
+        .any(|author| haystack.contains(&format!("{} <", author.to_lowercase())))
 }
 
 /// Did this commit change anything below one of `paths`?
