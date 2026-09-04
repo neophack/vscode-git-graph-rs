@@ -111,6 +111,8 @@ class GitGraphView {
 	private readonly pinnedControlsElem: HTMLElement | null;
 	public readonly tableElem: HTMLElement;
 	private readonly footerElem: HTMLElement;
+	/** The innerHTML the footer was last set to (see setFooter): unchanged content is never swapped. */
+	private footerHtml: string | null = null;
 	private readonly showRemoteBranchesElem: HTMLInputElement;
 	private readonly refreshBtnElem: HTMLElement;
 
@@ -601,49 +603,7 @@ class GitGraphView {
 		this.requestAvatars(avatarsNeeded);
 	}
 
-	/**
-	 * TEMPORARY DIAGNOSTIC (remove once the reported jitter is understood): after every refresh,
-	 * sample the geometry that could possibly move and log ONLY what actually changed since the
-	 * previous refresh. Open the webview devtools (Command Palette -> "Developer: Open Webview
-	 * Developer Tools") and watch for lines starting with GG-DIAG.
-	 */
-	private diagPrev: { [key: string]: string } = {};
-	public diagSample(tag: string) {
-		try {
-			const table = <HTMLElement | null>this.tableElem.querySelector('table');
-			const graphCol = document.getElementById('tableHeaderGraphCol');
-			const firstRow = <HTMLElement | null>this.tableElem.querySelector('tr.commit');
-			const cells = firstRow !== null
-				? Array.from(firstRow.querySelectorAll('td')).map((td) => Math.round(td.getBoundingClientRect().left)).join(',')
-				: '';
-			const sample: { [key: string]: string } = {
-				scrollTop: String(this.viewElem.scrollTop),
-				range: this.renderedRange === null ? 'full' : this.renderedRange.start + '-' + this.renderedRange.end,
-				rowsInDom: String(this.tableElem.querySelectorAll('tr.commit').length),
-				cdv: this.expandedCommit === null ? 'no' : this.expandedCommit.commitHash.substring(0, 7),
-				tableClass: this.tableElem.className,
-				tableWidth: table !== null ? String(Math.round(table.getBoundingClientRect().width)) : '?',
-				graphColWidth: graphCol !== null ? String(Math.round(graphCol.getBoundingClientRect().width)) : '?',
-				graphColPadding: graphCol !== null ? graphCol.style.padding : '?',
-				graphContentWidth: String(this.graph.getContentWidth()),
-				colLefts: cells,
-				headerHeight: String(this.getHeaderHeight()),
-				viewWidth: String(this.viewElem.clientWidth)
-			};
-			const changed: string[] = [];
-			for (const key of Object.keys(sample)) {
-				if (typeof this.diagPrev[key] === 'string' && this.diagPrev[key] !== sample[key]) {
-					changed.push(key + ': ' + this.diagPrev[key] + ' -> ' + sample[key]);
-				}
-			}
-			this.diagPrev = sample;
-			if (changed.length > 0) console.log('GG-DIAG [' + tag + '] ' + changed.join(' | '));
-		} catch (e) { /* diagnostics must never break the view */ }
-	}
-
 	private finaliseLoadCommits() {
-		this.diagSample('response');
-		setTimeout(() => this.diagSample('settled'), 80); // catches anything that moves asynchronously
 		const refreshState = this.currentRepoRefreshState;
 		if (refreshState.inProgress) {
 			dialog.closeActionRunning();
@@ -707,7 +667,7 @@ class GitGraphView {
 		// Jump straight to the commit: load everything up to it (plus a margin), then
 		// checkPendingScrollCommit scrolls to it once the load completes
 		this.maxCommits = Math.max(this.maxCommits, msg.count + this.config.loadMoreCommits);
-		this.footerElem.innerHTML = '<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2>';
+		this.setFooter('<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2>');
 		this.saveState();
 		this.requestLoadRepoInfoAndCommits(false, true);
 	}
@@ -779,7 +739,7 @@ class GitGraphView {
 		this.saveState();
 		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
 		this.tableElem.innerHTML = '';
-		this.footerElem.innerHTML = '';
+		this.setFooter('');
 		this.renderGraph();
 		this.findWidget.refresh();
 	}
@@ -1914,12 +1874,14 @@ class GitGraphView {
 			const commitElem = findCommitElemWithId(this.getCommitId(this.expandedCommit!.commitHash));
 			if (commitElem !== null) insertAfter(cdvElem, commitElem);
 		}
-		this.footerElem.innerHTML = this.moreCommitsAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>' : '';
+		const footerSwapped = this.setFooter(this.moreCommitsAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>' : '');
 		makeTableResizable(this);
 		this.findWidget.refresh();
 		this.renderedGitBranchHead = this.gitBranchHead;
 
-		if (this.moreCommitsAvailable) {
+		if (this.moreCommitsAvailable && footerSwapped) {
+			// Only a freshly swapped footer needs the listener: an untouched button keeps the one
+			// attached when it was created
 			document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
 				this.loadMoreCommits();
 			});
@@ -2006,15 +1968,42 @@ class GitGraphView {
 	private renderUncommittedChanges() {
 		const uncommittedElem = document.getElementById('uncommittedChanges');
 		if (uncommittedElem === null) return; // not rendered (e.g. outside the windowed render range)
-		const colVisibility = this.getColumnVisibility(), date = formatShortDate(this.commits[0].date);
-		uncommittedElem.innerHTML = '<td></td><td><b>' + escapeHtml(this.commits[0].message) + '</b></td>' +
-			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + date.formatted + '</td>' : '') +
-			(colVisibility.author ? '<td class="authorCol text" title="* <>">*</td>' : '') +
-			(colVisibility.commit ? '<td class="text" title="*">*</td>' : '');
+		const date = formatShortDate(this.commits[0].date);
+		// Patch the rendered cells in place: the row was built by the table's row builder, so only
+		// the two things a working-tree status can change are touched - the count in the message
+		// and the date. A background refresh with an identical status leaves the row's DOM
+		// (structure, resize handles, find highlights) completely alone.
+		const messageElem = uncommittedElem.querySelector('.description .text');
+		if (messageElem !== null && messageElem.textContent !== this.commits[0].message) {
+			messageElem.textContent = this.commits[0].message;
+		}
+		const dateElem = <HTMLElement | null>uncommittedElem.querySelector('.dateCol');
+		if (dateElem !== null) {
+			if (dateElem.title !== date.title) dateElem.title = date.title;
+			// The formatted date is the trailing text node after the column-resize handle
+			const dateText = dateElem.lastChild;
+			if (dateText !== null && dateText.nodeType === 3 && dateText.textContent !== date.formatted) {
+				dateText.textContent = date.formatted;
+			}
+		}
 	}
 
 	private renderFetchButton() {
 		alterClass(this.controlsElem, CLASS_FETCH_SUPPORTED, this.gitRemotes.length > 0);
+	}
+
+	/**
+	 * Set the footer's content, leaving the DOM untouched when it is already showing exactly this
+	 * (a re-render that swaps identical nodes would only reset whatever the user is doing with
+	 * them - e.g. hovering the "Load More Commits" button). Every footer write goes through here,
+	 * so the cached content can never go stale.
+	 * @returns Whether the footer was actually swapped.
+	 */
+	private setFooter(html: string) {
+		if (this.footerHtml === html) return false;
+		this.footerHtml = html;
+		this.footerElem.innerHTML = html;
+		return true;
 	}
 
 	/**
@@ -2230,7 +2219,7 @@ class GitGraphView {
 	}
 
 	public loadMoreCommits() {
-		this.footerElem.innerHTML = '<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2>';
+		this.setFooter('<h2 id="loadingHeader">' + SVG_ICONS.loading + strings.loading + '</h2>');
 		this.maxCommits += this.config.loadMoreCommits;
 		this.saveState();
 		this.requestLoadRepoInfoAndCommits(false, true);

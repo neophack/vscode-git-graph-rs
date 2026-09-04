@@ -315,3 +315,61 @@ describe('the Commit Details View stays open and untouched while the repository 
 		assert.equal(cdv.style.animation, 'none', 'the entrance animation is suppressed on every later render');
 	});
 });
+
+
+describe('identical background refreshes leave the auxiliary DOM untouched', () => {
+	it('keeps the "Load More Commits" button node on an unchanged refresh, and it stays wired', async () => {
+		const h = await bootView(300, { window: 100 }); // a longer repository: the footer button shows
+		const button = h.document.getElementById('loadMoreCommitsBtn');
+		assert.ok(button !== null, 'the footer renders the Load More button');
+
+		// The watcher firing on a file save with the repository unchanged: the footer's content is
+		// identical, so its nodes are left alone (a swap would only reset whatever the user is
+		// doing with the button)
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+		assert.strictEqual(h.document.getElementById('loadMoreCommitsBtn'), button, 'the button node survived an unchanged refresh');
+
+		// ... and the kept node is still wired: clicking starts the next page load
+		// (footer -> loading), and the button rebuilt after the answer is wired again
+		button.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		assert.ok(h.document.getElementById('loadingHeader') !== null, 'clicking started the next page load');
+		h.state.window = 150; // the host answers with the next page of commits
+		await h.pump();
+		const rebuilt = h.document.getElementById('loadMoreCommitsBtn');
+		assert.ok(rebuilt !== null && rebuilt !== button, 'the button was rebuilt after the page load');
+		rebuilt.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		assert.ok(h.document.getElementById('loadingHeader') !== null, 'the rebuilt button is wired too');
+		h.state.window = 200;
+		await h.pump();
+		assert.ok(h.document.getElementById('loadMoreCommitsBtn') !== null, 'the footer is back to the button');
+	});
+
+	it('keeps the Uncommitted Changes row cells on an unchanged refresh', async () => {
+		const h = await bootView(300);
+		// Pin the clock: the row's rendered date text derives from the response's arrival time
+		const realNow = h.window.Date.now;
+		h.window.Date.now = () => 1700000000000;
+		try {
+			h.state.uncommitted = 3;
+			h.state.uncommittedCount = 3;
+			h.dispatch({ command: 'refresh' });
+			await h.pump();
+			const row = h.document.getElementById('uncommittedChanges');
+			assert.ok(row !== null, 'the Uncommitted Changes row is rendered');
+			const cells = Array.from(row.children);
+
+			// Another file save, the status answer identical: the row is patched in place only
+			// when the content actually changed, so every cell keeps its DOM node
+			h.dispatch({ command: 'refresh' });
+			await h.pump();
+			const rowAfter = h.document.getElementById('uncommittedChanges');
+			assert.strictEqual(rowAfter, row, 'the row element is kept');
+			Array.from(rowAfter.children).forEach((td, i) => {
+				assert.strictEqual(td, cells[i], 'cell ' + i + ' kept its DOM node');
+			});
+		} finally {
+			h.window.Date.now = realNow;
+		}
+	});
+});

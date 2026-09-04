@@ -171,6 +171,13 @@ window.__measure = function () {
 };
 window.__refNames = function () { const names = []; for (const r of document.querySelectorAll('#commitTable tr.commit .gitRefName')) names.push(r.textContent); return names; };
 
+/* the column boundaries, from the kept header row: any column moving left or right shows up here */
+window.__colLefts = function () {
+	return Array.from(document.querySelectorAll('#tableColHeaders > th')).map((th) => Math.round(th.getBoundingClientRect().left));
+};
+/* the number of file rows the open Commit Details View currently shows (0 when closed) */
+window.__cdvFileRows = function () { return document.querySelectorAll('#cdvFiles .fileTreeFileRecord').length; };
+
 /* adjacent rendered (non-spacer) commit rows must keep the uniform row pitch */
 window.__rowPitch = function () {
 	const tops = [];
@@ -203,16 +210,27 @@ window.__run = async function (name) {
 		await window.__respond();
 		await window.__settle();
 		await window.__settle();
+	} else if (name === 'openCdvUncommitted') {
+		/* Click the Uncommitted Changes row instead: the CDV opens on the working-tree change set,
+		 * whose file list grows and shrinks with every save - the exact configuration the
+		 * horizontal column jitter was reported in. */
+		const row = document.getElementById('uncommittedChanges');
+		if (row !== null) row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await window.__respond();
+		await window.__settle();
+		await window.__settle();
 	} else if (name === 'cdvCountChange') {
 		/* With the Commit Details View open, the number of uncommitted files keeps changing - the
 		 * exact situation reported as "the columns keep shifting left and right". Every count is
-		 * applied through a full refresh and the layout is measured after each one. */
+		 * applied through a full refresh and the layout is measured after each one. The column
+		 * boundaries and the CDV's file row count are recorded per round, so the checks can assert
+		 * both that no column moved and that the file list really re-rendered (non-vacuous). */
 		extra.rounds = [];
 		for (const count of [3, 12, 4, 7, 3, 12]) {
 			state.uncommittedCount = count;
 			state.uncommitted = uncommitted(count);
 			await refresh();
-			extra.rounds.push({ count: count, ...window.__measure() });
+			extra.rounds.push({ count: count, colLefts: window.__colLefts(), cdvFileRows: window.__cdvFileRows(), ...window.__measure() });
 		}
 	} else if (name === 'jump') {
 		const view = document.getElementById('view');

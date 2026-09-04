@@ -267,6 +267,52 @@ await load('');
 		'offscreen row: clearing the tree while at the top removes it, rows shift back up', { row: cleared.after.uncommittedRow });
 }
 
+/* ---------------- the reported column jitter: the Commit Details View open while the
+ * uncommitted file count keeps changing - no column boundary may move left or right.
+ * Two configurations: the CDV on the Uncommitted Changes row itself (its file list lives in a
+ * colspan cell inside the same table and grows/shrinks with the count), and the CDV on a commit
+ * deep in the history (which drops the table out of windowed rendering). ---------------- */
+{
+	/* CDV on the Uncommitted Changes row (the reported configuration) */
+	await load('');
+	await run('uncommittedAppear');
+	const cdvOpen = await run('openCdvUncommitted');
+	check(cdvOpen.after.uncommittedRow !== null, 'jitter: uncommitted row rendered before opening the CDV', cdvOpen.after.uncommittedRow);
+	check(await page.evaluate(() => document.getElementById('cdv') !== null), 'jitter: CDV opened on the Uncommitted Changes row');
+	const colsBefore = JSON.parse(await page.evaluate(() => JSON.stringify(window.__colLefts())));
+	const churn = await run('cdvCountChange');
+	const rounds = churn.extra.rounds || [];
+	check(rounds.length === 6, 'jitter: six count-change rounds executed', rounds.length);
+	for (let i = 0; i < rounds.length; i++) {
+		check(JSON.stringify(rounds[i].colLefts) === JSON.stringify(colsBefore),
+			'jitter: count ' + rounds[i].count + ' - column boundaries identical to before the churn', { before: colsBefore, now: rounds[i].colLefts });
+		if (i > 0 && rounds[i].tracked['commit 150'] !== undefined && rounds[i - 1].tracked['commit 150'] !== undefined) {
+			check(near(rounds[i - 1].tracked['commit 150'].textLeft, rounds[i].tracked['commit 150'].textLeft, 1),
+				'jitter: count ' + rounds[i - 1].count + ' -> ' + rounds[i].count + ' - commit 150 horizontally stable', { prev: rounds[i - 1].tracked['commit 150'].textLeft, now: rounds[i].tracked['commit 150'].textLeft });
+		}
+	}
+	/* non-vacuous: the CDV's file list really re-rendered across the rounds */
+	const fileRowCounts = [...new Set(rounds.map((r) => r.cdvFileRows))];
+	check(fileRowCounts.length > 1, 'jitter: the CDV file list actually changed size across the rounds', fileRowCounts);
+
+	/* CDV on a commit deep in the history, same count churn above it */
+	await load('');
+	await run('jump');
+	await run('openCdv');
+	const colsBefore2 = JSON.parse(await page.evaluate(() => JSON.stringify(window.__colLefts())));
+	const churn2 = await run('cdvCountChange');
+	const rounds2 = churn2.extra.rounds || [];
+	check(rounds2.length === 6, 'jitter@150: six count-change rounds executed', rounds2.length);
+	for (let i = 0; i < rounds2.length; i++) {
+		check(JSON.stringify(rounds2[i].colLefts) === JSON.stringify(colsBefore2),
+			'jitter@150: count ' + rounds2[i].count + ' - column boundaries identical to before the churn', { before: colsBefore2, now: rounds2[i].colLefts });
+		if (i > 0 && rounds2[i].tracked['commit 150'] !== undefined && rounds2[i - 1].tracked['commit 150'] !== undefined) {
+			check(near(rounds2[i - 1].tracked['commit 150'].textLeft, rounds2[i].tracked['commit 150'].textLeft, 1) && near(rounds2[i - 1].tracked['commit 150'].top, rounds2[i].tracked['commit 150'].top, 1),
+				'jitter@150: count ' + rounds2[i - 1].count + ' -> ' + rounds2[i].count + ' - commit 150 fully stable', { prev: rounds2[i - 1].tracked['commit 150'], now: rounds2[i].tracked['commit 150'] });
+		}
+	}
+}
+
 /* ---------------- column resize handles: a stray CLICK must not freeze the column widths.
  * The handles line every cell boundary of every row (full column height), so hitting one
  * accidentally is easy - and converting the automatic layout to a fixed one on MOUSEDOWN meant
