@@ -545,13 +545,19 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			title: strings.menuEditMessage + ELLIPSIS,
 
-			// The original message-editing action (git commit --amend, HEAD only); kept from the
+			// One entry for every amendable commit: the host serves HEAD with a plain
 
-			// recent rework: a commit already published to a remote (or in an unknown state) gets
+			// git commit --amend and any earlier commit through an automated rebase reword;
 
-			// no button at all, instead of an action that would rewrite published history
+			// merge commits can't be reworded, and commits already published to a remote
 
-			visible: visibility.editMessage && hash === view.commitHead && !view.graph.commitOnRemote(view.commitLookup[hash]),
+			// (or whose state is unknown) get no button at all - the host re-validates the
+
+			// local-only requirement (git branch -r --contains) before rewriting anything,
+
+			// so a stale graph cannot cause a published commit to be rewritten
+
+			visible: visibility.editMessage && commit.parents.length < 2 && !view.graph.commitOnRemote(view.commitLookup[hash]),
 
 			onClick: () => editCommitMessageAction(view, target)
 
