@@ -2,6 +2,7 @@ interface DropdownOption {
 	readonly name: string;
 	readonly value: string;
 	readonly hint?: string;
+	readonly title?: string;
 }
 
 /**
@@ -247,7 +248,10 @@ class Dropdown {
 		let html = '';
 		for (let i = 0; i < this.options.length; i++) {
 			const escapedName = escapeHtml(this.options[i].name);
-			html += '<div class="dropdownOption' + (this.optionsSelected[i] ? ' ' + CLASS_SELECTED : '') + '" data-id="' + i + '" title="' + escapedName + '">' +
+			// An option may carry a more descriptive text (e.g. a sub-repository's path relative
+			// to its parent repository) to show on hover than the name displayed in the list
+			const title = typeof this.options[i].title === 'string' && this.options[i].title !== '' ? this.options[i].title! : this.options[i].name;
+			html += '<div class="dropdownOption' + (this.optionsSelected[i] ? ' ' + CLASS_SELECTED : '') + '" data-id="' + i + '" title="' + escapeHtml(title) + '">' +
 				(this.multipleAllowed && this.optionsSelected[i] ? '<div class="dropdownOptionMultiSelected">' + SVG_ICONS.check + '</div>' : '') +
 				escapedName + (typeof this.options[i].hint === 'string' && this.options[i].hint !== '' ? '<span class="dropdownOptionHint">' + escapeHtml(this.options[i].hint!) + '</span>' : '') +
 				(this.showInfo ? '<div class="dropdownOptionInfo" title="' + escapeHtml(this.options[i].value) + '">' + SVG_ICONS.info + '</div>' : '') +

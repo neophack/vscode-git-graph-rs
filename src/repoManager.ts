@@ -51,8 +51,16 @@ export class RepoManager extends Disposable {
 		this.dataSource = dataSource;
 		this.extensionState = extensionState;
 		this.logger = logger;
-		this.repos = extensionState.getRepos();
-		this.ignoredRepos = extensionState.getIgnoredRepos();
+		// Repository paths used to be persisted in native-separator form on Windows when they came
+		// from a backend (submodules in particular), which made them miss every forward-slash
+		// comparison; migrate them to the normalised form
+		this.repos = {};
+		const savedRepos = extensionState.getRepos();
+		for (const repo of Object.keys(savedRepos)) {
+			const normalised = getPathFromStr(repo);
+			if (typeof this.repos[normalised] === 'undefined') this.repos[normalised] = savedRepos[repo];
+		}
+		this.ignoredRepos = extensionState.getIgnoredRepos().map((repo) => getPathFromStr(repo)).filter((repo, i, repos) => repos.indexOf(repo) === i);
 		this.maxDepthOfRepoSearch = getConfig().maxDepthOfRepoSearch;
 
 		this.configWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/git-graph-rs.json');

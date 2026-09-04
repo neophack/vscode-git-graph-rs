@@ -174,11 +174,16 @@ export async function bootView(total, options = {}) {
 	const document = window.document;
 
 	const sent = [];
+	/* options.repos: the exact GitRepoSet the extension would send for a multi-repository
+	 * workspace (each value a fresh default repository state unless the test provides one). */
+	const repos = options.repos !== undefined
+		? Object.fromEntries(Object.entries(options.repos).map(([repo, state]) => [repo, state === null ? JSON.parse(JSON.stringify(DEFAULT_REPO_STATE)) : state]))
+		: { [REPO]: JSON.parse(JSON.stringify(DEFAULT_REPO_STATE)) };
 	window.initialState = {
 		config: config,
 		lastActiveRepo: REPO,
 		loadViewTo: null,
-		repos: { [REPO]: JSON.parse(JSON.stringify(DEFAULT_REPO_STATE)) },
+		repos: repos,
 		loadRepoInfoRefreshId: 0,
 		loadCommitsRefreshId: 0,
 		backend: { platform: 'test', engineAvailable: true, engineVersion: 'test', gitCliAvailable: true, capabilities: [] }

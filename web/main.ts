@@ -2108,7 +2108,7 @@ class GitGraphView {
 	}
 
 	public renderRepoDropdownOptions(repo?: string) {
-		this.repoDropdown.setOptions(getRepoDropdownOptions(this.gitRepos), [repo || this.currentRepo]);
+		this.repoDropdown.setOptions(getRepoDropdownOptions(this.gitRepos, this.config.repoDropdownOrder), [repo || this.currentRepo]);
 	}
 
 
@@ -2738,8 +2738,8 @@ function abbrevCommit(commitHash: string) {
 }
 
 
-function getRepoDropdownOptions(repos: Readonly<GG.GitRepoSet>) {
-	const repoPaths = getSortedRepositoryPaths(repos, initialState.config.repoDropdownOrder);
+function getRepoDropdownOptions(repos: Readonly<GG.GitRepoSet>, repoDropdownOrder: GG.RepoDropdownOrder) {
+	const repoPaths = getSortedRepositoryPaths(repos, repoDropdownOrder);
 	const paths: string[] = [], names: string[] = [], distinctNames: string[] = [], firstSep: number[] = [];
 	const resolveAmbiguous = (indexes: number[]) => {
 		// Find ambiguous names within indexes
@@ -2805,28 +2805,32 @@ function getRepoDropdownOptions(repos: Readonly<GG.GitRepoSet>) {
 	}
 	resolveAmbiguous(indexes);
 
-	const options: DropdownOption[] = [];
-	for (let i = 0; i < repoPaths.length; i++) {
-		let hint;
-		if (names[i] === distinctNames[i]) {
-			// Name is distinct, no hint needed
-			hint = '';
-		} else {
-			// Hint path is the prefix of the distinctName before the common suffix with name
-			let hintPath = distinctNames[i].substring(0, distinctNames[i].length - names[i].length - 1);
+		// A sub-repository is shown by its short name like every other repository, with its path
+		// relative to the closest containing repository as the tooltip of the option
+		const subRepoPaths = repoPaths.map((path) => getSubRepoPath(path.endsWith('/') ? path.substring(0, path.length - 1) : path, repos));
 
-			// Keep two informative directories
-			let hintComps = hintPath.split('/');
-			let keepDirs = hintComps[0] !== '' ? 2 : 3;
-			if (hintComps.length > keepDirs) hintComps.splice(keepDirs, hintComps.length - keepDirs, '...');
+		const options: DropdownOption[] = [];
+		for (let i = 0; i < repoPaths.length; i++) {
+			let hint;
+			if (names[i] === distinctNames[i]) {
+				// Name is distinct, no hint needed
+				hint = '';
+			} else {
+				// Hint path is the prefix of the distinctName before the common suffix with name
+				let hintPath = distinctNames[i].substring(0, distinctNames[i].length - names[i].length - 1);
 
-			// Construct the hint
-			hint = (distinctNames[i] !== paths[i] ? '.../' : '') + hintComps.join('/');
+				// Keep two informative directories
+				let hintComps = hintPath.split('/');
+				let keepDirs = hintComps[0] !== '' ? 2 : 3;
+				if (hintComps.length > keepDirs) hintComps.splice(keepDirs, hintComps.length - keepDirs, '...');
+
+				// Construct the hint
+				hint = (distinctNames[i] !== paths[i] ? '.../' : '') + hintComps.join('/');
+			}
+			options.push({ name: names[i], value: repoPaths[i], hint: hint, title: subRepoPaths[i] !== null ? subRepoPaths[i]! : undefined });
 		}
-		options.push({ name: names[i], value: repoPaths[i], hint: hint });
+		return options;
 	}
-	return options;
-}
 
 /**
  * Assess whether an action can cause the user to lose data, and if so describe the risk.

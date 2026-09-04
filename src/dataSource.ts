@@ -604,7 +604,9 @@ export class DataSource extends Disposable {
 	 * @returns An array of the paths of the submodules.
 	 */
 	public getSubmodules(repo: string) {
-		return this.backend.getSubmodules(repo).then((submodules) => [...submodules], () => []);
+		// The engines return native-separator paths on Windows, while every repository path Git
+		// Graph compares these against is normalised — apply the same normalisation as repoRoot
+		return this.backend.getSubmodules(repo).then((submodules) => submodules.map((submodule) => getPathFromUri(vscode.Uri.file(path.normalize(submodule)))), () => []);
 	}
 
 

@@ -227,6 +227,32 @@ function getRepoName(path: string) {
 }
 
 /**
+ * Get the path of a repository relative to the closest repository containing it.
+ *
+ * A repository contained within another known repository — a submodule or a nested repository —
+ * is identified by its path relative to that repository (the way `.gitmodules` names a
+ * submodule), which is what the Repos dropdown shows as the tooltip of an option. Canonicalised
+ * Windows paths may differ from the workspace path's drive letter and directory casing, so
+ * drive-letter paths are compared case-insensitively.
+ * @param path The path of the repository.
+ * @param repos The set of known repositories.
+ * @returns The relative path, or NULL if the repository is not contained within another known repository.
+ */
+function getSubRepoPath(path: string, repos: GG.GitRepoSet): string | null {
+	const caseInsensitive = /^[a-zA-Z]:/.test(path);
+	const repoPaths = Object.keys(repos);
+	let parent: string | null = null;
+	for (let i = 0; i < repoPaths.length; i++) {
+		if (repoPaths[i].length >= path.length) continue;
+		const contained = caseInsensitive
+			? path.substring(0, repoPaths[i].length + 1).toLowerCase() === (repoPaths[i] + '/').toLowerCase()
+			: path.startsWith(repoPaths[i] + '/');
+		if (contained && (parent === null || repoPaths[i].length > parent.length)) parent = repoPaths[i];
+	}
+	return parent === null ? null : path.substring(parent.length + 1);
+}
+
+/**
  * Get a sorted list of repository paths from a given GitRepoSet.
  * @param repos The set of repositories.
  * @param order The order to sort the repositories.
