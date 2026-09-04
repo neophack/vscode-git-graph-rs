@@ -1350,6 +1350,11 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 	const getFileOfFileElem = (fileChanges: ReadonlyArray<GG.GitFileChange>, fileElem: HTMLElement) => fileChanges[parseInt(fileElem.dataset.index!)];
 
+	// Whether this file's line counts have not settled yet — a still-loading file must be treated
+	// as (optimistically) text, exactly like the file tree's own row rendering does, so a click
+	// racing the background batch never mistakes "not known yet" for "known to be binary".
+	const isFileCountsPending = (file: GG.GitFileChange, expandedCommit: ExpandedCommit) => expandedCommit.lineCounts.pending !== null && expandedCommit.lineCounts.pending.has(file.newFilePath);
+
 
 
 	const getCommitHashForFile = (file: GG.GitFileChange, expandedCommit: ExpandedCommit) => {
@@ -1428,23 +1433,17 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		cdvUpdateFileState(view, file, fileElem, true, true);
 
-		sendMessage({
+		// A binary/image file has no textual diff for the native Diff View: it opens the
+		// standalone Binary Compare tab instead (the same one the Commit Comparison View uses).
+		if (fileIsBinary(file, isFileCountsPending(file, expandedCommit))) {
 
-			command: 'viewDiff',
+			sendMessage({ command: 'viewDiffBinary', repo: view.currentRepo, fromHash: fromHash, toHash: toHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath, type: fileStatus });
 
-			repo: view.currentRepo,
+		} else {
 
-			fromHash: fromHash,
+			sendMessage({ command: 'viewDiff', repo: view.currentRepo, fromHash: fromHash, toHash: toHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath, type: fileStatus });
 
-			toHash: toHash,
-
-			oldFilePath: file.oldFilePath,
-
-			newFilePath: file.newFilePath,
-
-			type: fileStatus
-
-		});
+		}
 
 	};
 
@@ -1680,11 +1679,13 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		};
 
-		const diffPossible = file.type === GG.GitFileStatus.Untracked || (file.additions !== null && file.deletions !== null);
+		// "View Diff" now covers every file (as a text or a binary/image comparison); the other
+		// two actions below still only understand text, so they stay hidden for a binary file.
+		const isBinary = fileIsBinary(file, isFileCountsPending(file, expandedCommit));
 
 		const fileExistsAtThisRevision = file.type !== GG.GitFileStatus.Deleted && !isUncommitted;
 
-		const fileExistsAtThisRevisionAndDiffPossible = fileExistsAtThisRevision && diffPossible;
+		const fileExistsAtThisRevisionAndDiffPossible = fileExistsAtThisRevision && !isBinary;
 
 		const codeReviewInProgressAndNotReviewed = expandedCommit.codeReview !== null && expandedCommit.codeReview.remainingFiles.includes(file.newFilePath);
 
@@ -1700,7 +1701,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 					title: strings.cdvMenuViewDiff,
 
-					visible: visibility.viewDiff && diffPossible,
+					visible: visibility.viewDiff,
 
 					onClick: () => triggerViewFileDiff(file, fileElem)
 

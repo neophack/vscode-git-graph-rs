@@ -1514,6 +1514,18 @@ export interface ResponseViewDiff extends ResponseWithErrorInfo {
 	readonly command: 'viewDiff';
 }
 
+/** Opens the Binary Compare tab for a file the native Diff View cannot show (a binary or image
+ *  change): the same tab the Commit Comparison View's "open diff" button uses. No response is
+ *  sent, exactly like `openCompareTab`, since it just reveals a webview panel. */
+export interface RequestViewDiffBinary extends RepoRequest {
+	readonly command: 'viewDiffBinary';
+	readonly fromHash: string;
+	readonly toHash: string;
+	readonly oldFilePath: string;
+	readonly newFilePath: string;
+	readonly type: GitFileStatus;
+}
+
 export interface RequestViewDiffWithWorkingFile extends RepoRequest {
 	readonly command: 'viewDiffWithWorkingFile';
 	readonly hash: string;
@@ -1639,6 +1651,7 @@ export type RequestMessage =
 	| RequestTagDetails
 	| RequestUpdateCodeReview
 	| RequestViewDiff
+	| RequestViewDiffBinary
 	| RequestViewDiffWithWorkingFile
 	| RequestViewFileAtRevision
 	| RequestViewScm

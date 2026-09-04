@@ -28,6 +28,7 @@ function getMediaCacheVersion(extensionPath: string): string {
 import { AvatarManager } from './avatarManager';
 import { describeCapabilities } from './backend';
 import { hasEngineForPlatform } from './backend/addon';
+import { BinaryCompareView } from './binaryCompareView';
 import { getConfig } from './config';
 import { CommitComparisonView } from './comparisonView';
 import { DataSource, GitCommitData, GitCommitDetailsData, GitConfigKey } from './dataSource';
@@ -39,7 +40,7 @@ import { PullRequestDataSource } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
-import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
+import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, resolveDiffFromHash, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**
@@ -1093,6 +1094,17 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({
 					command: 'viewDiff',
 					error: await viewDiff(msg.repo, msg.fromHash, msg.toHash, msg.oldFilePath, msg.newFilePath, msg.type)
+				});
+				break;
+			case 'viewDiffBinary':
+				// The native Diff View can't show a binary/image file (both panes would be
+				// empty): the same standalone tab the Commit Comparison View opens for one does.
+				BinaryCompareView.open(this.dataSource, msg.repo, resolveDiffFromHash(msg.fromHash, msg.toHash), msg.toHash, {
+					oldFilePath: msg.oldFilePath,
+					newFilePath: msg.newFilePath,
+					type: msg.type,
+					additions: null,
+					deletions: null
 				});
 				break;
 			case 'viewDiffWithWorkingFile':

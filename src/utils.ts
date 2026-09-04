@@ -485,6 +485,19 @@ export async function openFile(repo: string, filePath: string, hash: string | nu
 }
 
 /**
+ * Resolve the actual left-side revision of a diff: UNCOMMITTED means "against HEAD", and a
+ * left/right pair that are the same commit means "against that commit's own parent" — the
+ * shorthand both the native Diff View and the binary/image comparison views rely on.
+ * @param fromHash The nominal revision of the left-side of the Diff View.
+ * @param toHash The revision of the right-side of the Diff View.
+ * @returns The revision to actually diff from.
+ */
+export function resolveDiffFromHash(fromHash: string, toHash: string): string {
+	if (fromHash === UNCOMMITTED) fromHash = 'HEAD';
+	return fromHash === toHash ? fromHash + '^' : fromHash;
+}
+
+/**
  * Open the Visual Studio Code Diff View for a specific Git file change.
  * @param repo The repository the file is contained in.
  * @param fromHash The revision of the left-side of the Diff View.
@@ -503,9 +516,8 @@ export function viewDiff(repo: string, fromHash: string, toHash: string, oldFile
 				: (type === GitFileStatus.Added ? t('diffTitleAddedIn', abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedIn', abbrevToHash) : t('diffTitleChangedWithParent', abbrevFromHash, abbrevToHash))
 			: (type === GitFileStatus.Added ? t('diffTitleAddedBetween', abbrevFromHash, abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedBetween', abbrevFromHash, abbrevToHash) : t('diffTitleChanged', abbrevFromHash, abbrevToHash));
 		let title = pathComponents[pathComponents.length - 1] + ' (' + desc + ')';
-		if (fromHash === UNCOMMITTED) fromHash = 'HEAD';
 
-		return vscode.commands.executeCommand('vscode.diff', encodeDiffDocUri(repo, oldFilePath, fromHash === toHash ? fromHash + '^' : fromHash, type, DiffSide.Old), encodeDiffDocUri(repo, newFilePath, toHash, type, DiffSide.New), title, {
+		return vscode.commands.executeCommand('vscode.diff', encodeDiffDocUri(repo, oldFilePath, resolveDiffFromHash(fromHash, toHash), type, DiffSide.Old), encodeDiffDocUri(repo, newFilePath, toHash, type, DiffSide.New), title, {
 			preview: true,
 			viewColumn: getConfig().openNewTabEditorGroup
 		}).then(

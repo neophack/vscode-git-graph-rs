@@ -59,14 +59,19 @@ function fileChangeTypeMessage(file: GG.GitFileChange): string {
 	return getGitFileChangeTypeName(file.type) + (file.type === GG.GitFileStatus.Renamed ? ' (' + escapeHtml(file.oldFilePath) + ' → ' + escapeHtml(file.newFilePath) + ')' : '');
 }
 
-/** Whether the file's contents can be diffed: untracked files always, others when they are text. */
-function fileDiffPossible(file: GG.GitFileChange, pending: boolean): boolean {
-	return file.type === GG.GitFileStatus.Untracked || file.additions !== null && file.deletions !== null || pending;
+/**
+ * Whether a file's settled line counts mark it as binary (both null once counts are no longer
+ * pending). Every file can be diffed — a binary one just opens the Binary Compare tab's hex or
+ * picture view instead of the native text Diff View. Untracked files never carry counts (they
+ * are diffed by opening the new file directly, so their content never needs to be known here).
+ */
+function fileIsBinary(file: GG.GitFileChange, pending: boolean): boolean {
+	return !pending && file.type !== GG.GitFileStatus.Untracked && file.additions === null && file.deletions === null;
 }
 
 /** The tooltip of a file row: what clicking it does, then what happened to it. */
 function fileRowTitle(file: GG.GitFileChange): string {
-	return (fileDiffPossible(file, false) ? strings.clickToViewDiff : strings.unableToViewDiff + (file.type !== GG.GitFileStatus.Deleted ? strings.binaryFileSuffix : '')) + ' • ' + fileChangeTypeMessage(file);
+	return strings.clickToViewDiff + (fileIsBinary(file, false) ? strings.binaryFileSuffix : '') + ' • ' + fileChangeTypeMessage(file);
 }
 
 /** The `(+N|-M)` counts chip of a modified or renamed text file. */
@@ -83,7 +88,7 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 		const fileTreeFile: GG.GitFileChange = gitFiles[leaf.index];
 		const type = fileTreeFile.type;
 		const pending = pendingCounts !== null && pendingCounts.has(fileTreeFile.newFilePath);
-		const diffPossible = fileDiffPossible(fileTreeFile, pending);
+		const isBinary = fileIsBinary(fileTreeFile, pending);
 		const changeTypeMessage = fileChangeTypeMessage(fileTreeFile);
 		let countsChip = '';
 		if (type !== GG.GitFileStatus.Added && type !== GG.GitFileStatus.Untracked && type !== GG.GitFileStatus.Deleted) {
@@ -91,13 +96,13 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 				? fileCountsChipHtml(fileTreeFile)
 				: pending ? PENDING_COUNTS_CHIP_HTML : '';
 		}
-		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile' + (diffPossible ? ' gitDiffPossible' : '') + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + (diffPossible ? strings.clickToViewDiff : strings.unableToViewDiff + (type !== GG.GitFileStatus.Deleted ? strings.binaryFileSuffix : '')) + ' • ' + changeTypeMessage + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
+		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile gitDiffPossible' + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + strings.clickToViewDiff + (isBinary ? strings.binaryFileSuffix : '') + ' • ' + changeTypeMessage + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
 			(initialState.config.enhancedAccessibility ? '<span class="fileTreeFileType" title="' + changeTypeMessage + '">' + type + '</span>' : '') +
 			countsChip +
 			(fileTreeFile.newFilePath === lastViewedFile ? '<span id="cdvLastFileViewed" title="' + strings.lastFileViewedTitle + '">' + SVG_ICONS.eyeOpen + '</span>' : '') +
 			'<span class="copyGitFile fileTreeFileAction" title="' + strings.cdvMenuCopyAbsolutePath + '">' + SVG_ICONS.copy + '</span>' +
 			(type !== GG.GitFileStatus.Deleted
-				? (diffPossible && !isUncommitted ? '<span class="viewGitFileAtRevision fileTreeFileAction" title="' + strings.cdvMenuViewFileAtRevision + '">' + SVG_ICONS.commit + '</span>' : '') +
+				? (!isBinary && !isUncommitted ? '<span class="viewGitFileAtRevision fileTreeFileAction" title="' + strings.cdvMenuViewFileAtRevision + '">' + SVG_ICONS.commit + '</span>' : '') +
 				'<span class="openGitFile fileTreeFileAction" title="' + strings.cdvMenuOpenFile + '">' + SVG_ICONS.openFile + '</span>'
 				: ''
 			) + '</span></li>';
@@ -107,14 +112,13 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 }
 
 /**
- * Patch one rendered file row in place after its line counts arrived — the class, the tooltip and
- * the counts chip — without rebuilding the list, so a background batch never disturbs the view.
+ * Patch one rendered file row in place after its line counts arrived — the tooltip and the
+ * counts chip — without rebuilding the list, so a background batch never disturbs the view.
  */
 function patchFileRowCounts(record: HTMLElement, file: GG.GitFileChange) {
 	const fileElem = <HTMLElement>record.children[0]; // span.fileTreeFile
 	if (fileElem === null || !fileElem.classList.contains('fileTreeFile')) return;
 	const pendingChip = record.querySelector(':scope > .countsPending');
-	fileElem.classList.toggle('gitDiffPossible', fileDiffPossible(file, false));
 	fileElem.setAttribute('title', fileRowTitle(file));
 	if (pendingChip !== null) {
 		if (file.type !== GG.GitFileStatus.Added && file.type !== GG.GitFileStatus.Untracked && file.type !== GG.GitFileStatus.Deleted && file.additions !== null && file.deletions !== null) {
