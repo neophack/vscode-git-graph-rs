@@ -74,6 +74,35 @@ fn reports_when_more_commits_are_available() {
 }
 
 #[test]
+fn declines_graphs_that_include_reflog_commits() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "first", "first");
+
+    let engine = open(&repo);
+    let mut options = view_options(100);
+    options.include_commits_mentioned_by_reflogs = true;
+
+    let error = graph::load_commits(&engine, &options).unwrap_err();
+    assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
+}
+
+#[test]
+fn allows_branch_filtered_graphs_with_reflog_option() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "first", "first");
+
+    let engine = open(&repo);
+    let mut options = view_options(100);
+    options.branches = Some(vec!["main".to_string()]);
+    options.include_commits_mentioned_by_reflogs = true;
+
+    let data = graph::load_commits(&engine, &options).unwrap();
+    assert_eq!(data.commits.len(), 1);
+}
+
+#[test]
 fn adds_an_uncommitted_changes_row_above_head() {
     require_git!();
     let mut repo = TestRepo::new();
