@@ -496,12 +496,15 @@ export class GitGraphView extends Disposable {
 					error: await this.dataSource.applyStash(msg.repo, msg.selector, msg.reinstateIndex)
 				});
 				break;
-			case 'branchFromStash':
+			case 'branchFromStash': {
+				const branchFromStashResult = await this.dataSource.branchFromStash(msg.repo, msg.selector, msg.branchName, msg.confirmed === true);
+				if (this.sendLossWarning(branchFromStashResult, msg)) break;
 				this.sendMessage({
 					command: 'branchFromStash',
-					error: await this.dataSource.branchFromStash(msg.repo, msg.selector, msg.branchName)
+					error: <ErrorInfo>branchFromStashResult
 				});
 				break;
+			}
 			case 'checkoutBranch': {
 				const checkoutResult = await this.dataSource.checkoutBranch(msg.repo, msg.branchName, msg.remoteBranch, msg.confirmed === true);
 				if (this.sendLossWarning(checkoutResult, msg)) break;

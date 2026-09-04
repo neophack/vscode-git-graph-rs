@@ -792,6 +792,8 @@ export interface ResponseApplyStash extends ResponseWithErrorInfo {
 }
 
 export interface RequestBranchFromStash extends RepoRequest {
+	/** Set when the view already showed the data-loss warning and the user insisted. */
+	readonly confirmed?: boolean;
 	readonly command: 'branchFromStash';
 	readonly selector: string;
 	readonly branchName: string;

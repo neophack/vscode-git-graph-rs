@@ -1574,9 +1574,15 @@ export class DataSource extends Disposable {
 	 * @param branchName The name of the branch to be created.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public branchFromStash(repo: string, selector: string, branchName: string) {
+	public async branchFromStash(repo: string, selector: string, branchName: string, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['selector', selector, 'stash'], ['branchName', branchName, 'ref']);
-		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+		if (unsafeArgs !== null) return unsafeArgs;
+		// `stash branch` moves HEAD to the new branch, rooted at the stash's base commit: exactly
+		// like `checkout`, it strands the current detached position's own commits when there is one.
+		if (!confirmed) {
+			const warning = await this.detachedCommitsLossWarning(repo);
+			if (warning !== null) return warning;
+		}
 
 		return this.runGitCommand(['stash', 'branch', branchName, selector], repo);
 	}
