@@ -138,6 +138,80 @@ describe('the i18n parity checker', () => {
 	});
 });
 
+describe('the source packager', () => {
+	/**
+	 * Build a minimal extension layout (out/ + src/askpass/, everything the packager touches) in a
+	 * directory of its own and run scripts/package-src.js there, returning the rewritten files.
+	 */
+	function runPackager(files) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-pack-'));
+		try {
+			fs.mkdirSync(path.join(dir, 'out', 'askpass'), { recursive: true });
+			fs.mkdirSync(path.join(dir, 'src', 'askpass'), { recursive: true });
+			fs.writeFileSync(path.join(dir, 'src', 'askpass', 'askpass.sh'), '#!/bin/sh\n');
+			for (const [name, content] of Object.entries(files)) {
+				fs.writeFileSync(path.join(dir, 'out', name), content);
+				fs.writeFileSync(path.join(dir, 'out', name + '.map'), '{"version":3,"mappings":"AAAA"}');
+			}
+			const result = spawnSync(process.execPath, [path.join(root, 'scripts', 'package-src.js')], { encoding: 'utf8', cwd: dir });
+			assert.equal(result.status, 0, result.stdout + result.stderr);
+			const packaged = {};
+			for (const name of Object.keys(files)) {
+				packaged[name] = fs.readFileSync(path.join(dir, 'out', name), 'utf8');
+				packaged[name + '.map'] = JSON.parse(fs.readFileSync(path.join(dir, 'out', name + '.map'), 'utf8'));
+			}
+			return packaged;
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	it('rewrites only the code require("fs"), never occurrences inside literals, templates or comments', () => {
+		// Compiled-module shape, with the interesting hazard inline: the embedded source of a
+		// temporary editor script carries its own require("fs"), which must survive verbatim
+		// because the standalone script runs under plain Node, without this bundle's helper.
+		const source = [
+			'"use strict";',
+			'Object.defineProperty(exports, "__esModule", { value: true });',
+			'const fs = require("fs");',
+			"const seqEditorSource = 'const fs=require(\"fs\");const hash=process.argv[2];';",
+			'const name = `gg-${Date.now()}-${\'require("fs")\'}.js`;',
+			'// a comment mentioning require("fs") stays as it is',
+			'const quoteRegex = /["\']/; // a regex with quotes must not be mistaken for a string',
+			'const later = require("fs");',
+			'exports.x = seqEditorSource.length + name.length + quoteRegex.source.length + later.constants.F_OK;',
+			''
+		].join('\n');
+
+		const packaged = runPackager({ 'editorScripts.js': source });
+		const rewritten = packaged['editorScripts.js'];
+
+		// The two real imports are rewritten and the helper they now depend on is injected
+		assert.match(rewritten, /const fs = requireWithFallback\("original-fs", "fs"\);/);
+		assert.match(rewritten, /const later = requireWithFallback\("original-fs", "fs"\);/);
+		assert.match(rewritten, /function requireWithFallback\(electronModule, nodeModule\)/);
+		// The sourcemap gains a leading unmapped line for the injected helper
+		assert.ok(packaged['editorScripts.js.map'].mappings.startsWith(';'));
+		// Everything that was not code keeps its require("fs") exactly where it was
+		assert.ok(rewritten.includes("const seqEditorSource = 'const fs=require(\"fs\");const hash=process.argv[2];';"));
+		assert.ok(rewritten.includes('const name = `gg-${Date.now()}-${\'require("fs")\'}.js`;'));
+		assert.ok(rewritten.includes('// a comment mentioning require("fs") stays as it is'));
+		assert.ok(rewritten.includes('const quoteRegex = /[\"\']/;'));
+		// The result must still be valid JavaScript
+		const check = spawnSync(process.execPath, ['--check'], { input: rewritten, encoding: 'utf8' });
+		assert.equal(check.status, 0, check.stderr);
+	});
+
+	it('leaves a file whose only require("fs") lives inside a string, and its map, untouched', () => {
+		const source = '"use strict";\nconst embedded = \'const fs=require("fs");\';\nexports.x = embedded;\n';
+
+		const packaged = runPackager({ 'embeddedOnly.js': source });
+
+		assert.equal(packaged['embeddedOnly.js'], source);
+		assert.equal(packaged['embeddedOnly.js.map'].mappings, 'AAAA');
+	});
+});
+
 describe('the benchmark runner', () => {
 	let repoPath;
 	let clock = 1_700_000_000;
