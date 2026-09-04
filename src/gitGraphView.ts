@@ -153,6 +153,18 @@ export class GitGraphView extends Disposable {
 	private loadCommitsRefreshId: number = 0;
 
 	/**
+	 * Whether the webview is currently RENDERING a commit list (set once a `loadCommits` response
+	 * with commits has been sent, reset when the view switches to a different repository). The
+	 * remote-tracking refs are deferred (see `deferRemoteRefs`) only while this is FALSE: a stripped
+	 * intermediate response is a win when the view is empty (the local-only walk paints first while
+	 * the complete ref scan runs), but on a refresh of an already-rendered view it is a pure
+	 * regression - the remote branch pills (and any commits reachable only from remote refs) would
+	 * visibly vanish from the rendered graph until the follow-up response restored them a moment
+	 * later, so every watcher refresh (e.g. each file save) flickered the view.
+	 */
+	private viewHasCommits: boolean = false;
+
+	/**
 	 * The background change poll: the repository's signature (branches, HEAD, remotes, stashes,
 	 * tags) is compared against the last observation, so a change the file watcher missed (watcher
 	 * events can be dropped by the platform, e.g. on network or synced filesystems, or swallowed
@@ -361,13 +373,17 @@ export class GitGraphView extends Disposable {
 		);
 
 		// Instantiate a RepoFileWatcher that watches for file changes in the repository currently open in the Git Graph View
-		this.repoFileWatcher = new RepoFileWatcher(logger, () => {
+		this.repoFileWatcher = new RepoFileWatcher(logger, (commitsAffected) => {
 			if (this.panel.visible) {
-				// The repository changed on disk: any cached commit data is now stale
-				this.commitCache.clear();
-				// The change is being handled here, so the background poll must re-record its baseline
-				// instead of detecting the same change again on its next tick
-				this.lastRepoSignature = null;
+				if (commitsAffected) {
+					// A ref, HEAD or the Git config changed on disk: any cached commit data is now stale
+					this.commitCache.clear();
+					// The change is being handled here, so the background poll must re-record its
+					// baseline instead of detecting the same change again on its next tick
+					this.lastRepoSignature = null;
+				}
+				// A working-tree-only change leaves the commit cache valid: the refresh is served
+				// from it in one response, and only the "Uncommitted Changes" count is recomputed
 				this.sendMessage({ command: 'refresh' });
 			}
 		}, () => {
@@ -711,8 +727,9 @@ export class GitGraphView extends Disposable {
 				// Remote-tracking refs dominate the ref scan on repositories with many of them (a
 				// Gerrit one above all), so the first response is sent WITHOUT them: the local
 				// branch and tag pills render immediately, and the complete ref set follows
-				// asynchronously (see `sendRemoteRefsFollowUp`).
-				const deferRemoteRefs = msg.showRemoteBranches;
+				// asynchronously (see `sendRemoteRefsFollowUp`). Only while the view is EMPTY: once
+				// the view renders commits, a stripped response would regress it (see `viewHasCommits`).
+				const deferRemoteRefs = msg.showRemoteBranches && !this.viewHasCommits;
 				// A hard refresh (e.g. the Refresh button) must observe fresh repository state even if
 				// the commit cache is still warm (e.g. a watcher event swallowed by the watcher's
 				// post-action suppression window): bypass the commit cache
@@ -727,6 +744,7 @@ export class GitGraphView extends Disposable {
 						uncommittedPending: true,
 						...commitData
 					});
+					if (commitData.commits.length > 0) this.viewHasCommits = true;
 					this.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (Date.now() - startTime) + ' ms');
 					// runs asynchronously (never awaited): the remote refs first, then the "Uncommitted Changes" status on top of the complete data
 					void this.sendRemoteRefsFollowUp(msg, null, commitData, null, true, msg.hard).then((complete) => this.sendUncommittedChangesFollowUp(msg, complete));
@@ -743,6 +761,7 @@ export class GitGraphView extends Disposable {
 						uncommittedPending: true,
 						...commitData
 					});
+					if (commitData.commits.length > 0) this.viewHasCommits = true;
 					this.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (Date.now() - startTime) + ' ms');
 					// runs asynchronously (never awaited): the remote refs first, then the "Uncommitted Changes" status on top of the complete data
 					void this.sendRemoteRefsFollowUp(msg, gerritData.refs, commitData, gerritData.states, true, msg.hard).then((complete) => this.sendUncommittedChangesFollowUp(msg, complete, gerritData.states));
@@ -772,6 +791,7 @@ export class GitGraphView extends Disposable {
 						uncommittedPending: true,
 						...commitData
 					});
+					if (commitData.commits.length > 0) this.viewHasCommits = true;
 					// runs asynchronously (never awaited): the remote refs, then the Gerrit pipeline
 					// on top of the complete data, then the "Uncommitted Changes" status last (on
 					// the commit data the Gerrit stages actually rendered, which may be fresher)
@@ -819,11 +839,15 @@ export class GitGraphView extends Disposable {
 			case 'loadRepoInfo': {
 				this.loadRepoInfoRefreshId = msg.refreshId;
 				const startTime = Date.now();
-				// The remote-tracking refs are NOT scanned for this response (see
-				// `deferRemoteRefs`): the branch dropdown starts local-only, and the complete list
-				// rides along the follow-up `loadCommits` response that carries the remote pills —
-				// the branch list and the pills come from the same ref scan, so it is run once.
-				const repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, msg.showRemoteBranches);
+				// The remote-tracking refs are NOT scanned for this response while the view is
+				// EMPTY (see `viewHasCommits`): the branch dropdown starts local-only, and the
+				// complete list rides along the follow-up `loadCommits` response that carries the
+				// remote pills — the branch list and the pills come from the same ref scan, so it
+				// is run once. Once the view is populated, a deferred (local-only) list would just
+				// blink the remote entries out of the dropdown and back on a soft refresh, so the
+				// complete list is scanned for this response right away.
+				const deferRemoteRefs = msg.showRemoteBranches && !this.viewHasCommits;
+				const repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, deferRemoteRefs);
 				let isRepo = true;
 				if (repoInfo.error) {
 					// If an error occurred, check to make sure the repo still exists
@@ -835,7 +859,7 @@ export class GitGraphView extends Disposable {
 					refreshId: msg.refreshId,
 					...repoInfo,
 					isRepo: isRepo,
-					remoteRefsPending: msg.showRemoteBranches || undefined
+					remoteRefsPending: deferRemoteRefs || undefined
 				});
 				this.logger.log('Loaded repository info in ' + (Date.now() - startTime) + ' ms (' + repoInfo.branches.length + ' branches)');
 				if (msg.repo !== this.currentRepo) {
@@ -844,6 +868,9 @@ export class GitGraphView extends Disposable {
 					this.repoFileWatcher.start(msg.repo);
 					// The signature of the previous repository says nothing about this one
 					this.lastRepoSignature = null;
+					// The view switches to an empty repository: the remote-refs deferral applies
+					// again until its first page of commits is rendered (see `viewHasCommits`)
+					this.viewHasCommits = false;
 				}
 				break;
 			}

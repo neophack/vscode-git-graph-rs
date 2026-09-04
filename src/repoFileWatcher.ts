@@ -5,16 +5,27 @@ import { getPathFromUri } from './utils';
 const FILE_CHANGE_REGEX = /(^\.git\/(config|index|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
 
 /**
+ * Paths whose modification can change the commit graph itself (the checked-out branch, any ref, or
+ * the config Git reads when walking it). Everything else matching `FILE_CHANGE_REGEX` - working
+ * tree files, `.git/index`, top-level `.git*` files - only affects the "Uncommitted Changes"
+ * count, which is computed per refresh outside the commit cache; clearing that cache for them
+ * would force the staged reload whose intermediate response strips the remote refs (the pill
+ * flicker / double shape change this classification exists to prevent).
+ */
+const COMMITS_AFFECTED_REGEX = /^\.git\/(config|HEAD|refs\/.*)$/;
+
+/**
  * Watches a Git repository for file events.
  */
 export class RepoFileWatcher {
 	private readonly logger: Logger;
-	private readonly repoChangeCallback: () => void;
+	private readonly repoChangeCallback: (commitsAffected: boolean) => void;
 	private readonly repoConfigChangeCallback: (() => void) | null;
 	private repo: string | null = null;
 	private fsWatcher: vscode.FileSystemWatcher | null = null;
 	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
 	private refreshTimeout: NodeJS.Timer | null = null;
+	private pendingCommitsAffected: boolean = false;
 	private muteCount: number = 0;
 	private resumeAt: number = 0;
 
@@ -22,10 +33,12 @@ export class RepoFileWatcher {
 	 * Creates a RepoFileWatcher.
 	 * @param logger The Git Graph Logger instance.
 	 * @param repoChangeCallback A callback to be invoked when a file event occurs in the repository.
+	 * The argument tells whether any event of the debounce window can have changed the commit graph
+	 * (a ref, HEAD or the Git config), as opposed to only the working tree status.
 	 * @param repoConfigChangeCallback An optional callback to be invoked when the repository's
 	 * `.git/config` file is modified (even while muted, so caches are never left stale).
 	 */
-	constructor(logger: Logger, repoChangeCallback: () => void, repoConfigChangeCallback: (() => void) | null = null) {
+	constructor(logger: Logger, repoChangeCallback: (commitsAffected: boolean) => void, repoConfigChangeCallback: (() => void) | null = null) {
 		this.logger = logger;
 		this.repoChangeCallback = repoChangeCallback;
 		this.repoConfigChangeCallback = repoConfigChangeCallback;
@@ -82,6 +95,7 @@ export class RepoFileWatcher {
 			clearTimeout(this.refreshTimeout);
 			this.refreshTimeout = null;
 		}
+		this.pendingCommitsAffected = false;
 	}
 
 	/**
@@ -119,6 +133,10 @@ export class RepoFileWatcher {
 		if (this.muteCount > 0) return;
 		if (!relativePath.match(FILE_CHANGE_REGEX)) return;
 
+		// Accumulate the classification across the debounce window: a `git commit` writes the index
+		// AND the branch ref as separate events, and the callback must fire once with the union.
+		this.pendingCommitsAffected = this.pendingCommitsAffected || COMMITS_AFFECTED_REGEX.test(relativePath);
+
 		// An event arriving inside the post-action suppression window is DEFERRED until after the
 		// window, never dropped: whether the event was caused by one of this extension's own Git
 		// actions or by the user committing at just the wrong moment cannot be told apart here, and
@@ -129,7 +147,9 @@ export class RepoFileWatcher {
 		}
 		this.refreshTimeout = setTimeout(() => {
 			this.refreshTimeout = null;
-			this.repoChangeCallback();
+			const commitsAffected = this.pendingCommitsAffected;
+			this.pendingCommitsAffected = false;
+			this.repoChangeCallback(commitsAffected);
 		}, delay);
 	}
 }

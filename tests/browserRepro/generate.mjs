@@ -60,7 +60,7 @@ const history = [];
 for (let i = 0; i < TOTAL; i++) history.push(commit(i));
 
 const hostScript = `
-window.__state = { history: ${JSON.stringify(history)}, head: ${JSON.stringify(history[0].hash)}, uncommitted: null, uncommittedCount: null, pendingCount: null, pipeline: null, pipelineCycle: 0, pipelineCounts: null };
+window.__state = { history: ${JSON.stringify(history)}, head: ${JSON.stringify(history[0].hash)}, uncommitted: null, uncommittedCount: null, pendingCount: null, pipeline: null, pipelineCycle: 0, pipelineCounts: null, servedCommits: false };
 const state = window.__state;
 const sent = [];
 window.VSCODE_API = { getState: () => null, setState: () => {}, postMessage: (m) => { sent.push(m); } };
@@ -96,13 +96,29 @@ window.__respond = async function () {
 					const clone = () => JSON.parse(JSON.stringify(state.history));
 					const base = { command: 'loadCommits', refreshId: message.refreshId, head: state.head, tags: [],
 						moreCommitsAvailable: false, onlyFollowFirstParent: false, gerritStates: null, error: null };
-					dispatch({ ...base, commits: clone(), uncommittedPending: true });
+					/* stage 1: the remote-tracking refs are deferred ONLY while the view is empty
+					 * (the host's viewHasCommits rule) - on a refresh of an already-rendered view
+					 * the first response is complete, so the remote pills never blink away */
+					const stage1 = clone();
+					if (!state.servedCommits) {
+						for (const c of stage1) c.remotes = [];
+					} else {
+						const h = stage1.find((c) => c.hash === state.head);
+						if (h && h.heads.length > 0) h.remotes = [{ name: 'origin/' + h.heads[0], remote: 'origin' }];
+					}
+					dispatch({ ...base, commits: stage1, uncommittedPending: true });
+					state.servedCommits = state.history.length > 0;
 					if (window.__onStage) window.__onStage('stage1', count);
+					/* the stages of the real pipeline are separated by the time each scan takes
+					 * (the complete ref scan above all): model a realistic gap, so an intermediate
+					 * state that would visibly render actually gets frames to render in */
+					await new Promise((r) => setTimeout(r, 120));
 					const withRemotes = clone();
 					const headCommit = withRemotes.find((c) => c.hash === state.head);
 					if (headCommit) headCommit.remotes = [{ name: 'origin/' + (headCommit.heads[0] || 'main'), remote: 'origin' }];
 					dispatch({ ...base, commits: withRemotes, uncommittedPending: true, branches: ['main', 'origin/main'] });
 					if (window.__onStage) window.__onStage('stage2', count);
+					await new Promise((r) => setTimeout(r, 120));
 					const withRow = clone();
 					const rowHead = withRow.find((c) => c.hash === state.head);
 					if (rowHead) rowHead.remotes = [{ name: 'origin/main', remote: 'origin' }];
@@ -122,6 +138,7 @@ window.__respond = async function () {
 				} else {
 					dispatch({ command: 'loadCommits', refreshId: message.refreshId, commits, head: state.head, tags: [],
 						moreCommitsAvailable: false, onlyFollowFirstParent: false, gerritStates: null, uncommittedPending: false, error: null, uncommittedCount: state.uncommittedCount });
+					state.servedCommits = commits.length > 0;
 				}
 			} else if (message.command === 'commitDetails') {
 				/* Answering this is what actually OPENS the Commit Details View, which switches the

@@ -267,6 +267,49 @@ await load('');
 		'offscreen row: clearing the tree while at the top removes it, rows shift back up', { row: cleared.after.uncommittedRow });
 }
 
+/* ---------------- a file save must be seamless: the remote branch pills never blink away.
+ * Every load's FIRST response used to be sent WITHOUT the remote-tracking refs (the
+ * deferRemoteRefs first-paint optimisation); on a refresh of an already-rendered view that
+ * blanked the remote pills (and any commits reachable only from remote refs) until the
+ * follow-up response restored them a moment later - so every file save visibly flickered the
+ * view. The host now defers only while the view is empty (viewHasCommits); this pins it: with
+ * a remote pill rendered, a full save pipeline runs and the pill must keep its remote segment
+ * in EVERY rendered frame. ---------------- */
+{
+	await load('');
+	/* establish a rendered state WITH a remote pill on HEAD (any real repository has one) */
+	await page.evaluate(() => {
+		window.__state.history[0].remotes = [{ name: 'origin/main', remote: 'origin' }];
+		window.__dispatch({ command: 'refresh' });
+	});
+	await page.evaluate(() => window.__respond());
+	await new Promise((r) => setTimeout(r, 400));
+	const pillText = await page.evaluate(() => {
+		const r = Array.from(document.querySelectorAll('#commitTable tr.commit')).find((x) => { const t = x.querySelector('.description .text'); return t !== null && t.textContent === 'commit 0'; });
+		const p = r !== undefined ? r.querySelector('.gitRef') : null;
+		return p !== null ? p.textContent : null;
+	});
+	check(pillText !== null && pillText.indexOf('origin') >= 0, 'seamless: the remote pill is rendered before the save', pillText);
+	/* sample the pill on every animation frame across the save pipeline */
+	await page.evaluate(() => {
+		window.__pillFrames = [];
+		const samplePill = () => {
+			const r = Array.from(document.querySelectorAll('#commitTable tr.commit')).find((x) => { const t = x.querySelector('.description .text'); return t !== null && t.textContent === 'commit 0'; });
+			const p = r !== undefined ? r.querySelector('.gitRef') : null;
+			window.__pillFrames.push(p !== null ? p.textContent : '(none)');
+			window.__rafPill = requestAnimationFrame(samplePill);
+		};
+		window.__rafPill = requestAnimationFrame(samplePill);
+	});
+	await page.evaluate(() => { window.__state.pipeline = 'real'; window.__state.pipelineCounts = [3]; window.__dispatch({ command: 'refresh' }); });
+	await page.evaluate(() => window.__respond());
+	await new Promise((r) => setTimeout(r, 500));
+	const frames = await page.evaluate(() => { cancelAnimationFrame(window.__rafPill); return window.__pillFrames; });
+	const bad = frames.filter((f) => f.indexOf('origin') < 0);
+	check(bad.length === 0 && frames.length > 10, 'seamless: the remote pill survives every frame of a file-save refresh', { samples: frames.length, offenders: bad.slice(0, 3) });
+	await page.evaluate(() => { window.__state.pipeline = null; window.__state.history[0].remotes = []; });
+}
+
 /* ---------------- config variants: graph width follows the graph settings ---------------- */
 const variantWidths = {};
 for (const variant of ['angular', 'aligned']) {
