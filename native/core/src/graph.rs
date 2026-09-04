@@ -55,6 +55,15 @@ pub fn repo_info(
 /// the commits carry no remote labels — the caller sends this page straight away and follows up
 /// with a complete one.
 pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> {
+    // The engine does not read reflog entries yet. Decline this request instead of silently
+    // omitting reflog-only commits; the backend layer then serves the exact `git log --reflog`
+    // result through the CLI implementation.
+    if options.include_commits_mentioned_by_reflogs {
+        return Err(crate::error::Error::unsupported(
+            "Commits mentioned by reflogs are not read by the engine",
+        ));
+    }
+
     let ref_options = RefReadOptions {
         show_remote_branches: options.show_remote_branches && !options.defer_remote_refs,
         show_remote_heads: options.show_remote_heads,
