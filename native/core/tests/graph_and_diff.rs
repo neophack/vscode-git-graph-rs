@@ -174,6 +174,43 @@ fn counts_uncommitted_changes_the_way_git_status_does() {
 }
 
 #[test]
+fn reports_a_dirty_submodule_as_a_modification() {
+    require_git!();
+    let mut sub = TestRepo::new();
+    sub.commit_file("s.txt", "1", "first");
+
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    repo.git(&[
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        sub.path().to_str().unwrap(),
+        "sub",
+    ]);
+    repo.commit("add submodule");
+
+    // Dirty the submodule's own working tree, without touching the superproject's tree at all —
+    // this is exactly what gix's `SubmoduleModification` status entry covers.
+    repo.write("sub/s.txt", "changed");
+
+    let engine = open(&repo);
+    let expected = repo
+        .git(&["status", "--porcelain", "--untracked-files=all"])
+        .lines()
+        .count();
+    assert_eq!(status::count_changes(&engine, true).unwrap(), expected);
+
+    let changes = status::uncommitted_changes(&engine).unwrap();
+    let submodule_change = changes
+        .iter()
+        .find(|change| change.new_file_path == "sub")
+        .expect("the dirty submodule must be reported as a change, the way `git status` does");
+    assert_eq!(submodule_change.kind, GitFileStatus::Modified);
+}
+
+#[test]
 fn reports_the_untracked_and_deleted_files() {
     require_git!();
     let mut repo = TestRepo::new();

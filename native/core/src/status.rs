@@ -100,7 +100,12 @@ fn classify_unstaged(
                 gix::status::plumbing::index_as_worktree::EntryStatus::Change(change) => {
                     match change {
                         WorktreeChange::Removed => Some((path, GitFileStatus::Deleted, false)),
-                        WorktreeChange::SubmoduleModification(_) => None,
+                        // A submodule whose checked-out HEAD, worktree or untracked files differ
+                        // from what the superproject records is a modification, just like git
+                        // itself reports it (`git status` prints "modified: <path> (...)").
+                        WorktreeChange::SubmoduleModification(_) => {
+                            Some((path, GitFileStatus::Modified, false))
+                        }
                         _ => Some((path, GitFileStatus::Modified, false)),
                     }
                 }
