@@ -123,6 +123,34 @@ window.__respond = async function () {
 					dispatch({ command: 'loadCommits', refreshId: message.refreshId, commits, head: state.head, tags: [],
 						moreCommitsAvailable: false, onlyFollowFirstParent: false, gerritStates: null, uncommittedPending: false, error: null, uncommittedCount: state.uncommittedCount });
 				}
+			} else if (message.command === 'commitDetails') {
+				/* Answering this is what actually OPENS the Commit Details View, which switches the
+				 * table out of windowed rendering (canVirtualize is false while it is open) - the
+				 * configuration the user reported the horizontal jitter in. */
+				const c = state.history.find((x) => x.hash === message.commitHash);
+				dispatch({
+					command: 'commitDetails', repo: ${JSON.stringify(REPO)}, error: null, avatar: null, codeReview: null,
+					refresh: message.refresh,
+					commitDetails: {
+						hash: message.commitHash, parents: c ? c.parents : [],
+						author: c ? c.author : 'Author', authorEmail: c ? c.email : '', authorDate: c ? c.date : 0,
+						committer: c ? c.author : 'Author', committerEmail: c ? c.email : '', committerDate: c ? c.date : 0,
+						signature: null, body: 'Body of ' + (c ? c.message : ''),
+						/* For the Uncommitted Changes row the file list is exactly the working-tree
+						 * change set, so it GROWS AND SHRINKS with the file count - and its rows live
+						 * in a colspan cell inside the same table. */
+						fileChanges: message.commitHash === '*'
+							? Array.from({ length: state.uncommittedCount || 0 }, (_, i) => ({
+								oldFilePath: 'src/' + 'nested/'.repeat(i % 5) + 'file' + i + '.ts',
+								newFilePath: 'src/' + 'nested/'.repeat(i % 5) + 'file' + i + '.ts',
+								type: 'M', additions: i, deletions: i
+							}))
+							: [
+								{ oldFilePath: 'src/index.ts', newFilePath: 'src/index.ts', type: 'M', additions: 4, deletions: 2 },
+								{ oldFilePath: 'README.md', newFilePath: 'README.md', type: 'M', additions: 1, deletions: 1 }
+							]
+					}
+				});
 			}
 		}
 		await new Promise((r) => setTimeout(r, 30));
@@ -183,7 +211,28 @@ const sideCommit = (i, parent) => ({ hash: 's' + String(i).padStart(4, '0') + 'a
 window.__run = async function (name) {
 	const before = window.__measure();
 	const extra = {};
-	if (name === 'jump') {
+	if (name === 'openCdv') {
+		/* Click the row the user is looking at to expand the Commit Details View. While it is open
+		 * the table drops out of windowed rendering: EVERY loaded commit row is in the DOM, so the
+		 * browser's automatic column layout is computed over all of them. */
+		const row = Array.from(document.querySelectorAll('#commitTable tr.commit'))
+			.find((r) => { const t = r.querySelector('.description .text'); return t !== null && t.textContent === 'commit 150'; });
+		if (row !== undefined) row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await window.__respond();
+		await window.__settle();
+		await window.__settle();
+	} else if (name === 'cdvCountChange') {
+		/* With the Commit Details View open, the number of uncommitted files keeps changing - the
+		 * exact situation reported as "the columns keep shifting left and right". Every count is
+		 * applied through a full refresh and the layout is measured after each one. */
+		extra.rounds = [];
+		for (const count of [3, 12, 4, 7, 3, 12]) {
+			state.uncommittedCount = count;
+			state.uncommitted = uncommitted(count);
+			await refresh();
+			extra.rounds.push({ count: count, ...window.__measure() });
+		}
+	} else if (name === 'jump') {
 		const view = document.getElementById('view');
 		view.scrollTop = 150 * 24 + 10;
 		view.dispatchEvent(new Event('scroll'));

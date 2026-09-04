@@ -601,7 +601,49 @@ class GitGraphView {
 		this.requestAvatars(avatarsNeeded);
 	}
 
+	/**
+	 * TEMPORARY DIAGNOSTIC (remove once the reported jitter is understood): after every refresh,
+	 * sample the geometry that could possibly move and log ONLY what actually changed since the
+	 * previous refresh. Open the webview devtools (Command Palette -> "Developer: Open Webview
+	 * Developer Tools") and watch for lines starting with GG-DIAG.
+	 */
+	private diagPrev: { [key: string]: string } = {};
+	public diagSample(tag: string) {
+		try {
+			const table = <HTMLElement | null>this.tableElem.querySelector('table');
+			const graphCol = document.getElementById('tableHeaderGraphCol');
+			const firstRow = <HTMLElement | null>this.tableElem.querySelector('tr.commit');
+			const cells = firstRow !== null
+				? Array.from(firstRow.querySelectorAll('td')).map((td) => Math.round(td.getBoundingClientRect().left)).join(',')
+				: '';
+			const sample: { [key: string]: string } = {
+				scrollTop: String(this.viewElem.scrollTop),
+				range: this.renderedRange === null ? 'full' : this.renderedRange.start + '-' + this.renderedRange.end,
+				rowsInDom: String(this.tableElem.querySelectorAll('tr.commit').length),
+				cdv: this.expandedCommit === null ? 'no' : this.expandedCommit.commitHash.substring(0, 7),
+				tableClass: this.tableElem.className,
+				tableWidth: table !== null ? String(Math.round(table.getBoundingClientRect().width)) : '?',
+				graphColWidth: graphCol !== null ? String(Math.round(graphCol.getBoundingClientRect().width)) : '?',
+				graphColPadding: graphCol !== null ? graphCol.style.padding : '?',
+				graphContentWidth: String(this.graph.getContentWidth()),
+				colLefts: cells,
+				headerHeight: String(this.getHeaderHeight()),
+				viewWidth: String(this.viewElem.clientWidth)
+			};
+			const changed: string[] = [];
+			for (const key of Object.keys(sample)) {
+				if (typeof this.diagPrev[key] === 'string' && this.diagPrev[key] !== sample[key]) {
+					changed.push(key + ': ' + this.diagPrev[key] + ' -> ' + sample[key]);
+				}
+			}
+			this.diagPrev = sample;
+			if (changed.length > 0) console.log('GG-DIAG [' + tag + '] ' + changed.join(' | '));
+		} catch (e) { /* diagnostics must never break the view */ }
+	}
+
 	private finaliseLoadCommits() {
+		this.diagSample('response');
+		setTimeout(() => this.diagSample('settled'), 80); // catches anything that moves asynchronously
 		const refreshState = this.currentRepoRefreshState;
 		if (refreshState.inProgress) {
 			dialog.closeActionRunning();
