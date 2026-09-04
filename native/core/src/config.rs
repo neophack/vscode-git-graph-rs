@@ -20,9 +20,10 @@ pub fn read_config(repo: &Repo) -> Result<ConfigSnapshot> {
     let git = repo.borrow();
     let config = git.config_snapshot();
 
-    // A remote may be declared across several config files (e.g. a URL locally and a push URL
-    // globally); the first section wins for each field, which is git's own last-wins resolution
-    // flipped to section order, so remotes already seen are skipped.
+    // A remote's fields can each be declared in a different config file (a URL locally, a push
+    // URL only globally); `url` and `pushurl` are therefore resolved independently, each through
+    // the config stack's own local-over-global-over-system precedence (`string_by`), rather than
+    // both being read off of whichever section is encountered first for that remote name.
     let mut remotes: Vec<RemoteConfig> = Vec::new();
     if let Some(sections) = config.plumbing().sections_by_name("remote") {
         for section in sections {
@@ -34,8 +35,12 @@ pub fn read_config(repo: &Repo) -> Result<ConfigSnapshot> {
             }
             remotes.push(RemoteConfig {
                 name: name.to_string(),
-                url: section.value("url").map(|v| v.to_string()),
-                push_url: section.value("pushurl").map(|v| v.to_string()),
+                url: config
+                    .string_by("remote", Some(name), "url")
+                    .map(|v| v.to_string()),
+                push_url: config
+                    .string_by("remote", Some(name), "pushurl")
+                    .map(|v| v.to_string()),
             });
         }
     }

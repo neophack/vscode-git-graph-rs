@@ -89,6 +89,43 @@ fn reports_absent_configuration_as_none() {
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[test]
+fn resolves_remote_fields_independently_across_config_files() {
+    require_git!();
+    let repo = TestRepo::new();
+    // The URL is local-only; the push URL for the very same remote exists only in a fake global
+    // config. Each field must be resolved through its own local-over-global precedence, not both
+    // taken from whichever config file's `[remote "origin"]` section is encountered first.
+    repo.git(&["remote", "add", "origin", "https://example.invalid/one.git"]);
+
+    let global_config = repo.path().join("fake-global-gitconfig");
+    std::fs::write(
+        &global_config,
+        "[remote \"origin\"]\n\tpushurl = git@example.invalid:global-push.git\n",
+    )
+    .unwrap();
+
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("GIT_CONFIG_GLOBAL", &global_config);
+    std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+
+    let engine = open(&repo);
+    let snapshot = config::read_config(&engine).unwrap();
+
+    std::env::remove_var("GIT_CONFIG_GLOBAL");
+    std::env::remove_var("GIT_CONFIG_NOSYSTEM");
+
+    assert_eq!(snapshot.remotes.len(), 1);
+    assert_eq!(
+        snapshot.remotes[0].url.as_deref(),
+        Some("https://example.invalid/one.git")
+    );
+    assert_eq!(
+        snapshot.remotes[0].push_url.as_deref(),
+        Some("git@example.invalid:global-push.git")
+    );
+}
+
+#[test]
 fn reads_a_text_file_at_a_revision() {
     require_git!();
     let mut repo = TestRepo::new();
