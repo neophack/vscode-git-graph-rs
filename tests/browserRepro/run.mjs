@@ -267,6 +267,44 @@ await load('');
 		'offscreen row: clearing the tree while at the top removes it, rows shift back up', { row: cleared.after.uncommittedRow });
 }
 
+/* ---------------- column resize handles: a stray CLICK must not freeze the column widths.
+ * The handles line every cell boundary of every row (full column height), so hitting one
+ * accidentally is easy - and converting the automatic layout to a fixed one on MOUSEDOWN meant
+ * that a single stray click permanently froze the Graph column at its current width: from then
+ * on it never tracked the graph again, and a graph wider than the frozen width was cut off at
+ * the column boundary, covered by the Description column. Only a real DRAG may convert and
+ * save; the header context menu's "Reset Column Widths" recovers a frozen layout. ---------------- */
+{
+	await load('');
+	const span = await page.$('#tableHeaderGraphCol .resizeCol.right');
+	const box = await span.boundingBox();
+	const x = box.x + box.width / 2, y = box.y + 5;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.up(); // a bare click, no movement
+	let cls = await page.evaluate(() => document.getElementById('commitTable').className);
+	check(cls === 'autoLayout', 'resize: a stray click does not freeze the column layout', cls);
+	/* a real drag still converts to fixed layout and resizes */
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x + 30, y, { steps: 4 });
+	await page.mouse.up();
+	const fixed = await page.evaluate(() => ({ cls: document.getElementById('commitTable').className, w: document.getElementById('tableHeaderGraphCol').offsetWidth }));
+	check(fixed.cls === 'fixedLayout' && fixed.w > 80, 'resize: a real drag converts to fixed layout and resizes', fixed);
+	/* recovery: the header context menu offers Reset Column Widths, which returns to automatic */
+	await page.click('#tableHeaderGraphCol', { button: 'right' });
+	await new Promise((r) => setTimeout(r, 150));
+	const resetClicked = await page.evaluate(() => {
+		const reset = Array.from(document.querySelectorAll('.contextMenuItem')).find((li) => li.textContent.indexOf('Reset Column Widths') >= 0);
+		if (reset === undefined) return false;
+		reset.click();
+		return true;
+	});
+	await new Promise((r) => setTimeout(r, 150));
+	cls = await page.evaluate(() => document.getElementById('commitTable').className);
+	check(resetClicked && cls === 'autoLayout', 'resize: Reset Column Widths returns the table to the automatic layout', cls);
+}
+
 /* ---------------- a file save must be seamless: the remote branch pills never blink away.
  * Every load's FIRST response used to be sent WITHOUT the remote-tracking refs (the
  * deferRemoteRefs first-paint optimisation); on a refresh of an already-rendered view that

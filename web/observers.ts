@@ -922,6 +922,11 @@ function makeTableResizable(view: GitGraphView) {
 
 	let columnWidths: GG.ColumnWidth[], mouseX = -1, col = -1, colIndex = -1;
 
+	// Whether the currently pressed resize handle has actually been DRAGGED (the mouse moved
+	// while pressing it). The switch from the automatic column layout to a fixed one - and the
+	// saving of the widths - must only happen for a real drag, never for a stray click.
+	let dragMoved = false;
+
 
 
 	const makeTableFixedLayout = () => {
@@ -1022,6 +1027,26 @@ function makeTableResizable(view: GitGraphView) {
 
 			let mouseDeltaX = mouseEvent.clientX - mouseX;
 
+			if (mouseDeltaX === 0) return; // the mouse has not moved (yet): nothing to resize
+
+			if (!dragMoved) {
+				dragMoved = true;
+				if (columnWidths[0] === COLUMN_AUTO) {
+					// The drag began on the automatic layout: capture the columns' current widths
+					// and switch the table to a fixed layout - but only now, on the first actual
+					// movement. Converting on mousedown instead meant that one stray click on a
+					// handle (they line every cell boundary of every row, full column height, so
+					// they are easy to hit accidentally) permanently froze the column widths: the
+					// Graph column never tracked the graph again, and a graph wider than the
+					// frozen width was cut off at the column boundary.
+					for (let i = 0; i < cols.length; i++) {
+						let curCol = parseInt(cols[i].dataset.col!);
+						if (curCol !== 1) columnWidths[curCol] = cols[i].clientWidth - COLUMN_LEFT_RIGHT_PADDING;
+					}
+					makeTableFixedLayout();
+				}
+			}
+
 
 
 			if (col === 0) {
@@ -1074,15 +1099,22 @@ function makeTableResizable(view: GitGraphView) {
 
 		if (col > -1) {
 
+			let resized = dragMoved;
+
 			col = -1;
 
 			colIndex = -1;
 
 			mouseX = -1;
 
+			dragMoved = false;
+
 			eventOverlay.remove();
 
-			view.saveColumnWidths(columnWidths);
+			// A click without any movement must not save anything: the widths are unchanged, and
+			// saving would write the mousedown state (or a stale closure's state) as if the user
+			// had chosen it
+			if (resized) view.saveColumnWidths(columnWidths);
 
 		}
 
@@ -1107,21 +1139,13 @@ function makeTableResizable(view: GitGraphView) {
 
 		mouseX = (<MouseEvent>e).clientX;
 
-
-
-		let isAuto = columnWidths[0] === COLUMN_AUTO;
+		dragMoved = false;
 
 		for (let i = 0; i < cols.length; i++) {
 
-			let curCol = parseInt(cols[i].dataset.col!);
-
-			if (isAuto && curCol !== 1) columnWidths[curCol] = cols[i].clientWidth - COLUMN_LEFT_RIGHT_PADDING;
-
-			if (curCol === col) colIndex = i;
+			if (parseInt(cols[i].dataset.col!) === col) colIndex = i;
 
 		}
-
-		if (isAuto) makeTableFixedLayout();
 
 		eventOverlay.create('colResize', processResizingColumn, stopResizingColumn);
 
@@ -1236,6 +1260,34 @@ function makeTableResizable(view: GitGraphView) {
 					checked: commitOrdering === GG.CommitOrdering.Topological,
 
 					onClick: () => changeCommitOrdering(GG.RepoCommitOrdering.Topological)
+
+				}
+
+			],
+
+			[
+
+				{
+
+					// Recovery for a layout that was frozen at one point's widths (e.g. by the
+					// stray-click freeze, or a drag the user no longer wants): back to automatic.
+					title: strings.columnResetWidths,
+
+					visible: columnWidths[0] !== COLUMN_AUTO,
+
+					onClick: () => {
+
+						for (let i = 0; i < cols.length; i++) cols[i].style.width = '';
+
+						for (let i = 2; i < columnWidths.length; i++) columnWidths[i] = columnWidths[i] === COLUMN_HIDDEN ? COLUMN_HIDDEN : COLUMN_AUTO;
+
+						columnWidths[0] = COLUMN_AUTO;
+
+						view.saveColumnWidths(columnWidths);
+
+						view.render();
+
+					}
 
 				}
 
