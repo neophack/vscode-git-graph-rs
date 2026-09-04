@@ -351,8 +351,8 @@ class Vertex {
 /* Graph Class */
 
 class Graph {
-	private readonly config: GG.GraphConfig;
-	private readonly muteConfig: GG.MuteCommitsConfig;
+	private config: GG.GraphConfig;
+	private muteConfig: GG.MuteCommitsConfig;
 	private vertices: Vertex[] = [];
 	private branches: Branch[] = [];
 	private availableColours: number[] = [];
@@ -406,6 +406,16 @@ class Graph {
 
 
 	/* Graph Operations */
+
+	/**
+	 * Replace the configuration the graph renders with (a `configChanged` message applies the
+	 * Extension Settings live). The next render() draws with the new values; the graph's content
+	 * (commits, layout) is unaffected.
+	 */
+	public setConfig(config: GG.GraphConfig, muteConfig: GG.MuteCommitsConfig) {
+		this.config = config;
+		this.muteConfig = muteConfig;
+	}
 
 	public loadCommits(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, commitLookup: { [hash: string]: number }, onlyFollowFirstParent: boolean) {
 		this.commits = commits;

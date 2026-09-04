@@ -40,7 +40,8 @@ class GitGraphView {
 	private countCommitsBeforePending: boolean = false;
 
 	public readonly graph: Graph;
-	public readonly config: Config;
+	/** The Extension Settings the view runs on - swapped live by applyConfig (a `configChanged` message). */
+	public config: Config;
 	/** Which backend serves each area on this platform — shown by the Settings widget. */
 	public readonly backend: GG.BackendReport;
 
@@ -994,6 +995,53 @@ class GitGraphView {
 
 
 	/* Refresh */
+
+	/**
+	 * Apply a changed Extension Configuration to the running view (a `configChanged` message):
+	 * everything the generated HTML would have baked in is re-applied in place, then the commits
+	 * are reloaded with a soft refresh - the page keeps its rendered content, scroll position and
+	 * open Commit Details View instead of being regenerated (which flashed the whole view).
+	 */
+	public applyConfig(config: Config) {
+		const previousColours = this.config.graph.colours.length;
+		this.config = config;
+		this.saveState();
+		this.graph.setConfig(config.graph, config.mute);
+
+		// What the constructor applies from the configuration (see there)
+		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, config.referenceLabels.branchLabelsAlignedToGraph);
+		alterClass(document.body, CLASS_TAG_LABELS_RIGHT_ALIGNED, config.referenceLabels.tagLabelsOnRight);
+		document.body.style.setProperty('--git-graph-fontSize', config.graph.fontSize + 'px');
+		document.body.style.setProperty('--git-graph-rowHeight', config.graph.rowHeight + 'px');
+		for (let i = 0; i < config.graph.colours.length; i++) {
+			document.body.style.setProperty('--git-graph-color' + i, config.graph.colours[i]);
+		}
+		for (let i = config.graph.colours.length; i < previousColours; i++) {
+			document.body.style.removeProperty('--git-graph-color' + i);
+		}
+		alterClass(document.getElementById('headerRow')!, 'sticky', config.stickyHeader);
+		document.getElementById('fetchBtn')!.title = config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle;
+
+		// The repo state defaults derive from the configuration, and the dropdowns carry
+		// configuration-derived options (glob patterns, repository order)
+		const repoState = this.gitRepos[this.currentRepo];
+		if (repoState !== undefined) {
+			this.showRemoteBranchesElem.checked = getShowRemoteBranches(repoState.showRemoteBranchesV2);
+		}
+		this.repoDropdown.setOptions(getRepoDropdownOptions(this.gitRepos, config.repoDropdownOrder), [this.currentRepo]);
+		this.branchDropdown.setOptions(this.getBranchOptions(true), this.currentBranches);
+		this.settingsWidget.refresh();
+
+		// Settings that shape the rendered output but not the commit data (graph style, date
+		// format, column visibility, ...) would otherwise wait for the next render: run one now.
+		// It reconciles, so unchanged rows keep their DOM nodes and the viewport its position.
+		this.render();
+
+		// Reload the commits under the new settings (the extension host dropped its commit cache
+		// for the change): a soft refresh, answered with the complete data in one response (see
+		// `viewHasCommits` there), so the view updates in place
+		this.refresh(false);
+	}
 
 	public refresh(hard: boolean, configChanges: boolean = false) {
 		if (hard) {
@@ -2530,6 +2578,9 @@ window.addEventListener('load', () => {
 				break;
 			case 'refresh':
 				gitGraph.refresh(false);
+				break;
+			case 'configChanged':
+				gitGraph.applyConfig(msg.config);
 				break;
 			case 'renameBranch':
 				refreshOrDisplayError(msg.error, strings.errRenameBranch);

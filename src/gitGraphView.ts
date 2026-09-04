@@ -38,7 +38,7 @@ import { Logger } from './logger';
 import { PullRequestDataSource } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
@@ -163,6 +163,14 @@ export class GitGraphView extends Disposable {
 	 * later, so every watcher refresh (e.g. each file save) flickered the view.
 	 */
 	private viewHasCommits: boolean = false;
+
+	/**
+	 * The interface language of the configuration last delivered to the webview (embedded in the
+	 * generated HTML, or sent with a `configChanged` message). A language change is the one
+	 * setting a live `configChanged` message cannot apply - every rendered label would have to be
+	 * swapped - so it falls back to regenerating the page.
+	 */
+	private lastSentInterfaceLanguage: string | null = null;
 
 	/**
 	 * The background change poll: the repository's signature (branches, HEAD, remotes, stashes,
@@ -367,7 +375,21 @@ export class GitGraphView extends Disposable {
 							light: this.getResourcesUri('git-graph-rs-webview-icon-light.svg'),
 							dark: this.getResourcesUri('git-graph-rs-webview-icon-dark.svg')
 						};
-					this.update();
+					if (config.interfaceLanguage !== this.lastSentInterfaceLanguage || !this.isGraphViewLoaded || !this.panel.visible) {
+						// Regenerate the page: a language change replaces every rendered label
+						// (the one setting a live update cannot apply) - and when there is no
+						// live page to accept a runtime update (a hidden webview may have been
+						// destroyed), regenerating now costs nothing while unseen
+						this.update();
+					} else {
+						// Apply the settings live: the page keeps its rendered commits, scroll
+						// position and open Commit Details View
+						this.sendMessage({
+							command: 'configChanged',
+							config: this.getWebviewConfig(config)
+						});
+						this.lastSentInterfaceLanguage = config.interfaceLanguage;
+					}
 				}
 			})
 		);
@@ -1146,56 +1168,65 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * The webview's runtime configuration: the subset of the Extension Settings the page runs on.
+	 * Embedded into the generated HTML at page load, and sent to the already-loaded page with a
+	 * `configChanged` message when a setting changes (see onDidChangeConfiguration).
+	 */
+	private getWebviewConfig(config: ReturnType<typeof getConfig>): GitGraphViewConfig {
+		return {
+			commitDetailsView: config.commitDetailsView,
+			commitOrdering: config.commitOrder,
+			contextMenuActionsVisibility: config.contextMenuActionsVisibility,
+			customBranchGlobPatterns: config.customBranchGlobPatterns,
+			customEmojiShortcodeMappings: config.customEmojiShortcodeMappings,
+			customPullRequestProviders: config.customPullRequestProviders,
+			dateFormat: config.dateFormat,
+			dateType: config.dateType,
+			defaultColumnVisibility: config.defaultColumnVisibility,
+			enableLog: config.enableLog,
+			stickyHeader: config.stickyHeader,
+			dialogDefaults: config.dialogDefaults,
+			enhancedAccessibility: config.enhancedAccessibility,
+			fetchAndPrune: config.fetchAndPrune,
+			fetchAndPruneTags: config.fetchAndPruneTags,
+			fetchAvatars: config.fetchAvatars && this.extensionState.isAvatarStorageAvailable(),
+			gerrit: config.gerrit,
+			graph: config.graph,
+			interfaceLanguage: config.interfaceLanguage,
+			interfaceLanguageSetting: config.interfaceLanguageSetting,
+			includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
+			initialLoadCommits: config.initialLoadCommits,
+			keybindings: config.keybindings,
+			loadMoreCommits: config.loadMoreCommits,
+			loadMoreCommitsAutomatically: config.loadMoreCommitsAutomatically,
+			markdown: config.markdown,
+			mute: config.muteCommits,
+			showBodyInline: config.showCommitBodyInline,
+
+			onlyFollowFirstParent: config.onlyFollowFirstParent,
+			onRepoLoad: config.onRepoLoad,
+			pullRequests: config.pullRequests,
+			referenceLabels: config.referenceLabels,
+			repoDropdownOrder: config.repoDropdownOrder,
+			showCommitBodyInline: config.showCommitBodyInline,
+			showRemoteBranches: config.showRemoteBranches,
+			showRemoteHeads: config.showRemoteHeads,
+			showStashes: config.showStashes,
+			showTags: config.showTags,
+			showUncommittedChanges: config.showUncommittedChanges,
+			showUntrackedFiles: config.showUntrackedFiles,
+			trackRemoteTags: config.trackRemoteTags
+		};
+	}
+
+	/**
 	 * Get the HTML document to be loaded in the Webview.
 	 * @returns The HTML.
 	 */
 	private getHtmlForWebview() {
 		const config = getConfig(), nonce = getNonce();
 		const initialState: GitGraphViewInitialState = {
-			config: {
-				commitDetailsView: config.commitDetailsView,
-				commitOrdering: config.commitOrder,
-				contextMenuActionsVisibility: config.contextMenuActionsVisibility,
-				customBranchGlobPatterns: config.customBranchGlobPatterns,
-				customEmojiShortcodeMappings: config.customEmojiShortcodeMappings,
-				customPullRequestProviders: config.customPullRequestProviders,
-				dateFormat: config.dateFormat,
-				dateType: config.dateType,
-				defaultColumnVisibility: config.defaultColumnVisibility,
-				enableLog: config.enableLog,
-				stickyHeader: config.stickyHeader,
-				dialogDefaults: config.dialogDefaults,
-				enhancedAccessibility: config.enhancedAccessibility,
-				fetchAndPrune: config.fetchAndPrune,
-				fetchAndPruneTags: config.fetchAndPruneTags,
-				fetchAvatars: config.fetchAvatars && this.extensionState.isAvatarStorageAvailable(),
-				gerrit: config.gerrit,
-				graph: config.graph,
-				interfaceLanguage: config.interfaceLanguage,
-				interfaceLanguageSetting: config.interfaceLanguageSetting,
-				includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
-				initialLoadCommits: config.initialLoadCommits,
-				keybindings: config.keybindings,
-				loadMoreCommits: config.loadMoreCommits,
-				loadMoreCommitsAutomatically: config.loadMoreCommitsAutomatically,
-				markdown: config.markdown,
-				mute: config.muteCommits,
-				showBodyInline: config.showCommitBodyInline,
-
-				onlyFollowFirstParent: config.onlyFollowFirstParent,
-				onRepoLoad: config.onRepoLoad,
-				pullRequests: config.pullRequests,
-				referenceLabels: config.referenceLabels,
-				repoDropdownOrder: config.repoDropdownOrder,
-				showCommitBodyInline: config.showCommitBodyInline,
-				showRemoteBranches: config.showRemoteBranches,
-				showRemoteHeads: config.showRemoteHeads,
-				showStashes: config.showStashes,
-				showTags: config.showTags,
-				showUncommittedChanges: config.showUncommittedChanges,
-				showUntrackedFiles: config.showUntrackedFiles,
-				trackRemoteTags: config.trackRemoteTags
-			},
+			config: this.getWebviewConfig(config),
 			lastActiveRepo: this.extensionState.getLastActiveRepo(),
 			loadViewTo: this.loadViewTo,
 			repos: this.repoManager.getRepos(),
@@ -1203,6 +1234,7 @@ export class GitGraphView extends Disposable {
 			loadCommitsRefreshId: this.loadCommitsRefreshId,
 			backend: describeCapabilities({ gitCliAvailable: !this.dataSource.isGitExecutableUnknown() })
 		};
+		this.lastSentInterfaceLanguage = initialState.config.interfaceLanguage;
 		const globalState = this.extensionState.getGlobalViewState();
 		const workspaceState = this.extensionState.getWorkspaceViewState();
 

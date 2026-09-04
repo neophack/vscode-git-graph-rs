@@ -1367,6 +1367,17 @@ export interface ResponseRefresh extends BaseMessage {
 	readonly command: 'refresh';
 }
 
+/**
+ * A Git Graph Extension Setting changed: apply it live instead of regenerating the webview's HTML
+ * (a full page reload that flashed the view and dropped the open Commit Details View). Only sent
+ * for settings the webview can apply at runtime; an interface language change still regenerates
+ * the page (every rendered label would have to be swapped).
+ */
+export interface ResponseConfigChanged extends BaseMessage {
+	readonly command: 'configChanged';
+	readonly config: GitGraphViewConfig;
+}
+
 export interface RequestRenameBranch extends RepoRequest {
 	readonly command: 'renameBranch';
 	readonly oldName: string;
@@ -1648,6 +1659,7 @@ export type ResponseMessage =
 	| ResponseCommitBodies
 	| ResponseCommitDetails
 	| ResponseCommitFileCounts
+	| ResponseConfigChanged
 	| ResponseCopyFilePath
 	| ResponseCopyToClipboard
 	| ResponseCreateArchive
