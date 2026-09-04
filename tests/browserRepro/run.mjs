@@ -286,6 +286,15 @@ for (const variant of ['angular', 'aligned']) {
 const defaultAligned = variantWidths.aligned.tracked['commit 150'];
 console.log('graphWidth angular=' + variantWidths.angular.graphWidth + ' aligned=' + variantWidths.aligned.graphWidth);
 
+/* after every scenario above (dozens of re-renders on the KEPT table skeleton), each header cell
+ * must still carry exactly one pair of resize handles and the graph header exactly one 'right'
+ * handle - the reconciling render keeps the header row, so an unguarded re-decoration in
+ * makeTableResizable would stack one pair per render (regression: accumulated .resizeCol spans
+ * and stacked mousedown/contextmenu listeners holding stale column-width closures) */
+const handleCounts = await page.evaluate(() => Array.from(document.querySelectorAll('#tableColHeaders > th')).map((th) => th.querySelectorAll('.resizeCol').length));
+check(handleCounts.length > 0 && handleCounts.every((n, i) => n === (i === 0 || i === handleCounts.length - 1 ? 1 : 2)), 'resize handles: exactly one pair per header cell after all re-renders', handleCounts);
+
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : '\n' + failures + ' CHECK(S) FAILED');
 if (!keep) { await browser.close(); server.close(); }
 process.exit(failures === 0 ? 0 : 1);

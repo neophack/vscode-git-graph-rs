@@ -905,6 +905,13 @@ function observeTableEvents(view: GitGraphView) {
 }
 
 
+/* Wiring state of makeTableResizable: the elements and repository its .resizeCol handles and
+ * listeners were last attached to (see the comment inside the function). */
+let resizableWiredTable: HTMLElement | null = null;
+let resizableWiredHeader: HTMLElement | null = null;
+let resizableWiredRepo: unknown = undefined;
+let resizableAbort: AbortController | null = null;
+
 function makeTableResizable(view: GitGraphView) {
 
 	// Every .tableColHeader element is a direct child of colHeadersElem, so read them from there
@@ -939,11 +946,33 @@ function makeTableResizable(view: GitGraphView) {
 
 
 
-	for (let i = 0; i < cols.length; i++) {
+	// The resize handles and their listeners are wired ONCE per table/header element and
+	// repository - not on every call. The table skeleton and the header row are KEPT across
+	// renders (the reconciling render rebuilds neither), so re-running the decoration and the
+	// addEventListener calls on every renderTable would stack another pair of .resizeCol handles
+	// onto each header cell and another mousedown/contextmenu listener (holding a stale closure
+	// over columnWidths) onto the same elements on every refresh. The wiring is redone only when
+	// one of its anchors changes: the <table> or header row element was replaced, or the current
+	// repository switched (columnWidths are per-repository, and a stale closure would read one
+	// repo's widths while writing them into another).
+	const tableRootElem = <HTMLElement>view.tableElem.firstElementChild;
+	const wiringChanged = resizableWiredTable !== tableRootElem || resizableWiredHeader !== colHeadersElem || resizableWiredRepo !== view.currentRepo;
+	let signal: AbortSignal | null = null;
+	if (wiringChanged) {
+		if (resizableAbort !== null) resizableAbort.abort();
+		resizableAbort = new AbortController();
+		signal = resizableAbort.signal;
+		resizableWiredTable = tableRootElem;
+		resizableWiredHeader = colHeadersElem;
+		resizableWiredRepo = view.currentRepo;
 
-		let col = parseInt(cols[i].dataset.col!);
+		for (let i = 0; i < cols.length; i++) {
 
-		cols[i].innerHTML += (i > 0 ? '<span class="resizeCol left" data-col="' + (col - 1) + '"></span>' : '') + (i < cols.length - 1 ? '<span class="resizeCol right" data-col="' + col + '"></span>' : '');
+			let col = parseInt(cols[i].dataset.col!);
+
+			cols[i].innerHTML += (i > 0 ? '<span class="resizeCol left" data-col="' + (col - 1) + '"></span>' : '') + (i < cols.length - 1 ? '<span class="resizeCol right" data-col="' + col + '"></span>' : '');
+
+		}
 
 	}
 
@@ -1063,11 +1092,11 @@ function makeTableResizable(view: GitGraphView) {
 
 	// Every commit row (not just the header) carries its own pair of .resizeCol handles, so the
 	// hit area spans the table's full height - with hundreds/thousands of loaded commits that's
-	// thousands of elements. A single delegated listener on the <table> just inserted by
-	// renderTable() (torn down and recreated together with all of them on the next render, so
-	// there's no risk of accumulating stale listeners across renders) replaces what was previously
-	// one addEventListener call per handle, and was the dominant cost of a full render.
-	const tableRootElem = <HTMLElement>view.tableElem.firstElementChild;
+	// thousands of elements. A single delegated listener on the <table> replaces what was
+	// previously one addEventListener call per handle, and was the dominant cost of a full render.
+	// Attached inside the wiring guard above: the <table> is kept across renders now, so an
+	// unguarded attach would stack one listener per renderTable call.
+	if (signal === null) return;
 	tableRootElem.addEventListener('mousedown', (e) => {
 		const resizeColElem = e.target !== null ? (<HTMLElement>e.target).closest('.resizeCol') : null;
 		if (resizeColElem === null) return;
@@ -1096,7 +1125,7 @@ function makeTableResizable(view: GitGraphView) {
 
 		eventOverlay.create('colResize', processResizingColumn, stopResizingColumn);
 
-	});
+	}, { signal });
 
 
 
@@ -1214,7 +1243,7 @@ function makeTableResizable(view: GitGraphView) {
 
 		], true, null, e, view.viewElem);
 
-	});
+	}, { signal });
 
 }
 
