@@ -112,7 +112,7 @@ list, and `getConfigList` for a file carrying `include`/`includeIf` directives.
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename that exists only in the working tree (file moved but never committed) is not reassembled by the engine |
 | Lightweight tags | The Tag Details dialogue shows no Tagger/Date row (a lightweight tag has no tagger); the original showed an empty tagger and an invalid date |
 | mailmap | The engine does not apply `.mailmap` (the `useMailmap` setting has no effect on the engine path) |
-| Commits mentioned by reflogs | The engine declines the graph request and the CLI answers with `git log --reflog`; for `countCommitsBefore` the engine also declines and the CLI answers |
+| Commits mentioned by reflogs | For an all-refs graph the engine declines and the CLI answers with `git log --reflog`; branch-filtered graphs do not need reflog commits and stay on the engine path. For `countCommitsBefore` the engine also declines and the CLI answers |
 | `--glob=` branch items | The engine's starting-point resolution does not recognise this form (declined for `countCommitsBefore`, skipped in the graph) |
 
 [gix]: https://github.com/GitoxideLabs/gitoxide

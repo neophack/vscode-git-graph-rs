@@ -58,7 +58,7 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
     // The engine does not read reflog entries yet. Decline this request instead of silently
     // omitting reflog-only commits; the backend layer then serves the exact `git log --reflog`
     // result through the CLI implementation.
-    if options.include_commits_mentioned_by_reflogs {
+    if options.include_commits_mentioned_by_reflogs && options.branches.is_none() {
         return Err(crate::error::Error::unsupported(
             "Commits mentioned by reflogs are not read by the engine",
         ));

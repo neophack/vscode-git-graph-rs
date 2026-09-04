@@ -104,7 +104,7 @@ Documented in the README's "Known deviations from git":
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename existing only in the working tree is not reassembled by the engine |
 | Lightweight tags | the Tag Details dialogue hides the Tagger/Date row instead of showing an empty tagger and an invalid date (a deliberate improvement over the original) |
 | Mailmap | the engine does not apply `.mailmap`; the original honours `useMailmap` |
-| Reflog-mentioned commits | `includeCommitsMentionedByReflogs` is accepted but ignored by the engine's graph; `countCommitsBefore` declines it and the CLI answers |
+| Reflog-mentioned commits | `includeCommitsMentionedByReflogs` is handled by the CLI for all-refs graphs; branch-filtered graphs stay on the engine path because reflogs are ignored there. `countCommitsBefore` declines it and the CLI answers |
 | Custom branch glob patterns | `--glob=` branch entries are not understood by the engine's tip resolution (`countCommitsBefore` declines them; the graph skips them) |
 
 ## 5. Suggested order
