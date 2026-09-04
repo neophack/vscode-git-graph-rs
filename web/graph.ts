@@ -447,11 +447,27 @@ class Graph {
 		}
 
 		i = 0;
+		/* Termination guard: determinePath resolves a vertex's parents by scanning DOWNWARD for
+		 * them, which requires every parent to sit below its child in the list (the case for the
+		 * extension's date/topology orderings). A repository whose commit dates are skewed (a
+		 * clock jump, a cherry-pick preserving an old author date under date ordering) can violate
+		 * that: the scan never reaches such a parent, registerParentProcessed is never called and
+		 * this loop would spin forever, freezing the view. No legitimate layout needs to revisit
+		 * one vertex more times than there are vertices, so past that bound the remaining parent
+		 * edges are dropped and the layout continues (the offending edges simply draw no line). */
+		let visitsAtI = 0;
 		while (i < this.vertices.length) {
 			if (this.vertices[i].getNextParent() !== null || this.vertices[i].isNotOnBranch()) {
-				this.determinePath(i);
+				if (++visitsAtI > this.vertices.length) {
+					while (this.vertices[i].getNextParent() !== null) this.vertices[i].registerParentProcessed();
+					i++; // force past a vertex the layout cannot resolve (drawn without its branch lines)
+					visitsAtI = 0;
+				} else {
+					this.determinePath(i);
+				}
 			} else {
 				i++;
+				visitsAtI = 0;
 			}
 		}
 	}

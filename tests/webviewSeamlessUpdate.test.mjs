@@ -112,7 +112,7 @@ describe('seamless updates while viewing a commit in the middle of the history',
 		rows.forEach((row, i) => assert.equal(row.dataset.id, String(startIdBefore + 1 + i)));
 	});
 
-	it('patches only the row whose remote label moved deep in the history (e.g. a background git fetch), touching nothing else', async () => {
+	it('re-renders only the row whose remote label moved deep in the history (e.g. a background git fetch), touching nothing else', async () => {
 		// A `git fetch` moving a remote-tracking branch (origin/main) onto a commit that is NOT at
 		// the top of the history is a common background event, unrelated to any commit landing on
 		// the checked-out branch. It must not degrade into a full re-render (which would rebuild
@@ -136,7 +136,7 @@ describe('seamless updates while viewing a commit in the middle of the history',
 		assert.deepEqual(h.rows(), nodesBefore, 'every rendered row (none of which is commit 200) kept its DOM node');
 	});
 
-	it('patches a visible row in place when its remote label changes, leaving every other row untouched', async () => {
+	it('re-renders a visible row when its remote label changes, leaving every other row untouched', async () => {
 		const h = await bootView(300);
 		await h.scrollTo(150);
 
@@ -216,8 +216,17 @@ describe('seamless updates while viewing a commit in the middle of the history',
 		assert.match(rows[0].textContent, /commit NEW/);
 		// One row removed (Uncommitted) and one added (the commit): the scroll bar nets out
 		assert.equal(h.viewElem.scrollTop, scrollTopBeforeCommit, 'the scroll bar did not move');
-		// The old rows keep their nodes AND their positions (the top swap nets out to zero shift)
-		assert.deepEqual(rows.slice(1), nodesBefore);
+		// The old rows keep their nodes AND their positions (the top swap nets out to zero shift).
+		// The one exception is the previous head: the new commit took the 'main' label off it, so
+		// its content genuinely changed and it is the only row that may be re-rendered.
+		rows.slice(1).forEach((row, i) => {
+			if (i === 0) {
+				assert.match(row.textContent, /commit 0/, 'the previous head is still row 1');
+				assert.equal(row.querySelector('.gitRef.head'), null, 'the previous head lost the branch label');
+			} else {
+				assert.strictEqual(row, nodesBefore[i], 'row ' + i + ' kept its DOM node');
+			}
+		});
 	});
 });
 

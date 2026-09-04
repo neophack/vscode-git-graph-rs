@@ -135,7 +135,6 @@ export function uncommittedRow(headHash, count) {
  * viewing a historical entry.
  */
 export async function bootView(total, options = {}) {
-	const staged = options.staged === true;
 	// Materialise the view config the extension passes to the webview: a Config instance exposes
 	// every setting as a prototype getter over the (stubbed, all-default) workspace configuration;
 	// the few fields the extension renames on the way into initialState are mapped explicitly
@@ -247,18 +246,14 @@ export async function bootView(total, options = {}) {
 	const dispatch = (message) => {
 		window.dispatchEvent(new window.MessageEvent('message', { data: message }));
 	};
-	// Optional hook invoked after EVERY response was dispatched (including each stage of the
-	// staged pipeline): lets a test observe - and reject - transient jumps BETWEEN responses
-	let afterEachResponse = null;
 	const respond = async (message) => {
 		if (message.command === 'loadRepoInfo') {
 			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null });
 		} else if (message.command === 'loadCommits') {
-			/* Realistic pipeline (see the loadCommits case in src/gitGraphView.ts): the FIRST
-			 * response deliberately excludes the working-tree status (a `git status` can be slow),
-			 * so it never carries the Uncommitted Changes row and is marked uncommittedPending -
-			 * the row and its exact count only arrive in a final follow-up response. `staged`
-			 * reproduces that two-step delivery; otherwise both responses are merged into one. */
+			/* One merged response. The extension's real multi-stage delivery (a first response
+			 * without the working-tree status, then the Uncommitted Changes row and its count in a
+			 * follow-up) is exercised end-to-end against the real host by
+			 * webviewRealPipeline.test.mjs, so it is not simulated here. */
 			const loadCommitsMessage = (pending, commits) => ({
 				command: 'loadCommits', refreshId: message.refreshId, commits: commits, head: state.head, tags: [],
 				moreCommitsAvailable: state.window !== null, onlyFollowFirstParent: false, gerritStates: null,
@@ -266,16 +261,7 @@ export async function bootView(total, options = {}) {
 			});
 			const visibleHistory = state.window !== null ? state.history.slice(0, state.window) : state.history.slice();
 			const finalCommits = state.uncommitted === null ? visibleHistory : [uncommittedRow(state.head, state.uncommitted), ...visibleHistory];
-		if (!staged) {
 			dispatch({ ...loadCommitsMessage(false, finalCommits), uncommittedCount: state.uncommittedCount });
-			if (afterEachResponse !== null) afterEachResponse();
-			return;
-		}
-			dispatch(loadCommitsMessage(true, visibleHistory));
-		if (afterEachResponse !== null) afterEachResponse();
-		await new Promise((resolve) => setTimeout(resolve, 10));
-		dispatch({ ...loadCommitsMessage(false, finalCommits), uncommittedCount: state.uncommittedCount });
-		if (afterEachResponse !== null) afterEachResponse();
 		} else if (message.command === 'commitDetails') {
 			const c = state.history.find((x) => x.hash === message.commitHash);
 			dispatch({
@@ -294,7 +280,6 @@ export async function bootView(total, options = {}) {
 					fileChanges: []
 				}
 			});
-			if (afterEachResponse !== null) afterEachResponse();
 		}
 		// every other request (loadConfig, fetchPullRequest, avatars, ...) is left unanswered:
 		// the view tolerates a pending request, and none of them affect the commit table
@@ -320,5 +305,5 @@ export async function bootView(total, options = {}) {
 	await pump();
 	const rows = () => Array.from(document.querySelectorAll('#commitTable tr.commit'));
 
-	return { window, document, viewElem, state, dispatch, pump, scrollTo, rows, setAfterResponse: (fn) => { afterEachResponse = fn; }, ROW_HEIGHT };
+	return { window, document, viewElem, state, dispatch, pump, scrollTo, rows, ROW_HEIGHT };
 }

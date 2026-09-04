@@ -72,6 +72,15 @@ class GitGraphView {
 	 * find query).
 	 */
 	private renderedRange: { start: number, end: number } | null = null;
+	/**
+	 * The HTML each rendered row was built from, minus the parts that are patched in place (its
+	 * index, its lane colour, the checked-out marker). A row is rebuilt only when this changes, so
+	 * an update that does not affect a row leaves its DOM node completely alone. Held outside the
+	 * elements themselves so the nodes stay pristine.
+	 */
+	private readonly rowSignatures = new WeakMap<HTMLElement, string>();
+	/** Which columns the rendered header row was built for (see renderTable). */
+	private renderedHeaderKey: string | null = null;
 	private static readonly VIRTUAL_ROW_BUFFER = 10;
 
 	/**
@@ -516,62 +525,21 @@ class GitGraphView {
 			return;
 		}
 
-		// Incremental "Load More Commits" paging: if the new commit list is a pure extension of the
-		// previously rendered one (same head, branch and view state), only the new rows are
-		// appended instead of re-rendering the entire table (which would be quadratically
-		// expensive when scrolling through a large repository)
-		if (this.canAppendCommits(commits, commitHead, onlyFollowFirstParent)) {
-			this.appendCommits(commits, moreAvailable);
-			return;
-		}
-
-		// Incremental refresh with commits added at the top (e.g. a commit was made while the user
-		// is scrolled down the history): instead of re-rendering the whole table - which would make
-		// the view jump, since the same scrollTop would then point k rows further into the history -
-		// only the new rows are inserted and the scroll position is shifted by exactly the height
-		// they add, keeping the visible rows perfectly still. The new commits appear when the user
-		// scrolls back up to the top.
-		const prepend = this.canPrependCommits(commits, onlyFollowFirstParent);
-		if (prepend !== null) {
-			this.prependCommits(commits, commitHead, moreAvailable, prepend.numNewCommits);
-			return;
-		}
-
-		// Same commits, same order (e.g. a background `git fetch` moved a remote-tracking branch on
-		// a commit that isn't at the top, or HEAD moved to a commit already in the list): nothing
-		// about the table's shape or scroll position is affected, so only the specific rows whose
-		// ref/tag/remote/stash labels actually changed are patched in place, wherever they sit -
-		// every other row, in the DOM or not, is left completely untouched.
-		if (this.canPatchCommitsMetadata(commits, onlyFollowFirstParent)) {
-			this.patchCommitsMetadata(commits, commitHead, moreAvailable);
-			return;
-		}
-
+		// Everything else - a commit landing at the top, the Uncommitted Changes row appearing or
+		// vanishing, a "Load More Commits" page arriving at the bottom, a background fetch moving a
+		// label deep in the history, a rebase rewriting the middle - goes through this one path.
+		// There used to be three hand-written incremental paths here (append / prepend / patch
+		// metadata), each with a predicate deciding whether it was safe to take: they existed only
+		// because rendering rebuilt the whole table, so anything that could avoid a rebuild was
+		// worth a special case. Rendering now reconciles rows by commit identity and rebuilds only
+		// the rows that actually differ (see syncCommitRows), which is strictly better than any of
+		// them - and correct for every shape of change, not three enumerated ones.
 		const currentRepoLoading = this.currentRepoLoading;
 		// A background refresh reaching this full re-render changes the table's shape under the
 		// user (a commit inserted/removed anywhere, a rebase rewriting mid-history, the Gerrit
-		// states arriving) - and scrollTop is a pixel offset, not tied to any commit, so the same
-		// scrollTop after the rebuild points k rows away from what the user was looking at: the
-		// mid-history up/down jump. Anchor the rebuild instead: remember the commit row currently
-		// at the top of the viewport (and how far it is scrolled past that edge) measured straight
-		// from the DOM - getHeaderHeight() does not include the sticky table column headers, so
-		// any index*rowHeight arithmetic built on it is off by their height - and restore the
-		// scroll so that commit sits at the same position again after the render.
-		let scrollAnchorHash: string | null = null, scrollAnchorOffset = 0;
-		if (!currentRepoLoading && this.viewElem.clientHeight > 0) {
-			const viewRect = this.viewElem.getBoundingClientRect();
-			for (const elem of <HTMLElement[]><any>this.tableElem.querySelectorAll('tr.commit')) {
-				const top = elem.getBoundingClientRect().top;
-				if (top + elem.offsetHeight > viewRect.top + 1) { // the first row intersecting the viewport
-					const index = parseInt(elem.dataset.id!);
-					if (!isNaN(index) && index >= 0 && index < this.commits.length) {
-						scrollAnchorHash = this.commits[index].hash;
-						scrollAnchorOffset = viewRect.top - top; // pixels of this row scrolled past the viewport top
-					}
-					break;
-				}
-			}
-		}
+		// states arriving). Anchor the rebuild on the commit the user is looking at, exactly like
+		// every other update path does.
+		const anchor = currentRepoLoading ? null : this.captureViewportAnchor();
 		this.currentRepoLoading = false;
 		this.moreCommitsAvailable = moreAvailable;
 		this.onlyFollowFirstParent = onlyFollowFirstParent;
@@ -606,25 +574,17 @@ class GitGraphView {
 		this.saveState();
 
 		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
+
+		// Put the scroll where the anchored commit needs it BEFORE rendering, so the window is
+		// computed at its final position and every row in it is reconciled exactly once. (Rendering
+		// first and correcting afterwards would window the list at the stale position, then move -
+		// destroying and rebuilding the rows at both edges of the window for nothing.)
+		this.applyViewportAnchor(anchor);
 		this.render();
 		this.gerritStatesDirty = false;
-
-		if (scrollAnchorHash !== null && typeof this.commitLookup[scrollAnchorHash] === 'number') {
-			// The anchored commit survived the refresh: put it back at the exact viewport position
-			// it had before the rebuild (works whether rows above were added or removed, and
-			// absorbs header-height changes like the Pinned row appearing/disappearing). Measured
-			// from the row's real DOM position, so it also holds in a non-virtualized render with
-			// the Commit Details View open, where the CDV <tr> inserted above shifts every row
-			// below it by its (variable) height.
-			const anchorElem = findCommitElemWithId(this.commitLookup[scrollAnchorHash]);
-			if (anchorElem !== null) {
-				const newScrollTop = this.viewElem.scrollTop + anchorElem.getBoundingClientRect().top - this.viewElem.getBoundingClientRect().top + scrollAnchorOffset;
-				if (this.viewElem.scrollTop !== newScrollTop) {
-					this.viewElem.scrollTop = newScrollTop;
-					this.updateVirtualWindow(); // re-render the window around the restored position
-				}
-			}
-		}
+		// A full render has variable row heights, so its anchor can only be measured now that the
+		// rows are on screen. Windowed rendering already landed exactly, and this is a no-op.
+		if (this.renderedRange === null) this.applyViewportAnchor(anchor);
 
 		if (currentRepoLoading) {
 			if (this.config.onRepoLoad.scrollToHead && this.commitHead !== null) {
@@ -639,337 +599,6 @@ class GitGraphView {
 
 		this.finaliseLoadCommits();
 		this.requestAvatars(avatarsNeeded);
-	}
-
-	/**
-	 * Determine whether an incoming commit list can be appended to the currently rendered table
-	 * (a "Load More Commits" paging response), rather than requiring a full re-render.
-	 * @returns TRUE if the new commits strictly extend the rendered list and all view state that
-	 * affects row rendering is unchanged.
-	 */
-	private canAppendCommits(commits: GG.GitCommit[], commitHead: string | null, onlyFollowFirstParent: boolean) {
-		if (this.currentRepoLoading || this.currentRepoRefreshState.hard) return false;
-		if (!this.moreCommitsAvailable) return false; // Paging wasn't in progress (a full render set up the button)
-		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return false;
-		if (this.commitHead !== commitHead) return false;
-		if (this.renderedGitBranchHead !== this.gitBranchHead) return false;
-		if (commits.length <= this.commits.length || this.commits.length === 0) return false;
-		if (this.commits[0].hash === UNCOMMITTED ? commits[0].hash !== UNCOMMITTED : commits[0].hash === UNCOMMITTED) return false;
-
-		// Every previously rendered commit must be identical (same refs, parents, stash): otherwise
-		// its row would need to be re-rendered
-		return arraysEqual(this.commits, commits.slice(0, this.commits.length), (a, b) =>
-			a.hash === b.hash &&
-			arraysStrictlyEqual(a.heads, b.heads) &&
-			arraysEqual(a.tags, b.tags, (a: GG.GitCommitTag, b: GG.GitCommitTag) => a.name === b.name && a.annotated === b.annotated) &&
-			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
-			arraysStrictlyEqual(a.parents, b.parents) &&
-			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector))
-		);
-	}
-
-	/**
-	 * Apply a paging response by appending only the new commit rows to the table and re-rendering
-	 * the graph (the graph layout is cheap pure JS, but the table rows dominate the render cost).
-	 */
-	private appendCommits(commits: GG.GitCommit[], moreAvailable: boolean) {
-		const previousLength = this.commits.length;
-		this.moreCommitsAvailable = moreAvailable;
-		// The comparator in canAppendCommits intentionally ignores the message: for real commits it
-		// never changes, but the UNCOMMITTED row's message includes the (changing) file count
-		const uncommittedChanged = this.commits[0].hash === UNCOMMITTED && commits[0].message !== this.commits[0].message;
-		this.commits = commits;
-
-		const avatarsNeeded: { [email: string]: string[] } = {};
-		for (let i = previousLength; i < commits.length; i++) {
-			const commit = commits[i];
-			this.commitLookup[commit.hash] = i;
-			if (this.config.fetchAvatars && typeof this.avatars[commit.email] !== 'string' && commit.email !== '') {
-				if (typeof avatarsNeeded[commit.email] === 'undefined') {
-					avatarsNeeded[commit.email] = [commit.hash];
-				} else {
-					avatarsNeeded[commit.email].push(commit.hash);
-				}
-			}
-		}
-
-		this.saveState();
-		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
-		this.appendCommitRows(previousLength);
-		this.renderGraph();
-		// The appended page can open branch lanes further right than before, widening the graph:
-		// re-apply the graph column layout so the Graph column (and width limit) tracks the new
-		// width, otherwise the absolutely positioned SVG overlaps the Description text
-		applyGraphColumnAutoLayout(this);
-		if (uncommittedChanged) this.renderUncommittedChanges();
-		this.finaliseLoadCommits();
-		this.requestAvatars(avatarsNeeded);
-	}
-
-	/**
-	 * Determine whether an incoming commit list is the currently rendered history with rows added
-	 * (or removed) strictly at the top (e.g. a commit was made while the user is scrolled down the
-	 * history, or the working tree became dirty / clean so the "Uncommitted Changes" row appeared
-	 * or vanished), so it can be applied incrementally instead of requiring a full re-render.
-	 * @returns The number of commits new at the top (and how many old commits dropped out of the
-	 * truncated bottom of the loading window), or NULL if the previously rendered commits are not
-	 * the tail of the new list (ignoring the Uncommitted Changes row, which may appear or disappear
-	 * at the very top). A new commit on the checked-out branch also moves the `heads` label off the
-	 * previous head commit: the FIRST old-core commit is therefore allowed to differ (its row is
-	 * patched in place, not in view), while every commit below it must be unchanged. In a
-	 * repository longer than the loading window (moreCommitsAvailable), a commit landing at the top
-	 * also slides the window: the oldest LOADED commit drops out at the bottom - far below the
-	 * viewport - which is just as prependable.
-	 */
-	private canPrependCommits(commits: GG.GitCommit[], onlyFollowFirstParent: boolean): { numNewCommits: number } | null {
-		if (this.currentRepoLoading || this.currentRepoRefreshState.hard) return null;
-		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return null;
-		const oldCore = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? this.commits.slice(1) : this.commits;
-		const newCore = commits.length > 0 && commits[0].hash === UNCOMMITTED ? commits.slice(1) : commits;
-		if (oldCore.length === 0 || newCore.length === 0) return null;
-		// The head is allowed to change here (a new commit above the old head is the whole point);
-		// the previous head commit may lose its branch label to the new commit (same hash, same
-		// parents - only its refs can move), but every commit below it must be unchanged
-		const unchanged = (a: GG.GitCommit, b: GG.GitCommit) =>
-			a.hash === b.hash &&
-			arraysStrictlyEqual(a.heads, b.heads) &&
-			arraysEqual(a.tags, b.tags, (a: GG.GitCommitTag, b: GG.GitCommitTag) => a.name === b.name && a.annotated === b.annotated) &&
-			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
-			arraysStrictlyEqual(a.parents, b.parents) &&
-			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector));
-		const firstUnchanged = (a: GG.GitCommit, b: GG.GitCommit) => a.hash === b.hash && arraysStrictlyEqual(a.parents, b.parents);
-		/* numNewCommits = commits new at the top; the remaining oldCore.length - dropped commits
-		 * must appear in newCore starting at that offset. dropped > 0 (the window slid) is only
-		 * possible while the loading window is active - with the full history loaded, nothing can
-		 * disappear from the bottom. */
-		for (let numNewCommits = Math.max(0, newCore.length - oldCore.length);; numNewCommits++) {
-			const dropped = numNewCommits + oldCore.length - newCore.length;
-			if (dropped > 0 && !this.moreCommitsAvailable) return null;
-			const retained = oldCore.length - dropped;
-			if (retained <= 0) return null;
-			if (firstUnchanged(oldCore[0], newCore[numNewCommits]) &&
-				(retained === 1 || arraysEqual(oldCore.slice(1, retained), newCore.slice(numNewCommits + 1, numNewCommits + retained), unchanged))) {
-				return { numNewCommits: numNewCommits };
-			}
-		}
-	}
-
-	/**
-	 * Apply a refresh response whose changes sit strictly at the top of the rendered history (new
-	 * commits above the old head, and/or the "Uncommitted Changes" row appearing or disappearing as
-	 * the working tree becomes dirty or clean): apply only the top-row changes and shift the scroll
-	 * position by the height they add or remove, so the rows the user is looking at stay exactly
-	 * where they are (no jump, no flicker) - scrolling back up to the top reveals the new rows.
-	 */
-	private prependCommits(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean, numNewCommits: number) {
-		const oldHasUncommitted = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED;
-		const newHasUncommitted = commits.length > 0 && commits[0].hash === UNCOMMITTED;
-		const oldCoreLength = this.commits.length - (oldHasUncommitted ? 1 : 0);
-		// Commits that slid out of the truncated bottom of the loading window (far below the
-		// viewport): they must leave the table without disturbing anything above them
-		const droppedTail = oldCoreLength + numNewCommits - (commits.length - (newHasUncommitted ? 1 : 0));
-		// Rows that are new at the very top of the table, in order: the new commits, then the
-		// Uncommitted Changes row if it just appeared (it always sits at index 0 when present)
-		let numInsertedRows = numNewCommits + (newHasUncommitted && !oldHasUncommitted ? 1 : 0);
-		let removedRows = oldHasUncommitted && !newHasUncommitted ? 1 : 0;
-
-		const prevMoreAvailable = this.moreCommitsAvailable;
-		this.moreCommitsAvailable = moreAvailable;
-		this.commits = commits;
-		this.commitHead = commitHead;
-
-		const avatarsNeeded: { [email: string]: string[] } = {};
-		this.commitLookup = {};
-		for (let i = 0; i < commits.length; i++) {
-			this.commitLookup[commits[i].hash] = i;
-		}
-		for (let i = 0; i < numNewCommits; i++) {
-			const commit = commits[i];
-			if (this.config.fetchAvatars && typeof this.avatars[commit.email] !== 'string' && commit.email !== '') {
-				if (typeof avatarsNeeded[commit.email] === 'undefined') {
-					avatarsNeeded[commit.email] = [commit.hash];
-				} else {
-					avatarsNeeded[commit.email].push(commit.hash);
-				}
-			}
-		}
-
-		this.saveState();
-		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
-
-		if (this.renderedRange !== null) {
-			// Windowed rendering: rows have a uniform height, so the top-row changes shift the
-			// content by exactly delta * rowHeight; shifting scrollTop by that keeps the visible
-			// window on the same commits.
-			const delta = numInsertedRows - removedRows;
-			const oldRange = this.renderedRange;
-			this.viewElem.scrollTop = Math.max(0, this.viewElem.scrollTop + delta * this.config.graph.rowHeight);
-			const newRange = this.canVirtualize() ? this.computeVisibleRange() : null;
-			// The row whose branch label just moved (the previous head, immediately below the
-			// inserted rows) needs its HTML patched, not just its data-id - only relevant if it
-			// actually fell inside the rendered window (near the very top of the history)
-			const headRowIndex = numInsertedRows;
-			const headRowNeedsContent = numNewCommits > 0 && newRange !== null && headRowIndex >= newRange.start && headRowIndex < newRange.end;
-			if (newRange !== null && !headRowNeedsContent && newRange.start === oldRange.start + delta && newRange.end === oldRange.end + delta) {
-				// Every change happened strictly outside the rendered window (the common case while
-				// viewing well within the history): patch the existing rows' identity in place
-				// instead of tearing down and rebuilding the whole table. A full rebuild forces the
-				// browser to redo the (auto-layout) column widths on every background refresh, even
-				// though nothing on screen actually changed - perceptible as the Description column
-				// jittering left/right on every file edit or commit happening off-screen.
-				this.renderedRange = newRange;
-				const ctx = this.createRowRenderingContext();
-				const vertexColours = ctx.vertexColours;
-				this.tableElem.querySelectorAll('tr.commit').forEach((row, i) => {
-					const id = newRange.start + i;
-					(row as HTMLElement).dataset.id = String(id);
-					(row as HTMLElement).dataset.color = String(vertexColours[id]);
-					row.classList.toggle('current', this.commits[id].hash === ctx.currentHash);
-				});
-				const rowHeight = this.config.graph.rowHeight;
-				const topSpacerTd = this.tableElem.querySelector('#tableColHeaders + tr.virtSpacer td');
-				if (topSpacerTd !== null) (topSpacerTd as HTMLElement).style.height = (newRange.start * rowHeight) + 'px';
-				const bottomSpacerTd = this.tableElem.querySelector('tr.virtSpacer:last-child td');
-				if (bottomSpacerTd !== null) (bottomSpacerTd as HTMLElement).style.height = ((this.commits.length - newRange.end) * rowHeight) + 'px';
-				this.findWidget.refresh();
-			} else {
-				// The change reaches into (or right up against) the rendered window - fall back to a
-				// full re-render of the window, which is always correct
-				this.renderTable();
-			}
-		} else {
-			// Full render is active (variable row heights are possible, e.g. inline commit bodies):
-			// apply the top-row changes above the existing rows and shift the scroll position by the
-			// height they actually add or remove, measured across the change
-			const scrollHeightBefore = this.viewElem.scrollHeight;
-			const ctx = this.createRowRenderingContext();
-			if (removedRows > 0) {
-				const uncommittedElem = document.getElementById('uncommittedChanges');
-				if (uncommittedElem !== null && uncommittedElem.parentElement !== null) uncommittedElem.parentElement.removeChild(uncommittedElem);
-			}
-			if (droppedTail > 0) {
-				// The loading window slid (a commit landed at the top of a repository longer than
-				// the window): the oldest loaded commits left the list at the bottom, far below the
-				// viewport - drop their rows without touching anything above them
-				const commitRows = this.tableElem.querySelectorAll('tr.commit');
-				for (let i = commitRows.length - droppedTail; i < commitRows.length; i++) commitRows[i].remove();
-			}
-			if (numInsertedRows > 0) {
-				// The rows new at the top are exactly the first numInsertedRows entries of the new
-				// list: the new commits, plus the Uncommitted Changes row if it just appeared
-				let html = '';
-				for (let i = 0; i < numInsertedRows; i++) {
-					html += this.getCommitRowHtml(i, ctx);
-				}
-				const headerRow = this.tableElem.children[0].querySelector('#tableColHeaders')!;
-				headerRow.insertAdjacentHTML('afterend', html);
-			}
-			// A new commit on the checked-out branch moves the branch label off the previous head
-			// commit: that one row (just below the inserted ones, above the viewport) is re-rendered
-			// in place so its label is correct; every row below keeps its DOM node untouched
-			if (numNewCommits > 0) {
-				const previousHeadIndex = numInsertedRows;
-				const previousHeadRow = this.tableElem.querySelectorAll('tr.commit')[previousHeadIndex];
-				if (previousHeadRow !== undefined) previousHeadRow.outerHTML = this.getCommitRowHtml(previousHeadIndex, ctx);
-			}
-			// The already rendered rows shifted by the top-row change: update their data-id (and
-			// color) in place instead of re-rendering them
-			const vertexColours = ctx.vertexColours;
-			this.tableElem.querySelectorAll('tr.commit').forEach((row, i) => {
-				(row as HTMLElement).dataset.id = String(i);
-				(row as HTMLElement).dataset.color = String(vertexColours[i]);
-				// The "current" row moves with the Uncommitted Changes row appearing or vanishing
-				row.classList.toggle('current', this.commits[i].hash === ctx.currentHash);
-			});
-			this.viewElem.scrollTop = Math.max(0, this.viewElem.scrollTop + this.viewElem.scrollHeight - scrollHeightBefore);
-			this.findWidget.refresh();
-			if (numNewCommits > 0) this.requestCommitBodiesForRows(0, numNewCommits);
-			if (prevMoreAvailable !== moreAvailable) {
-				// e.g. the whole repository history just became loaded: drop the "Load More Commits"
-				// button (or restore it)
-				this.footerElem.innerHTML = moreAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>' : '';
-				if (moreAvailable) {
-					document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
-						this.loadMoreCommits();
-					});
-				}
-			}
-		}
-		this.renderedGitBranchHead = this.gitBranchHead;
-		this.gerritStatesDirty = false;
-		this.renderGraph();
-		// The prepended commits can open branch lanes further right than before, widening the
-		// graph: re-apply the graph column layout so the Graph column tracks the new width
-		applyGraphColumnAutoLayout(this);
-		this.finaliseLoadCommits();
-		this.requestAvatars(avatarsNeeded);
-	}
-
-	/**
-	 * TRUE if `commits` is exactly the same commits, in exactly the same order, as currently
-	 * rendered - only their ref/tag/remote/stash labels (and/or the uncommitted change count) may
-	 * differ, anywhere in the list, not just at the top (e.g. a background `git fetch` moving a
-	 * remote-tracking branch on a commit deep in the history, well below the top-only changes
-	 * `canPrependCommits` handles). Every row's array index is therefore unaffected: nothing about
-	 * the table's shape or scroll position needs to change, only the content of specific rows.
-	 */
-	private canPatchCommitsMetadata(commits: GG.GitCommit[], onlyFollowFirstParent: boolean) {
-		if (this.currentRepoLoading || this.currentRepoRefreshState.hard || this.gerritStatesDirty) return false;
-		if (this.onlyFollowFirstParent !== onlyFollowFirstParent) return false;
-		if (this.expandedCommit !== null) return false; // keep the existing commitElem-refresh handling in renderTable() for this rarer case
-		if (this.commits.length !== commits.length || this.commits.length === 0) return false;
-		for (let i = 0; i < commits.length; i++) {
-			if (this.commits[i].hash !== commits[i].hash || !arraysStrictlyEqual(this.commits[i].parents, commits[i].parents)) return false;
-		}
-		return true;
-	}
-
-	/**
-	 * Apply a refresh response that carries the exact same commits, in the exact same order, as
-	 * currently rendered (see `canPatchCommitsMetadata`): patches only the rows whose content
-	 * actually changed - wherever they sit in the table, in the DOM or not - leaving every other
-	 * row, the scroll position and the rendered window completely untouched.
-	 */
-	private patchCommitsMetadata(commits: GG.GitCommit[], commitHead: string | null, moreAvailable: boolean) {
-		const metadataUnchanged = (a: GG.GitCommit, b: GG.GitCommit) =>
-			a.message === b.message &&
-			arraysStrictlyEqual(a.heads, b.heads) &&
-			arraysEqual(a.tags, b.tags, (a: GG.GitCommitTag, b: GG.GitCommitTag) => a.name === b.name && a.annotated === b.annotated) &&
-			arraysEqual(a.remotes, b.remotes, (a: GG.GitCommitRemote, b: GG.GitCommitRemote) => a.name === b.name && a.remote === b.remote) &&
-			((a.stash === null && b.stash === null) || (a.stash !== null && b.stash !== null && a.stash.selector === b.stash.selector));
-
-		const changedIds = new Set<number>();
-		for (let i = 0; i < commits.length; i++) {
-			if (!metadataUnchanged(this.commits[i], commits[i])) changedIds.add(i);
-		}
-		const prevCurrentHash = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? UNCOMMITTED : this.commitHead;
-
-		this.moreCommitsAvailable = moreAvailable;
-		this.commits = commits;
-		this.commitHead = commitHead;
-		this.commitLookup = {};
-		for (let i = 0; i < commits.length; i++) this.commitLookup[commits[i].hash] = i;
-		this.saveState();
-		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
-		this.renderedGitBranchHead = this.gitBranchHead;
-		this.gerritStatesDirty = false;
-
-		const newCurrentHash = this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED ? UNCOMMITTED : this.commitHead;
-		if (changedIds.size > 0 || prevCurrentHash !== newCurrentHash) {
-			const ctx = this.createRowRenderingContext();
-			this.tableElem.querySelectorAll('tr.commit').forEach((row) => {
-				const id = parseInt((row as HTMLElement).dataset.id!);
-				if (changedIds.has(id)) {
-					(row as HTMLElement).outerHTML = this.getCommitRowHtml(id, ctx);
-				} else if (prevCurrentHash !== newCurrentHash) {
-					row.classList.toggle('current', this.commits[id].hash === ctx.currentHash);
-				}
-			});
-			this.findWidget.refresh();
-		}
-		this.renderGraph();
-		applyGraphColumnAutoLayout(this);
-		this.finaliseLoadCommits();
 	}
 
 	private finaliseLoadCommits() {
@@ -1732,6 +1361,10 @@ class GitGraphView {
 		this.renderPinnedControls();
 		this.renderTable();
 		this.renderGraph();
+		// The graph column's automatic width follows the lanes the graph just drew, so it can only
+		// be measured once renderGraph() has run - makeTableResizable() applies it from inside
+		// renderTable(), which is one step too early to see newly opened branch lanes.
+		applyGraphColumnAutoLayout(this);
 	}
 
 	public renderGraph() {
@@ -1901,7 +1534,7 @@ class GitGraphView {
 		const pinnedBadge = pinnedCommitHashes.has(commit.hash)
 			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
 			: '';
-		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
+		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">' +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + getResizeColHtml(2) + date.formatted + '</td>' : '') +
 			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" decoding="sync" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
@@ -1936,14 +1569,215 @@ class GitGraphView {
 		return { start: start, end: Math.min(this.commits.length, start + count) };
 	}
 
+
 	/**
-	 * A spacer row standing in for `rows` unrendered commit rows, keeping the scroll height (and
-	 * with it the scroll bar and the "Load More Commits" bottom detection) proportional to the full
-	 * commit list.
+	 * The scroll position at which commit row `index` sits exactly at the top of the viewport,
+	 * while windowed rendering is active: rows then have a uniform height, so the position is pure
+	 * arithmetic and holds whether or not that row is currently in the DOM. Unlike
+	 * `computeVisibleRange` - which only has to pick a window and is deliberately generous - this
+	 * is exact, and includes the sticky table column headers `getHeaderHeight()` leaves out.
 	 */
-	private getSpacerRowHtml(rows: number) {
-		if (rows <= 0) return '';
-		return '<tr class="virtSpacer" aria-hidden="true"><td colspan="' + this.getNumColumns() + '" style="height:' + (rows * this.config.graph.rowHeight) + 'px;padding:0"></td></tr>';
+	private getRowTop(index: number) {
+		const colHeadersElem = document.getElementById('tableColHeaders');
+		return this.getHeaderHeight()
+			+ (colHeadersElem !== null ? colHeadersElem.offsetHeight : this.config.graph.rowHeight)
+			+ index * this.config.graph.rowHeight;
+	}
+
+	/**
+	 * The commit the user is currently looking at: the topmost commit row intersecting the
+	 * viewport, plus how far it is scrolled past the top edge.
+	 *
+	 * This - not `scrollTop` - is the thing that must survive an update. `scrollTop` is a pixel
+	 * offset into a document whose shape changes underneath it: insert or remove k rows above the
+	 * viewport and the same `scrollTop` points k rows away from what the user was reading, which
+	 * is exactly what "the view jumps" means. An anchor is immune to that by construction, because
+	 * it names a commit rather than a distance.
+	 */
+	private captureViewportAnchor(): { hash: string, offset: number, atTop: boolean } | null {
+		if (this.viewElem.clientHeight <= 0 || this.commits.length === 0) return null;
+		const atTop = this.viewElem.scrollTop <= 0;
+
+		if (this.canVirtualize()) {
+			// Windowed rendering: row heights are uniform (that is its precondition), so which
+			// commit sits at the top of the viewport is exact arithmetic - the inverse of
+			// getRowTop(). Preferred over measuring the DOM because it also holds for a row that
+			// windowing left out of the DOM entirely.
+			const index = Math.min(this.commits.length - 1, Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / this.config.graph.rowHeight)));
+			return { hash: this.commits[index].hash, offset: this.viewElem.scrollTop - this.getRowTop(index), atTop: atTop };
+		}
+
+		// Full render: rows may have any height (an open Commit Details View), so the topmost
+		// visible row has to be found by measuring
+		const viewTop = this.viewElem.getBoundingClientRect().top;
+		for (const elem of <HTMLElement[]><any>this.tableElem.querySelectorAll('tr.commit')) {
+			const rect = elem.getBoundingClientRect();
+			if (rect.bottom > viewTop + 1) { // the first row intersecting the viewport
+				const index = parseInt(elem.dataset.id!);
+				if (isNaN(index) || index < 0 || index >= this.commits.length) return null;
+				return { hash: this.commits[index].hash, offset: viewTop - rect.top, atTop: atTop };
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Put the anchored commit back at the exact on-screen position it had, whatever the update did
+	 * to the list: rows inserted or removed above it, history rewritten, the "Uncommitted Changes"
+	 * row appearing or vanishing, even the header growing by a Pinned row. Rows below the viewport
+	 * cannot affect it by construction.
+	 *
+	 * Nothing here is a delta, so nothing can accumulate: the position is restored absolutely,
+	 * measured from the DOM where the row is rendered (correct with variable row heights, e.g. an
+	 * open Commit Details View) and computed arithmetically where windowed rendering left it out
+	 * of the DOM. Must run once the DOM already represents the new list.
+	 */
+	private applyViewportAnchor(anchor: { hash: string, offset: number, atTop: boolean } | null) {
+		if (anchor === null) return;
+
+		if (anchor.atTop) {
+			// At the very top of the history the user is following the newest commits, so rows
+			// arriving above must be SEEN: the list stays pinned to the top and the content below
+			// slides down, rather than the view scrolling to keep the old first row still. Pinning
+			// to the edge IS the anchor here - the same rule the browser's own scroll anchoring
+			// applies, and the only place where the visible rows are expected to move.
+			this.viewElem.scrollTop = 0;
+			return;
+		}
+
+		const index = this.commitLookup[anchor.hash];
+		if (typeof index !== 'number') return; // the anchored commit is gone (e.g. it was rewritten)
+
+		let target: number;
+		if (this.canVirtualize()) {
+			// Windowed: exact arithmetic, needing neither layout nor the row to be in the DOM -
+			// which is what lets this run BEFORE the rows are rendered, so the window is computed
+			// at the final scroll position and the rows in it are reconciled exactly once.
+			target = this.getRowTop(index) + anchor.offset;
+		} else {
+			// Full render: measured, so it is correct with variable row heights too (the Commit
+			// Details View inserts a <tr> of its own height above the rows below it). Only valid
+			// once the DOM already shows the new list.
+			const elem = findCommitElemWithId(index);
+			if (elem === null) return;
+			target = this.viewElem.scrollTop + (elem.getBoundingClientRect().top - this.viewElem.getBoundingClientRect().top) + anchor.offset;
+		}
+
+		this.viewElem.scrollTop = Math.max(0, Math.round(target));
+	}
+
+	/**
+	 * Build a single `<tr>` from its HTML. Rows have to be parsed in table context or the browser
+	 * drops them, which `<template>` does correctly.
+	 */
+	private createRowElem(html: string) {
+		const tpl = document.createElement('template');
+		tpl.innerHTML = '<table><tbody>' + html + '</tbody></table>';
+		return <HTMLElement>tpl.content.querySelector('tr')!;
+	}
+
+	/**
+	 * Make the rendered commit rows match `commits[from..to)` exactly, reusing the existing DOM
+	 * node of every row that has not changed.
+	 *
+	 * This is what makes the virtual table's contract true: rows are matched by COMMIT HASH, not
+	 * by index, and re-rendered only when their own HTML actually differs. A commit inserted or
+	 * removed outside the window therefore touches nothing inside it - the rows keep their very
+	 * DOM nodes, and with them the column widths the browser already laid out, the find-widget
+	 * highlights and the open Commit Details View. Only the `data-id` index label is restamped.
+	 *
+	 * Doing it here, once, is what replaces the hand-written "can I take a fast path?" predicates
+	 * this used to need (append / prepend / patch-metadata), each of which had to re-derive that
+	 * same conclusion for one particular shape of change - and got it wrong at the edges.
+	 */
+	private syncCommitRows(ctx: ReturnType<GitGraphView['createRowRenderingContext']>, from: number, to: number) {
+		// Rows live inside the <tbody> (implicit or explicit), not directly under the <table>
+		const tableBody = <HTMLElement | null>(this.tableElem.querySelector('table > tbody') || this.tableElem.querySelector('table'));
+		if (tableBody === null) return;
+
+		const existing = new Map<string, HTMLElement>();
+		for (const row of <HTMLElement[]><any>tableBody.querySelectorAll('tr.commit')) {
+			const hash = row.dataset.hash;
+			if (typeof hash === 'string' && !existing.has(hash)) existing.set(hash, row);
+		}
+
+		// Walk the desired rows in order, keeping a cursor on the node each one should sit before
+		const headerRow = tableBody.querySelector('#tableColHeaders');
+		const topSpacer = tableBody.querySelector('#tableColHeaders + tr.virtSpacer');
+		let cursor: Node | null = (topSpacer !== null ? topSpacer : headerRow) as Node | null;
+		cursor = cursor !== null ? cursor.nextSibling : tableBody.firstChild;
+
+		const kept = new Set<HTMLElement>();
+		for (let i = from; i < to; i++) {
+			const html = this.getCommitRowHtml(i, ctx);
+			// Three things change without the ROW changing - its index label, its graph lane colour
+			// and whether it is the checked-out commit - and all three can be applied to an existing
+			// node in place. Keeping them out of the comparison is what lets a row survive a commit
+			// arriving above it, or HEAD moving elsewhere, as the very same DOM node.
+			const signature = html
+				.replace(/ data-id="\d+"/, '')
+				.replace(/ data-color="\d+"/, '')
+				.replace(/^<tr class="commit current/, '<tr class="commit');
+			const hash = this.commits[i].hash;
+			let row = existing.get(hash);
+
+			if (row === undefined || this.rowSignatures.get(row) !== signature) {
+				// The row's own content changed (or it was not rendered at all): build it, put it in
+				// place, and only then drop the stale node - which may be the very node `cursor`
+				// points at, so it must not be detached while the cursor still needs it.
+				const fresh = this.createRowElem(html);
+				this.rowSignatures.set(fresh, signature);
+				tableBody.insertBefore(fresh, cursor);
+				if (row !== undefined && row.parentNode !== null) row.remove();
+				row = fresh;
+			} else {
+				// Unchanged: keep the node, restamping only what is allowed to differ. Moving it is
+				// what absorbs rows inserted or removed above without rebuilding anything.
+				if (row.dataset.id !== String(i)) row.dataset.id = String(i);
+				if (row.dataset.color !== String(ctx.vertexColours[i])) row.dataset.color = String(ctx.vertexColours[i]);
+				row.classList.toggle('current', hash === ctx.currentHash);
+				if (row !== cursor) tableBody.insertBefore(row, cursor);
+			}
+
+			// The next row goes immediately after this one, whatever just happened to the nodes
+			cursor = row.nextSibling;
+			kept.add(row);
+			existing.delete(hash);
+		}
+
+		// Whatever is left is no longer in the window (scrolled out, or the commit is gone)
+		for (const row of <HTMLElement[]><any>tableBody.querySelectorAll('tr.commit')) {
+			if (!kept.has(row)) row.remove();
+		}
+	}
+
+	/**
+	 * Keep the spacer row that stands in for the `rows` unrendered commit rows above (`top`) or
+	 * below the window, so the scroll height - and with it the scroll bar and the "Load More
+	 * Commits" bottom detection - stays proportional to the whole commit list. The element is
+	 * created once and afterwards only resized, so the rows around it are never disturbed.
+	 */
+	private syncSpacerRow(tableBody: HTMLElement, top: boolean, rows: number) {
+		let spacer = <HTMLElement | null>tableBody.querySelector(top ? '#virtSpacerTop' : '#virtSpacerBottom');
+		if (this.renderedRange === null) {
+			// Full render: every row is in the DOM, nothing to stand in for
+			if (spacer !== null) spacer.remove();
+			return;
+		}
+		if (spacer === null) {
+			spacer = this.createRowElem('<tr id="' + (top ? 'virtSpacerTop' : 'virtSpacerBottom') + '" class="virtSpacer" aria-hidden="true"><td style="height:0;padding:0"></td></tr>');
+			if (top) {
+				tableBody.querySelector('#tableColHeaders')!.insertAdjacentElement('afterend', spacer);
+			}
+		}
+		if (!top) tableBody.appendChild(spacer); // always the last row, whatever was appended before it
+		const td = <HTMLElement | null>spacer.querySelector('td');
+		if (td !== null) {
+			const height = Math.max(0, rows) * this.config.graph.rowHeight + 'px';
+			if (td.style.height !== height) td.style.height = height;
+			const colspan = String(this.getNumColumns());
+			if (td.getAttribute('colspan') !== colspan) td.setAttribute('colspan', colspan);
+		}
 	}
 
 	/**
@@ -1975,19 +1809,18 @@ class GitGraphView {
 	}
 
 	private renderTable() {
-		// The expanded Commit Details View (a <tr> living inside this table, in the non-docked
-		// layout) is about to be destroyed by the innerHTML rebuild below along with every commit
-		// row - detach it first and re-insert it after the rebuild instead of letting
-		// showCommitDetails() recreate it from scratch a few lines later: recreating it would
-		// discard its scroll position, its file-tree open/closed DOM state and every event
-		// listener, which is what makes an unrelated background refresh look like the commit
-		// "closing and reopening" while the user is looking at it.
+		// The expanded Commit Details View is a <tr> living inside this table (non-docked layout).
+		// Detach it while the rows are reconciled and put it back afterwards: it must not be
+		// treated as one of the commit rows, and re-creating it would discard its scroll position,
+		// its file-tree open/closed state and every event listener - which is what makes an
+		// unrelated background refresh look like the commit "closing and reopening".
 		const cdvElem = this.expandedCommit !== null && !isCdvDocked(this) ? document.getElementById('cdv') : null;
+		if (cdvElem !== null && cdvElem.parentNode !== null) cdvElem.parentNode.removeChild(cdvElem);
 
 		const ctx = this.createRowRenderingContext();
 		const colVisibility = ctx.colVisibility;
 
-		let html = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">' + strings.columnGraph + '</th><th class="tableColHeader" data-col="1">' + strings.columnDescription + '</th>' +
+		const headerHtml = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">' + strings.columnGraph + '</th><th class="tableColHeader" data-col="1">' + strings.columnDescription + '</th>' +
 			(colVisibility.date ? '<th class="tableColHeader dateCol" data-col="2">' + strings.columnDate + '</th>' : '') +
 			(colVisibility.author ? '<th class="tableColHeader authorCol" data-col="3">' + strings.columnAuthor + '</th>' : '') +
 			(colVisibility.commit ? '<th class="tableColHeader commitCol" data-col="4">' + strings.columnCommit + '</th>' : '') +
@@ -2004,20 +1837,34 @@ class GitGraphView {
 			if (this.viewElem.scrollTop > maxScroll) this.viewElem.scrollTop = maxScroll;
 		}
 		this.renderedRange = this.canVirtualize() ? this.computeVisibleRange() : null;
-		let from = 0, to = this.commits.length;
-		if (this.renderedRange !== null) {
-			from = this.renderedRange.start;
-			to = this.renderedRange.end;
-			html += this.getSpacerRowHtml(from);
-		}
+		const from = this.renderedRange !== null ? this.renderedRange.start : 0;
+		const to = this.renderedRange !== null ? this.renderedRange.end : this.commits.length;
 
-		for (let i = from; i < to; i++) {
-			html += this.getCommitRowHtml(i, ctx);
+		// The table skeleton (<tbody>, the column header row, and the two spacers standing in for
+		// the rows outside the window) is created once and then kept - never rebuilt - so that
+		// reconciling the rows below can reuse the DOM nodes that did not change.
+		let tableBody = <HTMLElement | null>this.tableElem.querySelector('table > tbody');
+		if (tableBody === null) {
+			this.tableElem.innerHTML = '<table><tbody></tbody></table>';
+			tableBody = <HTMLElement>this.tableElem.querySelector('table > tbody')!;
 		}
-		if (this.renderedRange !== null) {
-			html += this.getSpacerRowHtml(this.commits.length - to);
+		// Rebuild the header row only when the set of visible columns actually changes - never by
+		// comparing its HTML, which the column-resizing code decorates with inline widths, so it
+		// would never match what is generated here and the header (and the widths on it) would be
+		// thrown away on every single refresh.
+		const headerKey = String(colVisibility.date) + String(colVisibility.author) + String(colVisibility.commit);
+		const headerElem = tableBody.querySelector('#tableColHeaders');
+		if (headerElem === null) {
+			tableBody.insertAdjacentHTML('afterbegin', headerHtml);
+			this.renderedHeaderKey = headerKey;
+		} else if (this.renderedHeaderKey !== headerKey) {
+			headerElem.outerHTML = headerHtml;
+			this.renderedHeaderKey = headerKey;
 		}
-		this.tableElem.innerHTML = '<table>' + html + '</table>';
+		this.syncSpacerRow(tableBody, true, this.renderedRange !== null ? from : 0);
+		this.syncCommitRows(ctx, from, to);
+		this.syncSpacerRow(tableBody, false, this.renderedRange !== null ? this.commits.length - to : 0);
+
 		if (cdvElem !== null) {
 			// Re-attach it now, before the expandedCommit handling below runs: showCommitDetails()
 			// / renderCommitDetailsView() find it via document.getElementById('cdv') and reuse it in
@@ -2110,42 +1957,6 @@ class GitGraphView {
 		this.renderGraph();
 	}
 
-	/**
-	 * Append the commit rows from `fromIndex` onwards to the existing table, without re-rendering
-	 * the already rendered rows. Used by the "Load More Commits" paging, where the new commit list
-	 * is a pure extension of the previous one: re-rendering all rows on every page would make
-	 * scrolling through a large repository quadratically expensive.
-	 */
-	private appendCommitRows(fromIndex: number) {
-		if (this.renderedRange !== null) {
-			// Windowed rendering is active: the appended rows are outside the rendered window
-			// unless the user is at the very bottom, so simply re-render the (small) window - the
-			// spacers absorb the appended rows and keep the scroll height correct
-			this.renderTable();
-			return;
-		}
-		const ctx = this.createRowRenderingContext();
-		let html = '';
-		for (let i = fromIndex; i < this.commits.length; i++) {
-			html += this.getCommitRowHtml(i, ctx);
-		}
-		this.tableElem.children[0].insertAdjacentHTML('beforeend', html);
-
-		if (this.moreCommitsAvailable) {
-			// Restore the "Load More Commits" button (the paging request replaced the footer with
-			// a loading indicator)
-			this.footerElem.innerHTML = '<div id="loadMoreCommitsBtn" class="roundedBtn">' + strings.loadMoreCommits + '</div>';
-			document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
-				this.loadMoreCommits();
-			});
-		} else {
-			// The final page has been loaded: the "Load More Commits" button is no longer needed
-			this.footerElem.innerHTML = '';
-		}
-		this.findWidget.refresh();
-		this.renderedGitBranchHead = this.gitBranchHead;
-		this.requestCommitBodiesForRows(fromIndex, this.commits.length);
-	}
 
 
 
@@ -2345,8 +2156,7 @@ class GitGraphView {
 		if (this.renderedRange !== null) {
 			// Windowed rendering: the row's position derives from its index (uniform row heights),
 			// then the window is re-rendered around the new scroll position so the row exists
-			const colHeadersElem = document.getElementById('tableColHeaders');
-			const elemTop = this.getHeaderHeight() + (colHeadersElem !== null ? colHeadersElem.offsetHeight : this.config.graph.rowHeight) + id * this.config.graph.rowHeight;
+			const elemTop = this.getRowTop(id);
 			if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
 				this.viewElem.scroll(0, Math.max(0, elemTop + 12 - this.viewElem.clientHeight / 2));
 			}

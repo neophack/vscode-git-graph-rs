@@ -113,40 +113,11 @@ describe('on-screen row coordinates stay frozen in a repository longer than the 
 	});
 });
 
-describe('on-screen row coordinates stay frozen across the REAL staged load pipeline (windowed rendering)', () => {
-	/* The extension never answers loadCommits in one go: the first response (and the remote-refs
-	 * follow-up) exclude the working-tree status - no Uncommitted Changes row, marked
-	 * uncommittedPending - and only the final follow-up carries the row with its exact count. The
-	 * view must bridge all of these stages without the viewport moving, including the transient
-	 * state BETWEEN two responses (what the user perceives as the view jumping). */
-	it('never moves a visible row between ANY two pipeline responses while files change and get committed', async () => {
-		const h = await bootView(300, { staged: true });
-		await h.scrollTo(150);
-
-		let reference = measureRowCoordinates(h);
-		h.setAfterResponse(() => {
-			const now = measureRowCoordinates(h);
-			// every response stage is checked against the coordinates BEFORE the whole change began
-			assertViewportUnchanged(h, reference, now, 'staged pipeline response');
-		});
-
-		for (const [label, mutate] of [
-			['files edited (3)', () => editFiles(h, 3)],
-			['more files edited (5)', () => editFiles(h, 5)],
-			['everything committed', () => commitEverything(h)],
-			['idle refresh', () => {}]
-		]) {
-			mutate();
-			h.dispatch({ command: 'refresh' });
-			await h.pump();
-			// the settled state after the full pipeline becomes the new reference
-			reference = measureRowCoordinates(h);
-			assertViewportUnchanged(h, reference, reference, label + ' (settled)');
-		}
-
-		assert.equal(reference.get('commit 150'), 0, 'commit 150 ends exactly where the user scrolled it');
-	});
-});
+/* The multi-stage load pipeline (first response without the working-tree status, remote-refs
+ * follow-up, then the Uncommitted Changes row with its count) is covered against the REAL
+ * extension host, on a real repository, by webviewRealPipeline.test.mjs - and once more in a real
+ * browser by tests/browserRepro (realPipelineLoop). A third, simulated copy of that same scenario
+ * used to live here; it asserted nothing the other two do not. */
 
 describe('on-screen row coordinates stay frozen while the repository moves (full render)', () => {
 	it('files being edited, the count ticking up, a commit, and repeated idle refreshes never move a visible row', async () => {
@@ -165,7 +136,7 @@ describe('on-screen row coordinates stay frozen while the repository moves (full
 	});
 });
 
-describe('a mid-history rewrite (rebase/amend) forces the full re-render path - the viewport stays anchored', () => {
+describe('a mid-history rewrite (rebase/amend) keeps the viewport anchored', () => {
 	it('a commit deep in the middle of the windowed history getting a new hash keeps every visible row still', async () => {
 		const h = await bootView(300, { window: 300 });
 		await h.scrollTo(150);
@@ -198,7 +169,7 @@ describe('a mid-history rewrite (rebase/amend) forces the full re-render path - 
 	});
 });
 
-describe('rows removed above the viewport force the full re-render path - the DOM-rect anchoring keeps the viewport still', () => {
+describe('rows removed above the viewport keep the viewport still', () => {
 	it('the newest commits disappearing (history truncated / rebased away) moves no visible row (windowed)', async () => {
 		const h = await bootView(300, { window: 300 });
 		await h.scrollTo(150);
