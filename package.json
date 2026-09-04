@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.15",
+	"version": "1.0.16",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
