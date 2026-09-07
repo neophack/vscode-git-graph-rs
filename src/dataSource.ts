@@ -230,6 +230,23 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Get a signature of everything at ref level that can change the commit graph: the resolved
+	 * hash of HEAD, and the names AND hashes of every branch, tag, remote-tracking ref and stash.
+	 * The name-only lists `getRepoInfo` returns cannot express a new commit landing on an existing
+	 * branch (no name appears or disappears), so a change poller comparing those never notices one
+	 * - reading the actual ref hashes is what makes a commit visible to the poll.
+	 * @param repo The path of the repository.
+	 * @returns The signature, or NULL when the repository is momentarily unreadable (a change made
+	 *          while it was unreadable is still picked up by the next successful read).
+	 */
+	public getRepoChangeSignature(repo: string): Promise<string | null> {
+		return Promise.all([
+			this.backend.getRefs(repo, { showRemoteBranches: true }),
+			this.backend.getStashes(repo)
+		]).then(([refs, stashes]) => JSON.stringify([refs.head, refs.heads, refs.tags, refs.remotes, stashes]), () => null);
+	}
+
+	/**
 	 * Get the commits in a repository.
 	 */
 	public getCommits(repo: string, branches: ReadonlyArray<string> | null, authors: ReadonlyArray<string> | null, maxCommits: number, showTags: boolean, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: ReadonlyArray<string>, hideRemotes: ReadonlyArray<string>, _stashes: ReadonlyArray<GitStash>, gerritRefs: ReadonlyArray<string> | null = null, gerritShowChangeRefs: boolean = false, filterPath: string | null = null, deferUncommittedChanges: boolean = false, deferRemoteRefs: boolean = false): Promise<GitCommitData> {

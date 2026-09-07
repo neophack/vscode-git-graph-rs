@@ -174,12 +174,14 @@ export class GitGraphView extends Disposable {
 	private lastSentInterfaceLanguage: string | null = null;
 
 	/**
-	 * The background change poll: the repository's signature (branches, HEAD, remotes, stashes,
-	 * tags) is compared against the last observation, so a change the file watcher missed (watcher
-	 * events can be dropped by the platform, e.g. on network or synced filesystems, or swallowed
-	 * by the watcher's mute window) still refreshes the view promptly. The interval is a few
-	 * seconds: a commit made outside this extension must appear on the graph without a noticeable
-	 * wait, and the signature read is a cheap in-process ref scan.
+	 * The background change poll: the repository's signature (the resolved hash of HEAD, and the
+	 * names and hashes of every branch, tag, remote-tracking ref and stash) is compared against the
+	 * last observation, so a change the file watcher missed (watcher events can be dropped by the
+	 * platform, e.g. on network or synced filesystems) still refreshes the view promptly. The
+	 * interval is a few seconds: a commit made outside this extension must appear on the graph
+	 * without a noticeable wait, and the signature read is a cheap in-process ref scan. The
+	 * signature carries the ref HASHES (not just the names `getRepoInfo` returns): a new commit on
+	 * an existing branch changes no name, so a name-only signature would never notice it.
 	 */
 	private static readonly BACKGROUND_POLL_INTERVAL_MS = 5000;
 	private backgroundRefreshTimer: NodeJS.Timer | null = null;
@@ -1153,20 +1155,22 @@ export class GitGraphView extends Disposable {
 	 * Update the HTML document loaded in the Webview.
 	 */
 	/**
-	 * One tick of the background change poll: read the repository's signature (branches, HEAD,
-	 * remotes, stashes, tags) and compare it with the previous tick. A difference means the
-	 * repository changed without the file watcher reporting it (dropped events, unusual
-	 * filesystems), so the cached commit data is dropped and the view is asked to refresh —
-	 * exactly what the watcher callback does. A NULL baseline (start, repository switch, or a
-	 * watcher-handled change) is recorded without refreshing.
+	 * One tick of the background change poll: read the repository's signature (the resolved hash
+	 * of HEAD, and the names and hashes of every branch, tag, remote-tracking ref and stash) and
+	 * compare it with the previous tick. A difference means the repository changed without the
+	 * file watcher reporting it (dropped events, unusual filesystems), so the cached commit data
+	 * is dropped and the view is asked to refresh — exactly what the watcher callback does. A NULL
+	 * baseline (start, repository switch, or a watcher-handled change) is recorded without
+	 * refreshing, and an unreadable repository keeps the previous baseline (its change, if any, is
+	 * still detected by the next successful read).
 	 */
 	private async checkForBackgroundChanges() {
 		const repo = this.currentRepo;
 		if (repo === null || !this.panel.visible || this.isDisposed()) return;
 		try {
-			const info = await this.dataSource.getRepoInfo(repo, true, true, []);
+			const signature = await this.dataSource.getRepoChangeSignature(repo);
 			if (this.isDisposed() || repo !== this.currentRepo) return; // the view moved on while reading
-			const signature = JSON.stringify([info.branches, info.head, info.remotes, info.stashes, info.tags]);
+			if (signature === null) return; // momentarily unreadable (e.g. mid-rebase file churn): try again next tick
 			if (this.lastRepoSignature !== null && signature !== this.lastRepoSignature) {
 				this.logger.log('Background poll detected a repository change in ' + repo);
 				this.commitCache.clear();
@@ -1174,7 +1178,7 @@ export class GitGraphView extends Disposable {
 			}
 			this.lastRepoSignature = signature;
 		} catch (_) {
-			// The repository is momentarily unreadable (e.g. mid-rebase file churn): try again next tick
+			// The repository is momentarily unreadable: try again next tick
 		}
 	}
 
