@@ -634,7 +634,10 @@ export class DataSource extends Disposable {
 	private async verifyCommitSignature(repo: string, details: GitCommitDetails): Promise<GitCommitDetails> {
 		if (
 			this.gitExecutable === null ||
-			details.signature?.status !== GitSignatureStatus.CannotBeChecked
+			this.backend.name === 'git-cli' ||
+			details.signature?.status !== GitSignatureStatus.CannotBeChecked ||
+			details.signature?.key !== '' ||
+			details.signature?.signer !== ''
 		) {
 			return details;
 		}
@@ -654,7 +657,10 @@ export class DataSource extends Disposable {
 	private async verifyTagSignature(repo: string, tagName: string, details: GitTagDetails): Promise<GitTagDetails> {
 		if (
 			this.gitExecutable === null ||
-			details.signature?.status !== GitSignatureStatus.CannotBeChecked
+			this.backend.name === 'git-cli' ||
+			details.signature?.status !== GitSignatureStatus.CannotBeChecked ||
+			details.signature?.key !== '' ||
+			details.signature?.signer !== ''
 		) {
 			return details;
 		}
