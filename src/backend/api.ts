@@ -204,7 +204,13 @@ export class NativeBackend implements GitBackend {
 	}
 
 	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
-		return callJson<GitCommitData>(() => this.addon.loadCommits(repo, JSON.stringify(options)));
+		// Unlike getRepoInfo/getRefs above, this payload isn't merged onto DEFAULT_REF_OPTIONS, so
+		// an omitted showRemoteBranches would otherwise fall back to the engine's bare `false`
+		// (via serde's derived default) instead of the CLI backend's `?? true` — the two backends
+		// would then quietly disagree on every remote branch, tag and label whenever a caller
+		// relies on "unset" meaning "on", the documented default everywhere else in this API.
+		const payload: LogOptions = { ...options, showRemoteBranches: options.showRemoteBranches ?? true };
+		return callJson<GitCommitData>(() => this.addon.loadCommits(repo, JSON.stringify(payload)));
 	}
 
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {

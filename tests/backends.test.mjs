@@ -1166,6 +1166,7 @@ describe('git semantics the fixtures do not cover', () => {
 	let changed;
 	let mailmapped;
 	let alice;
+	let dependabot;
 
 	before(async () => {
 		repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-docsem-'));
@@ -1206,6 +1207,11 @@ describe('git semantics the fixtures do not cover', () => {
 		mailmapped = commitIn('add the mailmap');
 
 		alice = commitIn('by alice', ['Alice (ops)', 'ops@example.com']);
+
+		// Unlike `(`/`)` above, `[` and `]` are a character class even in a basic regular
+		// expression (git log's default), so a bot account's bracketed name is a sharper test
+		// of --author being treated as a literal string.
+		dependabot = commitIn('bump deps', ['dependabot[bot]', 'dependabot@users.noreply.github.com']);
 
 		rust = new NativeBackend();
 		cli = new CliBackend();
@@ -1277,6 +1283,27 @@ describe('git semantics the fixtures do not cover', () => {
 			a.commits.filter((commit) => commit.stash === null).map((commit) => commit.hash),
 			[alice],
 			'the parenthesised name must match literally, not as a regex group'
+		);
+	});
+
+	it('filters by an author whose name contains a character class', async () => {
+		const options = { maxCommits: 50, authors: ['dependabot[bot]'] };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'authors=dependabot[bot]');
+		assert.deepEqual(
+			a.commits.filter((commit) => commit.stash === null).map((commit) => commit.hash),
+			[dependabot],
+			'the bracketed name must match literally, not as a regex character class'
+		);
+	});
+
+	it('filters by author case-insensitively, like the engine does', async () => {
+		const options = { maxCommits: 50, authors: ['ALICE (OPS)'] };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'authors=ALICE (OPS)');
+		assert.deepEqual(
+			a.commits.filter((commit) => commit.stash === null).map((commit) => commit.hash),
+			[alice]
 		);
 	});
 });

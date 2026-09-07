@@ -842,7 +842,12 @@ export class CliBackend implements GitBackend {
 			'-z'
 		];
 		if (options.onlyFollowFirstParent) args.push('--first-parent');
-		for (const author of options.authors ?? []) args.push(`--author=${author} <`);
+		const authors = options.authors ?? [];
+		// --fixed-strings so an author name with regex metacharacters (e.g. "dependabot[bot]")
+		// still matches literally, and --regexp-ignore-case to mirror the native engine's
+		// case-insensitive comparison (see log.rs's matches_author).
+		if (authors.length > 0) args.push('--regexp-ignore-case', '--fixed-strings');
+		for (const author of authors) args.push(`--author=${author} <`);
 
 		if (options.branches) {
 			args.push(...options.branches);
