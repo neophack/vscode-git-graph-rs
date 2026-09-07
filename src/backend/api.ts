@@ -233,7 +233,7 @@ export class NativeBackend implements GitBackend {
 		return callJson<GitCommitDetails>(() => this.addon.loadCommitDetails(repo, hash));
 	}
 
-	public getCommitSignature(): Promise<GitSignature | null> {
+	public getCommitSignature(_repo: string, _hash: string): Promise<GitSignature | null> {
 		return Promise.reject(
 			new GitBackendError('Unsupported', 'Signature verification requires the Git CLI and GPG keyring')
 		);
@@ -313,7 +313,7 @@ export class NativeBackend implements GitBackend {
 		return callJson(() => this.addon.loadTagDetails(repo, tagName));
 	}
 
-	public getTagSignature(): Promise<GitSignature | null> {
+	public getTagSignature(_repo: string, _tagName: string): Promise<GitSignature | null> {
 		return Promise.reject(
 			new GitBackendError('Unsupported', 'Signature verification requires the Git CLI and GPG keyring')
 		);
