@@ -356,7 +356,7 @@ class SettingsWidget {
 			const globalAuthorIndex = this.getGlobalAuthorIndex(savedAuthors);
 			globalHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionAuthors + '</h3>' +
 				'<span>' + strings.settingsAuthorsIntro + '</span>' +
-				'<table><tr><th>' + strings.settingsAuthorNameInput + '</th><th>' + strings.settingsAuthorEmailInput + '</th><th>' + strings.settingsGlobalAuthorBadge + '</th><th>' + strings.settingsAction + '</th></tr>';
+				'<table class="authorTable"><tr><th>' + strings.settingsAuthorNameInput + '</th><th>' + strings.settingsAuthorEmailInput + '</th><th>' + strings.settingsGlobalAuthorBadge + '</th><th>' + strings.settingsAction + '</th></tr>';
 			if (savedAuthors.length > 0) {
 				savedAuthors.forEach((author, i) => {
 					const escapedName = escapeHtml(author.name), escapedEmail = escapeHtml(author.email);

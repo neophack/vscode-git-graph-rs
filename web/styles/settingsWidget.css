@@ -467,3 +467,12 @@
 	margin-top:3px;
 	opacity:0.75;
 }
+/* Balance the Author Identities columns: emails are longer than names, so give
+   the email column the wider share instead of the even split both width:100%
+   ellipsis cells would otherwise get */
+.authorTable td.leftWithEllipsis:first-child{
+	width:35%;
+}
+.authorTable td.leftWithEllipsis:nth-child(2){
+	width:65%;
+}
