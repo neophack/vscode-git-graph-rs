@@ -96,8 +96,7 @@ Documented in the README's "Known deviations from git":
 
 | Area | Difference |
 |---|---|
-| Commit signatures | reported as present but unverified (status `E`), never as valid |
-| Tag signatures | the same, and on both backends: moving `getTagDetails` behind `GitBackend` dropped the original's real `verify-tag`/gpg verification on the CLI path too |
+| Commit and tag signatures | the engine reads signature presence in-process, while the host delegates verification to Git/GPG when the CLI is available; engine-only installations remain at status `E` |
 | Ordering | exact within a bounded window rather than over the whole history |
 | Worktree line counts | a file modified but not staged has no `additions`/`deletions` when comparing an arbitrary revision against the working tree; a comparison against the working tree reports no counts at all, committed part included |
 | Deferred line counts | every details/comparison load renders its file list first (statuses only) and settles the `+N/-M` counts afterwards — visible rows first, then background batches — via `getLineCounts`; a working-tree comparison settles nothing |

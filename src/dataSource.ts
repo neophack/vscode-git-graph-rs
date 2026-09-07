@@ -4,13 +4,13 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
-import { GitBackend, NativeBackend, createBackend } from './backend';
+import { GitBackend, GitBackendError, GitSignature as BackendGitSignature, NativeBackend, createBackend } from './backend';
 import { isAddonAvailable } from './backend/addon';
 import { getConfig } from './config';
 import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
 import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -458,11 +458,13 @@ export class DataSource extends Disposable {
 	 * @returns The commit details.
 	 */
 	public getCommitDetails(repo: string, commitHash: string, _hasParents: boolean): Promise<GitCommitDetailsData> {
-		return this.backend.getCommitDetails(repo, commitHash).then((details) => {
-			return { commitDetails: details as unknown as GitCommitDetails, error: null };
-		}, (errorMessage) => {
-			return { commitDetails: null, error: errorMessage };
-		});
+		return this.backend.getCommitDetails(repo, commitHash).then(async (details) => ({
+			commitDetails: await this.verifyCommitSignature(repo, details as unknown as GitCommitDetails),
+			error: null
+		}), (errorMessage) => ({
+			commitDetails: null,
+			error: errorMessage
+		}));
 	}
 
 	/**
@@ -619,13 +621,69 @@ export class DataSource extends Disposable {
 			return Promise.resolve({ details: null, error: constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.TagDetails, 'retrieving Tag Details') });
 		}
 
-		return this.backend.getTagDetails(repo, tagName).then((details) => ({
-			details: details as unknown as GitTagDetails,
+		return this.backend.getTagDetails(repo, tagName).then(async (details) => ({
+			details: await this.verifyTagSignature(repo, tagName, details as unknown as GitTagDetails),
 			error: null
 		}), (errorMessage) => ({
 			details: null,
 			error: errorMessage
 		}));
+	}
+
+	private async verifyCommitSignature(repo: string, details: GitCommitDetails): Promise<GitCommitDetails> {
+		if (
+			this.gitExecutable === null ||
+			details.signature?.status !== GitSignatureStatus.CannotBeChecked
+		) {
+			return details;
+		}
+
+		try {
+			const signature = await this.backend.getCommitSignature(repo, details.hash);
+			return signature === null ? details : { ...details, signature: this.toGitSignature(signature) };
+		} catch (error) {
+			if (error instanceof GitBackendError) {
+				this.logger.log(`Could not verify the signature of ${details.hash}: ${error.message}`);
+				return details;
+			}
+			throw error;
+		}
+	}
+
+	private async verifyTagSignature(repo: string, tagName: string, details: GitTagDetails): Promise<GitTagDetails> {
+		if (
+			this.gitExecutable === null ||
+			details.signature?.status !== GitSignatureStatus.CannotBeChecked
+		) {
+			return details;
+		}
+
+		try {
+			const signature = await this.backend.getTagSignature(repo, tagName);
+			return signature === null ? details : { ...details, signature: this.toGitSignature(signature) };
+		} catch (error) {
+			if (error instanceof GitBackendError) {
+				this.logger.log(`Could not verify the signature of tag ${tagName}: ${error.message}`);
+				return details;
+			}
+			throw error;
+		}
+	}
+
+	private toGitSignature(signature: BackendGitSignature): GitSignature {
+		const status = ({
+			G: GitSignatureStatus.GoodAndValid,
+			U: GitSignatureStatus.GoodWithUnknownValidity,
+			X: GitSignatureStatus.GoodButExpired,
+			Y: GitSignatureStatus.GoodButMadeByExpiredKey,
+			R: GitSignatureStatus.GoodButMadeByRevokedKey,
+			E: GitSignatureStatus.CannotBeChecked,
+			B: GitSignatureStatus.Bad
+		} as Record<string, GitSignatureStatus>)[signature.status];
+		if (status === undefined) {
+			throw new Error(`Unknown Git signature status: ${signature.status}`);
+		}
+		return { key: signature.key, signer: signature.signer, status };
 	}
 
 	/**

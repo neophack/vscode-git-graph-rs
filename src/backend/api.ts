@@ -11,6 +11,7 @@ import { call, callJson, loadAddon } from './addon';
 import { GerritChangeState } from '../types';
 import {
 	GitAuthor,
+	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
 	GitCommitFile,
@@ -22,6 +23,7 @@ import {
 	GitLineCounts,
 	GitRefData,
 	GitRepoInfo,
+	GitSignature,
 	GitStash,
 	GitTagDetails,
 	LogOptions,
@@ -64,6 +66,12 @@ export interface GitBackend {
 
 	/** One commit in full, with the files it changed — their statuses only, without line counts. */
 	getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails>;
+
+	/**
+	 * Verify one commit's signature with Git/GPG. The Rust engine does not implement the keyring
+	 * integration, so it declines this capability and lets the CLI fallback answer it.
+	 */
+	getCommitSignature(repo: string, hash: string): Promise<GitSignature | null>;
 
 	/**
 	 * The `+N/-M` line counts of the given paths between two revisions, keyed by the path.
@@ -114,6 +122,9 @@ export interface GitBackend {
 
 	/** A tag in full: tagger, message, and whether it is signed. */
 	getTagDetails(repo: string, tagName: string): Promise<GitTagDetails>;
+
+	/** Verify one annotated tag's signature with Git/GPG. */
+	getTagSignature(repo: string, tagName: string): Promise<GitSignature | null>;
 
 	/** The fetch URL of a remote, or NULL when it is not configured. */
 	getRemoteUrl(repo: string, remote: string): Promise<string | null>;
@@ -222,6 +233,12 @@ export class NativeBackend implements GitBackend {
 		return callJson<GitCommitDetails>(() => this.addon.loadCommitDetails(repo, hash));
 	}
 
+	public getCommitSignature(): Promise<GitSignature | null> {
+		return Promise.reject(
+			new GitBackendError('Unsupported', 'Signature verification requires the Git CLI and GPG keyring')
+		);
+	}
+
 	public getLineCounts(
 		repo: string,
 		from: string | null,
@@ -294,6 +311,12 @@ export class NativeBackend implements GitBackend {
 
 	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
 		return callJson(() => this.addon.loadTagDetails(repo, tagName));
+	}
+
+	public getTagSignature(): Promise<GitSignature | null> {
+		return Promise.reject(
+			new GitBackendError('Unsupported', 'Signature verification requires the Git CLI and GPG keyring')
+		);
 	}
 
 	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
