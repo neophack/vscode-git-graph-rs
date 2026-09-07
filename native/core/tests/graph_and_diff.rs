@@ -470,6 +470,29 @@ fn detects_renames() {
 }
 
 #[test]
+fn detects_a_staged_but_uncommitted_rename() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let contents = (0..40).map(|n| format!("line {n}\n")).collect::<String>();
+    repo.commit_file("original.txt", &contents, "first");
+
+    // `git mv` both renames on disk and stages the rename - nothing is committed.
+    repo.git(&["mv", "original.txt", "renamed.txt"]);
+
+    let engine = open(&repo);
+    let changes = status::uncommitted_changes(&engine).unwrap();
+
+    assert_eq!(
+        changes.len(),
+        1,
+        "a staged rename is one change, not an add plus a delete"
+    );
+    assert_eq!(changes[0].kind, GitFileStatus::Renamed);
+    assert_eq!(changes[0].old_file_path, "original.txt");
+    assert_eq!(changes[0].new_file_path, "renamed.txt");
+}
+
+#[test]
 fn does_not_list_a_renamed_directory_as_a_file() {
     require_git!();
     let mut repo = TestRepo::new();

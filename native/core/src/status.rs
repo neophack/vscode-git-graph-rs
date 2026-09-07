@@ -19,13 +19,16 @@ use crate::repository::Repo;
 use crate::types::{GitFileChange, GitFileStatus, GitStatusFiles};
 
 /// One path's state, as the two halves of a porcelain status code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct PathState {
     /// The change between HEAD and the index (git's first column).
     staged: Option<GitFileStatus>,
     /// The change between the index and the working tree (git's second column).
     unstaged: Option<GitFileStatus>,
     untracked: bool,
+    /// The pre-rename path, when `staged` is `Renamed` — the current path (the map key) is the
+    /// destination, so the source has to be carried separately.
+    old_path: Option<String>,
 }
 
 /// Scan the working tree, collapsing every finding onto the path it concerns.
@@ -58,8 +61,12 @@ fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathSta
         let item = item.git_ctx("Could not read the working tree status")?;
         match item {
             gix::status::Item::TreeIndex(change) => {
-                let (path, status) = classify_staged(&change);
-                states.entry(path).or_default().staged = Some(status);
+                let (path, status, old_path) = classify_staged(&change);
+                let state = states.entry(path).or_default();
+                state.staged = Some(status);
+                if old_path.is_some() {
+                    state.old_path = old_path;
+                }
             }
             gix::status::Item::IndexWorktree(item) => {
                 if let Some((path, status, untracked)) = classify_unstaged(&item) {
@@ -74,13 +81,24 @@ fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathSta
     Ok(states)
 }
 
-fn classify_staged(change: &gix::diff::index::Change) -> (String, GitFileStatus) {
+/// Returns the path, its status, and — for a rename — the source path it was renamed from.
+fn classify_staged(change: &gix::diff::index::Change) -> (String, GitFileStatus, Option<String>) {
     use gix::diff::index::Change;
     match change {
-        Change::Addition { location, .. } => (location.to_string(), GitFileStatus::Added),
-        Change::Deletion { location, .. } => (location.to_string(), GitFileStatus::Deleted),
-        Change::Modification { location, .. } => (location.to_string(), GitFileStatus::Modified),
-        Change::Rewrite { location, .. } => (location.to_string(), GitFileStatus::Renamed),
+        Change::Addition { location, .. } => (location.to_string(), GitFileStatus::Added, None),
+        Change::Deletion { location, .. } => (location.to_string(), GitFileStatus::Deleted, None),
+        Change::Modification { location, .. } => {
+            (location.to_string(), GitFileStatus::Modified, None)
+        }
+        Change::Rewrite {
+            location,
+            source_location,
+            ..
+        } => (
+            location.to_string(),
+            GitFileStatus::Renamed,
+            Some(source_location.to_string()),
+        ),
     }
 }
 
@@ -179,8 +197,10 @@ pub fn uncommitted_changes(repo: &Repo) -> Result<Vec<GitFileChange>> {
             continue;
         };
 
+        let old_file_path = state.old_path.unwrap_or_else(|| path.clone());
+
         changes.push(GitFileChange {
-            old_file_path: path.clone(),
+            old_file_path,
             new_file_path: path,
             kind,
             additions: None,
