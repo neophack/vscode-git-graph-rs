@@ -72,6 +72,69 @@ function stringArraysEqual(a: ReadonlyArray<string> | undefined, b: ReadonlyArra
 	return a.every((value, index) => value === b[index]);
 }
 
+/** The decision for one reading of the repository's uncommitted-change count. */
+export type UncommittedReading =
+	| { readonly send: number } // deliver this count to the view now
+	| { readonly recheckAfterMs: number }; // deliver nothing yet: read the count again after this delay
+
+/**
+ * Decides when a reading of the "Uncommitted Changes" count may be delivered to the webview, so
+ * the row never disappears and reappears on a momentary reading (a `git status` that failed or
+ * raced a concurrent index write reports 0, not the real count - delivering that 0 removes the
+ * rendered row, and the next refresh brings it straight back):
+ *  - a positive count is delivered immediately, whatever the row currently shows: the row appears
+ *    at once when the user starts editing, and a count-only change just updates its number;
+ *  - a zero that would REMOVE the row is delivered only once it has been confirmed by re-reads
+ *    spanning the confirm window (5 seconds), so a momentarily wrong zero can never land;
+ *  - a failed reading (NULL) delivers nothing: the failure neither confirms nor denies anything,
+ *    and the next refresh reads the status again.
+ */
+export class UncommittedCountStabiliser {
+	/** The count the view last rendered (NULL => unknown: nothing was delivered since the last reset). */
+	private renderedCount: number | null = null;
+	/** When the current streak of zero readings started (NULL => the latest reading wasn't a zero). */
+	private zeroSince: number | null = null;
+
+	constructor(private readonly confirmWindowMs: number, private readonly recheckIntervalMs: number) {}
+
+	/**
+	 * Observe one reading of the count.
+	 * @param count The reading (number of uncommitted changes), or NULL when it could not be read.
+	 * @param now The time of the reading (epoch milliseconds).
+	 * @returns Whether to deliver a count now, or re-read after a delay.
+	 */
+	public observe(count: number | null, now: number): UncommittedReading {
+		if (count === null) return { recheckAfterMs: this.recheckIntervalMs };
+		if (count > 0) {
+			this.zeroSince = null;
+			return { send: count };
+		}
+		if (this.renderedCount === null || this.renderedCount === 0) {
+			// No row is rendered: delivering 0 changes nothing on screen, so there is nothing to stabilise
+			return { send: 0 };
+		}
+		if (this.zeroSince === null) this.zeroSince = now;
+		if (now - this.zeroSince < this.confirmWindowMs) return { recheckAfterMs: this.recheckIntervalMs };
+		this.zeroSince = null;
+		return { send: 0 };
+	}
+
+	/**
+	 * Record the count a delivered response rendered in the view (call only after actually sending).
+	 * @param count The delivered count.
+	 */
+	public delivered(count: number) {
+		this.renderedCount = count;
+		if (count > 0) this.zeroSince = null;
+	}
+
+	/** Forget what the view renders (the view switched repository or was reset). */
+	public reset() {
+		this.renderedCount = null;
+		this.zeroSince = null;
+	}
+}
+
 /**
  * The Global (User) Settings that the Settings Widget is allowed to write, and the validator of
  * each value. Requests naming a setting that isn't a key of this record are rejected, so a
@@ -187,6 +250,15 @@ export class GitGraphView extends Disposable {
 	private backgroundRefreshTimer: NodeJS.Timer | null = null;
 	/** The last repository signature the background poll observed (NULL => record a baseline first). */
 	private lastRepoSignature: string | null = null;
+
+	/**
+	 * Gates the "Uncommitted Changes" count delivered to the webview (see
+	 * `UncommittedCountStabiliser`): the row must never vanish on a momentary reading, and a
+	 * genuine zero only removes it once confirmed across a 5 second window of re-checks.
+	 */
+	private static readonly UNCOMMITTED_ZERO_CONFIRM_MS = 5000;
+	private static readonly UNCOMMITTED_RECHECK_MS = 1000;
+	private readonly uncommittedStabiliser = new UncommittedCountStabiliser(GitGraphView.UNCOMMITTED_ZERO_CONFIRM_MS, GitGraphView.UNCOMMITTED_RECHECK_MS);
 
 	private readonly pullRequests: PullRequestDataSource = new PullRequestDataSource();
 
@@ -896,6 +968,8 @@ export class GitGraphView extends Disposable {
 					this.repoFileWatcher.start(msg.repo);
 					// The signature of the previous repository says nothing about this one
 					this.lastRepoSignature = null;
+					// The uncommitted count of the previous repository says nothing about this one
+					this.uncommittedStabiliser.reset();
 					// The view switches to an empty repository: the remote-refs deferral applies
 					// again until its first page of commits is rendered (see `viewHasCommits`)
 					this.viewHasCommits = false;
@@ -1412,6 +1486,11 @@ export class GitGraphView extends Disposable {
 	 * changes, so no Git commands (log/refs) are re-run. The Git Graph View keeps the previously
 	 * rendered row (with its stale count) until this response arrives, so the row never flickers
 	 * away and back on a refresh - only its count is updated.
+	 *
+	 * The count goes through `UncommittedCountStabiliser`: a positive count is sent at once, while
+	 * a zero that would remove the row is re-checked across a 5 second window first and a failed
+	 * status read is not sent at all, so the row's PRESENCE never flickers - only its number ever
+	 * changes in place, and a genuine zero removes it 5 seconds after it was first read.
 	 * @param msg The original `loadCommits` request message.
 	 * @param commitData The commit data already sent in the initial response.
 	 * @param gerritStates The Gerrit states already sent in the initial response (unaffected by this follow-up).
@@ -1422,14 +1501,50 @@ export class GitGraphView extends Disposable {
 		if (!getConfig().showUncommittedChanges || commitData.head === null || commitData.error !== null) return;
 		if (!commitData.commits.some((commit) => commit.hash === commitData.head)) return;
 
-		let numUncommittedChanges = 0;
-		try {
-			numUncommittedChanges = await this.dataSource.getUncommittedChanges(msg.repo);
-		} catch (_) {
-			numUncommittedChanges = 0;
-		}
-		if (this.loadCommitsRefreshId !== msg.refreshId) return; // superseded by a newer load request
+		let numUncommittedChanges = await this.readUncommittedChanges(msg.repo);
+		// The confirm loop is bounded: a status read that keeps failing (or zeros that keep racing
+		// new reads) gives up after twice the confirm window, leaving the row at its last delivered
+		// state for the next refresh to settle
+		let attemptsLeft = Math.ceil((2 * GitGraphView.UNCOMMITTED_ZERO_CONFIRM_MS) / GitGraphView.UNCOMMITTED_RECHECK_MS);
+		while (true) {
+			if (this.isDisposed() || this.loadCommitsRefreshId !== msg.refreshId) return; // superseded by a newer load request
 
+			if (msg.hard === true) {
+				// A hard refresh wiped the view (the row included) before this pipeline started, so
+				// there is no rendered row whose disappearance needs stabilising: deliver the reading
+				// directly, and give up on a read that fails
+				if (numUncommittedChanges === null) return;
+				this.sendUncommittedChangesResponse(msg, commitData, gerritStates, numUncommittedChanges);
+				this.uncommittedStabiliser.delivered(numUncommittedChanges);
+				return;
+			}
+
+			const outcome = this.uncommittedStabiliser.observe(numUncommittedChanges, Date.now());
+			if ('recheckAfterMs' in outcome) {
+				if (--attemptsLeft < 0) return;
+				await new Promise((resolve) => setTimeout(resolve, outcome.recheckAfterMs));
+				numUncommittedChanges = await this.readUncommittedChanges(msg.repo);
+				continue;
+			}
+
+			this.sendUncommittedChangesResponse(msg, commitData, gerritStates, outcome.send);
+			this.uncommittedStabiliser.delivered(outcome.send);
+			return;
+		}
+	}
+
+	/**
+	 * Send the final `loadCommits` response of the uncommitted changes follow-up: the commit list
+	 * of the initial response, prepended with the synthetic "Uncommitted Changes" row above HEAD
+	 * when (and only when) there are uncommitted changes.
+	 * @param msg The original `loadCommits` request message.
+	 * @param commitData The commit data already sent in the initial response.
+	 * @param gerritStates The Gerrit states already sent in the initial response (resent verbatim).
+	 * @param numUncommittedChanges The confirmed number of uncommitted changes.
+	 */
+	private sendUncommittedChangesResponse(msg: RequestLoadCommits, commitData: GitCommitData, gerritStates: GerritChangeState[] | null, numUncommittedChanges: number) {
+		const head = commitData.head;
+		if (head === null) return;
 		this.sendMessage({
 			command: 'loadCommits',
 			refreshId: msg.refreshId,
@@ -1441,7 +1556,7 @@ export class GitGraphView extends Disposable {
 			commits: numUncommittedChanges > 0
 				? [{
 					hash: UNCOMMITTED,
-					parents: [commitData.head],
+					parents: [head],
 					author: '*',
 					email: '',
 					date: Math.round(Date.now() / 1000),
@@ -1458,6 +1573,22 @@ export class GitGraphView extends Disposable {
 			moreCommitsAvailable: commitData.moreCommitsAvailable,
 			error: null
 		});
+	}
+
+	/**
+	 * Read the number of uncommitted changes of a repository.
+	 * @param repo The path of the repository.
+	 * @returns The number of uncommitted changes, or NULL when the status could not be read (which
+	 *          must be treated as "unknown", never as "0": a momentarily failing status scan is
+	 *          exactly how the "Uncommitted Changes" row used to vanish and come back).
+	 */
+	private async readUncommittedChanges(repo: string): Promise<number | null> {
+		try {
+			return await this.dataSource.getUncommittedChanges(repo);
+		} catch (error) {
+			this.logger.logError('Failed to read the uncommitted changes of ' + repo + ': ' + error);
+			return null;
+		}
 	}
 
 	/* Gerrit Methods */
