@@ -24,6 +24,7 @@ import {
 	GitLineCounts,
 	GitRefData,
 	GitRepoInfo,
+	GitSignature,
 	GitStash,
 	GitTagDetails,
 	LogOptions,
@@ -111,6 +112,10 @@ class FallbackBackend implements GitBackend {
 		return this.attempt('getCommitDetails', (backend) => backend.getCommitDetails(repo, hash));
 	}
 
+	public getCommitSignature(repo: string, hash: string): Promise<GitSignature | null> {
+		return this.attempt('getCommitSignature', (backend) => backend.getCommitSignature(repo, hash));
+	}
+
 	public getLineCounts(
 		repo: string,
 		from: string | null,
@@ -183,6 +188,10 @@ class FallbackBackend implements GitBackend {
 
 	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
 		return this.attempt('getTagDetails', (backend) => backend.getTagDetails(repo, tagName));
+	}
+
+	public getTagSignature(repo: string, tagName: string): Promise<GitSignature | null> {
+		return this.attempt('getTagSignature', (backend) => backend.getTagSignature(repo, tagName));
 	}
 
 	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {

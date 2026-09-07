@@ -330,10 +330,11 @@ tell which one it is talking to, so any disagreement is a user-visible behaviour
 
 ## Known deviations from git
 
-- **Commit and tag signatures are reported as present but unverified.** Verifying them needs a full
-  OpenPGP and SSH implementation plus access to the user's keyring. The status reported is `E` ("cannot be
-  checked"), which is what git itself reports when the key is unavailable — rather than claiming a
-  signature is good without having checked it.
+- **Commit and tag signatures are verified by Git when a CLI is available.** The Rust engine still
+  reads signature presence in-process, then the extension delegates verification to Git/GPG so the
+  status, key id and signer match the user's local keyring. On a machine without Git, or when the
+  signing key is unavailable, the status remains `E` ("cannot be checked") instead of claiming a
+  signature is valid.
 
 - **Ordering reads a bounded window.** All three of git's orderings are topologically constrained,
   and gix's traversal offers no such guarantee, so the ordering is done here: a window of commits

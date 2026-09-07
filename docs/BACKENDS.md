@@ -105,8 +105,8 @@ list, and `getConfigList` for a file carrying `include`/`includeIf` directives.
 
 | Area | Difference |
 |---|---|
-| Commit signatures | The engine only reports "present, unverified" (status E) and performs no GPG verification; the CLI version verifies for real |
-| Tag signatures | Both backends report "present, unverified" (status E); the CLI backend no longer shells out to `verify-tag`/gpg, matching what was already true of commit signatures on this port |
+| Commit signatures | The engine reads presence in-process; the extension delegates verification to the Git CLI/GPG and reports status, key id and signer. Engine-only installations remain at status E |
+| Tag signatures | The engine reads presence in-process; the extension delegates verification to `verify-tag --raw` when Git is available. Engine-only installations remain at status E |
 | Ordering | The engine is exact within a bounded window; whole-history ordering may differ from git |
 | Working-tree line counts | Files with unstaged modifications get no additions/deletions in "any revision vs working tree" comparisons |
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename that exists only in the working tree (file moved but never committed) is not reassembled by the engine |

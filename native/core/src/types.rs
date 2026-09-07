@@ -370,7 +370,7 @@ pub struct GitTagDetails {
     pub tagger_email: String,
     pub tagger_date: i64,
     pub message: String,
-    /// Present when the tag carries a signature (reported as unverified, like commit signatures).
+    /// Present when the tag carries a signature; the host may replace status E after Git verifies it.
     pub signature: Option<GitSignature>,
 }
 

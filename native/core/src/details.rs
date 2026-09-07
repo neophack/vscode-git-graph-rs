@@ -109,17 +109,16 @@ pub fn uncommitted_details(repo: &Repo) -> Result<GitCommitDetails> {
 ///
 /// ### Deviation
 ///
-/// The signature is reported as present but **unverified**. Verifying it needs a full OpenPGP and
-/// SSH signature implementation plus access to the user's keyring. The status reported is `E`
-/// ("cannot be checked"), which is what git itself reports when the key is unavailable — rather
-/// than claiming a signature is good without having checked it.
+/// The engine reports signature presence but leaves verification to the host's Git CLI, which has
+/// access to the user's GPG/SSH keyring. The status is therefore `E` ("cannot be checked") here;
+/// the host replaces it with Git's verified status when a CLI is available.
 fn read_signature(commit: &gix::Commit<'_>) -> Option<GitSignature> {
     let (_signature, _signed_data) = commit.signature().ok().flatten()?;
     Some(unverified_signature())
 }
 
 /// The signature record for "a signature is present but was not checked", shared by commits and
-/// tags. See [`read_signature`] for why it is never reported as valid.
+/// tags. See [`read_signature`] for why the engine never reports it as valid.
 fn unverified_signature() -> GitSignature {
     GitSignature {
         key: String::new(),

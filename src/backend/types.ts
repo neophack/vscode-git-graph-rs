@@ -273,7 +273,7 @@ export interface GitTagDetails {
 	readonly taggerEmail: string;
 	readonly taggerDate: number;
 	readonly message: string;
-	/** Present when the tag carries a signature (reported as unverified, like commit signatures). */
+	/** Present when the tag carries a signature; status E means Git/GPG could not verify it. */
 	readonly signature: GitSignature | null;
 }
 

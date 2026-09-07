@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { GitBackend } from './api';
+import { parseGitSignatureOutput } from './signatures';
 import {
 	GitAuthor,
 	GitBackendError,
@@ -250,6 +251,10 @@ export class CliBackend implements GitBackend {
 		const from = details.parents.length > 0 ? hash + '^' : EMPTY_TREE;
 		details.fileChanges = await this.getFileChanges(repo, from, hash);
 		return details;
+	}
+
+	public async getCommitSignature(repo: string, hash: string) {
+		return parseGitSignatureOutput(await this.runRaw(['verify-commit', '--raw', hash], repo));
 	}
 
 	public async getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
@@ -609,6 +614,13 @@ export class CliBackend implements GitBackend {
 		}
 		const signed = data[4] !== '';
 		const taggerDate = parseInt(data[3], 10);
+		const signature = signed
+			? (await this.getTagSignature(repo, tagName)) ?? {
+				key: '',
+				signer: '',
+				status: GitSignatureStatus.CannotBeChecked
+			}
+			: null;
 		return {
 			hash: data[0],
 			taggerName: data[1],
@@ -623,11 +635,14 @@ export class CliBackend implements GitBackend {
 					.replace(data[4], '')
 					.split(EOL)
 			).join('\n'),
-			// As with commit signatures on this backend, presence is reported without verification.
-			signature: signed
-				? { key: '', signer: '', status: GitSignatureStatus.CannotBeChecked }
-				: null
+			signature
 		};
+	}
+
+	public async getTagSignature(repo: string, tagName: string) {
+		return parseGitSignatureOutput(
+			await this.runRaw(['verify-tag', '--raw', `refs/tags/${tagName}`], repo)
+		);
 	}
 
 	/** The fetch URL of a remote, or NULL when it is not configured. */
@@ -1004,10 +1019,10 @@ export class CliBackend implements GitBackend {
 
 	private async getCommitDetailsBase(repo: string, hash: string) {
 		const format = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ce', '%ct', '%B'].join(SEPARATOR);
-		const out = await this.run(
-			['-c', 'log.showSignature=false', 'show', '--quiet', hash, `--format=${format}`],
-			repo
-		);
+		const [out, signature] = await Promise.all([
+			this.run(['-c', 'log.showSignature=false', 'show', '--quiet', hash, `--format=${format}`], repo),
+			this.getCommitSignature(repo, hash)
+		]);
 		const fields = out.split(SEPARATOR);
 		if (fields.length < 9) {
 			throw new GitBackendError('NotFound', `Could not read the commit ${hash}`);
@@ -1021,7 +1036,7 @@ export class CliBackend implements GitBackend {
 			committer: fields[5],
 			committerEmail: fields[6],
 			committerDate: parseInt(fields[7], 10),
-			signature: null,
+			signature,
 			body: fields.slice(8).join(SEPARATOR).trim(),
 			fileChanges: [] as GitFileChange[]
 		};
@@ -1091,6 +1106,31 @@ export class CliBackend implements GitBackend {
 					} else {
 						resolve(stdout);
 					}
+				}
+			);
+		});
+	}
+
+	/** Run a signature verification command, retaining GnuPG status output on non-zero exits. */
+	private runRaw(args: ReadonlyArray<string>, cwd: string): Promise<string> {
+		return new Promise((resolve, reject) => {
+			execFile(
+				this.gitPath,
+				args as string[],
+				{ cwd, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
+				(error, stdout, stderr) => {
+					if (error) {
+						const code = (error as NodeJS.ErrnoException).code;
+						if (code === 'ENOENT') {
+							reject(new GitBackendError('Unsupported', `Git executable not found: ${this.gitPath}`));
+							return;
+						}
+						if (typeof code !== 'number') {
+							reject(new GitBackendError('Git', (stderr || stdout || error.message).trim()));
+							return;
+						}
+					}
+					resolve(stdout + stderr);
 				}
 			);
 		});
