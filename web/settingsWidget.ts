@@ -14,6 +14,7 @@ class SettingsWidget {
 	private repo: Readonly<GG.GitRepoState> | null = null;
 	private config: Readonly<GG.GitRepoConfig> | null = null;
 	private loading: boolean = false;
+	private commitAuthorsSeedAttempted: boolean = false;
 	private scrollTop: number = 0;
 	private repoColumnScrollTop: number = 0;
 	private globalColumnScrollTop: number = 0;
@@ -1033,11 +1034,25 @@ class SettingsWidget {
 	 * therefore the global author - so adding further identities can never silently replace
 	 * it. An empty list means "follow what Git already has"; Git having no complete global
 	 * identity leaves the list empty until the user configures one.
+	 *
+	 * The seeding is one-shot: it is attempted at most once per widget, and never once the
+	 * list has held any identity. Saving the setting re-loads the configuration, which
+	 * synchronously re-renders the widget before the saved setting is visible, so re-running
+	 * the seeding would recurse without end - and a list the user emptied deliberately must
+	 * stay empty instead of being re-seeded with the global identity.
 	 */
 	private maybeSeedCommitAuthors() {
-		if (this.config === null || this.view.config.commitAuthors.length > 0) return;
+		if (this.commitAuthorsSeedAttempted) return;
+		if (this.config === null) return;
+		if (this.view.config.commitAuthors.length > 0) {
+			// The list is managed by the user: emptying it later is deliberate, not a fresh
+			// start the global Git identity should be seeded into again
+			this.commitAuthorsSeedAttempted = true;
+			return;
+		}
 		const name = this.config.user.name.global, email = this.config.user.email.global;
 		if (name === null || email === null) return;
+		this.commitAuthorsSeedAttempted = true;
 		this.saveCommitAuthors([{ name: name, email: email }]);
 	}
 
@@ -1066,7 +1081,8 @@ class SettingsWidget {
 	/**
 	 * Save the author identities of the `git-graph-rs.commitAuthors` Extension Setting. The
 	 * extension host may default the global author to the first identity while saving (writing
-	 * the global Git configuration), and the resulting `configChanged` message re-renders the
+	 * the global Git configuration), or clear the global author when the list is emptied, and
+	 * the resulting `configChanged` message re-renders the
 	 * Settings Widget with the new list - the follow-up config reload refreshes the global
 	 * author badge against that configuration change. Values the setting rejects (e.g. an empty
 	 * name or email) are reported through the save action's response dialog.

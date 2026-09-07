@@ -1514,8 +1514,12 @@ export class GitGraphView extends Disposable {
 			this.logger.log('Saving the setting "' + setting + '" failed: ' + message);
 			return message;
 		}
-		if (setting === 'commitAuthors' && this.currentRepo !== null && Array.isArray(value) && value.length > 0) {
-			await this.applyDefaultGlobalAuthor(this.currentRepo, value);
+		if (setting === 'commitAuthors' && this.currentRepo !== null && Array.isArray(value)) {
+			if (value.length > 0) {
+				await this.applyDefaultGlobalAuthor(this.currentRepo, value);
+			} else {
+				await this.clearGlobalAuthor(this.currentRepo);
+			}
 		}
 		return null;
 	}
@@ -1538,6 +1542,27 @@ export class GitGraphView extends Disposable {
 		const emailError = await this.dataSource.setConfigValue(repo, GitConfigKey.UserEmail, author.email, GitConfigLocation.Global);
 		if (nameError !== null || emailError !== null) {
 			this.logger.log('Defaulting the global author to the first author identity failed: ' + (nameError ?? emailError));
+		}
+		// The global Git configuration changed, which the repository's `.git/config` watcher
+		// cannot see: drop the cached config data so the next load reflects it
+		this.dataSource.invalidateConfigCache(repo);
+	}
+
+	/**
+	 * Clear the global author (user.name/user.email of the global Git configuration) after the
+	 * last author identity was deleted from the list: an empty list means there is no global
+	 * author, rather than the deleted identity silently remaining what repositories without
+	 * their own selection commit with. Failures are logged and ignored: the list itself was
+	 * saved successfully.
+	 * @param repo The path of the repository open in the view (the working directory of the Git invocation).
+	 */
+	private async clearGlobalAuthor(repo: string) {
+		const global = await this.dataSource.getGlobalUserDetails(repo).catch(() => null);
+		if (global === null || (global.name === null && global.email === null)) return;
+		const nameError = global.name !== null ? await this.dataSource.unsetConfigValue(repo, GitConfigKey.UserName, GitConfigLocation.Global) : null;
+		const emailError = global.email !== null ? await this.dataSource.unsetConfigValue(repo, GitConfigKey.UserEmail, GitConfigLocation.Global) : null;
+		if (nameError !== null || emailError !== null) {
+			this.logger.log('Clearing the global author after the identity list was emptied failed: ' + (nameError ?? emailError));
 		}
 		// The global Git configuration changed, which the repository's `.git/config` watcher
 		// cannot see: drop the cached config data so the next load reflects it

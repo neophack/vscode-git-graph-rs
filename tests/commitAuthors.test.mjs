@@ -368,4 +368,60 @@ describe('the Author Identities feature against real repositories', () => {
 		assert.equal(await dataSource.setConfigValue(repo, USER_EMAIL, author.email, 'global'), null);
 		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: AUTHOR_B.name, email: AUTHOR_B.email });
 	});
+
+	it('emptying the identity list clears the global author from the global Git configuration', async () => {
+		resetGlobalConfig();
+		const dataSource = makeDataSource();
+		const repo = initRepo('clear-global', AUTHOR_A);
+
+		// Alice was the global author, then the user deleted every identity from the list
+		git(repo, ['config', '--global', USER_NAME, AUTHOR_A.name]);
+		git(repo, ['config', '--global', USER_EMAIL, AUTHOR_A.email]);
+
+		// The host's save pipeline for an empty list: the global author is cleared
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_NAME, 'global'), null);
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_EMAIL, 'global'), null);
+
+		// Git really holds no global identity anymore, so nothing lingers for identity-less
+		// repositories to commit with
+		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: null, email: null });
+		assert.equal(globalConfigValue(USER_NAME), null);
+		assert.equal(globalConfigValue(USER_EMAIL), null);
+	});
+
+	it('deleting identities one by one promotes the first survivor until the LAST deletion clears the global author', async () => {
+		resetGlobalConfig();
+		const dataSource = makeDataSource();
+		const repo = initRepo('stepwise', AUTHOR_A);
+
+		// [Alice, Bob, Carol] with Alice the global author
+		git(repo, ['config', '--global', USER_NAME, AUTHOR_A.name]);
+		git(repo, ['config', '--global', USER_EMAIL, AUTHOR_A.email]);
+
+		// The host's save pipeline for a non-empty list: promote the first identity the global
+		// configuration no longer matches (NULL => the match survived, write nothing)
+		const saveList = async (remaining) => {
+			const author = resolveGlobalAuthorAfterSave(remaining, await dataSource.getGlobalUserDetails(repo));
+			if (author !== null) {
+				assert.equal(await dataSource.setConfigValue(repo, USER_NAME, author.name, 'global'), null);
+				assert.equal(await dataSource.setConfigValue(repo, USER_EMAIL, author.email, 'global'), null);
+			}
+			return author;
+		};
+
+		// Deleting Alice (the global author): Bob - the first of the remaining - is promoted
+		assert.equal(await saveList([AUTHOR_B, AUTHOR_C]), AUTHOR_B);
+		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: AUTHOR_B.name, email: AUTHOR_B.email });
+
+		// Deleting Bob: Carol is promoted - a global author exists for as long as the list does
+		assert.equal(await saveList([AUTHOR_C]), AUTHOR_C);
+		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: AUTHOR_C.name, email: AUTHOR_C.email });
+
+		// Deleting Carol empties the list: the global author is cleared, not left at Carol
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_NAME, 'global'), null);
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_EMAIL, 'global'), null);
+		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: null, email: null });
+		assert.equal(globalConfigValue(USER_NAME), null);
+		assert.equal(globalConfigValue(USER_EMAIL), null);
+	});
 });
