@@ -28,6 +28,15 @@ export class RepoFileWatcher {
 	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
 	private refreshTimeout: NodeJS.Timer | null = null;
 	private pendingCommitsAffected: boolean = false;
+	/**
+	 * A repo change event arrived while muted. The watcher is muted for the whole duration of every
+	 * message the extension host handles (Git actions above all, but also the view's plain data
+	 * requests), so dropping muted events - as this once did - lost real user changes whenever they
+	 * raced one of those windows: a commit made in a terminal or by VS Code's own Git while the
+	 * webview was loading data simply never refreshed the view. The event is remembered instead and
+	 * its refresh runs once the mute ends.
+	 */
+	private pendingRefreshWhileMuted: boolean = false;
 	private muteCount: number = 0;
 	private resumeAt: number = 0;
 
@@ -98,6 +107,7 @@ export class RepoFileWatcher {
 			this.refreshTimeout = null;
 		}
 		this.pendingCommitsAffected = false;
+		this.pendingRefreshWhileMuted = false;
 	}
 
 	/**
@@ -117,6 +127,12 @@ export class RepoFileWatcher {
 	public unmute() {
 		if (this.muteCount > 0) this.muteCount--;
 		this.resumeAt = (new Date()).getTime() + 1500;
+		if (this.muteCount === 0 && this.pendingRefreshWhileMuted) {
+			// Run the refresh of the events that arrived while muted, deferred past the
+			// post-action suppression window exactly like an event arriving just after an action
+			this.pendingRefreshWhileMuted = false;
+			this.scheduleRefresh();
+		}
 	}
 
 
@@ -132,17 +148,29 @@ export class RepoFileWatcher {
 			// Git Graph View itself may change the config), otherwise stale data could be served
 			if (this.repoConfigChangeCallback !== null) this.repoConfigChangeCallback();
 		}
-		if (this.muteCount > 0) return;
 		if (!relativePath.match(FILE_CHANGE_REGEX)) return;
 
 		// Accumulate the classification across the debounce window: a `git commit` writes the index
 		// AND the branch ref as separate events, and the callback must fire once with the union.
 		this.pendingCommitsAffected = this.pendingCommitsAffected || COMMITS_AFFECTED_REGEX.test(relativePath);
 
-		// An event arriving inside the post-action suppression window is DEFERRED until after the
-		// window, never dropped: whether the event was caused by one of this extension's own Git
-		// actions or by the user committing at just the wrong moment cannot be told apart here, and
-		// a dropped event means a repository change that nothing else will detect.
+		if (this.muteCount > 0) {
+			// An event inside a mute window is DEFERRED until after the window, never dropped:
+			// whether the event was caused by one of this extension's own Git actions or by the
+			// user committing at just the wrong moment cannot be told apart here, and a dropped
+			// event means a repository change that nothing else will detect.
+			this.pendingRefreshWhileMuted = true;
+			return;
+		}
+		this.scheduleRefresh();
+	}
+
+	/**
+	 * (Re)schedule the debounced repo change callback. An event arriving inside the post-action
+	 * suppression window is pushed to after the window: whether it was caused by one of this
+	 * extension's own Git actions or by the user cannot be told apart here.
+	 */
+	private scheduleRefresh() {
 		const delay = Math.max(750, this.resumeAt - (new Date()).getTime());
 		if (this.refreshTimeout !== null) {
 			clearTimeout(this.refreshTimeout);
