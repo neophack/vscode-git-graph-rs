@@ -856,6 +856,9 @@ export class CliBackend implements GitBackend {
 			`--${order}-order`,
 			'-z'
 		];
+		// `log.mailmap` (and not `--use-mailmap`, whose availability varies) maps %an/%ae through
+		// the work tree's `.mailmap`, matching the engine's decline of the same request.
+		if (options.useMailmap) args.splice(1, 0, '-c', 'log.mailmap=true');
 		if (options.onlyFollowFirstParent) args.push('--first-parent');
 		const authors = options.authors ?? [];
 		// --fixed-strings so an author name with regex metacharacters (e.g. "dependabot[bot]")

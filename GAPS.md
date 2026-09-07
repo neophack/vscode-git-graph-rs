@@ -46,7 +46,9 @@ the checked-out branch. Three reads still spawn `git` directly at action time (n
 
 Three argument shapes are *declined* by the engine with `Unsupported`, which the fallback
 wrapper routes to the CLI automatically: `countCommitsBefore` with reflog tips, `--glob=`
-patterns or an empty branch list, and `getConfigList` for a file carrying `include` directives.
+patterns or an empty branch list, `getConfigList` for a file carrying `include` directives,
+and `getCommits` when `useMailmap` is on and a `.mailmap` exists (the CLI applies it via
+`log.mailmap=true`).
 
 ## 2. The write path — CLI only (and the extension now runs without Git installed)
 
@@ -102,7 +104,7 @@ Documented in the README's "Known deviations from git":
 | Deferred line counts | every details/comparison load renders its file list first (statuses only) and settles the `+N/-M` counts afterwards — visible rows first, then background batches — via `getLineCounts`; a working-tree comparison settles nothing |
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename existing only in the working tree is not reassembled by the engine |
 | Lightweight tags | the Tag Details dialogue hides the Tagger/Date row instead of showing an empty tagger and an invalid date (a deliberate improvement over the original) |
-| Mailmap | the engine does not apply `.mailmap`; the original honours `useMailmap` |
+| Mailmap | `useMailmap` is now honoured: the engine declines a graph when a `.mailmap` exists and the CLI serves it with mailmap applied. A mailmap redirected through `mailmap.file`/`mailmap.blob` is still not applied |
 | Reflog-mentioned commits | `includeCommitsMentionedByReflogs` is handled by the CLI for all-refs graphs; branch-filtered graphs stay on the engine path because reflogs are ignored there. `countCommitsBefore` declines it and the CLI answers |
 | Custom branch glob patterns | `--glob=` branch entries are not understood by the engine's tip resolution (`countCommitsBefore` declines them; the graph skips them) |
 

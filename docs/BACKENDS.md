@@ -73,9 +73,10 @@ credential environment), matching the original extension's implementation:
 | "Are changes staged?" (checked before committing a squash) | `areStagedChanges` (private) |
 | Which remotes contain a commit (checked before pushing a tag) | `getRemotesContainingCommit` (private) |
 
-The engine also *declines* three argument shapes, which `FallbackBackend` then routes here
+The engine also *declines* four argument shapes, which `FallbackBackend` then routes here
 automatically: `countCommitsBefore` with reflog tips or `--glob=` patterns or an empty branch
-list, and `getConfigList` for a file carrying `include`/`includeIf` directives.
+list, `getConfigList` for a file carrying `include`/`includeIf` directives, and `getCommits`
+when `useMailmap` is on and the work tree carries a `.mailmap` (served with `log.mailmap=true`).
 
 **All write operations (41)**: branches (`checkoutBranch`, `createBranch`, `deleteBranch`,
 `renameBranch`, `deleteRemoteBranch`), tags (`addTag`, `deleteTag`), remotes
@@ -111,7 +112,7 @@ list, and `getConfigList` for a file carrying `include`/`includeIf` directives.
 | Working-tree line counts | Files with unstaged modifications get no additions/deletions in "any revision vs working tree" comparisons |
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename that exists only in the working tree (file moved but never committed) is not reassembled by the engine |
 | Lightweight tags | The Tag Details dialogue shows no Tagger/Date row (a lightweight tag has no tagger); the original showed an empty tagger and an invalid date |
-| mailmap | The engine does not apply `.mailmap` (the `useMailmap` setting has no effect on the engine path) |
+| mailmap | With `useMailmap` on and a `.mailmap` in the work tree the engine declines and the CLI answers with `log.mailmap=true`; the `mailmap.file`/`mailmap.blob` config keys are not consulted, so a repository redirecting its mailmap elsewhere stays on the engine path with unmapped names |
 | Commits mentioned by reflogs | For an all-refs graph (no explicit branches list) the engine declines and the CLI answers with `git log --reflog`; branch-filtered graphs do not need reflog commits and stay on the engine path. For `countCommitsBefore` the engine also declines and the CLI answers |
 | `--glob=` branch items | The engine's starting-point resolution does not recognise this form (declined for `countCommitsBefore`, skipped in the graph) |
 

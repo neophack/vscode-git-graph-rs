@@ -64,6 +64,16 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         ));
     }
 
+    // The engine does not read mailmaps. Serving raw author names where git would show the mapped
+    // ones is a silent behavioural difference, so decline the load instead and let the CLI backend
+    // run `git log` with mailmap applied. The `mailmap.file`/`mailmap.blob` config keys are not
+    // consulted: a repository redirecting its mailmap elsewhere keeps the engine path.
+    if options.use_mailmap && repo.root().join(".mailmap").exists() {
+        return Err(crate::error::Error::unsupported(
+            "The engine does not apply .mailmap",
+        ));
+    }
+
     let ref_options = RefReadOptions {
         show_remote_branches: options.show_remote_branches && !options.defer_remote_refs,
         show_remote_heads: options.show_remote_heads,

@@ -103,6 +103,38 @@ fn allows_branch_filtered_graphs_with_reflog_option() {
 }
 
 #[test]
+fn declines_mailmapped_graphs_only_when_a_mailmap_exists() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "first", "first");
+
+    let engine = open(&repo);
+
+    // The option alone changes nothing: without a `.mailmap` there is nothing to apply, so the
+    // page is served exactly as it is without it.
+    let mut options = view_options(100);
+    options.use_mailmap = true;
+    let data = graph::load_commits(&engine, &options).unwrap();
+    assert_eq!(
+        data.commits.len(),
+        graph::load_commits(&engine, &view_options(100))
+            .unwrap()
+            .commits
+            .len()
+    );
+
+    repo.write(
+        ".mailmap",
+        "Proper Name <proper@example.com> <first@example.com>\n",
+    );
+    let error = graph::load_commits(&engine, &options).unwrap_err();
+    assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
+
+    // Without the option the engine serves the graph, as it always has.
+    graph::load_commits(&engine, &view_options(100)).unwrap();
+}
+
+#[test]
 fn adds_an_uncommitted_changes_row_above_head() {
     require_git!();
     let mut repo = TestRepo::new();

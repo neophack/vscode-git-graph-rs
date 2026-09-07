@@ -276,7 +276,8 @@ export class DataSource extends Disposable {
 			deferRemoteRefs: deferRemoteRefs,
 			showUncommittedChanges: config.showUncommittedChanges,
 			showUntrackedFiles: config.showUntrackedFiles,
-			showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags
+			showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags,
+			useMailmap: config.useMailmap
 		}).then((data) => data as unknown as GitCommitData, (errorMessage) => <GitCommitData>{ commits: [], head: null, tags: [], moreCommitsAvailable: false, error: errorMessage });
 	}
 

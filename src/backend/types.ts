@@ -202,6 +202,8 @@ export interface LogOptions {
 	showUncommittedChanges?: boolean;
 	showUntrackedFiles?: boolean;
 	showCommitsOnlyReferencedByTags?: boolean;
+	/** Apply `.mailmap` to author names and emails; the engine declines this to the CLI. */
+	useMailmap?: boolean;
 }
 
 /* ---------- Configuration & file contents ---------- */
