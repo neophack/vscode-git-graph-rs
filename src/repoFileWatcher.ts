@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { Logger } from './logger';
 import { getPathFromUri } from './utils';
 
-const FILE_CHANGE_REGEX = /(^\.git\/(config|index|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
+const FILE_CHANGE_REGEX = /(^\.git\/(config|index|packed-refs|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
 
 /**
  * Paths whose modification can change the commit graph itself (the checked-out branch, any ref, or
@@ -10,9 +10,11 @@ const FILE_CHANGE_REGEX = /(^\.git\/(config|index|HEAD|refs\/stash|refs\/heads\/
  * tree files, `.git/index`, top-level `.git*` files - only affects the "Uncommitted Changes"
  * count, which is computed per refresh outside the commit cache; clearing that cache for them
  * would force the staged reload whose intermediate response strips the remote refs (the pill
- * flicker / double shape change this classification exists to prevent).
+ * flicker / double shape change this classification exists to prevent). `packed-refs` is included
+ * because a ref stored in it is updated by rewriting the whole file (e.g. by `git pack-refs` or
+ * some fetches), so its modification can move refs just like a loose ref file does.
  */
-const COMMITS_AFFECTED_REGEX = /^\.git\/(config|HEAD|refs\/.*)$/;
+const COMMITS_AFFECTED_REGEX = /^\.git\/(config|HEAD|packed-refs|refs\/.*)$/;
 
 /**
  * Watches a Git repository for file events.
