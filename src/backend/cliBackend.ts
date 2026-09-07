@@ -888,10 +888,13 @@ export class CliBackend implements GitBackend {
 	/**
 	 * Read every ref the view needs.
 	 *
-	 * The two calls are split the way the original extension splits them, and for the same reason:
+	 * The calls are split the way the original extension split them, and for the same reason:
 	 * `show-ref -d` peels, which costs an object lookup per ref and is only affordable over the
 	 * local branches and tags; `for-each-ref` over `refs/remotes/` does not peel, which is what
-	 * makes the one unavoidably broad scan cheap.
+	 * makes the one unavoidably broad scan cheap. A remote tag (fetched by "track remote tags")
+	 * is rare enough that it gets its own narrow peel: without it, an annotated remote tag's
+	 * `%(objectname)` is the tag object's hash rather than the commit it points to, so it would
+	 * never attach to any commit in the graph.
 	 */
 	private async readRefs(
 		repo: string,
@@ -902,17 +905,35 @@ export class CliBackend implements GitBackend {
 			showChangeRefs?: boolean;
 		}
 	) {
-		const [local, remote, branchHead] = await Promise.all([
+		const [local, remote, remoteTagPeels, branchHead] = await Promise.all([
 			this.run(['show-ref', '--heads', '--tags', '-d', '--head'], repo).catch(() => ''),
 			options.showRemoteBranches ?? true
 				? this.run(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/remotes/'], repo).catch(
 						() => ''
 					)
 				: Promise.resolve(''),
+			options.showRemoteBranches ?? true
+				? this.run(
+						['for-each-ref', '--format=%(objectname) %(*objectname) %(refname)', 'refs/remotes/**/tags/*'],
+						repo
+					).catch(() => '')
+				: Promise.resolve(''),
 			this.run(['symbolic-ref', '-q', '--short', 'HEAD'], repo)
 				.then((out) => out.trim() || null)
 				.catch(() => null)
 		]);
+
+		// refname -> the commit hash an annotated remote tag peels to; absent for lightweight tags.
+		const remoteAnnotatedTags = new Map<string, string>();
+		for (const line of remoteTagPeels.split(EOL)) {
+			const firstSpace = line.indexOf(' ');
+			if (firstSpace === -1) continue;
+			const rest = line.slice(firstSpace + 1);
+			const secondSpace = rest.indexOf(' ');
+			if (secondSpace === -1) continue;
+			const peeled = rest.slice(0, secondSpace);
+			if (peeled !== '') remoteAnnotatedTags.set(rest.slice(secondSpace + 1), peeled);
+		}
 
 		const refData: { head: string | null; heads: GitRef[]; tags: GitTagRef[]; remotes: GitRef[] } = {
 			head: null,
@@ -956,10 +977,11 @@ export class CliBackend implements GitBackend {
 			const name = ref.slice(13);
 			const tagsIndex = name.indexOf('/tags/');
 			if (tagsIndex > -1) {
+				const peeledHash = remoteAnnotatedTags.get(ref);
 				refData.tags.push({
-					hash,
+					hash: peeledHash ?? hash,
 					name: name.slice(0, tagsIndex) + '/' + name.slice(tagsIndex + 6),
-					annotated: false
+					annotated: peeledHash !== undefined
 				});
 			} else if (name.includes('/changes/')) {
 				// Never offered as branches, however they are displayed.

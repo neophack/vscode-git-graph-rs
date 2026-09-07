@@ -1213,6 +1213,14 @@ describe('git semantics the fixtures do not cover', () => {
 		// of --author being treated as a literal string.
 		dependabot = commitIn('bump deps', ['dependabot[bot]', 'dependabot@users.noreply.github.com']);
 
+		// A tag fetched from a remote (git fetch --tags writes these under refs/remotes/<name>/tags/),
+		// annotated so reading it back has to dereference the tag object to alice's commit rather
+		// than reporting the tag object's own hash.
+		gitIn(['tag', '-a', 'v-remote', '-m', 'a remote tag', alice]);
+		const remoteTagObject = gitIn(['rev-parse', 'refs/tags/v-remote']).trim();
+		gitIn(['tag', '-d', 'v-remote']);
+		gitIn(['update-ref', 'refs/remotes/origin/tags/v-remote', remoteTagObject]);
+
 		rust = new NativeBackend();
 		cli = new CliBackend();
 		root = await rust.openRepository(repoDir);
@@ -1273,6 +1281,17 @@ describe('git semantics the fixtures do not cover', () => {
 			![...a.fileChanges, ...b.fileChanges].some((change) => change.newFilePath === 'a.txt.bak'),
 			'both backends drop the T status (--diff-filter=AMDR semantics)'
 		);
+	});
+
+	it('dereferences an annotated tag fetched from a remote to its commit', async () => {
+		const options = { maxCommits: 50, showRemoteBranches: true };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'remote annotated tag');
+		const commit = a.commits.find((commit) => commit.hash === alice);
+		assert.ok(commit, 'the tagged commit must still be in the page');
+		const tag = commit.tags.find((tag) => tag.name.endsWith('v-remote'));
+		assert.ok(tag, `the remote tag must attach to its commit, not be dropped: ${JSON.stringify(commit.tags)}`);
+		assert.equal(tag.annotated, true, 'an annotated remote tag must be reported as annotated');
 	});
 
 	it('filters by an author whose name contains regular-expression metacharacters', async () => {
