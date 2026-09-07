@@ -223,14 +223,14 @@
 .settingsSection > table td.btns.remoteBtns div{
 	vertical-align:middle;
 }
-.settingsSection > table #editRepoName svg, .settingsSection > table #editInitialBranches svg, .settingsSection > table .editRemote svg{
+.settingsSection > table #editRepoName svg, .settingsSection > table #editInitialBranches svg, .settingsSection > table .editRemote svg, .settingsSection > table .editAuthor svg, .settingsSection > table .setGlobalAuthor svg{
 	position:absolute;
 	left:1.5px;
 	top:1.5px;
 	width:14px !important;
 	height:14px !important;
 }
-.settingsSection > table #deleteRepoName svg, .settingsSection > table #clearInitialBranches svg, .settingsSection > table .deleteRemote svg, .settingsSection > table .fetchRemote svg, .settingsSection > table .pruneRemote svg{
+.settingsSection > table #deleteRepoName svg, .settingsSection > table #clearInitialBranches svg, .settingsSection > table .deleteRemote svg, .settingsSection > table .fetchRemote svg, .settingsSection > table .pruneRemote svg, .settingsSection > table .deleteAuthor svg{
 	position:absolute;
 	left:0.5px;
 	top:0.5px;
@@ -414,4 +414,56 @@
 	color:var(--vscode-editorInfo-foreground, #3794ff);
 	background:rgba(55, 148, 255, 0.12);
 	border:1px solid rgba(55, 148, 255, 0.4);
+}
+
+/* Author identities: the quick switcher (User Details section of the Repository Settings) and
+   the management list (Author Identities section of the Global Settings) */
+.settingsSection > table tr.authorSwitchRow{
+	cursor:pointer;
+}
+.settingsSection > table tr.authorSwitchRow:hover td{
+	background-color:var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+}
+.settingsSection > table tr.authorSwitchRow.active{
+	cursor:default;
+	font-weight:600;
+}
+.settingsSection > table tr.authorSwitchRow.active:hover td{
+	background-color:transparent;
+}
+.authorCurrentBadge{
+	display:inline-block;
+	border-radius:9px;
+	padding:1px 8px;
+	font-size:11px;
+	font-weight:600;
+	white-space:nowrap;
+	color:var(--vscode-editorInfo-foreground, #3794ff);
+	background:rgba(55, 148, 255, 0.12);
+	border:1px solid rgba(55, 148, 255, 0.4);
+}
+/* The "Global" badge of the author that is the global author: the first identity by default,
+   changeable with the check button of another author (see the Settings widget) */
+.authorGlobalBadge{
+	display:inline-block;
+	border-radius:9px;
+	padding:1px 8px;
+	font-size:11px;
+	font-weight:600;
+	white-space:nowrap;
+	color:var(--vscode-testing-iconPassed, #73c991);
+	background:rgba(115, 201, 145, 0.14);
+	border:1px solid rgba(115, 201, 145, 0.4);
+}
+.authorSwitchSelect{
+	visibility:hidden;
+	opacity:0.7;
+}
+.settingsSection > table tr.authorSwitchRow:hover .authorSwitchSelect{
+	visibility:visible;
+}
+.settingsCustomIdentity, .settingsNoAuthorsHint{
+	display:inline-block;
+	margin-top:3px;
+	opacity:0.75;
 }

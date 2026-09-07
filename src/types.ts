@@ -357,6 +357,7 @@ export interface BackendReport {
 }
 
 export interface GitGraphViewConfig {
+	readonly commitAuthors: ReadonlyArray<CommitAuthor>;
 	readonly commitDetailsView: CommitDetailsViewConfig;
 	readonly commitOrdering: CommitOrdering;
 	readonly contextMenuActionsVisibility: ContextMenuActionsVisibility;
@@ -577,6 +578,16 @@ export interface CustomEmojiShortcodeMapping {
 export interface CustomPullRequestProvider {
 	readonly name: string;
 	readonly templateUrl: string;
+}
+
+/**
+ * One commit author identity of the `git-graph-rs.commitAuthors` Extension Setting (e.g. an open
+ * source identity and a company identity). A repository switches between these in the Settings
+ * widget, which applies the selected identity as the repository's local `user.name`/`user.email`.
+ */
+export interface CommitAuthor {
+	readonly name: string;
+	readonly email: string;
 }
 
 export interface DateFormat {
@@ -1570,7 +1581,7 @@ export interface ResponseSetInterfaceLanguage extends ResponseWithErrorInfo {
 }
 
 /** The type of a Global Setting that can be written from the Settings Widget. */
-export type GlobalSettingValue = boolean | number | string;
+export type GlobalSettingValue = boolean | number | string | ReadonlyArray<CommitAuthor>;
 
 export interface RequestSetGlobalSetting extends BaseMessage {
 	readonly command: 'setGlobalSetting';

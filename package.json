@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.16",
+	"version": "1.0.17",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
@@ -588,6 +588,31 @@
 					"type": "string",
 					"default": "",
 					"description": "%config.git-graph-rs.avatars.gitlabToken.description%"
+				},
+				"git-graph-rs.commitAuthors": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"title": "%config.git-graph-rs.commitAuthors.items.title%",
+						"required": [
+							"name",
+							"email"
+						],
+						"properties": {
+							"name": {
+								"type": "string",
+								"title": "%config.git-graph-rs.commitAuthors.items.name.title%",
+								"description": "%config.git-graph-rs.commitAuthors.items.name.description%"
+							},
+							"email": {
+								"type": "string",
+								"title": "%config.git-graph-rs.commitAuthors.items.email.title%",
+								"description": "%config.git-graph-rs.commitAuthors.items.email.description%"
+							}
+						}
+					},
+					"default": [],
+					"markdownDescription": "%config.git-graph-rs.commitAuthors.markdownDescription%"
 				},
 				"git-graph-rs.date.format": {
 					"type": "string",

@@ -1379,6 +1379,17 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 
 
+	// A stash's untracked file is diffed as though it were freshly Added against the stash's
+	// synthetic untracked-files commit (see triggerViewFileDiff below), rather than taking
+	// viewDiff's "just open the file" shortcut for Untracked - so binary detection must key off
+	// that effective status, not the file's own Untracked type, or a binary untracked file in a
+	// stash slips past fileIsBinary's Untracked exclusion and opens a garbled native diff.
+	const effectiveDiffFileType = (expandedCommit: ExpandedCommit, file: GG.GitFileChange): GG.GitFileStatus => {
+		if (file.type !== GG.GitFileStatus.Untracked || expandedCommit.compareWithHash !== null) return file.type;
+		const commit = view.commits[view.commitLookup[expandedCommit.commitHash]];
+		return commit !== undefined && commit.stash !== null ? GG.GitFileStatus.Added : file.type;
+	};
+
 	const triggerViewFileDiff = (file: GG.GitFileChange, fileElem: HTMLElement) => {
 
 		const expandedCommit = view.expandedCommit;
@@ -1435,7 +1446,9 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		// A binary/image file has no textual diff for the native Diff View: it opens the
 		// standalone Binary Compare tab instead (the same one the Commit Comparison View uses).
-		if (fileIsBinary(file, isFileCountsPending(file, expandedCommit))) {
+		// Checked against `fileStatus` (not `file.type`): a stash's untracked file is remapped to
+		// Added above and no longer takes viewDiff's "just open the file" shortcut for Untracked.
+		if (fileIsBinary(file, fileStatus, isFileCountsPending(file, expandedCommit), toHash === UNCOMMITTED)) {
 
 			sendMessage({ command: 'viewDiffBinary', repo: view.currentRepo, fromHash: fromHash, toHash: toHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath, type: fileStatus });
 
@@ -1681,7 +1694,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		// "View Diff" now covers every file (as a text or a binary/image comparison); the other
 		// two actions below still only understand text, so they stay hidden for a binary file.
-		const isBinary = fileIsBinary(file, isFileCountsPending(file, expandedCommit));
+		const isBinary = fileIsBinary(file, effectiveDiffFileType(expandedCommit, file), isFileCountsPending(file, expandedCommit), isUncommitted);
 
 		const fileExistsAtThisRevision = file.type !== GG.GitFileStatus.Deleted && !isUncommitted;
 

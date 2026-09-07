@@ -82,6 +82,7 @@ class SettingsWidget {
 		this.repo = this.view.getRepoState(this.currentRepo);
 		this.config = this.view.getRepoConfig();
 		this.loading = this.view.isConfigLoading();
+		this.maybeSeedCommitAuthors();
 		this.render();
 	}
 
@@ -193,23 +194,47 @@ class SettingsWidget {
 			}
 			repoHtml += '</div>';
 
-			let userNameSet = false, userEmailSet = false;
 			if (this.config !== null) {
-				repoHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionUserDetails + '</h3>';
+				// The commit author selector: one row per configured author identity, plus the
+				// "Use Global Author" default. Selecting an author sets the repository's local
+				// user.name/user.email (so every commit made in the repository - from any tool -
+				// uses it); selecting the global author removes the local override. The identities
+				// and the global author itself are managed in the Global Settings column.
 				const userName = this.config.user.name, userEmail = this.config.user.email;
-				userNameSet = userName.local !== null || userName.global !== null;
-				userEmailSet = userEmail.local !== null || userEmail.global !== null;
-				if (userNameSet || userEmailSet) {
-					const escapedUserName = escapeHtml(userName.local ?? userName.global ?? strings.settingsNotSet);
-					const escapedUserEmail = escapeHtml(userEmail.local ?? userEmail.global ?? strings.settingsNotSet);
-					repoHtml += '<table>' +
-						'<tr><td class="left">' + strings.settingsUserNameLabel + '</td><td class="leftWithEllipsis" title="' + escapedUserName + (userNameSet ? ' (' + (userName.local !== null ? strings.settingsLocal : strings.settingsGlobal) + ')' : '') + '">' + escapedUserName + '</td></tr>' +
-						'<tr><td class="left">' + strings.settingsUserEmailLabel + '</td><td class="leftWithEllipsis" title="' + escapedUserEmail + (userEmailSet ? ' (' + (userEmail.local !== null ? strings.settingsLocal : strings.settingsGlobal) + ')' : '') + '">' + escapedUserEmail + '</td></tr>' +
-						'</table>' +
-						'<div class="settingsSectionButtons"><div id="editUserDetails" class="editBtn">' + SVG_ICONS.pencil + strings.settingsEdit + '</div><div id="removeUserDetails" class="removeBtn">' + SVG_ICONS.close + strings.settingsRemove + '</div></div>';
-				} else {
-					repoHtml += '<span>' + strings.settingsUserDetailsIntro + '</span>' +
-						'<div class="settingsSectionButtons"><div id="editUserDetails" class="addBtn">' + SVG_ICONS.plus + strings.settingsAddUserDetails + '</div></div>';
+				const commitAuthors = this.view.config.commitAuthors;
+				const hasLocalOverride = userName.local !== null || userEmail.local !== null;
+				// The global author the repository follows: the configured identity the global Git
+				// configuration matches, defaulting to the first identity (see getGlobalAuthorIndex)
+				const globalAuthorIndex = this.getGlobalAuthorIndex(commitAuthors);
+				const globalIdentity = globalAuthorIndex >= 0
+					? escapeHtml(commitAuthors[globalAuthorIndex].name + ' <' + commitAuthors[globalAuthorIndex].email + '>')
+					: userName.global !== null || userEmail.global !== null
+						? escapeHtml((userName.global ?? '?') + ' <' + (userEmail.global ?? '?') + '>')
+						: escapeHtml(strings.settingsNotSet);
+				let activeAuthorIndex = -1, customLocalIdentity = hasLocalOverride;
+				commitAuthors.forEach((author, i) => {
+					if (userName.local === author.name && userEmail.local === author.email) {
+						activeAuthorIndex = i;
+						customLocalIdentity = false;
+					}
+				});
+
+				repoHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionCommitAuthor + '</h3><table>' +
+					'<tr class="lineAbove authorSwitchRow' + (hasLocalOverride ? '' : ' active') + '" id="useGlobalAuthorRow" title="' + escapeHtml(strings.settingsUseGlobalAuthor) + ': ' + globalIdentity + '">' +
+					'<td class="leftWithEllipsis">' + escapeHtml(strings.settingsUseGlobalAuthor) + ' (' + globalIdentity + ')</td>' +
+					'<td class="right">' + (hasLocalOverride ? '' : '<span class="authorCurrentBadge">' + strings.settingsCurrentAuthor + '</span>') + '</td></tr>';
+				commitAuthors.forEach((author, i) => {
+					const authorStr = escapeHtml(author.name + ' <' + author.email + '>');
+					repoHtml += '<tr class="lineAbove authorSwitchRow' + (i === activeAuthorIndex ? ' active' : '') + '" data-index="' + i + '" title="' + authorStr + '">' +
+						'<td class="leftWithEllipsis">' + authorStr + '</td>' +
+						'<td class="right">' + (i === activeAuthorIndex ? '<span class="authorCurrentBadge">' + strings.settingsCurrentAuthor + '</span>' : '<span class="authorSwitchSelect" title="' + escapeHtml(authorStr) + '">' + SVG_ICONS.check + '</span>') + '</td></tr>';
+				});
+				repoHtml += '</table>';
+				if (customLocalIdentity) {
+					repoHtml += '<span class="settingsCustomIdentity">' + strings.settingsCustomLocalIdentity + '</span><br/>';
+				}
+				if (commitAuthors.length === 0) {
+					repoHtml += '<span class="settingsNoAuthorsHint">' + strings.settingsNoAuthorsRepoHint + '</span>';
 				}
 				repoHtml += '</div>';
 
@@ -323,6 +348,31 @@ class SettingsWidget {
 				SettingsWidget.checkbox('settingsShowUntrackedFiles', strings.settingsShowUntrackedFiles, viewConfig.showUntrackedFiles, null) +
 				'</div>';
 
+			// The author identities: managed here. One of them is the global author - the identity
+			// every repository without its own selection follows - defaulting to the FIRST identity
+			// and changeable with the check button of any author
+			const savedAuthors = viewConfig.commitAuthors;
+			const globalAuthorIndex = this.getGlobalAuthorIndex(savedAuthors);
+			globalHtml += '<div class="settingsSection centered"><h3>' + strings.settingsSectionAuthors + '</h3>' +
+				'<span>' + strings.settingsAuthorsIntro + '</span>' +
+				'<table><tr><th>' + strings.settingsAuthorNameInput + '</th><th>' + strings.settingsAuthorEmailInput + '</th><th>' + strings.settingsGlobalAuthorBadge + '</th><th>' + strings.settingsAction + '</th></tr>';
+			if (savedAuthors.length > 0) {
+				savedAuthors.forEach((author, i) => {
+					const escapedName = escapeHtml(author.name), escapedEmail = escapeHtml(author.email);
+					globalHtml += '<tr class="lineAbove">' +
+						'<td class="leftWithEllipsis" title="' + escapedName + '">' + escapedName + '</td>' +
+						'<td class="leftWithEllipsis" title="' + escapedEmail + '">' + escapedEmail + '</td>' +
+						(i === globalAuthorIndex
+							? '<td><span class="authorGlobalBadge" title="' + escapeHtml(strings.settingsGlobalAuthorBadgeTitle) + '">' + strings.settingsGlobalAuthorBadge + '</span></td>'
+							: '<td class="btns"><div class="setGlobalAuthor" data-index="' + i + '" title="' + strings.settingsSetGlobalAuthorTitle + '">' + SVG_ICONS.check + '</div></td>') +
+						'<td class="btns authorBtns" data-index="' + i + '"><div class="editAuthor" title="' + strings.settingsEditAuthorTitle + ELLIPSIS + '">' + SVG_ICONS.pencil + '</div> <div class="deleteAuthor" title="' + strings.settingsDeleteAuthorTitle + ELLIPSIS + '">' + SVG_ICONS.close + '</div></td>' +
+						'</tr>';
+				});
+			} else {
+				globalHtml += '<tr class="lineAbove"><td colspan="4">' + strings.settingsNoAuthors + '</td></tr>';
+			}
+			globalHtml += '</table><div class="settingsSectionButtons lineAbove"><div id="settingsAddAuthor" class="addBtn">' + SVG_ICONS.plus + strings.settingsAddAuthor + '</div></div></div>';
+
 			globalHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionRemotesFetching + '</h3>' +
 				SettingsWidget.checkbox('settingsFetchAndPrune', strings.settingsFetchAndPrune, viewConfig.fetchAndPrune, null) +
 				SettingsWidget.checkbox('settingsFetchAndPruneTags', strings.settingsFetchAndPruneTags, viewConfig.fetchAndPruneTags, strings.settingsFetchAndPruneTagsInfo) +
@@ -384,6 +434,22 @@ class SettingsWidget {
 			this.wireGlobalCheckbox('settingsShowRemoteHeads', 'repository.showRemoteHeads');
 
 			this.wireGlobalCheckbox('settingsPullRequestsEnabled', 'pullRequests.enabled');
+
+			document.getElementById('settingsAddAuthor')!.addEventListener('click', () => {
+				this.showAuthorDialog(-1);
+			});
+			addListenerToClass('editAuthor', 'click', (e) => {
+				this.showAuthorDialog(this.getAuthorIndexForBtnEvent(e));
+			});
+			addListenerToClass('deleteAuthor', 'click', (e) => {
+				const index = this.getAuthorIndexForBtnEvent(e);
+				const authors = this.getCommitAuthors();
+				const author = authors[index];
+				if (author === undefined) return;
+				dialog.showConfirmation(formatStr(strings.settingsDeleteAuthorConfirm, escapeHtml(author.name), escapeHtml(author.email)), strings.settingsYesRemove, () => {
+					this.saveCommitAuthors(authors.filter((_author, i) => i !== index));
+				}, null);
+			});
 
 
 			document.getElementById('editRepoName')!.addEventListener('click', () => {
@@ -551,45 +617,84 @@ class SettingsWidget {
 			}
 
 			if (this.config !== null) {
-				document.getElementById('editUserDetails')!.addEventListener('click', () => {
-					if (this.config === null) return;
+				// Applying an author identity to this repository writes its name and email to the
+				// repository's local Git configuration, so every commit made in the repository -
+				// from any tool - uses the selected identity
+				addListenerToClass('authorSwitchRow', 'click', (e) => {
+					if (this.currentRepo === null || this.config === null) return;
+					const row = <HTMLElement>(<Element>e.target).closest('.authorSwitchRow')!;
+					if (row.id === 'useGlobalAuthorRow') return; // handled by its own listener
+					const author = this.getCommitAuthors()[parseInt(row.dataset.index!)];
+					if (author === undefined) return;
 					const userName = this.config.user.name, userEmail = this.config.user.email;
-					dialog.showForm(strings.settingsUserDetailsDialogMessage, [
-						{ type: DialogInputType.Text, name: strings.settingsUserNameInput, default: userName.local ?? userName.global ?? '', placeholder: null },
-						{ type: DialogInputType.Text, name: strings.settingsUserEmailInput, default: userEmail.local ?? userEmail.global ?? '', placeholder: null },
-						{ type: DialogInputType.Checkbox, name: strings.settingsUseGlobally, value: userName.local === null && userEmail.local === null, info: strings.settingsUseGloballyInfo }
-					], strings.settingsSetUserDetails, (values) => {
-						if (this.currentRepo === null) return;
-						const useGlobally = <boolean>values[2];
+					if (userName.local === author.name && userEmail.local === author.email) return; // already applied
+					runAction({
+						command: 'editUserDetails',
+						repo: this.currentRepo,
+						name: author.name,
+						email: author.email,
+						location: GG.GitConfigLocation.Local,
+						deleteLocalName: false,
+						deleteLocalEmail: false
+					}, strings.settingsSettingUserDetails);
+				});
+
+				// "Use Global Author" makes the repository follow the global author again: the local
+				// override is removed. When the global author is still the implicit default (the
+				// first identity, not materialised into the global Git configuration yet), it is
+				// written there as part of the same action, so the commits really use it
+				document.getElementById('useGlobalAuthorRow')!.addEventListener('click', () => {
+					if (this.currentRepo === null || this.config === null) return;
+					const userName = this.config.user.name, userEmail = this.config.user.email;
+					const hasLocalOverride = userName.local !== null || userEmail.local !== null;
+					const authors = this.getCommitAuthors();
+					const globalMatches = authors.some((author) => userName.global === author.name && userEmail.global === author.email);
+					if (globalMatches) {
+						if (!hasLocalOverride) return; // already following the global author
+						runAction({
+							command: 'deleteUserDetails',
+							repo: this.currentRepo,
+							name: userName.local !== null,
+							email: userEmail.local !== null,
+							location: GG.GitConfigLocation.Local
+						}, strings.settingsRemovingUserDetails);
+					} else if (authors.length > 0) {
 						runAction({
 							command: 'editUserDetails',
 							repo: this.currentRepo,
-							name: <string>values[0],
-							email: <string>values[1],
-							location: useGlobally ? GG.GitConfigLocation.Global : GG.GitConfigLocation.Local,
-							deleteLocalName: useGlobally && userName.local !== null,
-							deleteLocalEmail: useGlobally && userEmail.local !== null
+							name: authors[0].name,
+							email: authors[0].email,
+							location: GG.GitConfigLocation.Global,
+							deleteLocalName: userName.local !== null,
+							deleteLocalEmail: userEmail.local !== null
 						}, strings.settingsSettingUserDetails);
-					}, null);
+					} else if (hasLocalOverride) {
+						runAction({
+							command: 'deleteUserDetails',
+							repo: this.currentRepo,
+							name: userName.local !== null,
+							email: userEmail.local !== null,
+							location: GG.GitConfigLocation.Local
+						}, strings.settingsRemovingUserDetails);
+					}
 				});
 
-				if (userNameSet || userEmailSet) {
-					document.getElementById('removeUserDetails')!.addEventListener('click', () => {
-						if (this.config === null) return;
-						const userName = this.config.user.name, userEmail = this.config.user.email;
-						const isGlobal = userName.local === null && userEmail.local === null;
-						dialog.showConfirmation(formatStr(strings.settingsRemoveUserDetailsConfirm, isGlobal ? strings.settingsGlobally : strings.settingsLocally), strings.settingsYesRemove, () => {
-							if (this.currentRepo === null) return;
-							runAction({
-								command: 'deleteUserDetails',
-								repo: this.currentRepo,
-								name: (isGlobal ? userName.global : userName.local) !== null,
-								email: (isGlobal ? userEmail.global : userEmail.local) !== null,
-								location: isGlobal ? GG.GitConfigLocation.Global : GG.GitConfigLocation.Local
-							}, strings.settingsRemovingUserDetails);
-						}, null);
-					});
-				}
+				// Setting an author as the global default writes it to the global Git
+				// configuration; repositories without their own selection follow it
+				addListenerToClass('setGlobalAuthor', 'click', (e) => {
+					if (this.currentRepo === null || this.config === null) return;
+					const author = this.getCommitAuthors()[this.getAuthorIndexForBtnEvent(e)];
+					if (author === undefined) return;
+					runAction({
+						command: 'editUserDetails',
+						repo: this.currentRepo,
+						name: author.name,
+						email: author.email,
+						location: GG.GitConfigLocation.Global,
+						deleteLocalName: false,
+						deleteLocalEmail: false
+					}, strings.settingsSettingUserDetails);
+				});
 
 				document.getElementById('settingsAddRemote')!.addEventListener('click', () => {
 					dialog.showForm(strings.settingsAddRemoteDialogMessage, [
@@ -920,6 +1025,89 @@ class SettingsWidget {
 
 
 	/* Private Helper Methods */
+
+	/**
+	 * While the `git-graph-rs.commitAuthors` Extension Setting is empty, the author list shown
+	 * by the widget is seeded from the identity already configured in the global Git
+	 * configuration (user.name/user.email): that identity becomes the first author - and
+	 * therefore the global author - so adding further identities can never silently replace
+	 * it. An empty list means "follow what Git already has"; Git having no complete global
+	 * identity leaves the list empty until the user configures one.
+	 */
+	private maybeSeedCommitAuthors() {
+		if (this.config === null || this.view.config.commitAuthors.length > 0) return;
+		const name = this.config.user.name.global, email = this.config.user.email.global;
+		if (name === null || email === null) return;
+		this.saveCommitAuthors([{ name: name, email: email }]);
+	}
+
+	/**
+	 * Get the author identities of the `git-graph-rs.commitAuthors` Extension Setting as a
+	 * writeable copy, ready to be modified and saved back.
+	 */
+	private getCommitAuthors(): GG.CommitAuthor[] {
+		return this.view.config.commitAuthors.map((author) => ({ name: author.name, email: author.email }));
+	}
+
+	/**
+	 * The index of the author identity that is the global author: the identity the global Git
+	 * configuration matches or - when it matches none - the FIRST identity (the default), so
+	 * repositories following the global configuration always have a well-defined author. The
+	 * default is materialised into the global Git configuration by the extension host whenever
+	 * the identity list is saved, and can be changed with the check button of any author.
+	 */
+	private getGlobalAuthorIndex(authors: ReadonlyArray<GG.CommitAuthor> = this.view.config.commitAuthors) {
+		if (this.config === null) return -1;
+		const name = this.config.user.name.global, email = this.config.user.email.global;
+		const matched = authors.findIndex((author) => name === author.name && email === author.email);
+		return matched >= 0 ? matched : authors.length > 0 ? 0 : -1;
+	}
+
+	/**
+	 * Save the author identities of the `git-graph-rs.commitAuthors` Extension Setting. The
+	 * extension host may default the global author to the first identity while saving (writing
+	 * the global Git configuration), and the resulting `configChanged` message re-renders the
+	 * Settings Widget with the new list - the follow-up config reload refreshes the global
+	 * author badge against that configuration change. Values the setting rejects (e.g. an empty
+	 * name or email) are reported through the save action's response dialog.
+	 */
+	private saveCommitAuthors(authors: GG.CommitAuthor[]) {
+		this.saveGlobalSetting('commitAuthors', authors);
+		this.view.requestLoadConfig();
+	}
+
+	/**
+	 * Get the index of the author identity a settings widget element event belongs to (the
+	 * edit/delete buttons of the row, the "set as global author" button, or the global badge).
+	 * @param e The mouse event.
+	 * @returns The index of the author in the `commitAuthors` Extension Setting.
+	 */
+	private getAuthorIndexForBtnEvent(e: Event) {
+		return parseInt((<HTMLElement>(<Element>e.target).closest('[data-index]')!).dataset.index!);
+	}
+
+	/**
+	 * Show the dialog for adding (index -1) or editing (index of the author) an author identity.
+	 * @param index The index of the author to edit, or -1 to add a new author.
+	 */
+	private showAuthorDialog(index: number) {
+		const authors = this.getCommitAuthors();
+		const author = index >= 0 && index < authors.length ? authors[index] : null;
+		dialog.showForm(author !== null ? strings.settingsEditAuthorDialogMessage : strings.settingsAddAuthorDialogMessage, [
+			{ type: DialogInputType.Text, name: strings.settingsAuthorNameInput, default: author !== null ? author.name : '', placeholder: null },
+			{ type: DialogInputType.Text, name: strings.settingsAuthorEmailInput, default: author !== null ? author.email : '', placeholder: null }
+		], strings.settingsSaveAuthor, (values) => {
+			const name = (<string>values[0]).trim(), email = (<string>values[1]).trim();
+			if (author !== null && author.name === name && author.email === email) return; // unchanged
+			const next = this.getCommitAuthors();
+			if (author !== null) {
+				next[index] = { name: name, email: email };
+			} else {
+				next.push({ name: name, email: email });
+			}
+			this.saveCommitAuthors(next);
+		}, null);
+	}
 
 	/**
 	 * Save the issue linking configuration for this repository, and refresh the view so these changes are taken into affect.

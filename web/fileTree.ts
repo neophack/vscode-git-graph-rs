@@ -64,14 +64,17 @@ function fileChangeTypeMessage(file: GG.GitFileChange): string {
  * pending). Every file can be diffed — a binary one just opens the Binary Compare tab's hex or
  * picture view instead of the native text Diff View. Untracked files never carry counts (they
  * are diffed by opening the new file directly, so their content never needs to be known here).
+ * A comparison against the working tree never has its counts computed at all (by design - see
+ * initialiseLineCounts), so null counts there mean "never asked for", not "binary"; such files
+ * fall back to the text Diff View, same as before the Binary Compare tab existed.
  */
-function fileIsBinary(file: GG.GitFileChange, pending: boolean): boolean {
-	return !pending && file.type !== GG.GitFileStatus.Untracked && file.additions === null && file.deletions === null;
+function fileIsBinary(file: GG.GitFileChange, type: GG.GitFileStatus, pending: boolean, isUncommitted: boolean): boolean {
+	return !isUncommitted && !pending && type !== GG.GitFileStatus.Untracked && file.additions === null && file.deletions === null;
 }
 
-/** The tooltip of a file row: what clicking it does, then what happened to it. */
+/** The tooltip of a file row: what clicking it does, then what happened to it. Only ever called once a file's counts have settled, so it is never in the working-tree comparison case. */
 function fileRowTitle(file: GG.GitFileChange): string {
-	return strings.clickToViewDiff + (fileIsBinary(file, false) ? strings.binaryFileSuffix : '') + ' • ' + fileChangeTypeMessage(file);
+	return strings.clickToViewDiff + (fileIsBinary(file, file.type, false, false) ? strings.binaryFileSuffix : '') + ' • ' + fileChangeTypeMessage(file);
 }
 
 /** The `(+N|-M)` counts chip of a modified or renamed text file. */
@@ -88,7 +91,7 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 		const fileTreeFile: GG.GitFileChange = gitFiles[leaf.index];
 		const type = fileTreeFile.type;
 		const pending = pendingCounts !== null && pendingCounts.has(fileTreeFile.newFilePath);
-		const isBinary = fileIsBinary(fileTreeFile, pending);
+		const isBinary = fileIsBinary(fileTreeFile, fileTreeFile.type, pending, isUncommitted);
 		const changeTypeMessage = fileChangeTypeMessage(fileTreeFile);
 		let countsChip = '';
 		if (type !== GG.GitFileStatus.Added && type !== GG.GitFileStatus.Untracked && type !== GG.GitFileStatus.Deleted) {

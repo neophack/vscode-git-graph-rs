@@ -39,7 +39,7 @@ import { Logger } from './logger';
 import { PullRequestDataSource } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, resolveDiffFromHash, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
@@ -141,6 +141,9 @@ export class UncommittedCountStabiliser {
  * compromised webview can't write arbitrary VS Code settings.
  */
 const WRITABLE_GLOBAL_SETTINGS: { readonly [setting: string]: (value: any) => boolean } = {
+	/* Commit Authors */
+	'commitAuthors': isCommitAuthors,
+
 	/* Graph & Display */
 	'graph.style': isOneOf('rounded', 'angular'),
 	'graph.rowHeight': isIntegerInRange(16, 48),
@@ -184,6 +187,36 @@ function isOneOf(...allowed: string[]) {
 
 function isIntegerInRange(min: number, max: number) {
 	return (value: any) => typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
+
+/** The most author identities the `git-graph-rs.commitAuthors` setting accepts. */
+const MAX_COMMIT_AUTHORS = 50;
+
+/**
+ * Validate a value for the `git-graph-rs.commitAuthors` Extension Setting: an array of at most
+ * MAX_COMMIT_AUTHORS `{ name, email }` entries with non-empty trimmed strings. Exported for tests.
+ */
+export function isCommitAuthors(value: any) {
+	return Array.isArray(value) && value.length <= MAX_COMMIT_AUTHORS && value.every((author: any) =>
+		typeof author === 'object' && author !== null &&
+		typeof author.name === 'string' && author.name.trim() !== '' &&
+		typeof author.email === 'string' && author.email.trim() !== ''
+	);
+}
+
+/**
+ * The author identity the global Git configuration should hold after the identity list was
+ * saved: NULL when the identity already configured there matches the list (nothing to write),
+ * otherwise the FIRST identity - the default global author, which repositories without their
+ * own selection follow. Exported for tests.
+ * @param authors The saved author identities.
+ * @param globalUser The identity currently in the global Git configuration (NULL => not set).
+ */
+export function resolveGlobalAuthorAfterSave(authors: ReadonlyArray<CommitAuthor>, globalUser: { name: string | null, email: string | null }): CommitAuthor | null {
+	if (authors.length === 0) return null;
+	return authors.some((author) => author.name === globalUser.name && author.email === globalUser.email)
+		? null
+		: authors[0];
 }
 
 /** The cached (unfiltered) Gerrit data of a repository. */
@@ -744,6 +777,10 @@ export class GitGraphView extends Disposable {
 				if (msg.email) {
 					errorInfos.push(await this.dataSource.unsetConfigValue(msg.repo, GitConfigKey.UserEmail, msg.location));
 				}
+				// A Global location write never touches the repository's `.git/config`, so the
+				// watcher-based cache invalidation cannot fire for it: drop the cached config data
+				// explicitly, so the settings widget re-render reflects the change immediately
+				this.dataSource.invalidateConfigCache(msg.repo);
 				this.sendMessage({
 					command: 'deleteUserDetails',
 					errors: errorInfos
@@ -780,6 +817,10 @@ export class GitGraphView extends Disposable {
 						errorInfos.push(await this.dataSource.unsetConfigValue(msg.repo, GitConfigKey.UserEmail, GitConfigLocation.Local));
 					}
 				}
+				// A Global location write never touches the repository's `.git/config`, so the
+				// watcher-based cache invalidation cannot fire for it: drop the cached config data
+				// explicitly, so the settings widget re-render reflects the change immediately
+				this.dataSource.invalidateConfigCache(msg.repo);
 				this.sendMessage({
 					command: 'editUserDetails',
 					errors: errorInfos
@@ -1267,6 +1308,7 @@ export class GitGraphView extends Disposable {
 	 */
 	private getWebviewConfig(config: ReturnType<typeof getConfig>): GitGraphViewConfig {
 		return {
+			commitAuthors: config.commitAuthors,
 			commitDetailsView: config.commitDetailsView,
 			commitOrdering: config.commitOrder,
 			contextMenuActionsVisibility: config.contextMenuActionsVisibility,
@@ -1472,7 +1514,34 @@ export class GitGraphView extends Disposable {
 			this.logger.log('Saving the setting "' + setting + '" failed: ' + message);
 			return message;
 		}
+		if (setting === 'commitAuthors' && this.currentRepo !== null && Array.isArray(value) && value.length > 0) {
+			await this.applyDefaultGlobalAuthor(this.currentRepo, value);
+		}
 		return null;
+	}
+
+	/**
+	 * Default the global author to the FIRST author identity whenever the global Git
+	 * configuration matches none of the configured identities, so repositories following the
+	 * global configuration always have a well-defined author. The user can change the global
+	 * author at any time in the Author Identities list (the check button materialises it the
+	 * same way). Failures are logged and ignored: the list itself was saved successfully.
+	 * @param repo The path of the repository open in the view (the working directory of the Git invocation).
+	 * @param authors The saved author identities.
+	 */
+	private async applyDefaultGlobalAuthor(repo: string, authors: ReadonlyArray<{ name: string, email: string }>) {
+		const global = await this.dataSource.getGlobalUserDetails(repo).catch(() => null);
+		if (global === null) return;
+		const author = resolveGlobalAuthorAfterSave(authors, global);
+		if (author === null) return;
+		const nameError = await this.dataSource.setConfigValue(repo, GitConfigKey.UserName, author.name, GitConfigLocation.Global);
+		const emailError = await this.dataSource.setConfigValue(repo, GitConfigKey.UserEmail, author.email, GitConfigLocation.Global);
+		if (nameError !== null || emailError !== null) {
+			this.logger.log('Defaulting the global author to the first author identity failed: ' + (nameError ?? emailError));
+		}
+		// The global Git configuration changed, which the repository's `.git/config` watcher
+		// cannot see: drop the cached config data so the next load reflects it
+		this.dataSource.invalidateConfigCache(repo);
 	}
 
 	/* Uncommitted Changes Follow-up */

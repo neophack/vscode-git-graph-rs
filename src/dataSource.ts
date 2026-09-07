@@ -367,6 +367,19 @@ export class DataSource extends Disposable {
 		}
 	}
 
+	/**
+	 * Get the user identity of the global Git configuration (user.name/user.email). The Author
+	 * Identities feature matches it against the configured authors to resolve the global author.
+	 * @param repo The path of a repository (used as the working directory of the Git invocation).
+	 * @returns The globally configured name and email (NULL => the key is not set globally).
+	 */
+	public getGlobalUserDetails(repo: string): Promise<{ name: string | null, email: string | null }> {
+		return this.backend.getConfigList(repo, 'global').then((configs) => ({
+			name: configs[GitConfigKey.UserName] ?? null,
+			email: configs[GitConfigKey.UserEmail] ?? null
+		}));
+	}
+
 	private loadConfig(repo: string): Promise<GitRepoConfigData> {
 		// The engine (or, failing it, the `git` CLI backend) provides the remotes with their URLs,
 		// the push default and the diff tools; the branch and user configuration and the author

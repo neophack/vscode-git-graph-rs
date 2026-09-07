@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import {
+	CommitAuthor,
 	CommitDetailsViewConfig,
 	CommitDetailsViewLocation,
 	CommitOrdering,
@@ -142,6 +143,19 @@ class Config {
 			fetchLimit: Number.isFinite(fetchLimit) && fetchLimit >= 1 && fetchLimit <= 10000 ? Math.floor(fetchLimit) : 20,
 			showReviewProgress: !!this.config.get('gerrit.showReviewProgress', true)
 		};
+	}
+
+	/**
+	 * Get the value of the `git-graph-rs.commitAuthors` Extension Setting: the commit author
+	 * identities a repository can switch between in the Settings widget.
+	 */
+	get commitAuthors(): CommitAuthor[] {
+		let authors = this.config.get('commitAuthors', <any[]>[]);
+		return Array.isArray(authors)
+			? authors
+				.filter((author) => typeof author === 'object' && author !== null && typeof author.name === 'string' && author.name.trim() !== '' && typeof author.email === 'string' && author.email.trim() !== '')
+				.map((author) => ({ name: author.name, email: author.email }))
+			: [];
 	}
 
 	/**
