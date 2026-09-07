@@ -53,10 +53,15 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
     }
     let git = repo.borrow();
     let filtering = !options.filter_paths.is_empty();
+    // An author filter has the same problem as a path filter: matches can be sparse, so a fixed
+    // window can run dry and silently return fewer commits than asked for (and hide "Load More"
+    // even though more matches exist deeper in history) instead of searching until the page is
+    // full, the way `git log --author` does.
+    let searching = filtering || options.authors.is_some();
 
     // A filtered walk cannot know in advance how deep it must go to fill a page, so it walks until
     // the page is full (or the safety limit is hit) instead of taking a fixed window.
-    let window = if filtering {
+    let window = if searching {
         FILTERED_WALK_LIMIT
     } else {
         (options.limit * WINDOW_FACTOR).max(WINDOW_MINIMUM)
@@ -109,7 +114,7 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         }
 
         records.push(record);
-        if filtering && records.len() >= options.limit {
+        if searching && records.len() >= options.limit {
             break;
         }
     }
