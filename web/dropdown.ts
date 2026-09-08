@@ -19,6 +19,7 @@ class Dropdown {
 	private dropdownVisible: boolean = false;
 	private lastClicked: number = 0;
 	private doubleClickTimeout: NodeJS.Timer | null = null;
+	private highlighted: number = -1; // The option currently highlighted by keyboard navigation (-1 => none)
 
 	private readonly elem: HTMLElement;
 	private readonly currentValueElem: HTMLDivElement;
@@ -61,6 +62,8 @@ class Dropdown {
 
 		this.currentValueElem = this.elem.appendChild(document.createElement('div'));
 		this.currentValueElem.className = 'dropdownCurrentValue';
+		this.currentValueElem.tabIndex = 0;
+		this.currentValueElem.setAttribute('role', 'button');
 
 		alterClass(this.elem, 'multi', multipleAllowed);
 		this.elem.appendChild(this.menuElem);
@@ -68,13 +71,11 @@ class Dropdown {
 		document.addEventListener('click', (e) => {
 			if (!e.target) return;
 			if (e.target === this.currentValueElem) {
-				this.dropdownVisible = !this.dropdownVisible;
 				if (this.dropdownVisible) {
-					this.filterInput.value = '';
-					this.filter();
+					this.close();
+				} else {
+					this.open();
 				}
-				this.elem.classList.toggle('dropdownOpen');
-				if (this.dropdownVisible) this.filterInput.focus();
 			} else if (this.dropdownVisible) {
 				if ((<HTMLElement>e.target).closest('.dropdown') !== this.elem) {
 					this.close();
@@ -87,7 +88,41 @@ class Dropdown {
 			}
 		}, true);
 		document.addEventListener('contextmenu', () => this.close(), true);
+		this.currentValueElem.addEventListener('keydown', (e) => {
+			if (!this.dropdownVisible && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+				// Open the dropdown from the keyboard, without requiring a mouse click
+				this.open();
+				handledEvent(e);
+			}
+		});
 		this.filterInput.addEventListener('keyup', () => this.filter());
+		this.filterInput.addEventListener('keydown', (e) => {
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				this.moveHighlighted(e.key === 'ArrowDown' ? 1 : -1);
+				handledEvent(e);
+			} else if (e.key === 'Enter' && this.highlighted > -1) {
+				this.onOptionClick(this.highlighted);
+				handledEvent(e);
+			} else if (e.key === 'Tab') {
+				// Closing on Tab (rather than leaving the menu open behind the next focused element)
+				// keeps the visible UI consistent with which control currently has focus
+				this.close();
+			}
+		});
+	}
+
+	/**
+	 * Open the dropdown, ready for keyboard or mouse selection.
+	 */
+	private open() {
+		this.dropdownVisible = true;
+		this.elem.classList.add('dropdownOpen');
+		this.filterInput.value = '';
+		this.filter();
+		// Start keyboard navigation from the currently selected option, and scroll it into view
+		// so opening a long list (e.g. branches) doesn't strand the selection off-screen
+		if (!this.multipleAllowed) this.setHighlighted(this.lastSelected);
+		this.filterInput.focus();
 	}
 
 	/**
@@ -285,6 +320,36 @@ class Dropdown {
 		}
 		this.filterInput.style.display = 'block';
 		this.noResultsElem.style.display = matches ? 'none' : 'block';
+		this.highlighted = -1;
+	}
+
+	/**
+	 * Move the keyboard-navigation highlight to the next/previous visible option, wrapping at either end.
+	 * @param delta The direction to move the highlight (1 => next, -1 => previous).
+	 */
+	private moveHighlighted(delta: number) {
+		const visible = <HTMLElement[]>Array.prototype.filter.call(this.optionsElem.children, (elem: HTMLElement) => elem.style.display !== 'none');
+		if (visible.length === 0) return;
+		const curPos = this.highlighted === -1 ? -1 : visible.findIndex((elem) => parseInt(elem.dataset.id!) === this.highlighted);
+		const newPos = curPos === -1 ? (delta > 0 ? 0 : visible.length - 1) : (curPos + delta + visible.length) % visible.length;
+		this.setHighlighted(parseInt(visible[newPos].dataset.id!));
+	}
+
+	/**
+	 * Set which option is highlighted by keyboard navigation, updating the highlight class and scrolling it into view.
+	 * @param index The index (within `this.options`) of the option to highlight.
+	 */
+	private setHighlighted(index: number) {
+		if (this.highlighted > -1) {
+			const prev = this.optionsElem.querySelector('[data-id="' + this.highlighted + '"]');
+			if (prev !== null) prev.classList.remove('highlighted');
+		}
+		this.highlighted = index;
+		const cur = this.optionsElem.querySelector('[data-id="' + index + '"]');
+		if (cur !== null) {
+			cur.classList.add('highlighted');
+			cur.scrollIntoView({ block: 'nearest' });
+		}
 	}
 
 	/**

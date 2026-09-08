@@ -406,7 +406,7 @@ class Dialog {
 		const dialog = document.createElement('div'), dialogContent = document.createElement('div');
 		dialog.className = 'dialog';
 		dialogContent.className = 'dialogContent';
-		dialogContent.innerHTML = html + '<br>' + (actionName !== null ? '<div id="dialogAction" class="roundedBtn">' + actionName + '</div>' : '') + '<div id="dialogSecondaryAction" class="roundedBtn">' + secondaryActionName + '</div>';
+		dialogContent.innerHTML = html + '<br>' + (actionName !== null ? '<div id="dialogAction" class="roundedBtn" role="button" tabindex="0">' + actionName + '</div>' : '') + '<div id="dialogSecondaryAction" class="roundedBtn" role="button" tabindex="0">' + secondaryActionName + '</div>';
 		dialog.appendChild(dialogContent);
 		this.elem = dialog;
 		document.body.appendChild(dialog);

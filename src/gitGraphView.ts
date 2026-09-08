@@ -1432,8 +1432,13 @@ export class GitGraphView extends Disposable {
 			<h2>${t('unableToLoadGitGraph')}</h2>
 			<p class="unableToLoadMessage">${t('noReposWhenLastScanned')}</p>
 			<p>${t('noReposHint', 'https://github.com/mhutchie/vscode-git-graph/wiki/Extension-Settings#max-depth-of-repo-search')}</p>
-			<p><div id="rescanForReposBtn" class="roundedBtn">${t('rescanForReposButton')}</div></p>
-			<script nonce="${nonce}">(function(){ var api = acquireVsCodeApi(); document.getElementById('rescanForReposBtn').addEventListener('click', function(){ api.postMessage({command: 'rescanForRepos'}); }); })();</script>
+			<p><div id="rescanForReposBtn" class="roundedBtn" role="button" tabindex="0">${t('rescanForReposButton')}</div></p>
+			<script nonce="${nonce}">(function(){
+				var api = acquireVsCodeApi(), btn = document.getElementById('rescanForReposBtn');
+				var rescan = function(){ api.postMessage({command: 'rescanForRepos'}); };
+				btn.addEventListener('click', rescan);
+				btn.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); rescan(); } });
+			})();</script>
 			</body>`;
 		}
 		this.isGraphViewLoaded =

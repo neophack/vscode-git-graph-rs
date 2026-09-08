@@ -173,6 +173,9 @@ class GitGraphView {
 		});
 
 		this.refreshBtnElem = document.getElementById('refreshBtn')!;
+		this.refreshBtnElem.tabIndex = 0;
+		this.refreshBtnElem.setAttribute('role', 'button');
+		makeKeyboardActivatable(this.refreshBtnElem);
 		this.refreshBtnElem.addEventListener('click', () => {
 			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
 				this.refresh(true, true);
@@ -260,6 +263,16 @@ class GitGraphView {
 			filterBtn.addEventListener('click', () => this.showPathFilterDialog());
 			this.renderFilterButton();
 		}
+
+		// These toolbar icons are styled <div>s rather than native <button>s, so they need to be
+		// wired into the tab order and given Enter/Space activation manually (the CSS already has
+		// :focus-visible rules for them, they just weren't reachable by keyboard)
+		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn].forEach((btn) => {
+			if (btn === null) return;
+			btn.tabIndex = 0;
+			btn.setAttribute('role', 'button');
+			makeKeyboardActivatable(btn);
+		});
 	}
 
 

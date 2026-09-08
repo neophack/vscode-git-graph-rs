@@ -29,6 +29,10 @@
 .dropdownCurrentValue:hover{
 	background-color:rgba(128,128,128,0.2);
 }
+.dropdownCurrentValue:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .dropdownCurrentValue:after{
 	position:absolute;
 	content:"";
@@ -82,7 +86,7 @@
 .dropdownOption.selected{
 	background-color:rgba(128,128,128,0.15);
 }
-.dropdownOption:hover{
+.dropdownOption:hover, .dropdownOption.highlighted{
 	background-color:var(--vscode-menu-selectionBackground, var(--vscode-menu-background));
 	color:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
 }
@@ -118,7 +122,7 @@ body.vscode-high-contrast .dropdownOption:hover{
 	opacity:0.7;
 }
 
-.dropdownOption:hover svg{
+.dropdownOption:hover svg, .dropdownOption.highlighted svg{
 	fill:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
 	opacity:0.85;
 }

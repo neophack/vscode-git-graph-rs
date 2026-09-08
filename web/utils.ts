@@ -569,6 +569,20 @@ function handledEvent(event: Event) {
 	event.stopPropagation();
 }
 
+/**
+ * Make a non-native button element (e.g. a `<div role="button">`) activate on Enter / Space, matching
+ * the behaviour a real `<button>` gets for free. Needed wherever a toolbar icon is a styled `<div>`.
+ * @param elem The element to make keyboard-activatable.
+ */
+function makeKeyboardActivatable(elem: HTMLElement) {
+	elem.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			elem.click();
+			handledEvent(e);
+		}
+	});
+}
+
 
 /* State Helpers */
 

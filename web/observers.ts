@@ -270,7 +270,35 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 				// Use keyCode === 13 to detect 'Enter' events if available (for compatibility with IME Keyboards used by Chinese / Japanese / Korean users)
 
-				dialog.submit();
+				const target = <HTMLElement>e.target;
+
+				if (target && target.tagName === 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
+
+					// Let Enter insert a newline in multi-line inputs; require Ctrl/Cmd+Enter to submit from a textarea
+
+					return;
+
+				}
+
+				if (target && target.id === 'dialogSecondaryAction') {
+
+					// The Cancel / secondary action button is focused: activate it, don't submit the primary action
+
+					target.click();
+
+				} else {
+
+					dialog.submit();
+
+				}
+
+				handledEvent(e);
+
+			} else if (e.key === ' ' && (<HTMLElement>e.target).getAttribute('role') === 'button') {
+
+				// Space activates a focused dialog button (divs don't get this behaviour natively, and would otherwise scroll the page)
+
+				(<HTMLElement>e.target).click();
 
 				handledEvent(e);
 
