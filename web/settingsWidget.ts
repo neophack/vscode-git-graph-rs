@@ -1081,15 +1081,15 @@ class SettingsWidget {
 	/**
 	 * Save the author identities of the `git-graph-rs.commitAuthors` Extension Setting. The
 	 * extension host may default the global author to the first identity while saving (writing
-	 * the global Git configuration), or clear the global author when the list is emptied, and
-	 * the resulting `configChanged` message re-renders the
-	 * Settings Widget with the new list - the follow-up config reload refreshes the global
-	 * author badge against that configuration change. Values the setting rejects (e.g. an empty
-	 * name or email) are reported through the save action's response dialog.
+	 * the global Git configuration), or clear the global author when the list is emptied; the
+	 * save's response tells the view to reload the repository configuration once those writes
+	 * have completed, and the fresh snapshot re-renders the Settings Widget (the global author
+	 * badge and the current repository's author). A reload issued HERE would race the save's
+	 * Git writes and render the pre-save global author. Values the setting rejects (e.g. an
+	 * empty name or email) are reported through the save action's response dialog.
 	 */
 	private saveCommitAuthors(authors: GG.CommitAuthor[]) {
 		this.saveGlobalSetting('commitAuthors', authors);
-		this.view.requestLoadConfig();
 	}
 
 	/**

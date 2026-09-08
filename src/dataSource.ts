@@ -23,6 +23,7 @@ export const enum GitConfigKey {
 	DiffGuiTool = 'diff.guitool',
 	DiffTool = 'diff.tool',
 	RemotePushDefault = 'remote.pushdefault',
+	UseConfigOnly = 'user.useConfigOnly',
 	UserEmail = 'user.email',
 	UserName = 'user.name'
 }

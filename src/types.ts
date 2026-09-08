@@ -1592,6 +1592,10 @@ export interface RequestSetGlobalSetting extends BaseMessage {
 export interface ResponseSetGlobalSetting extends ResponseWithErrorInfo {
 	readonly command: 'setGlobalSetting';
 	readonly setting: string;
+	/** Saving 'commitAuthors' may write the global Git configuration (defaulting or clearing the
+	 * global author): the webview must reload the repository configuration only once the save
+	 * completed, or it renders the pre-save snapshot of the global author. */
+	readonly authorConfigTouched: boolean;
 }
 
 export type RequestMessage =

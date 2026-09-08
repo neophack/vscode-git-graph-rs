@@ -2521,6 +2521,11 @@ window.addEventListener('load', () => {
 				break;
 			case 'setGlobalSetting':
 				finishOrDisplayError(msg.error, strings.settingsUnableToSaveSetting);
+				// Saving commitAuthors also wrote the global Git configuration (the global
+				// author was defaulted or cleared): reload the repository configuration from
+				// the post-save state, so the Settings Widget's "Use Global Author" row shows
+				// what Git really holds now instead of the pre-save snapshot
+				if (msg.authorConfigTouched) gitGraph.requestLoadConfig();
 				break;
 			case 'merge':
 				refreshOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn)));

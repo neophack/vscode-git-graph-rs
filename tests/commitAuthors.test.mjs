@@ -69,6 +69,8 @@ const { DataSource } = await import('../out/dataSource.js');
 /* The local Git config keys of the user identity (the values of dataSource's GitConfigKey). */
 const USER_NAME = 'user.name';
 const USER_EMAIL = 'user.email';
+/* The guard that forbids Git from fabricating an identity when none is configured. */
+const USE_CONFIG_ONLY = 'user.useConfigOnly';
 
 /** A repository directory created under a throwaway root, optionally with a local identity. */
 function initRepo(name, identity = null) {
@@ -369,7 +371,7 @@ describe('the Author Identities feature against real repositories', () => {
 		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: AUTHOR_B.name, email: AUTHOR_B.email });
 	});
 
-	it('emptying the identity list clears the global author from the global Git configuration', async () => {
+	it('emptying the identity list clears the global author and forbids Git from guessing one', async () => {
 		resetGlobalConfig();
 		const dataSource = makeDataSource();
 		const repo = initRepo('clear-global', AUTHOR_A);
@@ -378,7 +380,9 @@ describe('the Author Identities feature against real repositories', () => {
 		git(repo, ['config', '--global', USER_NAME, AUTHOR_A.name]);
 		git(repo, ['config', '--global', USER_EMAIL, AUTHOR_A.email]);
 
-		// The host's save pipeline for an empty list: the global author is cleared
+		// The host's save pipeline for an empty list: the global author is cleared, and the
+		// useConfigOnly guard stops Git from fabricating user@hostname in its place
+		assert.equal(await dataSource.setConfigValue(repo, USE_CONFIG_ONLY, 'true', 'global'), null);
 		assert.equal(await dataSource.unsetConfigValue(repo, USER_NAME, 'global'), null);
 		assert.equal(await dataSource.unsetConfigValue(repo, USER_EMAIL, 'global'), null);
 
@@ -387,6 +391,66 @@ describe('the Author Identities feature against real repositories', () => {
 		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: null, email: null });
 		assert.equal(globalConfigValue(USER_NAME), null);
 		assert.equal(globalConfigValue(USER_EMAIL), null);
+		assert.equal(globalConfigValue(USE_CONFIG_ONLY), 'true');
+	});
+
+	it('after the list was emptied, committing without an identity FAILS until the user configures one', async () => {
+		resetGlobalConfig();
+		const dataSource = makeDataSource();
+
+		// Alice was the global author and had been applied to this repository; the user then
+		// deleted every identity from the list
+		const repo = initRepo('after-emptying', AUTHOR_A);
+		git(repo, ['config', '--global', USER_NAME, AUTHOR_A.name]);
+		git(repo, ['config', '--global', USER_EMAIL, AUTHOR_A.email]);
+
+		// The host's save pipeline for an empty list: the global author is cleared and the
+		// useConfigOnly guard forbids Git from fabricating one from the operating system
+		assert.equal(await dataSource.setConfigValue(repo, USE_CONFIG_ONLY, 'true', 'global'), null);
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_NAME, 'global'), null);
+		assert.equal(await dataSource.unsetConfigValue(repo, USER_EMAIL, 'global'), null);
+
+		// The applied identity lives in the repository's LOCAL configuration, which emptying
+		// the list never touches: the repository keeps committing with it
+		commitFile(repo, 'local.txt');
+		assert.equal(lastCommitAuthor(repo), AUTHOR_A.name + ' <' + AUTHOR_A.email + '>');
+
+		// A repository without its own identity has NOTHING configured anymore, and instead
+		// of silently recording Git's fabricated user@hostname the commit FAILS with Git's
+		// demand that the user configure an identity first
+		const identityLess = initRepo('after-emptying-identityless');
+		fs.writeFileSync(path.join(identityLess, 'orphan.txt'), 'orphan\n');
+		git(identityLess, ['add', '-A']);
+		let refusal = null;
+		try {
+			git(identityLess, ['commit', '--quiet', '-m', 'No identity anywhere']);
+		} catch (error) {
+			refusal = error.stderr ?? String(error);
+		}
+		assert.match(refusal ?? '', /Please tell me who you are/);
+	});
+
+	it('re-adding an identity after the list was emptied makes commits work again - the guard stays inert', async () => {
+		resetGlobalConfig();
+		const dataSource = makeDataSource();
+		const repo = initRepo('re-added');
+
+		// The list was emptied earlier: no global identity, and the useConfigOnly guard set
+		git(repo, ['config', '--global', USE_CONFIG_ONLY, 'true']);
+		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: null, email: null });
+
+		// The host's save pipeline for the re-added list: the first identity becomes the
+		// global author
+		const author = resolveGlobalAuthorAfterSave([AUTHOR_B], await dataSource.getGlobalUserDetails(repo));
+		assert.equal(author, AUTHOR_B);
+		assert.equal(await dataSource.setConfigValue(repo, USER_NAME, author.name, 'global'), null);
+		assert.equal(await dataSource.setConfigValue(repo, USER_EMAIL, author.email, 'global'), null);
+
+		// Committing works again - the guard only forbids GUESSING an identity, not using a
+		// configured one
+		commitFile(repo, 're-added.txt');
+		assert.equal(lastCommitAuthor(repo), AUTHOR_B.name + ' <' + AUTHOR_B.email + '>');
+		assert.equal(globalConfigValue(USE_CONFIG_ONLY), 'true');
 	});
 
 	it('deleting identities one by one promotes the first survivor until the LAST deletion clears the global author', async () => {
@@ -417,11 +481,14 @@ describe('the Author Identities feature against real repositories', () => {
 		assert.equal(await saveList([AUTHOR_C]), AUTHOR_C);
 		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: AUTHOR_C.name, email: AUTHOR_C.email });
 
-		// Deleting Carol empties the list: the global author is cleared, not left at Carol
+		// Deleting Carol empties the list: the global author is cleared - not left at Carol -
+		// and the useConfigOnly guard goes down with it
+		assert.equal(await dataSource.setConfigValue(repo, USE_CONFIG_ONLY, 'true', 'global'), null);
 		assert.equal(await dataSource.unsetConfigValue(repo, USER_NAME, 'global'), null);
 		assert.equal(await dataSource.unsetConfigValue(repo, USER_EMAIL, 'global'), null);
 		assert.deepEqual(await dataSource.getGlobalUserDetails(repo), { name: null, email: null });
 		assert.equal(globalConfigValue(USER_NAME), null);
 		assert.equal(globalConfigValue(USER_EMAIL), null);
+		assert.equal(globalConfigValue(USE_CONFIG_ONLY), 'true');
 	});
 });
