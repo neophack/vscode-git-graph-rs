@@ -616,6 +616,21 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.deepEqual(real.map((commit) => commit.hash), [fixture.feature]);
 	});
 
+	it('filters the graph by several paths the same way', async () => {
+		const options = { maxCommits: 100, filterPaths: ['feature.txt', 'main.txt'], showRemoteBranches: true };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assertSameCommits(a.commits, b.commits, 'several filterPaths');
+		// Each path picks up the branch commit that touched it; the merge itself stays out,
+		// treesame as it is to each parent for one of the paths.
+		const real = a.commits.filter((commit) => commit.stash === null);
+		const hashes = real.map((commit) => commit.hash);
+		assert.ok(hashes.includes(fixture.feature), 'the feature commit is filtered for');
+		assert.ok(
+			hashes.some((hash) => hash !== fixture.feature && hash !== fixture.first),
+			'the main-side commit is filtered for too'
+		);
+	});
+
 	it('follows only the first parent the same way', async () => {
 		const options = {
 			maxCommits: 100,

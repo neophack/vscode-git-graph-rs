@@ -272,7 +272,11 @@ export class DataSource extends Disposable {
 			hideRemotes: hideRemotes,
 			gerritRefs: gerritRefs,
 			gerritShowChangeRefs: gerritShowChangeRefs,
-			filterPaths: filterPath !== null ? [filterPath] : undefined,
+			// The filter arrives as one comma-separated string (see Config.commitPathFilter): it is
+			// split here so that filtering by several files asks about several paths, rather than
+			// about one literal "path/one,path/two" that matches nothing. Paths containing commas
+			// are not supported by this filter syntax.
+			filterPaths: filterPath !== null ? filterPath.split(',').filter((path) => path !== '') : undefined,
 			deferUncommittedChanges: deferUncommittedChanges,
 			deferRemoteRefs: deferRemoteRefs,
 			showUncommittedChanges: config.showUncommittedChanges,
