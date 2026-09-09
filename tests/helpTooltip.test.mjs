@@ -22,6 +22,10 @@ describe('help tooltip', () => {
 		assert.equal(h.document.getElementById('ggHelpTooltip').textContent, 'Explain this icon');
 		assert.equal(target.getAttribute('aria-describedby'), 'ggHelpTooltip');
 
+		target.dataset.tooltip = 'Updated explanation';
+		target.dispatchEvent(new h.window.MouseEvent('mouseover', { bubbles: true }));
+		assert.equal(h.document.getElementById('ggHelpTooltip').textContent, 'Updated explanation');
+
 		target.dispatchEvent(new h.window.MouseEvent('mouseout', { bubbles: true }));
 		assert.equal(h.document.getElementById('ggHelpTooltip'), null);
 		assert.equal(target.getAttribute('aria-describedby'), null);

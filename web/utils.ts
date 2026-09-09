@@ -622,10 +622,28 @@ function hideHelpTooltip() {
 	}
 }
 
+function positionHelpTooltip() {
+	if (helpTooltipElem === null || helpTooltipTarget === null) return;
+	const targetRect = helpTooltipTarget.getBoundingClientRect();
+	const tooltipRect = helpTooltipElem.getBoundingClientRect();
+	const maxLeft = Math.max(8, window.innerWidth - tooltipRect.width - 8);
+	const left = Math.min(Math.max(8, targetRect.left + (targetRect.width - tooltipRect.width) / 2), maxLeft);
+	let top = targetRect.bottom + 6;
+	if (top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 6;
+	helpTooltipElem.style.left = Math.round(left) + 'px';
+	helpTooltipElem.style.top = Math.round(Math.max(8, top)) + 'px';
+}
+
 function showHelpTooltip(target: HTMLElement) {
 	const message = target.dataset.tooltip;
 	if (typeof message !== 'string' || message === '') return;
-	if (helpTooltipTarget === target) return;
+	if (helpTooltipTarget === target) {
+		if (helpTooltipElem !== null && helpTooltipElem.textContent !== message) {
+			helpTooltipElem.textContent = message;
+			positionHelpTooltip();
+		}
+		return;
+	}
 	hideHelpTooltip();
 
 	const tooltip = document.createElement('div');
@@ -637,15 +655,7 @@ function showHelpTooltip(target: HTMLElement) {
 	helpTooltipElem = tooltip;
 	helpTooltipTarget = target;
 	target.setAttribute('aria-describedby', 'ggHelpTooltip');
-
-	const targetRect = target.getBoundingClientRect();
-	const tooltipRect = tooltip.getBoundingClientRect();
-	const maxLeft = Math.max(8, window.innerWidth - tooltipRect.width - 8);
-	const left = Math.min(Math.max(8, targetRect.left + (targetRect.width - tooltipRect.width) / 2), maxLeft);
-	let top = targetRect.bottom + 6;
-	if (top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 6;
-	tooltip.style.left = Math.round(left) + 'px';
-	tooltip.style.top = Math.round(Math.max(8, top)) + 'px';
+	positionHelpTooltip();
 }
 
 /**

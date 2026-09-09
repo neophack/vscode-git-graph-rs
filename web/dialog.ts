@@ -301,6 +301,7 @@ class Dialog {
 						dialogAction.dataset.tooltip = validationMessage;
 						dialogAction.setAttribute('aria-label', validationMessage);
 					} else {
+						hideHelpTooltip();
 						dialogAction.classList.remove('gg-helpTooltip');
 						delete dialogAction.dataset.tooltip;
 						dialogAction.removeAttribute('aria-label');
