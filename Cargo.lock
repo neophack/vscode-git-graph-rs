@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "git-graph-core"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "bstr",
  "gix",
@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "git-graph-node"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "git-graph-core",
  "napi",
