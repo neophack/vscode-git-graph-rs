@@ -90,7 +90,7 @@ these crates appears in the build graph at all:
 - Runtime dependency: `iconv-lite` (character-set detection for file contents shown in the
   details view).
 - Dev/tooling: `typescript`, `@napi-rs/cli` (drives `cargo` for the addon), `@vscode/vsce`
-  (VSIX packaging), `uglify-js` + `sharp` (webview minification and icon generation).
+  (VSIX packaging), `esbuild` + `sharp` (webview minification and icon generation).
 - Runs inside the VS Code extension host (`vscode` API); the webview is dependency-free
   handwritten DOM code.
 

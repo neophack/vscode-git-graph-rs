@@ -97,26 +97,21 @@ jobs:
       # The loop follows `native/`, so a default run packages four of them and a `full` run all
       # six. The extension loads `native/<platform>/git-graph.node` and treats every other
       # platform's binary as optional, so a single-engine package needs no code changes.
+      #
+      # Each is also tagged with `--target`, the identifier the Marketplace uses to hand each
+      # user only the package built for their platform (https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions).
+      # Without it every install — Marketplace or manual — pulls all six engines, which is the
+      # `npm run package` universal VSIX's job, not these. Publishing per-platform is still a
+      # manual `vsce publish --target <target> --packagePath <file>` per asset below; this step
+      # only produces packages that are valid to publish that way.
+      # Delegates to scripts/package-platforms.mjs (also used by build-vsix-and-install.bat for a
+      # local build), so the stash/restore/--target logic exists in one place. Names its output
+      # `git-graph-rs-<package.json version>-<platform>.vsix`, which matches `git-graph-rs-${TAG#v}-*`
+      # since the "Resolve the release tag" step above already synced package.json's version to
+      # the tag.
       - name: Package the per-platform VSIXs
         run: |
-          stash="$(mktemp -d)"
-          for binary in native/*/git-graph.node; do
-            platform="$(basename "$(dirname "$binary")")"
-            mv "$binary" "$stash/$platform.node"
-          done
-          for engine in "$stash"/*.node; do
-            platform="$(basename "$engine" .node)"
-            cp "$engine" "native/$platform/git-graph.node"
-            npx vsce package \
-              --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid \
-              --out "git-graph-rs-${TAG#v}-$platform.vsix"
-            rm "native/$platform/git-graph.node"
-          done
-          # Put the full engine set back, so the workspace matches what was built and tested.
-          for engine in "$stash"/*.node; do
-            platform="$(basename "$engine" .node)"
-            mv "$engine" "native/$platform/git-graph.node"
-          done
+          node scripts/package-platforms.mjs
           ls -l git-graph-rs-*.vsix
 
       - name: Create the GitHub release

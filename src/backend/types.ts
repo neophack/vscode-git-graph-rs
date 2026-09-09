@@ -2,8 +2,8 @@
  * The data contract between the extension and the Git engine.
  *
  * These types mirror `native/core/src/types.rs` field for field, and they are the same shapes the
- * original extension's `src/types.ts` already defines — which is what lets the existing webview
- * render this engine's output unchanged.
+ * shared types in `src/types` already define — which is what lets the existing webview render
+ * this engine's output unchanged.
  */
 
 /** The synthetic hash the view uses for the "Uncommitted Changes" row. */

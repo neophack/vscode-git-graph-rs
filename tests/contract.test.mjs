@@ -20,12 +20,12 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 
 describe('the webview message protocol', () => {
 	/**
-	 * Every `Request*` interface in types.ts, paired with the command literal it declares. The
+	 * Every `Request*` interface in types/messages.ts, paired with the command literal it declares. The
 	 * responses (`Response*`) go the other way and are produced by the extension, so they are not
 	 * expected to appear in the receiving switch.
 	 */
 	function requestCommands() {
-		const types = read('src', 'types.ts');
+		const types = read('src', 'types', 'messages.ts');
 		const blocks = types.match(/interface\s+Request\w+\s+extends[^{]*\{[\s\S]*?\n\}/g) ?? [];
 		const commands = blocks.flatMap(
 			(block) => [...block.matchAll(/command: '([a-zA-Z]+)'/g)].map((match) => match[1])

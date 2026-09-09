@@ -504,6 +504,27 @@ check `full` (or `gh workflow run release.yml -f full=true`) to ship all six. Th
 `package.json`'s version; an override updates the VSIX's version to match. Nothing is published
 unless every test passed.
 
+The GitHub Release's per-platform VSIXs are each built with `vsce package --target <target>`,
+so they are also valid Marketplace platform-specific packages, not just smaller manual downloads.
+Publishing them to the Marketplace (`vsce publish --target <target> --packagePath
+git-graph-rs-<version>-<platform>.vsix` for each asset, using a token with publish rights) makes
+the Marketplace itself hand each user only the engine for their platform, instead of every
+Marketplace install pulling all six. That publish step is manual and not part of this workflow —
+run it once per release after the GitHub Release is up.
+
+The two platform spellings in that command are different things: the file name carries the
+Rust-style `native/` directory name of the engine the VSIX contains, while `--target` takes the
+VS Code target identifier it is published as:
+
+| VSIX file (`<platform>`) | `--target` value |
+| ------------------------ | ---------------- |
+| `win32-x64-msvc`         | `win32-x64`      |
+| `win32-arm64-msvc`       | `win32-arm64`    |
+| `linux-x64-gnu`          | `linux-x64`      |
+| `linux-arm64-gnu`        | `linux-arm64`    |
+| `darwin-x64`             | `darwin-x64`     |
+| `darwin-arm64`           | `darwin-arm64`   |
+
 ## Roadmap
 
 The phases below follow the rewrite plan this project was started from.

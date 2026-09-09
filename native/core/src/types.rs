@@ -1,8 +1,8 @@
 //! The data contract shared with the TypeScript extension.
 //!
 //! Every struct here serialises to exactly the shape the existing webview already consumes (see
-//! `src/types.ts` in the original extension), so the graph rendering, commit details view and
-//! context menus keep working unchanged against this engine.
+//! the shared types in `src/types` in the original extension), so the graph rendering, commit
+//! details view and context menus keep working unchanged against this engine.
 
 use serde::{Deserialize, Serialize};
 

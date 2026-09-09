@@ -420,7 +420,7 @@ export class GitGraphView extends Disposable {
 			this.panel.onDidChangeViewState(() => {
 				if (this.panel.visible !== this.isPanelVisible) {
 					if (this.panel.visible) {
-						if (this.isGraphViewLoaded) {
+						if (this.isGraphViewLoaded && this.loadViewTo === null) {
 							// The webview is already rendered: refresh its data in place instead of
 							// regenerating the HTML, which would reload the page and re-render the
 							// entire graph from scratch (a blank flash on every tab switch). The
@@ -429,6 +429,11 @@ export class GitGraphView extends Disposable {
 							// and the extension's commit cache serves the commits without rescanning.
 							this.sendMessage({ command: 'refresh' });
 						} else {
+							// The page isn't rendered yet, or a "load view to" request (e.g. Show
+							// File History) was made while the panel was hidden: regenerate the
+							// page. A loadViewTo stashed for "the next call to getHtmlForWebview"
+							// would otherwise never be consumed here (a soft refresh doesn't apply
+							// it), silently dropping the requested repository and path filter.
 							this.update();
 						}
 					} else {
@@ -1524,6 +1529,13 @@ export class GitGraphView extends Disposable {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.logger.log('Saving the setting "' + setting + '" failed: ' + message);
+			// A window that outlived an extension install/update still holds the configuration
+			// registry of the old version, so VS Code rejects writes of settings only the new
+			// version registers ("... is not a registered configuration"). That state clears
+			// with the next window reload, which only the user can perform.
+			if (/is not a registered configuration/i.test(message)) {
+				return t('settingSaveNeedsReload', setting);
+			}
 			return message;
 		}
 		if (setting === 'commitAuthors' && this.currentRepo !== null && Array.isArray(value)) {

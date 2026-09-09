@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.19",
+	"version": "1.0.20",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
@@ -15,7 +15,7 @@
 	},
 	"homepage": "https://github.com/neophack/vscode-git-graph-rs#readme",
 	"engines": {
-		"vscode": "^1.38.0",
+		"vscode": "^1.61.0",
 		"node": ">=18"
 	},
 	"extensionKind": [
@@ -59,12 +59,12 @@
 		"@napi-rs/cli": "^3.8.6",
 		"@types/iconv-lite": "^0.0.1",
 		"@types/node": "^8.10.66",
-		"@types/vscode": "1.38.0",
+		"@types/vscode": "1.61.0",
 		"@vscode/vsce": "^2.19.0",
+		"esbuild": "^0.25.12",
 		"jsdom": "^29.1.1",
 		"sharp": "^0.35.3",
-		"typescript": "^5.4.0",
-		"uglify-js": "^3.19.3"
+		"typescript": "^5.4.0"
 	},
 	"contributes": {
 		"commands": [

@@ -1,4 +1,7 @@
-import * as GG from '../out/types'; // Import types from back-end (requires `npm run compile-src`)
+// The `/index` suffix is deliberate: it pins the resolution to the barrel itself, so a stale
+// `out/types.js`/`out/types.d.ts` left in `out/` by an older build (before the types moved into
+// `src/types/`) can never shadow `out/types/index.js`. Requires `npm run compile-src`.
+import * as GG from '../out/types/index'; // Import types from back-end
 
 declare global {
 

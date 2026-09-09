@@ -76,7 +76,7 @@ the roadmap phase that would add them:
 ## 3. The extension layer — ported, Gerrit removed
 
 `web/` (the whole webview), `gitGraphView.ts`, `repoManager.ts`, `commands.ts`, `config.ts`,
-`utils.ts`, `avatarManager.ts`, `extensionState.ts`, `comparisonView.ts`, `types.ts`,
+`utils.ts`, `avatarManager.ts`, `extensionState.ts`, `comparisonView.ts`, `types/`,
 `pullRequests.ts`, `diffDocProvider.ts`, `statusBarItem.ts`, `repoFileWatcher.ts`, `logger.ts`,
 `askpass/*` and the `package.json` contributes block (14 commands, 90 settings) are ported and
 compile clean, under the `git-graph-rs` prefix.
