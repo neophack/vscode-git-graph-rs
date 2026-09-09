@@ -491,7 +491,9 @@ native/
 
 At load time the extension picks the directory for `process.platform` + `process.arch`. One VSIX
 holds every engine that was built; installing it needs no Git, Rust, Cargo, Python or CMake on the
-user's machine.
+user's machine. That universal VSIX is also the package every editor older than 1.61 receives —
+see ["Publishing a release"](#publishing-a-release) for how the two package kinds split the
+installed base between them.
 
 ### Publishing a release
 
@@ -504,17 +506,43 @@ check `full` (or `gh workflow run release.yml -f full=true`) to ship all six. Th
 `package.json`'s version; an override updates the VSIX's version to match. Nothing is published
 unless every test passed.
 
-The GitHub Release's per-platform VSIXs are each built with `vsce package --target <target>`,
-so they are also valid Marketplace platform-specific packages, not just smaller manual downloads.
-Publishing them to the Marketplace (`vsce publish --target <target> --packagePath
-git-graph-rs-<version>-<platform>.vsix` for each asset, using a token with publish rights) makes
-the Marketplace itself hand each user only the engine for their platform, instead of every
-Marketplace install pulling all six. That publish step is manual and not part of this workflow —
-run it once per release after the GitHub Release is up.
+The GitHub Release carries two kinds of VSIX for the same version, each declaring exactly the
+editors that can receive it:
 
-The two platform spellings in that command are different things: the file name carries the
-Rust-style `native/` directory name of the engine the VSIX contains, while `--target` takes the
-VS Code target identifier it is published as:
+- **The universal VSIX** (`git-graph-rs-<version>.vsix`) — every built engine in one package,
+  keeping package.json's own `engines.vscode` (`^1.38.0`); the extension picks its engine at load
+  time by `process.platform` + `process.arch`.
+- **The per-platform VSIXs** (`git-graph-rs-<version>-<platform>.vsix`) — one engine each, built
+  with `vsce package --target <target>` and stamped `engines.vscode ^1.61.0` (see below).
+
+On the Marketplace that split works without any per-user setup: editors **1.61 and newer** ask
+the gallery for their platform's package and are handed the small per-platform VSIX, while
+editors **older than 1.61** — and 1.61+ editors on a platform with no package of its own, such
+as Alpine — query without a target platform and receive the universal VSIX, which is the
+documented fallback behaviour: *"a package built without a platform flag will be used as a
+fallback for all platforms that have no platform-specific package"*
+([Platform-specific extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions)).
+
+`vsce package --target` refuses to run while `engines.vscode` is below 1.61, so
+[`scripts/package-platforms.mjs`](scripts/package-platforms.mjs) temporarily raises it to
+`^1.61.0` for the per-platform runs and restores the original file afterwards. That is the honest
+declaration, not a workaround: a per-platform package only ever reaches a 1.61+ editor, so
+`^1.61.0` is exactly what it can rely on, while the ^1.38.0 claim stays where it applies — on
+the universal package old editors actually install.
+
+Publishing to the Marketplace is a manual `vsce publish --packagePath <file>` per asset (using a
+token with publish rights), once per release after the GitHub Release is up — the universal
+VSIX first so the fallback exists, then each per-platform asset:
+
+```
+vsce publish --packagePath git-graph-rs-<version>.vsix
+vsce publish --packagePath git-graph-rs-<version>-<platform>.vsix   # for each built platform
+```
+
+`--target` is not passed to publish: the VSIX already carries it, and vsce rejects passing both
+options at once. The two platform spellings involved are different things, though: the file name
+carries the Rust-style `native/` directory name of the engine the VSIX contains, while the
+`--target` stamped at package time is the VS Code target identifier it is published as:
 
 | VSIX file (`<platform>`) | `--target` value |
 | ------------------------ | ---------------- |

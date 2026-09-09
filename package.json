@@ -15,7 +15,7 @@
 	},
 	"homepage": "https://github.com/neophack/vscode-git-graph-rs#readme",
 	"engines": {
-		"vscode": "^1.61.0",
+		"vscode": "^1.38.0",
 		"node": ">=18"
 	},
 	"extensionKind": [
@@ -59,7 +59,7 @@
 		"@napi-rs/cli": "^3.8.6",
 		"@types/iconv-lite": "^0.0.1",
 		"@types/node": "^8.10.66",
-		"@types/vscode": "1.61.0",
+		"@types/vscode": "1.38.0",
 		"@vscode/vsce": "^2.19.0",
 		"esbuild": "^0.25.12",
 		"jsdom": "^29.1.1",

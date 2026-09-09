@@ -5,6 +5,12 @@ name: Release
 # the VSIXs from those binaries, and publish a GitHub Release carrying a universal VSIX (every
 # engine that was built) plus one smaller VSIX per platform (only that platform's engine).
 #
+# The two kinds declare different engines on purpose: the universal VSIX keeps package.json's
+# ^1.38.0 (it is the fallback every editor older than 1.61 — and every platform without its own
+# package — receives from the Marketplace), while the per-platform VSIXs are stamped ^1.61.0
+# during packaging, exactly the editors the Marketplace will ever hand them to. See README's
+# "Publishing a release" for the full story.
+#
 # By default only the four common engines are built and packaged (Windows x64, Linux x64/arm64,
 # macOS arm64); the two niche ones — Windows ARM64 and macOS x64 — are left out, and editors on
 # them fall back to the extension's `git` CLI backend. Check `full` to build and package all six.
@@ -101,9 +107,14 @@ jobs:
       # Each is also tagged with `--target`, the identifier the Marketplace uses to hand each
       # user only the package built for their platform (https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions).
       # Without it every install — Marketplace or manual — pulls all six engines, which is the
-      # `npm run package` universal VSIX's job, not these. Publishing per-platform is still a
-      # manual `vsce publish --target <target> --packagePath <file>` per asset below; this step
-      # only produces packages that are valid to publish that way.
+      # `npm run package` universal VSIX's job, not these. `vsce package --target` requires
+      # engines.vscode >= 1.61, so the script stamps `^1.61.0` into package.json for these runs
+      # and restores the original file afterwards — accurate, since only 1.61+ editors are ever
+      # served a per-platform package; older editors get the universal VSIX packaged in the step
+      # above, which keeps package.json's own ^1.38.0. Publishing per-platform is still a manual
+      # `vsce publish --packagePath <file>` per asset below (the VSIX carries its target — vsce
+      # rejects passing --target together with --packagePath); this step only produces packages
+      # that are valid to publish that way.
       # Delegates to scripts/package-platforms.mjs (also used by build-vsix-and-install.bat for a
       # local build), so the stash/restore/--target logic exists in one place. Names its output
       # `git-graph-rs-<package.json version>-<platform>.vsix`, which matches `git-graph-rs-${TAG#v}-*`

@@ -11,6 +11,16 @@
  * `out/` and `media/`; this script only re-runs `vsce package`, not the TypeScript/webview build.
  * Safe to run with any subset of the six `native/<platform>/git-graph.node` binaries present —
  * cross-compiled locally (see build-rust.bat --full) or downloaded from CI.
+ *
+ * `vsce package --target` refuses to run when `engines.vscode` is below 1.61, so while the
+ * per-platform VSIXs are being built this script temporarily stamps `^1.61.0` into package.json
+ * and restores the original file afterwards (the same stash/restore discipline as the binaries).
+ * Each package type then declares exactly the clients that can receive it: the per-platform
+ * VSIXs — which only VS Code >= 1.61 ever asks the Marketplace for, since older editors query
+ * without a target platform and are handed the universal VSIX as the fallback — claim
+ * `^1.61.0`, while the universal VSIX keeps package.json's own engines (^1.38.0) and is what
+ * every pre-1.61 editor installs, picking its engine at load time by
+ * `process.platform`-`process.arch` (src/backend/addon.ts).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -40,6 +50,10 @@ const VSCE_TARGET = {
 
 const binaryName = 'git-graph.node';
 
+// Matches the `vscode` entry of the `engines` block only, so the rewrite below never touches the
+// `@types/vscode` devDependency (whose value also ends in `"vscode": "..."`).
+const ENGINES_VSCODE = /("engines"\s*:\s*\{[\s\S]*?"vscode"\s*:\s*")([^"]+)(")/;
+
 function findBuiltPlatforms() {
 	if (!fs.existsSync(nativeDir)) return [];
 	return fs.readdirSync(nativeDir).filter((entry) => {
@@ -61,8 +75,28 @@ function main() {
 		throw new Error(`No vsce --target mapping for platform director${unmapped.length > 1 ? 'ies' : 'y'}: ${unmapped.join(', ')}`);
 	}
 
-	const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+	const packageJsonPath = path.join(root, 'package.json');
+	const packageJsonOriginal = fs.readFileSync(packageJsonPath, 'utf8');
+	const version = JSON.parse(packageJsonOriginal).version;
 	console.log(`Packaging ${platforms.length} platform VSIX${platforms.length > 1 ? 's' : ''} for version ${version}: ${platforms.join(', ')}`);
+
+	// `vsce package --target` rejects engines.vscode < 1.61 (see the header comment for why the
+	// temporary bump is the honest declaration for these packages, not a workaround). Restore the
+	// original file in `restore()` below, alongside the engine binaries it puts back.
+	const enginesMatch = packageJsonOriginal.match(ENGINES_VSCODE);
+	if (enginesMatch === null) {
+		throw new Error('Could not find engines.vscode in package.json');
+	}
+	// vsce's own gate is `semver.satisfies(engineVersion, '>=1.61')`; VS Code versions are 1.x, so
+	// comparing the minor of the range's version covers every form package.json realistically
+	// uses. An unparseable engine (`latest`) satisfies vsce too, so it defaults to no bump.
+	const engineMinor = Number(/\d+\.(\d+)/.exec(enginesMatch[2])?.[1] ?? 61);
+	let enginesPatched = false;
+	if (engineMinor < 61) {
+		fs.writeFileSync(packageJsonPath, packageJsonOriginal.replace(enginesMatch[0], `${enginesMatch[1]}^1.61.0${enginesMatch[3]}`));
+		enginesPatched = true;
+		console.log(`  temporarily raising engines.vscode ${enginesMatch[2]} -> ^1.61.0 for --target packaging`);
+	}
 
 	// Stash every engine aside (copy + delete, never rename: `os.tmpdir()` can live on another
 	// volume than the repository — TEMP on C: and the repo on D: is common on Windows — and
@@ -79,6 +113,11 @@ function main() {
 	const restore = () => {
 		if (restored) return;
 		restored = true;
+		// package.json first: a Ctrl+C or a crash must never leave the bumped engines behind.
+		if (enginesPatched) {
+			fs.writeFileSync(packageJsonPath, packageJsonOriginal);
+			enginesPatched = false;
+		}
 		// Put every engine back, whether or not packaging succeeded for all of them
 		// (copyFileSync overwrites, so a dest left behind by a failed packaging run is fine).
 		for (const platform of platforms) {
