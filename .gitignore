@@ -9,3 +9,15 @@ native/*/
 .zcode
 media/
 *.log
+
+# Operating system and editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Common build and test output
+build/
+dist/
+coverage/
+.cache/
+__pycache__/
