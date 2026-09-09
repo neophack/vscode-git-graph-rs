@@ -217,7 +217,7 @@ class Dialog {
 					input.options.map((option, optionId) => '<label><input type="radio" name="dialogInput' + id + '" value="' + optionId + '"' + (option.value === input.default ? ' checked' : '') + ' tabindex="' + (id + 1) + '"/><span class="customRadio"></span>' + escapeHtml(option.name) + '</label>').join('<br>') +
 					'</span></td>';
 			} else {
-				const infoHtml = input.info ? '<span class="dialogInfo" title="' + escapeHtml(input.info) + '">' + SVG_ICONS.info + '</span>' : '';
+				const infoHtml = input.info ? '<span ' + helpTooltipAttrs(input.info, 'dialogInfo') + '>' + SVG_ICONS.info + '</span>' : '';
 				if (input.type === DialogInputType.Select) {
 					inputHtml = '<td class="inputCol"><div id="dialogFormSelect' + id + '"></div></td>' + (infoColRequired ? '<td>' + infoHtml + '</td>' : '');
 				} else if (input.type === DialogInputType.Checkbox) {
@@ -294,7 +294,18 @@ class Dialog {
 				const noInput = dialogInput.value === '', invalidInput = dialogInput.value.match(REF_INVALID_REGEX) !== null;
 				alterClass(this.elem, CLASS_DIALOG_NO_INPUT, noInput);
 				if (alterClass(this.elem, CLASS_DIALOG_INPUT_INVALID, !noInput && invalidInput)) {
-					dialogAction.title = invalidInput ? formatStr(strings.dialogUnableToAction, actionName) : '';
+					const validationMessage = invalidInput ? formatStr(strings.dialogUnableToAction, actionName) : '';
+					dialogAction.title = '';
+					if (validationMessage !== '') {
+						dialogAction.classList.add('gg-helpTooltip');
+						dialogAction.dataset.tooltip = validationMessage;
+						dialogAction.setAttribute('aria-label', validationMessage);
+					} else {
+						hideHelpTooltip();
+						dialogAction.classList.remove('gg-helpTooltip');
+						delete dialogAction.dataset.tooltip;
+						dialogAction.removeAttribute('aria-label');
+					}
 				}
 			});
 		}

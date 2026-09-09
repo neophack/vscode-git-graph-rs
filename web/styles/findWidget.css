@@ -82,6 +82,17 @@
 	color:var(--vscode-input-foreground);
 	opacity:0.7;
 }
+.findWidget button{
+	padding:0;
+	border:0;
+	background:transparent;
+	font:inherit;
+	color:inherit;
+}
+.findWidget button:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .findModifier.active, #findOpenCdv.active{
 	outline:1px solid var(--vscode-inputOption-activeBorder);
 	outline-offset:-1px;

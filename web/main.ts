@@ -121,6 +121,7 @@ class GitGraphView {
 		this.gitRepos = initialState.repos;
 		this.config = initialState.config;
 		this.backend = initialState.backend;
+		observeHelpTooltips();
 		setInterfaceLanguage(this.config.interfaceLanguage);
 		this.renderToolbarText();
 		this.maxCommits = this.config.initialLoadCommits;
@@ -150,6 +151,8 @@ class GitGraphView {
 
 		this.repoDropdown = new Dropdown('repoDropdown', true, false, strings.dropdownRepos, (values) => {
 			this.loadRepo(values[0]);
+		}, (option) => {
+			dialog.showMessage('<strong>' + escapeHtml(strings.repoInfoTitle) + '</strong><br>' + escapeHtml(formatStr(strings.repoInfoPath, option.value)));
 		});
 
 		this.branchDropdown = new Dropdown('branchDropdown', false, true, strings.dropdownBranches, (values) => {
@@ -1592,13 +1595,12 @@ class GitGraphView {
 		}
 
 		const commitDot = commit.hash === this.commitHead
-			? '<span class="commitHeadDot" title="' + (branchCheckedOutAtCommit !== null
-				? escapeHtml(formatStr(strings.checkedOutBranchAtCommit, branchCheckedOutAtCommit))
-				: strings.commitCurrentlyCheckedOut
-			) + '"></span>'
+			? '<span ' + helpTooltipAttrs(branchCheckedOutAtCommit !== null
+				? formatStr(strings.checkedOutBranchAtCommit, branchCheckedOutAtCommit)
+				: strings.commitCurrentlyCheckedOut, 'commitHeadDot') + '></span>'
 			: '';
 		const pinnedBadge = pinnedCommitHashes.has(commit.hash)
-			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
+			? '<span ' + helpTooltipAttrs(strings.pinnedBadgeTitle, 'pinnedBadge') + '>\uD83D\uDCCC</span>'
 			: '';
 		// The "Open Changes" action shown at the end of the description: it opens the commit's
 		// changes (diffed against its first parent) in a Commit Comparison View tab. Root commits
@@ -2990,9 +2992,10 @@ function findCommitElemWithId(id: number | null) {
 
 function generateSignatureHtml(signature: GG.GitSignature) {
 	const status: GG.GitSignatureStatus = signature.status;
-	return '<span class="signatureInfo ' + status + '" title="' + getGitSignatureStatusDescription(status) + strings.signatureDescColon
-		+ strings.signatureSignedBy + escapeHtml(signature.signer !== '' ? signature.signer : strings.signatureUnknown)
-		+ strings.signatureGpgKeyIdPrefix + escapeHtml(signature.key !== '' ? signature.key : strings.signatureUnknown) + strings.signatureGpgKeyIdSuffix + '">'
+	const tooltip = getGitSignatureStatusDescription(status) + strings.signatureDescColon
+		+ strings.signatureSignedBy + (signature.signer !== '' ? signature.signer : strings.signatureUnknown)
+		+ strings.signatureGpgKeyIdPrefix + (signature.key !== '' ? signature.key : strings.signatureUnknown) + strings.signatureGpgKeyIdSuffix;
+	return '<span ' + helpTooltipAttrs(tooltip, 'signatureInfo ' + status) + '>'
 		+ (status === GG.GitSignatureStatus.GoodAndValid
 			? SVG_ICONS.passed
 			: status === GG.GitSignatureStatus.Bad

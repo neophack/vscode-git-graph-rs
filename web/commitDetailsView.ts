@@ -717,13 +717,13 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 	}
 
-		html += '</div><div id="cdvControls"><div id="cdvClose" class="cdvControlBtn" title="' + strings.dialogClose + '">' + SVG_ICONS.close + '</div>' +
+		html += '</div><div id="cdvControls"><button type="button" id="cdvClose" class="cdvControlBtn" title="' + strings.dialogClose + '" aria-label="' + strings.dialogClose + '">' + SVG_ICONS.close + '</button>' +
 
-			(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
+			(codeReviewPossible ? '<button type="button" id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</button>' : '') +
 
-			(!expandedCommit.loading ? '<div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileListViewTitle + '">' + SVG_ICONS.fileList + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileTreeViewTitle + '">' + SVG_ICONS.fileTree + '</div><div id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="' + strings.collapseFoldersTitle + '">' + SVG_ICONS.collapseAll + '</div><div id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="' + strings.expandFoldersTitle + '">' + SVG_ICONS.expandAll + '</div>' : '') +
+			(!expandedCommit.loading ? '<button type="button" id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileListViewTitle + '" aria-label="' + strings.fileListViewTitle + '">' + SVG_ICONS.fileList + '</button><button type="button" id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileTreeViewTitle + '" aria-label="' + strings.fileTreeViewTitle + '">' + SVG_ICONS.fileTree + '</button><button type="button" id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="' + strings.collapseFoldersTitle + '" aria-label="' + strings.collapseFoldersTitle + '">' + SVG_ICONS.collapseAll + '</button><button type="button" id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="' + strings.expandFoldersTitle + '" aria-label="' + strings.expandFoldersTitle + '">' + SVG_ICONS.expandAll + '</button>' : '') +
 
-		(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
+		(externalDiffPossible ? '<button type="button" id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</button>' : '') +
 
 		'</div><div class="cdvHeightResize"></div>';
 
@@ -1158,8 +1158,10 @@ function cdvUpdateFileState(view: GitGraphView, file: GG.GitFileChange, fileElem
 
 		lastViewedElem.id = 'cdvLastFileViewed';
 
-		lastViewedElem.title = strings.lastFileViewedTitle;
-
+		lastViewedElem.className = 'gg-helpTooltip';
+		lastViewedElem.dataset.tooltip = strings.lastFileViewedTitle;
+		lastViewedElem.setAttribute('aria-label', strings.lastFileViewedTitle);
+		lastViewedElem.tabIndex = 0;
 		lastViewedElem.innerHTML = SVG_ICONS.eyeOpen;
 
 		insertBeforeFirstChildWithClass(lastViewedElem, fileElem, 'fileTreeFileAction');
@@ -1887,6 +1889,7 @@ function renderCdvExternalDiffBtn(view: GitGraphView) {
 		: null;
 
 	externalDiffBtnElem.title = strings.externalDiffTitle + (toolName !== null ? formatStr(strings.externalDiffWithTool, toolName) : '');
+	externalDiffBtnElem.setAttribute('aria-label', externalDiffBtnElem.title);
 
 }
 
@@ -1960,6 +1963,6 @@ function renderCodeReviewBtn(view: GitGraphView) {
 	alterClass(btnElem, CLASS_ACTIVE, active);
 
 	btnElem.title = active ? strings.endCodeReviewTitle : strings.startCodeReviewTitle;
+	btnElem.setAttribute('aria-label', btnElem.title);
 
 }
-
