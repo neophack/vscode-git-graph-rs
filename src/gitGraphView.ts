@@ -1061,7 +1061,7 @@ export class GitGraphView extends Disposable {
 				});
 				break;
 			case 'openCompareTab':
-				CommitComparisonView.open(this.dataSource, msg.repo, msg.fromHash, msg.toHash);
+				CommitComparisonView.open(this.extensionPath, this.dataSource, msg.repo, msg.fromHash, msg.toHash);
 				break;
 			case 'openExternalUrl':
 				this.sendMessage({

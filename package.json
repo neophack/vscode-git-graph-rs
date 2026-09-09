@@ -39,8 +39,8 @@
 		"build:native:release": "node scripts/build-addon.mjs --release",
 		"build:ts": "tsc -p tsconfig.json",
 		"compile-src": "tsc -p ./src && node scripts/package-src.js",
-		"compile-web": "tsc -p ./web && node scripts/package-web.js",
-		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug",
+		"compile-web": "tsc -p ./web && node scripts/package-web.js && node scripts/package-highlight.js",
+		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug && node scripts/package-highlight.js debug",
 		"clean": "node scripts/clean.js",
 		"compile": "npm run clean && npm run compile-src && npm run compile-web",
 		"package": "vsce package --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid",
@@ -62,6 +62,7 @@
 		"@types/vscode": "1.38.0",
 		"@vscode/vsce": "^2.19.0",
 		"esbuild": "^0.25.12",
+		"highlight.js": "^11.12.0",
 		"jsdom": "^29.1.1",
 		"sharp": "^0.35.3",
 		"typescript": "^5.4.0"
