@@ -644,7 +644,32 @@ function observeTableEvents(view: GitGraphView) {
 
 
 
-		if ((eventElem = eventTarget.closest('.gitRef')) !== null) {
+		if ((eventElem = eventTarget.closest('.openChangesBtn')) !== null) {
+
+			// The "Open Changes" button at the end of the description was clicked: open the commit's
+			// changes (diffed against its first parent) in a Commit Comparison View tab
+
+			e.stopPropagation();
+
+			if (contextMenu.isOpen()) {
+
+				contextMenu.close();
+
+			}
+
+			const commitElem = <HTMLElement | null>eventTarget.closest('.commit');
+
+			const commit = commitElem !== null ? view.getCommitOfElem(commitElem) : null;
+
+			if (commit !== null && commit.parents.length > 0) {
+
+				view.openCompareTab(commit.hash, commit.parents[0]);
+
+			}
+
+			return;
+
+		} else if ((eventElem = eventTarget.closest('.gitRef')) !== null) {
 
 			// .gitRef was clicked
 

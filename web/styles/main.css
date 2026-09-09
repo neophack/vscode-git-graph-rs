@@ -1252,6 +1252,43 @@ body.tagLabelsRightAligned .tagsWrapper {
 	user-select:none;
 }
 
+/* The "Open Changes" action shown at the end of each commit's description (the same action as
+   VS Code's built-in Source Control Graph): hidden by default, translucent while the row is
+   hovered or otherwise active, and fully visible while the row's Commit Details View is open. */
+#commitTable tr.commit span.description .openChangesBtn {
+	flex-shrink:0;
+	align-self:center;
+	/* push to the right edge of the row, rather than sitting right after the message text */
+	margin-left:auto;
+	cursor:pointer;
+	opacity:0;
+	pointer-events:none;
+	-webkit-user-select:none;
+	user-select:none;
+}
+#commitTable tr.commit span.description .openChangesBtn svg {
+	width:14px;
+	height:14px;
+	vertical-align:middle;
+}
+#commitTable tr.commit:hover span.description .openChangesBtn,
+#commitTable tr.commit.contextMenuActive span.description .openChangesBtn,
+#commitTable tr.commit.graphVertexActive span.description .openChangesBtn,
+#commitTable tr.commit.dialogActive span.description .openChangesBtn {
+	opacity:0.5;
+	pointer-events:auto;
+}
+#commitTable tr.commit.commitDetailsOpen span.description .openChangesBtn {
+	opacity:1;
+	pointer-events:auto;
+}
+/* When tag labels are shown on the right, they follow the button in the markup - keep them flush
+   against it (instead of also being pushed right by their own auto margin), so the button and
+   tags move to the row's right edge together as one group. */
+#commitTable tr.commit span.description .openChangesBtn + .tagsWrapper {
+	margin-left:4px;
+}
+
 
 
 .gg-hint {

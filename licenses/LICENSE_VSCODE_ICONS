@@ -4,7 +4,12 @@ code), which originate from the Visual Studio Code Icons repository
 (https://github.com/microsoft/vscode-icons), Copyright (c) Microsoft
 Corporation.
 
-They are used under the Creative Commons Attribution 4.0 International
+It also covers the "openChanges" SVG icon (the "diff-multiple" codicon) in
+the same files, which originates from the Visual Studio Code Codicons
+repository (https://github.com/microsoft/vscode-codicons), Copyright (c)
+Microsoft Corporation.
+
+Both are used under the Creative Commons Attribution 4.0 International
 license (CC-BY-4.0), the full text of which is available at
 https://creativecommons.org/licenses/by/4.0/legalcode
 
