@@ -99,21 +99,34 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
             Ok(commit) => commit,
             Err(_) => continue,
         };
-        let record = read_commit(&commit)?;
-        if filtering {
-            visited_parents.push((record.hash.clone(), record.parents.clone()));
-        }
 
-        if let Some(authors) = &options.authors {
-            if !matches_author(&record, authors) {
+        // The filters judge a commit on its identity alone — author, parents, the object ids below
+        // its tree — so the message and the dates of the commits about to be dropped are never
+        // decoded. On a filtered walk through a large repository that is nearly every commit it
+        // reads.
+        if filtering || options.authors.is_some() {
+            let author_ok = match &options.authors {
+                Some(authors) => commit_matches_author(&commit, authors)?,
+                None => true,
+            };
+            if filtering {
+                visited_parents.push((
+                    commit.id().detach().to_string(),
+                    commit
+                        .parent_ids()
+                        .map(|id| id.detach().to_string())
+                        .collect(),
+                ));
+            }
+            if !author_ok {
+                continue;
+            }
+            if filtering && !touches_paths(&git, &commit, &options.filter_paths)? {
                 continue;
             }
         }
-        if filtering && !touches_paths(&git, &commit, &options.filter_paths)? {
-            continue;
-        }
 
-        records.push(record);
+        records.push(read_commit(&commit)?);
         if searching && records.len() >= options.limit {
             break;
         }
@@ -161,11 +174,14 @@ pub fn read_commit(commit: &gix::Commit<'_>) -> Result<CommitRecord> {
 /// trailing "<", a name that is a textual prefix of another author's name (e.g. "Bob" inside
 /// "Bobby <bobby@x.com>") would match commits it should not. This mirrors that exactly, case-
 /// insensitively (case sensitivity is the one place this still deviates from a bare `git log`).
-fn matches_author(record: &CommitRecord, authors: &[String]) -> bool {
-    let haystack = format!("{} <{}>", record.author, record.email).to_lowercase();
-    authors
+fn commit_matches_author(commit: &gix::Commit<'_>, authors: &[String]) -> Result<bool> {
+    let author = commit
+        .author()
+        .git_ctx("Could not decode the commit author")?;
+    let haystack = format!("{} <{}>", author.name, author.email).to_lowercase();
+    Ok(authors
         .iter()
-        .any(|author| haystack.contains(&format!("{} <", author.to_lowercase())))
+        .any(|author| haystack.contains(&format!("{} <", author.to_lowercase()))))
 }
 
 /// Did this commit change anything below one of `paths`?
@@ -189,54 +205,97 @@ fn touches_paths(
     }
     for parent in parents {
         let parent_tree = git.find_commit(parent).ok().and_then(|c| c.tree().ok());
-        if !changes_paths(git, parent_tree, &tree, paths)? {
+        if !changes_paths(git, parent_tree.as_ref(), &tree, paths)? {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-/// Does `tree` differ from `parent_tree` (the empty tree when `None`) below any of `paths`?
+/// Does `tree` differ from `parent_tree` (nothing, when `None`) below any of `paths`?
 fn changes_paths(
     git: &gix::Repository,
-    parent_tree: Option<gix::Tree<'_>>,
+    parent_tree: Option<&gix::Tree<'_>>,
     tree: &gix::Tree<'_>,
     paths: &[String],
 ) -> Result<bool> {
-    let parent_tree = parent_tree.unwrap_or_else(|| git.empty_tree());
-
-    let mut touched = false;
-    let mut changes = parent_tree.changes().git_ctx("Could not diff the commit")?;
-    // Rename detection is off here: this only answers "did anything under these paths change",
-    // and rename detection is a similarity search that would cost far more than the answer.
-    changes.options(|options| {
-        options.track_rewrites(None);
-    });
-    let outcome = changes.for_each_to_obtain_tree(tree, |change| {
-        let location = change.location().to_string();
-        if paths.iter().any(|path| path_matches(&location, path)) {
-            touched = true;
-            // Stop at the first hit: the question is only whether the commit is in scope, and a
-            // commit that rewrites a whole tree should not cost more to answer than one that
-            // touches a single file.
-            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Break(()))
-        } else {
-            Ok(std::ops::ControlFlow::Continue(()))
+    for path in paths {
+        if changes_path(git, parent_tree, tree, path.trim_end_matches('/'))? {
+            return Ok(true);
         }
-    });
-    // Stopping early is reported as a cancellation. It is the success case here, so only a
-    // failure that happened *before* a hit is a real error.
-    match outcome {
-        Ok(_) => Ok(touched),
-        Err(_) if touched => Ok(true),
-        Err(e) => Err(Error::git(format!("Could not diff the commit: {e}"))),
     }
+    Ok(false)
 }
 
-/// A pathspec matches a file exactly, or any file below it when it names a directory.
-fn path_matches(location: &str, path: &str) -> bool {
-    let path = path.trim_end_matches('/');
-    path.is_empty() || location == path || location.starts_with(&format!("{path}/"))
+/// An entry of a tree, as far as comparing two of them goes: the mode and the object id are the
+/// whole of a tree entry's content.
+type PathEntry = (gix::object::tree::EntryMode, ObjectId);
+
+/// The entry named `component` in `tree`, if there is one.
+fn entry_named(tree: &gix::Tree<'_>, component: &str) -> Option<PathEntry> {
+    tree.find_entry(component)
+        .map(|entry| (entry.mode(), entry.oid().to_owned()))
+}
+
+/// Does `tree` differ from `parent_tree` (nothing, when `None`) below `path`?
+///
+/// Trees are content-addressed: two entries with the same mode and object id are identical, and
+/// for a directory that reaches all the way down — a matching subtree means everything below the
+/// path is unchanged. Walking the two trees down the path's components and comparing entries
+/// therefore answers the question without diffing them, and stops at the first component whose
+/// entries agree, which for the commits a filtered walk drops — nearly all of them on a large
+/// repository — is the first component. A per-commit tree diff instead touches every tree the
+/// commit changed anywhere in the repository, which is what made filtered history unaffordable
+/// there.
+fn changes_path(
+    git: &gix::Repository,
+    parent_tree: Option<&gix::Tree<'_>>,
+    tree: &gix::Tree<'_>,
+    path: &str,
+) -> Result<bool> {
+    let mut components = path
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .peekable();
+    if components.peek().is_none() {
+        // An empty pathspec matches every location, so the question collapses to whether the trees
+        // differ at all: identical root trees cannot hide a change below them.
+        return Ok(parent_tree.map(|tree| tree.id) != Some(tree.id));
+    }
+
+    // The tree to keep looking the path up in on each side. `None` also covers "the path passes
+    // through a file here, or through a directory that does not exist": in every one of those
+    // cases the path itself cannot exist on that side, so lookups there simply stay empty.
+    let mut here = Some(tree.clone());
+    let mut there = parent_tree.cloned();
+
+    let descend = |entry: Option<PathEntry>| -> Result<Option<gix::Tree<'_>>> {
+        match entry {
+            Some((mode, oid)) if mode.is_tree() => git
+                .find_tree(oid)
+                .git_ctx("Could not read the commit tree")
+                .map(Some),
+            _ => Ok(None),
+        }
+    };
+
+    while let Some(component) = components.next() {
+        let here_entry = here.as_ref().and_then(|tree| entry_named(tree, component));
+        let there_entry = there.as_ref().and_then(|tree| entry_named(tree, component));
+
+        // The entries below this component are identical — or equally absent — so nothing under
+        // the path can differ, however different the rest of the repository is.
+        if here_entry == there_entry {
+            return Ok(false);
+        }
+        // The path's final component differs from its counterpart: the path itself changed.
+        if components.peek().is_none() {
+            return Ok(true);
+        }
+        here = descend(here_entry)?;
+        there = descend(there_entry)?;
+    }
+    unreachable!("the loop returns on the final component")
 }
 
 /// Re-parent each commit onto its nearest ancestor that survived filtering.

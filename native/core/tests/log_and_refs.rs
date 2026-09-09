@@ -186,7 +186,7 @@ fn filters_commits_by_path() {
     repo.commit_file("src/c.txt", "3", "touches src again");
 
     let engine = open(&repo);
-    let tips = log::all_tips(&engine, true, true).unwrap();
+    let tips = log::all_tips(&engine, true, true).expect("could not resolve the tips");
     let options = WalkOptions {
         limit: 100,
         filter_paths: vec!["src".to_string()],
@@ -199,6 +199,158 @@ fn filters_commits_by_path() {
         hashes,
         repo.log_hashes(&["--format=%H", "--all", "--", "src"])
     );
+}
+
+#[test]
+fn filters_commits_by_a_single_file_path() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("src/keep.txt", "1", "base");
+    let added = repo.commit_file("src/watched.txt", "1", "add the watched file");
+    // A sibling changing must not read as the watched file changing, even though both commits
+    // rewrite the same directory tree.
+    repo.commit_file("src/keep.txt", "2", "touch only the sibling");
+    repo.remove("src/watched.txt");
+    let removed = repo.commit("remove the watched file");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        filter_paths: vec!["src/watched.txt".to_string()],
+        ..Default::default()
+    };
+    let records = log::walk(&engine, &tips, &options).unwrap();
+    let hashes: Vec<String> = records.iter().map(|record| record.hash.clone()).collect();
+
+    assert_eq!(
+        hashes,
+        repo.log_hashes(&["--format=%H", "--all", "--", "src/watched.txt"])
+    );
+    assert_eq!(hashes, vec![removed, added]);
+}
+
+#[test]
+fn filters_commits_by_several_paths_at_once() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let first = repo.commit_file("src/a.txt", "1", "base");
+    let second = repo.commit_file("docs/b.txt", "2", "docs");
+    repo.commit_file("src/c.txt", "3", "src");
+    repo.commit_file("other/d.txt", "4", "neither of the filtered paths");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        filter_paths: vec!["src/a.txt".to_string(), "docs/b.txt".to_string()],
+        ..Default::default()
+    };
+    let records = log::walk(&engine, &tips, &options).unwrap();
+    let hashes: Vec<String> = records.iter().map(|record| record.hash.clone()).collect();
+
+    assert_eq!(
+        hashes,
+        repo.log_hashes(&["--format=%H", "--all", "--", "src/a.txt", "docs/b.txt"])
+    );
+    assert_eq!(hashes, vec![second, first]);
+}
+
+#[test]
+fn a_mode_change_counts_as_a_change_to_the_file() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("run.sh", "1", "base");
+    // The filesystem cannot carry the bit everywhere, so the index is told directly — the mode is
+    // part of a tree entry, and a commit that only flips it is in the file's history.
+    repo.git(&["config", "core.filemode", "false"]);
+    repo.git(&["update-index", "--chmod=+x", "run.sh"]);
+    let flipped = repo.commit("make the file executable");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        filter_paths: vec!["run.sh".to_string()],
+        ..Default::default()
+    };
+    let records = log::walk(&engine, &tips, &options).unwrap();
+    let hashes: Vec<String> = records.iter().map(|record| record.hash.clone()).collect();
+
+    assert_eq!(
+        hashes,
+        repo.log_hashes(&["--format=%H", "--all", "--", "run.sh"])
+    );
+    assert!(hashes.contains(&flipped));
+}
+
+#[test]
+fn a_merge_carrying_a_branchs_changes_in_stays_out_of_the_filtered_log() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let base = repo.commit_file("src/a.txt", "1", "base");
+    repo.git(&["checkout", "--quiet", "-b", "feature"]);
+    let feature = repo.commit_file("src/feature.txt", "f", "feature work");
+    repo.git(&["checkout", "--quiet", "main"]);
+    let main = repo.commit_file("docs/main.txt", "m", "main work");
+    repo.git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "-m",
+        "merge feature",
+        "feature",
+    ]);
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+
+    // The merge is treesame to the feature side for src, and to the main side for docs, so neither
+    // filtered log shows it — matching `git log -- <path>`, which simplifies it away.
+    for (path, expected) in [("src", vec![feature, base.clone()]), ("docs", vec![main])] {
+        let options = WalkOptions {
+            limit: 100,
+            filter_paths: vec![path.to_string()],
+            ..Default::default()
+        };
+        let records = log::walk(&engine, &tips, &options).unwrap();
+        let hashes: Vec<String> = records.iter().map(|record| record.hash.clone()).collect();
+        assert_eq!(hashes, expected, "filtering by {path}");
+        assert_eq!(
+            hashes,
+            repo.log_hashes(&["--format=%H", "--all", "--", path]),
+            "git disagrees about filtering by {path}"
+        );
+    }
+}
+
+#[test]
+fn keeps_reparenting_when_the_author_filter_hides_the_commits_between() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let base = repo.commit_file("src/a.txt", "1", "by the default user");
+    repo.git(&["config", "user.name", "Other Person"]);
+    repo.git(&["config", "user.email", "other@example.com"]);
+    repo.commit_file("docs/b.txt", "2", "by the other user");
+    repo.git(&["config", "user.name", "Test User"]);
+    repo.git(&["config", "user.email", "test@example.com"]);
+    let top = repo.commit_file("src/c.txt", "3", "by the default user again");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        authors: Some(vec!["Test User".to_string()]),
+        filter_paths: vec!["src".to_string()],
+        ..Default::default()
+    };
+    let records = log::walk(&engine, &tips, &options).unwrap();
+    let hashes: Vec<String> = records.iter().map(|record| record.hash.clone()).collect();
+
+    // The other user's commit was read by the walk even though both filters hid it — that is what
+    // lets the src commit above it find its nearest shown ancestor, the base commit.
+    assert_eq!(hashes, vec![top, base.clone()]);
+    assert_eq!(records[0].parents, vec![base]);
 }
 
 #[test]
