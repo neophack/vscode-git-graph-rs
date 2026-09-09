@@ -5,12 +5,16 @@
  * shape the VS Code Marketplace's `--target` mechanism (and a manual GitHub Release download)
  * both want, so an install only pulls the one binary it can use instead of all six.
  *
- *   node scripts/package-platforms.mjs
+ *   node scripts/package-platforms.mjs [platform ...]
  *
  * Requires `npm run compile` (or `npm run package`'s prerequisites) to have already produced
  * `out/` and `media/`; this script only re-runs `vsce package`, not the TypeScript/webview build.
  * Safe to run with any subset of the six `native/<platform>/git-graph.node` binaries present —
  * cross-compiled locally (see build-rust.bat --full) or downloaded from CI.
+ *
+ * Naming platform directories as arguments packages only those engines (e.g.
+ * `node scripts/package-platforms.mjs win32-x64-msvc`); every named platform must already be
+ * built under `native/`.
  *
  * `vsce package --target` refuses to run when `engines.vscode` is below 1.61, so while the
  * per-platform VSIXs are being built this script temporarily stamps `^1.61.0` into package.json
@@ -50,6 +54,10 @@ const VSCE_TARGET = {
 
 const binaryName = 'git-graph.node';
 
+// Platform directories named as positional arguments (any `-`-prefixed flag is ignored) narrow
+// the packaging to just those engines; each must already be built under native/.
+const requestedPlatforms = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
+
 // Matches the `vscode` entry of the `engines` block only, so the rewrite below never touches the
 // `@types/vscode` devDependency (whose value also ends in `"vscode": "..."`).
 const ENGINES_VSCODE = /("engines"\s*:\s*\{[\s\S]*?"vscode"\s*:\s*")([^"]+)(")/;
@@ -63,11 +71,20 @@ function findBuiltPlatforms() {
 }
 
 function main() {
-	const platforms = findBuiltPlatforms();
-	if (platforms.length === 0) {
+	const built = findBuiltPlatforms();
+	if (built.length === 0) {
 		console.log('No native/<platform>/git-graph.node found - nothing to package per-platform.');
 		console.log('Build at least one engine first (build-rust.bat), then re-run.');
 		return;
+	}
+
+	let platforms = built;
+	if (requestedPlatforms.length > 0) {
+		const missing = requestedPlatforms.filter((platform) => !built.includes(platform));
+		if (missing.length > 0) {
+			throw new Error(`No built git-graph.node under native/ for: ${missing.join(', ')}`);
+		}
+		platforms = requestedPlatforms;
 	}
 
 	const unmapped = platforms.filter((platform) => !VSCE_TARGET[platform]);
@@ -101,14 +118,9 @@ function main() {
 	// Stash every engine aside (copy + delete, never rename: `os.tmpdir()` can live on another
 	// volume than the repository — TEMP on C: and the repo on D: is common on Windows — and
 	// renaming across volumes fails with EXDEV), then restore one at a time so each package
-	// carries exactly one.
+	// carries exactly one. restore() skips platforms with no stashed copy, so it copes with an
+	// abort mid-stash: what was stashed goes back, what was not yet stashed never left.
 	const stash = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-platform-vsix-'));
-	for (const platform of platforms) {
-		const src = path.join(nativeDir, platform, binaryName);
-		fs.copyFileSync(src, path.join(stash, `${platform}.node`));
-		fs.unlinkSync(src);
-	}
-
 	let restored = false;
 	const restore = () => {
 		if (restored) return;
@@ -132,7 +144,8 @@ function main() {
 	// The `finally` below only covers the script's own exceptions; without this handler a Ctrl+C
 	// kills the process outright and strands every engine in the temp stash. Registering it keeps
 	// the process alive long enough for the cleanup to run (a Ctrl+C during `vsce package` also
-	// kills that child, so `execFileSync` throws and unwinds through the `finally`).
+	// kills that child, so `execFileSync` throws and unwinds through the `finally`). It is in
+	// place before the first engine leaves native/, not just before the packaging loop.
 	process.on('SIGINT', () => {
 		restore();
 		process.exit(130);
@@ -140,6 +153,11 @@ function main() {
 
 	const produced = [];
 	try {
+		for (const platform of platforms) {
+			const src = path.join(nativeDir, platform, binaryName);
+			fs.copyFileSync(src, path.join(stash, `${platform}.node`));
+			fs.unlinkSync(src);
+		}
 		for (const platform of platforms) {
 			const target = VSCE_TARGET[platform];
 			const dest = path.join(nativeDir, platform, binaryName);

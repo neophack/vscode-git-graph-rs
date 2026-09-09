@@ -155,6 +155,10 @@ const EN = {
 	malformedDiffDocUri: 'Unable to decode the Git Graph RS diff document URI: the data is malformed.',
 
 	/* Commit Comparison View */
+	commitPanelTitle: 'Commit {0}',
+	commitPanelTitleWithSubject: '{0}-{1} ({2})',
+	commitPanelOneFile: '1 file',
+	commitPanelFiles: '{0} files',
 	comparePanelTitle: 'Compare {0} \u2194 {1}',
 	comparePresentLabel: 'Present',
 	compareUncommittedLabel: 'Uncommitted changes',
@@ -357,6 +361,10 @@ const ZH_CN: Record<MessageKey, string> = {
 	malformedDiffDocUri: '无法解码 Git Graph RS 差异文档 URI：数据格式错误。',
 
 	/* 提交比较视图 */
+	commitPanelTitle: '提交 {0}',
+	commitPanelTitleWithSubject: '{0}-{1} ({2})',
+	commitPanelOneFile: '1 个文件',
+	commitPanelFiles: '{0} 个文件',
 	comparePanelTitle: '比较 {0} ↔ {1}',
 	comparePresentLabel: '当前',
 	compareUncommittedLabel: '未提交的更改',

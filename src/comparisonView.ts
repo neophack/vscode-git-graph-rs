@@ -25,22 +25,26 @@ export class CommitComparisonView extends Disposable {
 
 	/**
 	 * Opens a Commit Comparison View for the given commit range, reusing (and revealing) the
-	 * existing tab when the same range is compared again.
+	 * existing tab when the same range is compared again. When `singleCommit` is set, the header
+	 * presents the changes as those of `toHash` alone (opened via the "Open Changes" action)
+	 * instead of showing both ends of the comparison.
 	 */
-	public static open(extensionPath: string, dataSource: DataSource, repo: string, fromHash: string, toHash: string) {
-		const key = repo + '\n' + fromHash + '\n' + toHash;
+	public static open(extensionPath: string, dataSource: DataSource, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
+		const key = repo + '\n' + fromHash + '\n' + toHash + '\n' + (singleCommit ? '1' : '0');
 		const existing = CommitComparisonView.openViews.get(key);
 		if (existing !== undefined) {
 			existing.panel.reveal();
 			return;
 		}
-		new CommitComparisonView(extensionPath, dataSource, repo, fromHash, toHash, key);
+		new CommitComparisonView(extensionPath, dataSource, repo, fromHash, toHash, singleCommit, key);
 	}
 
-	private constructor(private readonly extensionPath: string, private readonly dataSource: DataSource, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, key: string) {
+	private constructor(private readonly extensionPath: string, private readonly dataSource: DataSource, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, private readonly singleCommit: boolean, key: string) {
 		super();
 
-		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', t('comparePanelTitle', abbrevCommit(fromHash), toHash === '' ? t('comparePresentLabel') : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
+		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', this.singleCommit
+			? t('commitPanelTitle', abbrevCommit(this.toHash))
+			: t('comparePanelTitle', abbrevCommit(fromHash), toHash === '' ? t('comparePresentLabel') : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
 			enableScripts: true,
 			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
 		});
@@ -104,16 +108,17 @@ export class CommitComparisonView extends Disposable {
 		);
 
 		this.panel.webview.html = this.getHtml(null, {}, null, true);
-		// Load the file changes, the summaries of the two commits, and the number of commits
-		// between them in parallel, so the view is ready as soon as possible.
+		// Load the file changes, the summaries of the commits shown in the header, and the number
+		// of commits between them in parallel, so the view is ready as soon as possible.
 		Promise.all([
 			dataSource.getCommitComparison(repo, fromHash, toHash),
-			dataSource.getCommitSummaries(repo, [fromHash, toHash].filter((hash) => hash !== '' && hash !== UNCOMMITTED)),
+			dataSource.getCommitSummaries(repo, (this.singleCommit ? [toHash] : [fromHash, toHash]).filter((hash) => hash !== '' && hash !== UNCOMMITTED)),
 			this.getCommitsBetweenCount()
 		]).then((results) => {
 			if (this.isDisposed()) return; // the tab was closed while the Git commands were running
 			const comparison = results[0], summaries = results[1], commitsBetween = results[2];
 			this.fileChanges = comparison.error !== null ? [] : comparison.fileChanges;
+			this.updateSingleCommitTitle(comparison.error === null && summaries !== null ? summaries[this.toHash] : undefined);
 			this.panel.webview.html = this.getHtml(comparison.error, summaries === null ? {} : summaries, commitsBetween, false);
 		}, (error: unknown) => {
 			if (this.isDisposed()) return;
@@ -122,12 +127,24 @@ export class CommitComparisonView extends Disposable {
 	}
 
 	/**
+	 * Enriches the tab title of the "Open Changes" presentation from the bare "Commit <hash>"
+	 * to "<hash>-<subject> (<N> files)" once the commit's summary and file list have loaded.
+	 */
+	private updateSingleCommitTitle(summary: { hash: string, author: string, email: string, date: number, message: string } | undefined) {
+		if (!this.singleCommit || summary === undefined) return;
+		const subject = summary.message.split(/\r?\n/)[0];
+		const fileCount = this.fileChanges.length;
+		this.panel.title = t('commitPanelTitleWithSubject', abbrevCommit(this.toHash), subject,
+			fileCount === 1 ? t('commitPanelOneFile') : t('commitPanelFiles', fileCount));
+	}
+
+	/**
 	 * The number of commits strictly between `fromHash` and `toHash` (i.e. reachable from `toHash`
 	 * but not from `fromHash`), shown in the header between the two commit cards. NULL when it
 	 * can't be determined (comparing from the working tree, or the count failed).
 	 */
 	private getCommitsBetweenCount(): Promise<number | null> {
-		if (this.fromHash === '' || this.fromHash === UNCOMMITTED) return Promise.resolve(null);
+		if (this.singleCommit || this.fromHash === '' || this.fromHash === UNCOMMITTED) return Promise.resolve(null);
 		const tip = this.toHash === '' || this.toHash === UNCOMMITTED ? 'HEAD' : this.toHash;
 		return this.dataSource.countCommitsBefore(this.repo, [tip], this.fromHash, false, false);
 	}
@@ -167,17 +184,20 @@ export class CommitComparisonView extends Disposable {
 	}
 
 	/**
-	 * Generates the HTML of one of the two commit description cards shown in the header.
+	 * Generates the HTML of one of the commit description cards shown in the header. The role
+	 * 'single' (the "Open Changes" presentation) carries no `data-role`, so the card keeps its
+	 * standalone borders instead of the joined halves of a comparison pair.
 	 */
-	private commitCardHtml(hash: string, summaries: { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } }, role: 'base' | 'compare') {
+	private commitCardHtml(hash: string, summaries: { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } }, role: 'base' | 'compare' | 'single') {
+		const roleAttr = role === 'single' ? '' : ' data-role="' + role + '"';
 		if (hash === '' || hash === UNCOMMITTED) {
-			return '<div class="commitCard hasMessage" data-role="' + role + '"><div class="firstLine"><span class="chip">' + t('comparePresentLabel') + '</span><span class="author">' + t('compareUncommittedLabel') + '</span><span class="toggle">&#9656;</span></div><p class="message">' + t('compareWorkingTreeLabel') + '</p></div>';
+			return '<div class="commitCard hasMessage"' + roleAttr + '><div class="firstLine"><span class="chip">' + t('comparePresentLabel') + '</span><span class="author">' + t('compareUncommittedLabel') + '</span><span class="toggle">&#9656;</span></div><p class="message">' + t('compareWorkingTreeLabel') + '</p></div>';
 		}
 		const summary = summaries[hash];
 		if (summary === undefined) {
-			return '<div class="commitCard" data-role="' + role + '"><div class="firstLine"><span class="chip" title="' + escapeHtml(hash) + '">' + escapeHtml(abbrevCommit(hash)) + '</span></div></div>';
+			return '<div class="commitCard"' + roleAttr + '><div class="firstLine"><span class="chip" title="' + escapeHtml(hash) + '">' + escapeHtml(abbrevCommit(hash)) + '</span></div></div>';
 		}
-		return '<div class="commitCard hasMessage" data-role="' + role + '">' +
+		return '<div class="commitCard hasMessage"' + roleAttr + '>' +
 			'<div class="firstLine">' +
 			'<span class="chip" title="' + escapeHtml(summary.hash) + '">' + escapeHtml(abbrevCommit(summary.hash)) + '</span>' +
 			'<span class="author">' + escapeHtml(summary.author) + '</span>' +
@@ -197,6 +217,11 @@ export class CommitComparisonView extends Disposable {
 		const nonce = getNonce();
 		const hljsUri = this.panel.webview.asWebviewUri(vscode.Uri.file(path.join(this.extensionPath, 'media', 'vendor', 'highlight.min.js')));
 		const commitsBetweenHtml = commitsBetween === null ? '' : escapeHtml(commitsBetween === 1 ? t('compareCommitsBetweenOne') : t('compareCommitsBetween', commitsBetween));
+		// In the single-commit presentation only the commit itself is shown; otherwise the header
+		// pairs the two ends of the comparison around a divider with the commits-between count.
+		const commitCardsHtml = this.singleCommit
+			? this.commitCardHtml(this.toHash, summaries, 'single')
+			: this.commitCardHtml(this.fromHash, summaries, 'base') + '<div class="compareDivider" id="compareDivider" title="' + t('compareToggleMessagesTitle') + '"><span class="arrow">&#8594;</span><span class="count">' + commitsBetweenHtml + '</span></div>' + this.commitCardHtml(this.toHash, summaries, 'compare');
 		return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -212,12 +237,12 @@ export class CommitComparisonView extends Disposable {
 	.commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
 	.commitCard.hasMessage .firstLine { cursor: pointer; margin: -3px -6px; padding: 3px 6px; border-radius: 3px; }
 	.commitCard.hasMessage .firstLine:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
-	.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
-	.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
-	.commitCard .date { font-size: 11px; opacity: 0.65; margin-left: auto; flex-shrink: 0; }
-	.commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
-	#commitCards.expanded .toggle { transform: rotate(90deg); }
-	.commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; opacity: 0.9; max-height: 120px; overflow: auto; }
+		.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+		.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+		.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 0; }
+		.commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
+		#commitCards.expanded .toggle { transform: rotate(90deg); }
+		.commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
 	#commitCards:not(.expanded) .commitCard.hasMessage .message { display: none; margin: 0; padding: 0; border: none; }
 	.compareDivider { flex-shrink: 0; width: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; border-radius: 4px; padding: 4px 2px; }
 	.compareDivider:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
@@ -289,7 +314,7 @@ export class CommitComparisonView extends Disposable {
 </head>
 <body>
 <div id="header">
-	<div id="commitCards">${this.commitCardHtml(this.fromHash, summaries, 'base')}<div class="compareDivider" id="compareDivider" title="${t('compareToggleMessagesTitle')}"><span class="arrow">&#8594;</span><span class="count">${commitsBetweenHtml}</span></div>${this.commitCardHtml(this.toHash, summaries, 'compare')}</div>
+	<div id="commitCards">${commitCardsHtml}</div>
 </div>
 <div id="body">
 	<div id="sidebar"><h2 id="filesChangedLabel">${error !== null ? t('compareErrorLabel') : t('compareFilesChangedLabel')}</h2></div>
@@ -354,10 +379,12 @@ export class CommitComparisonView extends Disposable {
 	/* ---------- Commit card message collapse/expand ---------- */
 	// Both commit messages are collapsed by default so they take no vertical space, and expand
 	// together (one "expanded" state on the shared container) - clicking either card's header
-	// line, or the divider between them, toggles both at once.
+	// line, or the divider between them, toggles both at once. (In the single-commit
+	// presentation there is no divider, only the one card's header line.)
 	const commitCardsEl = document.getElementById('commitCards');
 	function toggleCommitMessages() { commitCardsEl.classList.toggle('expanded'); }
-	document.getElementById('compareDivider').addEventListener('click', toggleCommitMessages);
+	const compareDividerEl = document.getElementById('compareDivider');
+	if (compareDividerEl !== null) compareDividerEl.addEventListener('click', toggleCommitMessages);
 	document.querySelectorAll('.commitCard.hasMessage .firstLine').forEach((firstLine) => {
 		firstLine.addEventListener('click', toggleCommitMessages);
 	});

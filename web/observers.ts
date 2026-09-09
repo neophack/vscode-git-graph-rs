@@ -663,7 +663,7 @@ function observeTableEvents(view: GitGraphView) {
 
 			if (commit !== null && commit.parents.length > 0) {
 
-				view.openCompareTab(commit.hash, commit.parents[0]);
+				view.openCompareTab(commit.hash, commit.parents[0], true);
 
 			}
 

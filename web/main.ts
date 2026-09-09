@@ -1187,14 +1187,17 @@ class GitGraphView {
 
 	/**
 	 * Open the changes between two commits in a dedicated Commit Comparison View tab
-	 * (instead of expanding the inline comparison in the commit table).
+	 * (instead of expanding the inline comparison in the commit table). When `singleCommit`
+	 * is set (the "Open Changes" action), the view presents the changes as belonging to one
+	 * commit instead of a comparison between two.
 	 */
-	public openCompareTab(hash: string, compareWithHash: string) {
+	public openCompareTab(hash: string, compareWithHash: string, singleCommit: boolean = false) {
 		let commitOrder = getCommitOrder(this, hash, compareWithHash);
 		sendMessage({
 			command: 'openCompareTab',
 			repo: this.currentRepo,
-			fromHash: commitOrder.from, toHash: commitOrder.to
+			fromHash: commitOrder.from, toHash: commitOrder.to,
+			singleCommit: singleCommit
 		});
 	}
 
@@ -1599,9 +1602,11 @@ class GitGraphView {
 			: '';
 		// The "Open Changes" action shown at the end of the description: it opens the commit's
 		// changes (diffed against its first parent) in a Commit Comparison View tab. Root commits
-		// have nothing to diff against, so they don't get the button.
+		// have nothing to diff against, so they don't get the button. The tooltip carries the
+		// commit's subject, capped at 32 characters, so the target of the action is identifiable.
+		const openChangesSubject = subject.length > 32 ? subject.substring(0, 32) + '\u2026' : subject;
 		const openChangesBtn = commit.parents.length > 0
-			? '<span class="openChangesBtn" title="' + escapeHtml(strings.openChangesTitle) + '">' + SVG_ICONS.openChanges + '</span>'
+			? '<span class="openChangesBtn" title="' + escapeHtml(formatStr(strings.openChangesTitleWithSubject, openChangesSubject)) + '">' + SVG_ICONS.openChanges + '</span>'
 			: '';
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">' +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + openChangesBtn + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message + openChangesBtn) + '</span></td>' +

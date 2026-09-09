@@ -563,6 +563,9 @@ export interface RequestOpenCompareTab extends RepoRequest {
 	readonly command: 'openCompareTab';
 	readonly fromHash: string;
 	readonly toHash: string;
+	/** Present the changes as those of `toHash` alone (its diff against `fromHash`, its first
+	 *  parent) rather than as a comparison between two commits. */
+	readonly singleCommit: boolean;
 }
 export interface ResponseOpenExternalUrl extends ResponseWithErrorInfo {
 	readonly command: 'openExternalUrl';
