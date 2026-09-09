@@ -37,6 +37,7 @@ const STRINGS_EN = {
 	dropdownRepos: 'Repos',
 	dropdownBranches: 'Branches',
 	dropdownAuthors: 'Authors',
+	dropdownOptionInfoLabel: 'Show more information for {0}',
 
 	/* Find Widget */
 	findPlaceholder: 'Find',
@@ -57,6 +58,8 @@ const STRINGS_EN = {
 	dialogClearFilter: 'Clear Filter',
 	dialogErrorPrefix: 'Error: ',
 	dialogUnableToAction: 'Unable to {0}, one or more invalid characters entered.',
+	repoInfoTitle: 'Repository Information',
+	repoInfoPath: 'Path: {0}',
 	filterByPathMessage: 'Filter the commits by a file path:',
 	filterPathName: 'Path',
 	filterPathPlaceholder: 'e.g. src/main.ts, web/ (comma-separated paths; commits changing any of them are shown)',
@@ -841,6 +844,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	dropdownRepos: '仓库',
 	dropdownBranches: '分支',
 	dropdownAuthors: '作者',
+	dropdownOptionInfoLabel: '显示 {0} 的更多信息',
 
 	/* Find Widget */
 	findPlaceholder: '查找',
@@ -861,6 +865,8 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	dialogClearFilter: '清除过滤',
 	dialogErrorPrefix: '错误：',
 	dialogUnableToAction: '无法{0}：输入中包含一个或多个无效字符。',
+	repoInfoTitle: '仓库信息',
+	repoInfoPath: '路径：{0}',
 	filterByPathMessage: '按文件路径过滤提交：',
 	filterPathName: '路径',
 	filterPathPlaceholder: '例如 src/main.ts、web/（以逗号分隔的多个路径；显示更改了其中任意路径的提交）',

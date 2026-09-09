@@ -12,6 +12,7 @@ class Dropdown {
 	private readonly showInfo: boolean;
 	private readonly multipleAllowed: boolean;
 	private readonly changeCallback: (values: string[]) => void;
+	private readonly infoCallback: ((option: DropdownOption) => void) | null;
 
 	private options: ReadonlyArray<DropdownOption> = [];
 	private optionsSelected: boolean[] = [];
@@ -35,12 +36,14 @@ class Dropdown {
 	 * @param multipleAllowed Can multiple items be selected.
 	 * @param dropdownType The type of content the dropdown is being used for.
 	 * @param changeCallback A callback to be invoked when the selected item(s) of the dropdown changes.
+	 * @param infoCallback An optional callback to be invoked when an option's information button is selected.
 	 * @returns The Dropdown instance.
 	 */
-	constructor(id: string, showInfo: boolean, multipleAllowed: boolean, dropdownType: string, changeCallback: (values: string[]) => void) {
+	constructor(id: string, showInfo: boolean, multipleAllowed: boolean, dropdownType: string, changeCallback: (values: string[]) => void, infoCallback: ((option: DropdownOption) => void) | null = null) {
 		this.showInfo = showInfo;
 		this.multipleAllowed = multipleAllowed;
 		this.changeCallback = changeCallback;
+		this.infoCallback = infoCallback;
 		this.elem = document.getElementById(id)!;
 
 		this.menuElem = document.createElement('div');
@@ -80,6 +83,17 @@ class Dropdown {
 				if ((<HTMLElement>e.target).closest('.dropdown') !== this.elem) {
 					this.close();
 				} else {
+					const info = (<HTMLElement>e.target).closest('.dropdownOptionInfo');
+					if (info !== null && info.parentNode !== null && info.parentNode.parentNode === this.optionsElem && typeof (<HTMLElement>info.parentNode).dataset.id !== 'undefined') {
+						const optionIndex = parseInt((<HTMLElement>info.parentNode).dataset.id!, 10);
+						e.preventDefault();
+						e.stopPropagation();
+						if (this.infoCallback !== null && optionIndex >= 0 && optionIndex < this.options.length) {
+							this.close();
+							this.infoCallback(this.options[optionIndex]);
+						}
+						return;
+					}
 					const option = <HTMLElement | null>(<HTMLElement>e.target).closest('.dropdownOption');
 					if (option !== null && option.parentNode === this.optionsElem && typeof option.dataset.id !== 'undefined') {
 						this.onOptionClick(parseInt(option.dataset.id!));
@@ -298,7 +312,7 @@ class Dropdown {
 			html += '<div class="dropdownOption' + (this.optionsSelected[i] ? ' ' + CLASS_SELECTED : '') + '" data-id="' + i + '" title="' + escapeHtml(title) + '">' +
 				(this.multipleAllowed && this.optionsSelected[i] ? '<div class="dropdownOptionMultiSelected">' + SVG_ICONS.check + '</div>' : '') +
 				escapedName + (typeof this.options[i].hint === 'string' && this.options[i].hint !== '' ? '<span class="dropdownOptionHint">' + escapeHtml(this.options[i].hint!) + '</span>' : '') +
-				(this.showInfo ? '<div class="dropdownOptionInfo" title="' + escapeHtml(this.options[i].value) + '">' + SVG_ICONS.info + '</div>' : '') +
+				(this.showInfo ? '<button class="dropdownOptionInfo" type="button" title="' + escapeHtml(this.options[i].value) + '" aria-label="' + escapeHtml(formatStr(strings.dropdownOptionInfoLabel, this.options[i].name)) + '">' + SVG_ICONS.info + '</button>' : '') +
 				'</div>';
 		}
 		this.optionsElem.className = 'dropdownOptions' + (this.showInfo ? ' showInfo' : '');

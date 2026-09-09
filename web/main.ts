@@ -150,6 +150,8 @@ class GitGraphView {
 
 		this.repoDropdown = new Dropdown('repoDropdown', true, false, strings.dropdownRepos, (values) => {
 			this.loadRepo(values[0]);
+		}, (option) => {
+			dialog.showMessage('<strong>' + escapeHtml(strings.repoInfoTitle) + '</strong><br>' + escapeHtml(formatStr(strings.repoInfoPath, option.value)));
 		});
 
 		this.branchDropdown = new Dropdown('branchDropdown', false, true, strings.dropdownBranches, (values) => {
