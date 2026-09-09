@@ -431,6 +431,10 @@
 .settingsSection > table tr.authorSwitchRow.active:hover td{
 	background-color:transparent;
 }
+.settingsSectionButtons > div:focus-visible, .settingsSection > table td.btns > div:focus-visible, .hideRemoteBtn:focus-visible, .authorSwitchRow:focus-visible, #settingsClose:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .authorCurrentBadge{
 	display:inline-block;
 	border-radius:9px;

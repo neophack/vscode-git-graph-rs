@@ -49,6 +49,7 @@ class SettingsWidget {
 
 		const settingsClose = document.getElementById('settingsClose')!;
 		settingsClose.innerHTML = SVG_ICONS.close;
+		makeKeyboardActivatable(settingsClose);
 		settingsClose.addEventListener('click', () => this.close());
 	}
 
@@ -169,8 +170,8 @@ class SettingsWidget {
 				'</table>' +
 				'<label id="settingsShowStashes"><input type="checkbox" id="settingsShowStashesCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsShowStashes + '</label><br/>' +
 				'<label id="settingsShowTags"><input type="checkbox" id="settingsShowTagsCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsShowTags + '</label><br/>' +
-				'<label id="settingsIncludeCommitsMentionedByReflogs"><input type="checkbox" id="settingsIncludeCommitsMentionedByReflogsCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsIncludeReflogs + '</label><span class="settingsWidgetInfo" title="' + strings.settingsIncludeReflogsInfo + '">' + SVG_ICONS.info + '</span><br/>' +
-				'<label id="settingsOnlyFollowFirstParent"><input type="checkbox" id="settingsOnlyFollowFirstParentCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsOnlyFirstParent + '</label><span class="settingsWidgetInfo" title="' + strings.settingsOnlyFirstParentInfo + '">' + SVG_ICONS.info + '</span>' +
+				'<label id="settingsIncludeCommitsMentionedByReflogs"><input type="checkbox" id="settingsIncludeCommitsMentionedByReflogsCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsIncludeReflogs + '</label><span ' + helpTooltipAttrs(strings.settingsIncludeReflogsInfo, 'settingsWidgetInfo') + '>' + SVG_ICONS.info + '</span><br/>' +
+				'<label id="settingsOnlyFollowFirstParent"><input type="checkbox" id="settingsOnlyFollowFirstParentCheckbox" tabindex="-1"><span class="customCheckbox"></span>' + strings.settingsOnlyFirstParent + '</label><span ' + helpTooltipAttrs(strings.settingsOnlyFirstParentInfo, 'settingsWidgetInfo') + '>' + SVG_ICONS.info + '</span>' +
 				'</div>';
 
 			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionGerrit + '</h3>' +
@@ -189,7 +190,7 @@ class SettingsWidget {
 					SettingsWidget.checkbox('settingsGerritStatusMerged', strings.settingsGerritStatusMerged, this.repo.gerritStatusFilter.merged, null) +
 					SettingsWidget.checkbox('settingsGerritStatusAbandoned', strings.settingsGerritStatusAbandoned, this.repo.gerritStatusFilter.abandoned, null) +
 					SettingsWidget.checkbox('settingsGerritStatusWip', strings.settingsGerritStatusWip, this.repo.gerritStatusFilter.wip, null) +
-					'<table><tr class="lineAbove"><td class="left">' + strings.settingsGerritFetchLimitLabel + '<span class="settingsWidgetInfo" title="' + escapeHtml(strings.settingsGerritFetchLimitInfo) + '">' + SVG_ICONS.info + '</span></td>' +
+					'<table><tr class="lineAbove"><td class="left">' + strings.settingsGerritFetchLimitLabel + '<span ' + helpTooltipAttrs(strings.settingsGerritFetchLimitInfo, 'settingsWidgetInfo') + '>' + SVG_ICONS.info + '</span></td>' +
 					'<td class="leftWithEllipsis" title="' + escapeHtml(fetchLimitStr) + '">' + escapeHtml(fetchLimitStr) + '</td>' +
 					'<td class="btns right"><div id="editGerritFetchLimit" title="' + strings.settingsGerritFetchLimitEditTitle + ELLIPSIS + '">' + SVG_ICONS.pencil + '</div></td></tr></table>';
 			}
@@ -849,6 +850,8 @@ class SettingsWidget {
 					runAction({ command: 'exportRepoConfig', repo: this.currentRepo }, strings.settingsExportingRepoConfig);
 				}, null);
 			});
+
+			makeKeyboardActivatableCollection(this.widgetElem, '.settingsSectionButtons > div, .settingsSection > table td.btns > div, .hideRemoteBtn, .authorSwitchRow');
 		}
 
 		alterClass(this.widgetElem, CLASS_LOADING, this.loading);
@@ -953,7 +956,7 @@ class SettingsWidget {
 	 */
 	private static checkbox(id: string, label: string, checked: boolean, info: string | null) {
 		return '<label class="settingsGlobalCheckbox" id="' + id + '"><input type="checkbox" id="' + id + 'Checkbox" tabindex="-1"' + (checked ? ' checked' : '') + '><span class="customCheckbox"></span>' + label + '</label>' +
-			(info !== null ? '<span class="settingsWidgetInfo" title="' + escapeHtml(info) + '">' + SVG_ICONS.info + '</span>' : '') + '<br/>';
+			(info !== null ? '<span ' + helpTooltipAttrs(info, 'settingsWidgetInfo') + '>' + SVG_ICONS.info + '</span>' : '') + '<br/>';
 	}
 
 	/**

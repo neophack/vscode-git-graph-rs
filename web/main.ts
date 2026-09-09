@@ -121,6 +121,7 @@ class GitGraphView {
 		this.gitRepos = initialState.repos;
 		this.config = initialState.config;
 		this.backend = initialState.backend;
+		observeHelpTooltips();
 		setInterfaceLanguage(this.config.interfaceLanguage);
 		this.renderToolbarText();
 		this.maxCommits = this.config.initialLoadCommits;
@@ -1591,13 +1592,12 @@ class GitGraphView {
 		}
 
 		const commitDot = commit.hash === this.commitHead
-			? '<span class="commitHeadDot" title="' + (branchCheckedOutAtCommit !== null
-				? escapeHtml(formatStr(strings.checkedOutBranchAtCommit, branchCheckedOutAtCommit))
-				: strings.commitCurrentlyCheckedOut
-			) + '"></span>'
+			? '<span ' + helpTooltipAttrs(branchCheckedOutAtCommit !== null
+				? formatStr(strings.checkedOutBranchAtCommit, branchCheckedOutAtCommit)
+				: strings.commitCurrentlyCheckedOut, 'commitHeadDot') + '></span>'
 			: '';
 		const pinnedBadge = pinnedCommitHashes.has(commit.hash)
-			? '<span class="pinnedBadge" title="' + escapeHtml(strings.pinnedBadgeTitle) + '">\uD83D\uDCCC</span>'
+			? '<span ' + helpTooltipAttrs(strings.pinnedBadgeTitle, 'pinnedBadge') + '>\uD83D\uDCCC</span>'
 			: '';
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">' +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message) + '</span></td>' +
@@ -2981,9 +2981,10 @@ function findCommitElemWithId(id: number | null) {
 
 function generateSignatureHtml(signature: GG.GitSignature) {
 	const status: GG.GitSignatureStatus = signature.status;
-	return '<span class="signatureInfo ' + status + '" title="' + getGitSignatureStatusDescription(status) + strings.signatureDescColon
-		+ strings.signatureSignedBy + escapeHtml(signature.signer !== '' ? signature.signer : strings.signatureUnknown)
-		+ strings.signatureGpgKeyIdPrefix + escapeHtml(signature.key !== '' ? signature.key : strings.signatureUnknown) + strings.signatureGpgKeyIdSuffix + '">'
+	const tooltip = getGitSignatureStatusDescription(status) + strings.signatureDescColon
+		+ strings.signatureSignedBy + (signature.signer !== '' ? signature.signer : strings.signatureUnknown)
+		+ strings.signatureGpgKeyIdPrefix + (signature.key !== '' ? signature.key : strings.signatureUnknown) + strings.signatureGpgKeyIdSuffix;
+	return '<span ' + helpTooltipAttrs(tooltip, 'signatureInfo ' + status) + '>'
 		+ (status === GG.GitSignatureStatus.GoodAndValid
 			? SVG_ICONS.passed
 			: status === GG.GitSignatureStatus.Bad

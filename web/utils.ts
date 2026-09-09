@@ -291,6 +291,18 @@ function escapeHtml(str: string) {
 }
 
 /**
+ * Build attributes for a non-clickable element that exposes explanatory text.
+ * The shared tooltip uses the same text for mouse and keyboard users.
+ * @param message The explanatory text.
+ * @param className Optional additional CSS class.
+ * @returns HTML attributes for the tooltip target.
+ */
+function helpTooltipAttrs(message: string, className: string = '') {
+	const escaped = escapeHtml(message);
+	return 'class="' + (className !== '' ? className + ' ' : '') + 'gg-helpTooltip" data-tooltip="' + escaped + '" aria-label="' + escaped + '" tabindex="0"';
+}
+
+/**
  * Unescape HTML in the specified string.
  * @param str The string to unescape.
  * @returns The unescaped string.
@@ -575,12 +587,95 @@ function handledEvent(event: Event) {
  * @param elem The element to make keyboard-activatable.
  */
 function makeKeyboardActivatable(elem: HTMLElement) {
+	if (elem.getAttribute('role') === null) elem.setAttribute('role', 'button');
+	if (elem.tabIndex < 0) elem.tabIndex = 0;
 	elem.addEventListener('keydown', (e) => {
 		if (e.key === 'Enter' || e.key === ' ') {
 			elem.click();
 			handledEvent(e);
 		}
 	});
+}
+
+function makeKeyboardActivatableCollection(root: ParentNode, selector: string) {
+	for (const elem of Array.from(root.querySelectorAll<HTMLElement>(selector))) {
+		makeKeyboardActivatable(elem);
+	}
+}
+
+let helpTooltipElem: HTMLElement | null = null;
+let helpTooltipTarget: HTMLElement | null = null;
+let helpTooltipEventsObserved = false;
+
+function getHelpTooltipTarget(target: EventTarget | null) {
+	return target instanceof Element ? <HTMLElement | null>target.closest('.gg-helpTooltip') : null;
+}
+
+function hideHelpTooltip() {
+	if (helpTooltipTarget !== null && helpTooltipTarget.getAttribute('aria-describedby') === 'ggHelpTooltip') {
+		helpTooltipTarget.removeAttribute('aria-describedby');
+	}
+	helpTooltipTarget = null;
+	if (helpTooltipElem !== null) {
+		helpTooltipElem.remove();
+		helpTooltipElem = null;
+	}
+}
+
+function showHelpTooltip(target: HTMLElement) {
+	const message = target.dataset.tooltip;
+	if (typeof message !== 'string' || message === '') return;
+	if (helpTooltipTarget === target) return;
+	hideHelpTooltip();
+
+	const tooltip = document.createElement('div');
+	tooltip.id = 'ggHelpTooltip';
+	tooltip.className = 'gg-helpTooltipPopup';
+	tooltip.setAttribute('role', 'tooltip');
+	tooltip.textContent = message;
+	document.body.appendChild(tooltip);
+	helpTooltipElem = tooltip;
+	helpTooltipTarget = target;
+	target.setAttribute('aria-describedby', 'ggHelpTooltip');
+
+	const targetRect = target.getBoundingClientRect();
+	const tooltipRect = tooltip.getBoundingClientRect();
+	const maxLeft = Math.max(8, window.innerWidth - tooltipRect.width - 8);
+	const left = Math.min(Math.max(8, targetRect.left + (targetRect.width - tooltipRect.width) / 2), maxLeft);
+	let top = targetRect.bottom + 6;
+	if (top + tooltipRect.height > window.innerHeight - 8) top = targetRect.top - tooltipRect.height - 6;
+	tooltip.style.left = Math.round(left) + 'px';
+	tooltip.style.top = Math.round(Math.max(8, top)) + 'px';
+}
+
+/**
+ * Observe all non-clickable help indicators, including ones rendered after the initial view load.
+ * Unlike the browser's native `title` tooltip, this appears immediately on hover and focus.
+ */
+function observeHelpTooltips() {
+	if (helpTooltipEventsObserved) return;
+	helpTooltipEventsObserved = true;
+
+	document.addEventListener('mouseover', (e) => {
+		const target = getHelpTooltipTarget(e.target);
+		if (target === null || (e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) return;
+		showHelpTooltip(target);
+	});
+	document.addEventListener('mouseout', (e) => {
+		const target = getHelpTooltipTarget(e.target);
+		if (target === null || (e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) return;
+		if (target === helpTooltipTarget) hideHelpTooltip();
+	});
+	document.addEventListener('focusin', (e) => {
+		const target = getHelpTooltipTarget(e.target);
+		if (target !== null) showHelpTooltip(target);
+	});
+	document.addEventListener('focusout', (e) => {
+		const target = getHelpTooltipTarget(e.target);
+		if (target !== null && !(e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) hideHelpTooltip();
+	});
+	window.addEventListener('scroll', hideHelpTooltip, true);
+	window.addEventListener('resize', hideHelpTooltip);
 }
 
 

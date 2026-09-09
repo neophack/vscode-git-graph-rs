@@ -400,10 +400,19 @@ table { border-collapse: collapse; }
 
 .cdvControlBtn{
 	position:relative;
+	box-sizing:border-box;
 	margin:4px;
 	width:24px;
 	height:24px;
+	padding:0;
+	border:0;
+	background:transparent;
+	color:inherit;
 	cursor:pointer;
+}
+.cdvControlBtn:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
 }
 .cdvControlBtn.active{
 	background-color:rgba(128,128,128,0.25);
@@ -630,12 +639,41 @@ table { border-collapse: collapse; }
 	margin-left:8px;
 	cursor:help;
 }
+.gg-helpTooltip:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+.gg-helpTooltipPopup{
+	position:fixed;
+	z-index:50;
+	max-width:min(360px, calc(100vw - 16px));
+	padding:4px 7px;
+	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));
+	border-radius:3px;
+	background-color:var(--vscode-editorWidget-background, var(--vscode-menu-background));
+	color:var(--vscode-editorWidget-foreground, var(--vscode-menu-foreground));
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	font-size:12px;
+	line-height:16px;
+	white-space:pre-wrap;
+	pointer-events:none;
+}
 .fileTreeFileAction{
 	margin-left:8px;
+	padding:0;
+	border:0;
+	background:transparent;
+	color:inherit;
+	font:inherit;
 	opacity:0;
 }
 .fileTreeFileAction.viewGitFileAtRevision, .fileTreeFileAction.openGitFile{
 	margin-left:6px;
+}
+.fileTreeFileAction:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+	opacity:1;
 }
 .fileTreeFileRecord:hover .fileTreeFileAction, .fileTreeFileRecord.contextMenuActive .fileTreeFileAction, .fileTreeFileRecord.dialogActive .fileTreeFileAction{
 	cursor:pointer;

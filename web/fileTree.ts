@@ -79,7 +79,9 @@ function fileRowTitle(file: GG.GitFileChange): string {
 
 /** The `(+N|-M)` counts chip of a modified or renamed text file. */
 function fileCountsChipHtml(file: GG.GitFileChange): string {
-	return '<span class="fileTreeFileAddDel">(<span class="fileTreeFileAdd" title="' + formatStr(file.additions !== 1 ? strings.additionPlural : strings.additionSingular, String(file.additions)) + '">+' + file.additions + '</span>|<span class="fileTreeFileDel" title="' + formatStr(file.deletions !== 1 ? strings.deletionPlural : strings.deletionSingular, String(file.deletions)) + '">-' + file.deletions + '</span>)</span>';
+	const additions = formatStr(file.additions !== 1 ? strings.additionPlural : strings.additionSingular, String(file.additions));
+	const deletions = formatStr(file.deletions !== 1 ? strings.deletionPlural : strings.deletionSingular, String(file.deletions));
+	return '<span class="fileTreeFileAddDel">(<span ' + helpTooltipAttrs(additions, 'fileTreeFileAdd') + '>+' + file.additions + '</span>|<span ' + helpTooltipAttrs(deletions, 'fileTreeFileDel') + '>-' + file.deletions + '</span>)</span>';
 }
 
 /** The placeholder shown in place of the counts chip while they are still being computed. */
@@ -100,13 +102,13 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 				: pending ? PENDING_COUNTS_CHIP_HTML : '';
 		}
 		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile gitDiffPossible' + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + strings.clickToViewDiff + (isBinary ? strings.binaryFileSuffix : '') + ' • ' + changeTypeMessage + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
-			(initialState.config.enhancedAccessibility ? '<span class="fileTreeFileType" title="' + changeTypeMessage + '">' + type + '</span>' : '') +
+			(initialState.config.enhancedAccessibility ? '<span ' + helpTooltipAttrs(changeTypeMessage, 'fileTreeFileType') + '>' + type + '</span>' : '') +
 			countsChip +
-			(fileTreeFile.newFilePath === lastViewedFile ? '<span id="cdvLastFileViewed" title="' + strings.lastFileViewedTitle + '">' + SVG_ICONS.eyeOpen + '</span>' : '') +
-			'<span class="copyGitFile fileTreeFileAction" title="' + strings.cdvMenuCopyAbsolutePath + '">' + SVG_ICONS.copy + '</span>' +
+			(fileTreeFile.newFilePath === lastViewedFile ? '<span ' + helpTooltipAttrs(strings.lastFileViewedTitle) + ' id="cdvLastFileViewed">' + SVG_ICONS.eyeOpen + '</span>' : '') +
+			'<button type="button" class="copyGitFile fileTreeFileAction" title="' + strings.cdvMenuCopyAbsolutePath + '" aria-label="' + strings.cdvMenuCopyAbsolutePath + '">' + SVG_ICONS.copy + '</button>' +
 			(type !== GG.GitFileStatus.Deleted
-				? (!isBinary && !isUncommitted ? '<span class="viewGitFileAtRevision fileTreeFileAction" title="' + strings.cdvMenuViewFileAtRevision + '">' + SVG_ICONS.commit + '</span>' : '') +
-				'<span class="openGitFile fileTreeFileAction" title="' + strings.cdvMenuOpenFile + '">' + SVG_ICONS.openFile + '</span>'
+				? (!isBinary && !isUncommitted ? '<button type="button" class="viewGitFileAtRevision fileTreeFileAction" title="' + strings.cdvMenuViewFileAtRevision + '" aria-label="' + strings.cdvMenuViewFileAtRevision + '">' + SVG_ICONS.commit + '</button>' : '') +
+				'<button type="button" class="openGitFile fileTreeFileAction" title="' + strings.cdvMenuOpenFile + '" aria-label="' + strings.cdvMenuOpenFile + '">' + SVG_ICONS.openFile + '</button>'
 				: ''
 			) + '</span></li>';
 	} else {
