@@ -30,7 +30,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				if (options.length === 0) {
 
-					dialog.showError(strings.compareBranchTitle, strings.compareNoOtherBranches, strings.dialogClose, null);
+					dialog.showError(strings.compareBranchTitle, strings.compareNoOtherBranches, null, null);
 
 					return;
 
@@ -48,7 +48,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 					} else {
 
-						dialog.showError(strings.compareBranchTitle, strings.compareCommitsNotLoaded, strings.dialogClose, null);
+						dialog.showError(strings.compareBranchTitle, strings.compareCommitsNotLoaded, null, null);
 
 					}
 

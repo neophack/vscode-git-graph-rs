@@ -662,7 +662,7 @@ class GitGraphView {
 			this.loadMoreCommits();
 		} else {
 			this.pendingScrollCommitHash = null;
-			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInLoadedHistory, strings.dialogClose, null);
+			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInLoadedHistory, null, null);
 		}
 	}
 
@@ -675,7 +675,7 @@ class GitGraphView {
 		if (this.pendingScrollCommitHash !== msg.hash) return;
 		if (msg.count === null) {
 			this.pendingScrollCommitHash = null;
-			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInRepo, strings.dialogClose, null);
+			dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInRepo, null, null);
 			return;
 		}
 		// Jump straight to the commit: load everything up to it (plus a margin), then
@@ -1401,7 +1401,7 @@ class GitGraphView {
 		if (chip.dataset.type === 'commit') {
 			if (this.commitLookup[chip.dataset.value] === undefined) {
 				if (!this.moreCommitsAvailable) {
-					dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInView, strings.dialogClose, null);
+					dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInView, null, null);
 					return;
 				}
 				// The pinned commit is beyond the currently loaded commits: ask the extension how

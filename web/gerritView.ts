@@ -75,7 +75,7 @@ function getGerritBadgeHtml(view: GitGraphView, state: GG.GerritChangeState) {
 function showGerritReviewInfo(view: GitGraphView, hash: string) {
 	const state = view.gerritStates[hash];
 	if (state === undefined) {
-		dialog.showError(strings.gerritReviewDialogTitle, strings.gerritNoReviewInfo, strings.dialogClose, null);
+		dialog.showError(strings.gerritReviewDialogTitle, strings.gerritNoReviewInfo, null, null);
 		return;
 	}
 	showGerritDialog(state);
