@@ -95,7 +95,16 @@ class Dropdown {
 				handledEvent(e);
 			}
 		});
-		this.filterInput.addEventListener('keyup', () => this.filter());
+		this.filterInput.addEventListener('keyup', (e) => {
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Tab') {
+				// These keys are handled entirely on keydown below (they navigate/select rather than
+				// change the filter text); re-running filter() on their keyup would reset
+				// this.highlighted back to -1 right after keydown set it, leaving the option looking
+				// highlighted but Enter unable to select it
+				return;
+			}
+			this.filter();
+		});
 		this.filterInput.addEventListener('keydown', (e) => {
 			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 				this.moveHighlighted(e.key === 'ArrowDown' ? 1 : -1);
