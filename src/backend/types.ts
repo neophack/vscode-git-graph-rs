@@ -262,6 +262,27 @@ export interface GitAuthor {
 	readonly email: string;
 }
 
+/**
+ * Commit count for one author across all refs (branches, tags, remote-tracking, the stash),
+ * merge commits excluded - what the Statistics view's author table lists.
+ */
+export interface GitAuthorStat {
+	readonly name: string;
+	readonly email: string;
+	readonly commits: number;
+}
+
+/**
+ * One non-zero cell of the Statistics view's commit-activity heatmap, binned by each commit's
+ * author-local weekday/hour (not the viewer's timezone).
+ */
+export interface GitActivityCell {
+	/** 0 = Sunday, matching JavaScript's `Date.getUTCDay()`. */
+	readonly weekday: number;
+	readonly hour: number;
+	readonly count: number;
+}
+
 /* ---------- Tag details ---------- */
 
 /**

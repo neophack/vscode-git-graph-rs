@@ -17,7 +17,9 @@ import * as path from 'path';
 import { GitBackend } from './api';
 import { parseGitSignatureOutput } from './signatures';
 import {
+	GitActivityCell,
 	GitAuthor,
+	GitAuthorStat,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -807,6 +809,60 @@ export class CliBackend implements GitBackend {
 		// repeated name wins.
 		authors.sort((a, b) => (a.name > b.name ? 1 : -1));
 		return authors;
+	}
+
+	/** Commit counts per author, across all refs (branches, tags, remote-tracking, the stash), merge commits excluded. */
+	public async getAuthorStatistics(repo: string): Promise<GitAuthorStat[]> {
+		let lines: string[];
+		try {
+			lines = (await this.run(['shortlog', '-sne', '--all', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
+		} catch (_) {
+			return [];
+		}
+
+		const stats: GitAuthorStat[] = [];
+		for (const line of lines) {
+			const match = line.match(/^\s*(\d+)\s+(.+?)\s+<(.*?)>$/);
+			if (match !== null) {
+				stats.push({ commits: parseInt(match[1], 10), name: match[2], email: match[3] });
+			}
+		}
+		return stats;
+	}
+
+	/**
+	 * The commit-activity heatmap of a repository, binned by the author's local weekday and hour
+	 * (i.e. `%aI`'s own UTC offset, not the machine running Git Graph's timezone).
+	 */
+	public async getActivityHeatmap(repo: string): Promise<GitActivityCell[]> {
+		let lines: string[];
+		try {
+			lines = (await this.run(['log', '--all', '--format=%aI', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
+		} catch (_) {
+			return [];
+		}
+
+		const counts = new Map<string, number>();
+		for (const line of lines) {
+			// %aI is strict ISO 8601 (author date), e.g. 2026-05-02T10:00:00+09:00. The weekday is
+			// deliberately computed from ONLY the Y/M/D digits (as a UTC midnight), not by parsing
+			// the full string with its offset into a real Date: `new Date(iso)` would convert to
+			// the *local* time of the machine running Git Graph, shifting the weekday/hour near
+			// midnight for an author in a different timezone than whoever is viewing the graph.
+			const match = line.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})/);
+			if (match === null) continue;
+			const weekday = new Date(Date.UTC(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))).getUTCDay();
+			const hour = parseInt(match[4], 10);
+			const key = weekday + '-' + hour;
+			counts.set(key, (counts.get(key) || 0) + 1);
+		}
+
+		const cells: GitActivityCell[] = [];
+		counts.forEach((count, key) => {
+			const [weekday, hour] = key.split('-').map((n) => parseInt(n, 10));
+			cells.push({ weekday, hour, count });
+		});
+		return cells;
 	}
 
 	/** The config entries of one location, last value per key. */

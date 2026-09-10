@@ -48,6 +48,8 @@ interface NativeAddon {
 	repoRoot(path: string): Promise<string>;
 	remoteNames(path: string): Promise<string[]>;
 	authors(path: string): Promise<string>;
+	authorStats(path: string): Promise<string>;
+	activityHeatmap(path: string): Promise<string>;
 	configList(path: string, local: boolean): Promise<string>;
 	currentBranchName(path: string): Promise<string | null>;
 	parseGerritMetas(path: string, remote: string, changes: number[], urlBase: string | null): Promise<string>;
