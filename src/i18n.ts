@@ -156,9 +156,6 @@ const EN = {
 
 	/* Commit Comparison View */
 	commitPanelTitle: 'Commit {0}',
-	commitPanelTitleWithSubject: '{0}-{1} ({2})',
-	commitPanelOneFile: '1 file',
-	commitPanelFiles: '{0} files',
 	comparePanelTitle: 'Compare {0} \u2194 {1}',
 	comparePresentLabel: 'Present',
 	compareUncommittedLabel: 'Uncommitted changes',
@@ -362,9 +359,6 @@ const ZH_CN: Record<MessageKey, string> = {
 
 	/* 提交比较视图 */
 	commitPanelTitle: '提交 {0}',
-	commitPanelTitleWithSubject: '{0}-{1} ({2})',
-	commitPanelOneFile: '1 个文件',
-	commitPanelFiles: '{0} 个文件',
 	comparePanelTitle: '比较 {0} ↔ {1}',
 	comparePresentLabel: '当前',
 	compareUncommittedLabel: '未提交的更改',

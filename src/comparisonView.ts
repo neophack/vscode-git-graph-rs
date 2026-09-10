@@ -27,7 +27,7 @@ export class CommitComparisonView extends Disposable {
 	 * Opens a Commit Comparison View for the given commit range, reusing (and revealing) the
 	 * existing tab when the same range is compared again. When `singleCommit` is set, the header
 	 * presents the changes as those of `toHash` alone (opened via the "Open Changes" action)
-	 * instead of showing both ends of the comparison.
+	 * instead of showing both ends of the comparison; the tab is titled "Commit <hash>".
 	 */
 	public static open(extensionPath: string, dataSource: DataSource, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
 		const key = repo + '\n' + fromHash + '\n' + toHash + '\n' + (singleCommit ? '1' : '0');
@@ -118,24 +118,11 @@ export class CommitComparisonView extends Disposable {
 			if (this.isDisposed()) return; // the tab was closed while the Git commands were running
 			const comparison = results[0], summaries = results[1], commitsBetween = results[2];
 			this.fileChanges = comparison.error !== null ? [] : comparison.fileChanges;
-			this.updateSingleCommitTitle(comparison.error === null && summaries !== null ? summaries[this.toHash] : undefined);
 			this.panel.webview.html = this.getHtml(comparison.error, summaries === null ? {} : summaries, commitsBetween, false);
 		}, (error: unknown) => {
 			if (this.isDisposed()) return;
 			this.panel.webview.html = this.getHtml(error instanceof Error ? error.message : String(error), {}, null, false);
 		});
-	}
-
-	/**
-	 * Enriches the tab title of the "Open Changes" presentation from the bare "Commit <hash>"
-	 * to "<hash>-<subject> (<N> files)" once the commit's summary and file list have loaded.
-	 */
-	private updateSingleCommitTitle(summary: { hash: string, author: string, email: string, date: number, message: string } | undefined) {
-		if (!this.singleCommit || summary === undefined) return;
-		const subject = summary.message.split(/\r?\n/)[0];
-		const fileCount = this.fileChanges.length;
-		this.panel.title = t('commitPanelTitleWithSubject', abbrevCommit(this.toHash), subject,
-			fileCount === 1 ? t('commitPanelOneFile') : t('commitPanelFiles', fileCount));
 	}
 
 	/**
@@ -186,7 +173,9 @@ export class CommitComparisonView extends Disposable {
 	/**
 	 * Generates the HTML of one of the commit description cards shown in the header. The role
 	 * 'single' (the "Open Changes" presentation) carries no `data-role`, so the card keeps its
-	 * standalone borders instead of the joined halves of a comparison pair.
+	 * standalone borders instead of the joined halves of a comparison pair, and shows the
+	 * commit's subject line between the author and the date (ellipsized to the available width,
+	 * so the collapsed card identifies the commit without expanding its full message).
 	 */
 	private commitCardHtml(hash: string, summaries: { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } }, role: 'base' | 'compare' | 'single') {
 		const roleAttr = role === 'single' ? '' : ' data-role="' + role + '"';
@@ -197,10 +186,12 @@ export class CommitComparisonView extends Disposable {
 		if (summary === undefined) {
 			return '<div class="commitCard"' + roleAttr + '><div class="firstLine"><span class="chip" title="' + escapeHtml(hash) + '">' + escapeHtml(abbrevCommit(hash)) + '</span></div></div>';
 		}
+		const subject = summary.message.split(/\r?\n/)[0];
 		return '<div class="commitCard hasMessage"' + roleAttr + '>' +
 			'<div class="firstLine">' +
 			'<span class="chip" title="' + escapeHtml(summary.hash) + '">' + escapeHtml(abbrevCommit(summary.hash)) + '</span>' +
 			'<span class="author">' + escapeHtml(summary.author) + '</span>' +
+			(role === 'single' ? '<span class="subject" title="' + escapeHtml(subject) + '">' + escapeHtml(subject) + '</span>' : '') +
 			'<span class="date">' + escapeHtml(new Date(summary.date * 1000).toLocaleString()) + '</span>' +
 			'<span class="toggle">&#9656;</span>' +
 			'</div>' +
@@ -237,12 +228,15 @@ export class CommitComparisonView extends Disposable {
 	.commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
 	.commitCard.hasMessage .firstLine { cursor: pointer; margin: -3px -6px; padding: 3px 6px; border-radius: 3px; }
 	.commitCard.hasMessage .firstLine:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
-		.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
-		.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
-		.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 0; }
-		.commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
-		#commitCards.expanded .toggle { transform: rotate(90deg); }
-		.commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
+	.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+	.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+	/* The single-commit card's subject line: takes whatever width the window leaves between the
+	   fixed chip/author/date and truncates with an ellipsis, so it always fits. */
+	.commitCard .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 0; min-width: 0; opacity: 0.9; }
+	.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 0; }
+	.commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
+	#commitCards.expanded .toggle { transform: rotate(90deg); }
+	.commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
 	#commitCards:not(.expanded) .commitCard.hasMessage .message { display: none; margin: 0; padding: 0; border: none; }
 	.compareDivider { flex-shrink: 0; width: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; border-radius: 4px; padding: 4px 2px; }
 	.compareDivider:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
