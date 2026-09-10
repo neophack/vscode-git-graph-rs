@@ -1291,34 +1291,55 @@ body.tagLabelsRightAligned .tagsWrapper {
 }
 
 /* The "Open Changes" action shown at the end of each commit's description (the same action as
-   VS Code's built-in Source Control Graph): hidden by default, translucent while the row is
-   hovered or otherwise active, and fully visible while the row's Commit Details View is open. */
+   VS Code's built-in Source Control Graph): hidden by default, shown while the row is hovered
+   or otherwise active, and styled like a VS Code inline action - a codicon-sized 20x20 hit
+   area around the 16px icon, with the list hover background while it is itself hovered. */
 #commitTable tr.commit span.description .openChangesBtn {
 	flex-shrink:0;
 	align-self:center;
 	/* push to the right edge of the row, rather than sitting right after the message text */
 	margin-left:auto;
+	box-sizing:border-box;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:20px;
+	height:20px;
 	cursor:pointer;
 	opacity:0;
 	pointer-events:none;
+	border-radius:5px;
+	transition:background-color var(--gg-dur-fast) var(--gg-ease), transform 80ms var(--gg-ease);
 	-webkit-user-select:none;
 	user-select:none;
 }
 #commitTable tr.commit span.description .openChangesBtn svg {
-	width:14px;
-	height:14px;
-	vertical-align:middle;
+	width:16px;
+	height:16px;
+	fill:var(--vscode-editor-foreground);
+	fill-opacity:0.8;
+	transition:fill-opacity var(--gg-dur-fast) var(--gg-ease);
 }
 #commitTable tr.commit:hover span.description .openChangesBtn,
 #commitTable tr.commit.contextMenuActive span.description .openChangesBtn,
 #commitTable tr.commit.graphVertexActive span.description .openChangesBtn,
-#commitTable tr.commit.dialogActive span.description .openChangesBtn {
-	opacity:0.5;
-	pointer-events:auto;
-}
+#commitTable tr.commit.dialogActive span.description .openChangesBtn,
 #commitTable tr.commit.commitDetailsOpen span.description .openChangesBtn {
 	opacity:1;
 	pointer-events:auto;
+}
+#commitTable tr.commit span.description .openChangesBtn:hover {
+	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.25));
+}
+#commitTable tr.commit span.description .openChangesBtn:hover svg {
+	fill-opacity:1;
+}
+#commitTable tr.commit span.description .openChangesBtn:active {
+	transform:scale(0.88);
+}
+#commitTable tr.commit span.description .openChangesBtn:focus-visible {
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:-1px;
 }
 /* When tag labels are shown on the right, they follow the button in the markup - keep them flush
    against it (instead of also being pushed right by their own auto margin), so the button and
