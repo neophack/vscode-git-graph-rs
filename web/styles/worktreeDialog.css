@@ -1,0 +1,130 @@
+/* Worktree Widget: mirrors the Settings Widget / Reflog Widget fixed-overlay pattern */
+
+#worktreeWidget{
+	display:block;
+	position:fixed;
+	top:-158px;
+	right:28px;
+	width:620px;
+	max-width:calc(100vw - 56px);
+	box-sizing:border-box;
+	min-height:80px;
+	max-height:80vh;
+	padding:0 10px 10px 10px;
+	z-index:31;
+	background-color:var(--vscode-editorWidget-background);
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	color:var(--vscode-editorSuggestWidget-foreground);
+	fill:var(--vscode-editorSuggestWidget-foreground);
+	fill-opacity:0.7;
+	font-size:13px;
+	overflow-x:hidden;
+	overflow-y:auto;
+	transition:top var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
+}
+#worktreeWidget.active{
+	top:0;
+}
+
+#worktreeWidget h2{
+	margin:8px 10px;
+	padding:0;
+	font-size:16px;
+	line-height:24px;
+	text-align:center;
+}
+
+#worktreeClose{
+	position:absolute;
+	width:24px;
+	height:24px;
+	top:8px;
+	right:10px;
+	cursor:pointer;
+	z-index:33;
+}
+#worktreeClose svg{
+	position:absolute;
+	left:4px;
+	top:4px;
+	width:16px !important;
+	height:16px !important;
+}
+#worktreeClose:hover{
+	fill-opacity:1;
+}
+
+.worktreeLoading, .worktreeEmpty{
+	text-align:center;
+	padding:20px 0;
+	opacity:0.7;
+}
+.worktreeLoading svg{
+	width:24px;
+	height:32px;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+
+.worktreeTable{
+	width:100%;
+	border-collapse:collapse;
+	margin-bottom:8px;
+}
+.worktreeTable td{
+	padding:5px 6px;
+	vertical-align:middle;
+	border-bottom:1px solid rgba(128,128,128,0.25);
+}
+.worktreePathCol{
+	word-break:break-all;
+}
+.worktreeBranchCol{
+	white-space:nowrap;
+}
+.worktreeActionsCol{
+	width:24px;
+	text-align:right;
+}
+.worktreeRemoveBtn{
+	display:inline-block;
+	cursor:pointer;
+	vertical-align:middle;
+}
+.worktreeRemoveBtn svg{
+	width:14px !important;
+	height:14px !important;
+}
+.worktreeRemoveBtn:hover{
+	fill-opacity:1;
+}
+
+.worktreeBadge{
+	display:inline-block;
+	margin-left:4px;
+	padding:0 6px;
+	border-radius:8px;
+	font-size:11px;
+	line-height:16px;
+	vertical-align:middle;
+	background-color:rgba(128,128,128,0.2);
+}
+.worktreeBadgeMain{
+	background-color:rgba(0,150,80,0.2);
+}
+.worktreeBadgeLocked{
+	background-color:rgba(200,150,0,0.2);
+}
+.worktreeBadgePrunable{
+	background-color:rgba(217,64,64,0.2);
+	cursor:default;
+}
+
+#worktreeAddBtn, #worktreePruneBtn{
+	display:inline-block;
+	height:26px;
+	margin:4px 6px 4px 0;
+	padding:0 16px;
+	border-radius:13px;
+	line-height:26px;
+	text-align:center;
+}
