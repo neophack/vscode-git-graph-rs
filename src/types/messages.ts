@@ -860,12 +860,12 @@ export interface ResponseViewScm extends ResponseWithErrorInfo {
 
 export interface RequestFetchPullRequest extends RepoRequest {
 	readonly command: 'fetchPullRequest';
-	readonly branch: string;
 }
 export interface ResponsePullRequestStatus {
 	readonly command: 'pullRequestStatus';
-	readonly branch: string;
-	readonly pr: PullRequestInfo | null;
+	readonly repo: string;
+	/** The pull requests of the repository's remote (NULL when they couldn't be determined). */
+	readonly prs: PullRequestInfo[] | null;
 }
 
 export interface RequestSetInterfaceLanguage extends BaseMessage {

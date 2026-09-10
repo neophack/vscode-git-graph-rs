@@ -1351,44 +1351,60 @@ body.tagLabelsRightAligned .tagsWrapper {
 }
 
 
-/* Pull Request status badge row: shown under the controls when pullRequests.enabled and the
-   checked-out branch has a matching pull/merge request on the remote (GitHub/GitLab). */
-#prStatus{
-	display:none;
-	padding:2px 6px;
-	line-height:22px;
-	font-size:12px;
-	text-align:left;
-	border-bottom:1px solid rgba(128,128,128,0.35);
-	-webkit-user-select:none;
-	user-select:none;
-	white-space:nowrap;
-	overflow-x:auto;
+/* Pull Request badges on the commits (the GitHub/GitLab integration of pullRequests.enabled):
+   one badge per request on the commit it currently points at, styled like the Gerrit change
+   badge - the request number plus a status chip coloured by its state. Clicking the badge opens
+   the details dialog (which reuses the Gerrit dialog's gg-* styles). */
+.gitRef.pr svg{
+	fill:currentColor;
 }
 
-.prBadge{
-	display:inline-block;
-	padding:0 8px;
-	margin:2px 0;
-	border:1px solid var(--vscode-panel-border, #444);
-	border-radius:10px;
-	cursor:pointer;
-	text-decoration:none;
+.gitRef.pr .gg-status{
+	margin:2px 4px 2px 0;
+	font-size:9px;
+	opacity:0.85;
+}
+
+.gitRef.pr .gg-status.open{ color:var(--vscode-charts-green, #2da44e); }
+.gitRef.pr .gg-status.merged{ color:var(--vscode-charts-purple, #a371f7); }
+.gitRef.pr .gg-status.abandoned{ color:var(--gg-rejected, #bb4b4b); }
+.gitRef.pr .gg-status.wip{ color:var(--vscode-descriptionForeground, #888); }
+
+.pr-dialog .gg-pill.open{ color:var(--vscode-charts-green, #2da44e); border-color:var(--vscode-charts-green, #2da44e); }
+
+/* The Gerrit score boxes colour their value like the background (dark text on a coloured chip,
+   added by the cr2/v1/... classes): the pull request details reuse the boxes for plain text,
+   without any chip class - restore a readable foreground and normal weight. */
+.pr-dialog .gg-score-value{
+	min-width:0;
 	color:var(--vscode-foreground);
-	white-space:nowrap;
+	background-color:transparent;
+	font-weight:normal;
+	text-align:left;
 }
-
-.prBadge:hover{ opacity:0.85; }
-.prBadge.st-open{ color:var(--vscode-charts-green, #2da44e); }
-.prBadge.st-merged{ color:#a371f7; }
-.prBadge.st-closed{ color:var(--gg-rejected, #bb4b4b); }
-.prBadge.st-draft{ color:var(--vscode-descriptionForeground, #888); }
+.pr-dialog .gg-pill.merged{ color:var(--vscode-charts-purple, #a371f7); border-color:var(--vscode-charts-purple, #a371f7); }
+/* The remaining states of the dialog's status pill, coloured like the badge's status chip
+   (without these, draft and closed requests would show an uncoloured neutral pill) */
+.pr-dialog .gg-pill.wip{ color:var(--vscode-descriptionForeground, #888); border-color:var(--vscode-descriptionForeground, #888); }
+.pr-dialog .gg-pill.abandoned{ color:var(--gg-rejected, #bb4b4b); border-color:var(--gg-rejected, #bb4b4b); }
+.pr-dialog .pr-body{
+	white-space:pre-wrap;
+	font-size:12px;
+	max-height:220px;
+	overflow-y:auto;
+	-webkit-user-select:text;
+	user-select:text;
+}
 
 /* Gerrit Integration */
 
 /*
  * Gerrit colour palette. The colours default to VS Code's chart colours so that they follow the
  * active theme, with the original GitHub-inspired palette as fallbacks.
+ * --gg-disapproval-weak deliberately does NOT use --vscode-charts-orange: the built-in themes
+ * resolve that variable to a translucent #EA5C0055, which is unreadable as text (and makes the
+ * text coloured like the theme background invisible on the cr-1 chips) in both light and dark
+ * themes - so it uses solid, theme-kind-specific oranges instead.
  */
 :root{
 	--gg-icon:var(--vscode-charts-yellow, #f5a623);

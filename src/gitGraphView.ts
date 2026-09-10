@@ -36,10 +36,10 @@ import { ExtensionState } from './extensionState';
 import { buildFetchRefspecs, changeShard, filterChangeStates, limitChanges, parseChangeRef } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { PullRequestDataSource } from './pullRequests';
+import { buildPullRequestHeadRefspecs, findStalePullRequestRefs, parseGitRemoteVerbose, parseRemoteUrl, PullRequestDataSource, selectRemote } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, PullRequestInfo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, resolveDiffFromHash, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 
@@ -949,11 +949,13 @@ export class GitGraphView extends Disposable {
 				break;
 			}
 			case 'fetchPullRequest': {
+				const remote = await this.fetchPullRequests(msg.repo);
 				this.sendMessage({
 					command: 'pullRequestStatus',
-					branch: msg.branch,
-					pr: await this.fetchPullRequest(msg.repo, msg.branch)
+					repo: msg.repo,
+					prs: remote === null ? null : remote.prs
 				});
+				if (remote !== null) await this.fetchPullRequestHeadRefs(msg.repo, remote);
 				break;
 			}
 			case 'setInterfaceLanguage': {
@@ -1418,7 +1420,6 @@ export class GitGraphView extends Disposable {
 						<div id="fetchBtn"></div>
 						<div id="refreshBtn"></div>
 					</div>
-					<div id="prStatus" style="display:none"></div>
 					<div id="pinnedControls" style="display:none">
 						<span id="pinnedRowLabel" class="unselectable pinnedRowLabel"></span>
 					</div>
@@ -1468,19 +1469,58 @@ export class GitGraphView extends Disposable {
 	/* Pull Request Methods */
 
 	/**
-	 * Get the pull/merge request whose source branch matches the checked-out branch of a repository.
-	 * Degrades to NULL whenever the integration is disabled, the remote isn't hosted on GitHub or
-	 * GitLab, or the API request fails (any failure is silent).
+	 * Get the pull/merge requests of a repository's GitHub/GitLab remote. Degrades to NULL
+	 * whenever the integration is disabled or no remote is hosted on GitHub or GitLab - logging
+	 * the reason, so missing badges are diagnosable in the extension's output channel.
 	 * @param repo The path of the repository.
-	 * @param branch The branch name.
+	 * @returns The remote and its pull requests, or NULL when unavailable.
 	 */
-	private async fetchPullRequest(repo: string, branch: string) {
+	private async fetchPullRequests(repo: string): Promise<{ name: string, url: string, prs: PullRequestInfo[] } | null> {
 		if (!getConfig().pullRequests.enabled) return null;
 		try {
-			const remoteUrl = await this.dataSource.gitOutput(['remote', 'get-url', 'origin'], repo, (stdout) => stdout.trim());
-			return await this.pullRequests.getPullRequestForBranch(remoteUrl, branch);
-		} catch (_) {
+			const remotes = parseGitRemoteVerbose(await this.dataSource.gitOutput(['remote', '-v'], repo, (stdout) => stdout));
+			const remote = selectRemote(remotes);
+			if (remote === null) {
+				this.logger.log('Pull requests unavailable: no remote of the repository is hosted on GitHub or GitLab');
+				return null;
+			}
+			const prs = await this.pullRequests.getPullRequests(remote.url);
+			if (prs === null) {
+				this.logger.log('Pull requests unavailable: the GitHub/GitLab request for ' + remote.url + ' failed');
+			} else {
+				this.logger.log('Pull requests of ' + remote.url + ': ' + prs.length + ' request(s)');
+			}
+			return { name: remote.name, url: remote.url, prs: prs === null ? [] : prs };
+		} catch (error) {
+			this.logger.log('Pull requests unavailable: ' + (error instanceof Error ? error.message : String(error)));
 			return null;
+		}
+	}
+
+	/**
+	 * Fetch the head commits of the still-open pull requests into the repository (under
+	 * refs/remotes/&lt;remote&gt;/prs/), so that pull requests opened from a fork appear in the
+	 * Git Graph View with their commits, and prune the refs of pull requests that closed since.
+	 * The fetched refs trip the RepoFileWatcher, which refreshes the view with the new commits.
+	 * @param repo The path of the repository.
+	 * @param remote The remote whose pull requests were loaded (see fetchPullRequests).
+	 */
+	private async fetchPullRequestHeadRefs(repo: string, remote: { name: string, url: string, prs: PullRequestInfo[] }) {
+		try {
+			const refspecs = buildPullRequestHeadRefspecs(remote.name, parseRemoteUrl(remote.url), remote.prs);
+			const existing = await this.dataSource.gitOutput(['for-each-ref', '--format=%(refname)', 'refs/remotes/' + remote.name + '/prs/'], repo, (stdout) => stdout.split('\n').filter((line) => line !== ''));
+			let pruned = 0;
+			for (const ref of findStalePullRequestRefs(existing, remote.name, remote.prs)) {
+				await this.dataSource.gitOutput(['update-ref', '-d', ref], repo, () => null);
+				pruned++;
+			}
+			if (refspecs.length > 0) {
+				await this.dataSource.gitOutput(['fetch', '--no-tags', remote.name, ...refspecs], repo, () => null);
+				this.logger.log('Fetched the head commits of ' + refspecs.length + ' open pull request(s) into refs/remotes/' + remote.name + '/prs/');
+			}
+			if (pruned > 0) this.logger.log('Pruned ' + pruned + ' pull request ref(s) that are no longer open');
+		} catch (error) {
+			this.logger.log('Fetching the pull request head refs failed: ' + (error instanceof Error ? error.message : String(error)));
 		}
 	}
 

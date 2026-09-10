@@ -71,7 +71,10 @@ export function parseGithubPulls(body: any): PullRequestInfo[] {
 			state: githubState(pr),
 			author: pr.user && typeof pr.user.login === 'string' ? pr.user.login : '',
 			url: typeof pr.html_url === 'string' ? pr.html_url : '',
-			sourceBranch: pr.head && typeof pr.head.ref === 'string' ? pr.head.ref : ''
+			sourceBranch: pr.head && typeof pr.head.ref === 'string' ? pr.head.ref : '',
+			targetBranch: pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : '',
+			headHash: pr.head && typeof pr.head.sha === 'string' ? pr.head.sha : '',
+			body: typeof pr.body === 'string' ? pr.body : ''
 		});
 	}
 	return pulls;
@@ -100,7 +103,10 @@ export function parseGitlabMergeRequests(body: any): PullRequestInfo[] {
 			state: gitlabState(mr),
 			author: mr.author && typeof mr.author.name === 'string' ? mr.author.name : (mr.author && typeof mr.author.username === 'string' ? mr.author.username : ''),
 			url: typeof mr.web_url === 'string' ? mr.web_url : '',
-			sourceBranch: typeof mr.source_branch === 'string' ? mr.source_branch : ''
+			sourceBranch: typeof mr.source_branch === 'string' ? mr.source_branch : '',
+			targetBranch: typeof mr.target_branch === 'string' ? mr.target_branch : '',
+			headHash: typeof mr.sha === 'string' ? mr.sha : '',
+			body: typeof mr.description === 'string' ? mr.description : ''
 		});
 	}
 	return mrs;
@@ -113,17 +119,81 @@ function gitlabState(mr: any): PullRequestState {
 	return 'open';
 }
 
+/** The maximum number of open pull requests whose head commits are fetched into the repository. */
+const MAX_FETCHED_PULL_REQUEST_HEADS = 25;
+
 /**
- * Find the pull/merge request whose source branch matches the given branch name.
- * @param pulls The pull requests (as returned by the parse functions).
- * @param branch The branch name.
- * @returns The first matching pull request, or NULL if none matches.
+ * The refspecs that fetch the head commits of the still-open pull requests into the repository
+ * (under refs/remotes/&lt;remote&gt;/prs/), so that pull requests opened from a fork - whose
+ * commits the repository wouldn't otherwise have - appear in the Git Graph View.
+ * @param remoteName The name of the Git remote to fetch from.
+ * @param remote The parsed remote (its platform decides the source ref namespace), or NULL.
+ * @param prs The pull requests of the remote (as returned by the parse functions).
+ * @returns The refspecs (empty when the remote isn't GitHub/GitLab or no request is open).
  */
-export function findPullRequestForBranch(pulls: ReadonlyArray<PullRequestInfo>, branch: string): PullRequestInfo | null {
-	for (const pr of pulls) {
-		if (pr.sourceBranch === branch) return pr;
+export function buildPullRequestHeadRefspecs(remoteName: string, remote: ParsedRemote | null, prs: ReadonlyArray<PullRequestInfo>): string[] {
+	if (remote === null) return [];
+	const sourcePrefix = remote.platform === 'github' ? 'refs/pull/' : 'refs/merge-requests/';
+	const refspecs: string[] = [];
+	for (const pr of prs) {
+		if (pr.state !== 'open' && pr.state !== 'draft') continue;
+		if (refspecs.length >= MAX_FETCHED_PULL_REQUEST_HEADS) break;
+		refspecs.push('+' + sourcePrefix + pr.number + '/head:refs/remotes/' + remoteName + '/prs/' + pr.number);
 	}
-	return null;
+	return refspecs;
+}
+
+/**
+ * Of the pull request head refs already in the repository, the ones whose pull request is no
+ * longer open (closed requests are pruned; merged ones keep their commits in the graph).
+ * @param existingRefs The existing refs under refs/remotes/<remote>/prs/ (as `refs/remotes/<remote>/prs/<number>`).
+ * @param remoteName The name of the Git remote the refs were fetched from.
+ * @param prs The pull requests of the remote (as returned by the parse functions).
+ * @returns The refs to delete.
+ */
+export function findStalePullRequestRefs(existingRefs: ReadonlyArray<string>, remoteName: string, prs: ReadonlyArray<PullRequestInfo>): string[] {
+	const openOrMerged = new Set(prs.filter((pr) => pr.state === 'open' || pr.state === 'draft' || pr.state === 'merged').map((pr) => String(pr.number)));
+	const prefix = 'refs/remotes/' + remoteName + '/prs/';
+	const stale: string[] = [];
+	for (const ref of existingRefs) {
+		const number = ref.startsWith(prefix) ? ref.substring(prefix.length) : '';
+		if (number !== '' && !openOrMerged.has(number)) stale.push(ref);
+	}
+	return stale;
+}
+
+/**
+ * Parse the output of `git remote -v` into the repository's remotes.
+ * @param stdout The output of `git remote -v` (a "name\turl (fetch)" and "name\turl (push)" line per remote URL).
+ * @returns The remotes, one entry per name (the fetch URL; entries are deduplicated by name).
+ */
+export function parseGitRemoteVerbose(stdout: string): Array<{ name: string, url: string }> {
+	const remotes: Array<{ name: string, url: string }> = [];
+	for (const line of stdout.split('\n')) {
+		const parts = line.trim().split('\t');
+		if (parts.length !== 2) continue;
+		const name = parts[0], url = parts[1].replace(/ \((?:fetch|push)\)$/, '');
+		if (name === '' || remotes.some((remote) => remote.name === name)) continue;
+		remotes.push({ name: name, url: url });
+	}
+	return remotes;
+}
+
+/**
+ * Select the remote to query for pull requests: `origin` when it is hosted on a supported
+ * platform, otherwise the first remote that is (a repository whose GitHub/GitLab remote is named
+ * differently must still get its pull requests).
+ * @param remotes The repository's remotes (as returned by parseGitRemoteVerbose).
+ * @returns The selected remote (its name is needed for fetching, its URL for the API), or NULL when no remote is hosted on a supported platform.
+ */
+export function selectRemote(remotes: ReadonlyArray<{ name: string, url: string }>): { name: string, url: string } | null {
+	let fallback: { name: string, url: string } | null = null;
+	for (const remote of remotes) {
+		if (parseRemoteUrl(remote.url) === null) continue;
+		if (remote.name === 'origin') return remote;
+		if (fallback === null) fallback = remote;
+	}
+	return fallback;
 }
 
 /**
@@ -136,7 +206,18 @@ export function findPullRequestForBranch(pulls: ReadonlyArray<PullRequestInfo>, 
 export function fetchJson(url: string, headers: { [name: string]: string }, timeoutMs: number): Promise<any> {
 	return new Promise<any>((resolve, reject) => {
 		const target = new URL(url);
-		const request = https.get({
+		let settled = false;
+		const settle = (callback: () => void) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(deadline);
+			callback();
+		};
+			// An ABSOLUTE deadline: request.setTimeout only covers socket inactivity, so a hung DNS
+			// lookup or connect would otherwise leave the promise pending forever (no error, no badge).
+			// Created only after the request: if https.get threw synchronously, the timer would fire
+			// on an uninitialized `request` and crash the extension host with a ReferenceError.
+			const request = https.get({
 			protocol: target.protocol,
 			hostname: target.hostname,
 			port: target.port,
@@ -146,22 +227,24 @@ export function fetchJson(url: string, headers: { [name: string]: string }, time
 			const status = response.statusCode === undefined ? 0 : response.statusCode;
 			if (status < 200 || status >= 300) {
 				response.resume();
-				reject('HTTP ' + status);
+				settle(() => reject('HTTP ' + status));
 				return;
 			}
 			const chunks: Buffer[] = [];
 			response.on('data', (chunk: Buffer) => chunks.push(chunk));
-			response.on('end', () => {
+			response.on('end', () => settle(() => {
 				try {
 					resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
 				} catch (_) {
 					reject('invalid JSON response');
 				}
-			});
-			response.on('error', reject);
+			}));
+			response.on('error', (error) => settle(() => reject(error)));
 		});
-		request.on('error', reject);
-		request.setTimeout(timeoutMs, () => request.destroy(new Error('request timed out')));
+			request.on('error', (error) => settle(() => reject(error)));
+			const deadline = setTimeout(() => {
+				request.destroy(new Error('request timed out'));
+			}, timeoutMs);
 	});
 }
 
@@ -198,20 +281,12 @@ export class PullRequestDataSource {
 			const token = process.env.GITLAB_TOKEN;
 			const headers: { [name: string]: string } = { 'User-Agent': 'git-graph-rs' };
 			if (token) headers['PRIVATE-TOKEN'] = token;
-			return parseGitlabMergeRequests(await this.fetchJson(remote.apiBase + '/projects/' + encodeURIComponent(remote.repo) + '/merge_requests?state=opened&per_page=100', headers, REQUEST_TIMEOUT_MS));
+			// state=all like GitHub: a merged or closed request must stay in the list, or the refs
+			// of merged requests would be pruned by findStalePullRequestRefs (which keeps them
+			// deliberately, so their commits stay in the graph)
+			return parseGitlabMergeRequests(await this.fetchJson(remote.apiBase + '/projects/' + encodeURIComponent(remote.repo) + '/merge_requests?state=all&per_page=100', headers, REQUEST_TIMEOUT_MS));
 		} catch (_) {
 			return null; // silent degradation (e.g. anonymous access to a private repository, or no network)
 		}
-	}
-
-	/**
-	 * Get the pull/merge request whose source branch matches the given branch.
-	 * @param remoteUrl The URL of the Git remote.
-	 * @param branch The branch name.
-	 * @returns The matching pull request, or NULL if none was found (or the request failed).
-	 */
-	public async getPullRequestForBranch(remoteUrl: string, branch: string): Promise<PullRequestInfo | null> {
-		const pulls = await this.getPullRequests(remoteUrl);
-		return pulls === null ? null : findPullRequestForBranch(pulls, branch);
 	}
 }

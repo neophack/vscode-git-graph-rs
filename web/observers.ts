@@ -691,6 +691,16 @@ function observeTableEvents(view: GitGraphView) {
 
 			}
 
+			if (eventElem.classList.contains('pr')) {
+
+				// The pull request badge was clicked: show the details of the request
+
+				showPullRequestDetails(view, eventElem.dataset.hash!);
+
+				return;
+
+			}
+
 		} else if ((eventElem = eventTarget.closest('.commit')) !== null) {
 
 			// .commit was clicked
@@ -767,6 +777,8 @@ function observeTableEvents(view: GitGraphView) {
 
 			if (eventElem.classList.contains(CLASS_REF_GERRIT)) return; // the Gerrit badge has no double click action
 
+			if (eventElem.classList.contains('pr')) return; // the pull request badge has no double click action
+
 
 
 			if (eventElem.classList.contains(CLASS_REF_HEAD) || eventElem.classList.contains(CLASS_REF_REMOTE)) {
@@ -840,6 +852,11 @@ function observeTableEvents(view: GitGraphView) {
 			if (commit === null) return;
 
 			if (eventElem.classList.contains(CLASS_REF_GERRIT)) return; // the Gerrit badge has no context menu
+
+			// The pull request badge has no context menu either (it is not a ref: without this
+			// guard it would fall through to the remote branch actions below, which would act on
+			// the badge's label as if it were a remote-tracking branch name)
+			if (eventElem.classList.contains('pr')) return;
 
 
 

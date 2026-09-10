@@ -241,7 +241,7 @@
 	"config.git-graph-rs.sourceCodeProviderIntegrationLocation.description": "指定\"查看 Git Graph\"操作在源代码管理提供程序标题栏上的显示位置。",
 	"config.git-graph-rs.sourceCodeProviderIntegrationLocation.enumDescription0": "在源代码管理提供程序的标题栏上显示\"查看 Git Graph\"操作",
 	"config.git-graph-rs.sourceCodeProviderIntegrationLocation.enumDescription1": "在源代码管理提供程序标题栏的\"更多操作...\"菜单中显示\"查看 Git Graph\"操作",
-	"config.git-graph-rs.pullRequests.enabled.description": "在 Git Graph 视图中显示当前检出分支的 GitHub / GitLab 拉取（合并）请求状态。设置了 GITHUB_TOKEN / GITLAB_TOKEN 环境变量时将使用其进行认证。",
+	"config.git-graph-rs.pullRequests.enabled.description": "在 Git Graph 视图中以提交行上的徽章显示仓库的 GitHub / GitLab 拉取（合并）请求。打开状态的请求头提交会被取到 refs/remotes/<remote>/prs/ 下，使来自 fork 的请求也出现在图形中。设置了 GITHUB_TOKEN / GITLAB_TOKEN 环境变量时将使用其进行认证。",
 	"config.git-graph-rs.gerrit.remote.description": "在仓库设置中启用获取变更引用后，Gerrit 变更引用从该远程获取并按其清理。",
 	"config.git-graph-rs.gerrit.fetchLimit.description": "启用获取变更引用后，获取到仓库中的 Gerrit 变更数量上限（按变更号取最近的）。每个变更连同其最新补丁集与 NoteDb meta 引用一起获取到 refs/remotes/<gerrit.remote>/changes/ 下。Git Graph 视图的仓库设置可按仓库覆盖此上限。",
 	"config.git-graph-rs.gerrit.showReviewProgress.description": "在提交的 Gerrit 变更徽章中显示 Code-Review（CR）和 Verified（V）评分。",

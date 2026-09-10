@@ -442,8 +442,13 @@ const STRINGS_EN = {
 	prStateMerged: 'Merged',
 	prStateClosed: 'Closed',
 	prStateDraft: 'Draft',
-	prStatusTitle: 'Pull Request {0}: {1} (click to open)',
+	prStatusTitle: 'Pull Request {0}: {1} (click for details)',
 	prOpening: 'Opening Pull Request',
+	prAuthorLabel: 'Author: {0}',
+	prBranchesLabel: 'Branches',
+	prHeadCommitLabel: 'Head Commit',
+	prDescriptionSection: 'Description',
+	prOpenOnHost: 'Open Pull Request',
 
 	/* View messages */
 	loading: 'Loading ...',
@@ -1251,8 +1256,13 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	prStateMerged: '已合并',
 	prStateClosed: '已关闭',
 	prStateDraft: '草稿',
-	prStatusTitle: '拉取请求 {0}：{1}（点击打开）',
+	prStatusTitle: '拉取请求 {0}：{1}（点击查看详情）',
 	prOpening: '正在打开拉取请求',
+	prAuthorLabel: '作者：{0}',
+	prBranchesLabel: '分支',
+	prHeadCommitLabel: '头提交',
+	prDescriptionSection: '描述',
+	prOpenOnHost: '打开拉取请求页面',
 
 	/* View messages */
 	loading: '正在加载...',

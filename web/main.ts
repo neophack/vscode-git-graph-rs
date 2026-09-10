@@ -91,8 +91,10 @@ class GitGraphView {
 	 */
 	private restoreScrollTop: number | null = null;
 
-	/** The branch the current pull request status was requested for (NULL => none requested). */
-	private prStatusBranch: string | null = null;
+	/** The repositories whose pull requests were already requested (one request per repository). */
+	private prStatusRepos: Set<string> = new Set();
+	/** The pull requests of the current repository's remote, keyed by the commit each one points at. */
+	public pullRequestsByHead: { [hash: string]: GG.PullRequestInfo } = {};
 	public compareSourceHash: string | null = null; // the commit selected via "Select for Compare" (persisted with the webview state)
 	private commitPathFilter: string | null = null; // the path filter applied to the loaded commits (persisted with the webview state)
 
@@ -181,6 +183,10 @@ class GitGraphView {
 		makeKeyboardActivatable(this.refreshBtnElem);
 		this.refreshBtnElem.addEventListener('click', () => {
 			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
+				// An explicit refresh must also re-query the pull request states: prStatusRepos is a
+				// one-shot cache per repository, so without dropping the entry a request merged since
+				// the view loaded keeps its badge showing "open" until the webview is reloaded.
+				this.prStatusRepos.delete(this.currentRepo);
 				this.refresh(true, true);
 			}
 		});
@@ -351,8 +357,11 @@ class GitGraphView {
 		this.currentAuthors = null;
 		this.commitPathFilter = null;
 		this.compareSourceHash = null;
-		this.prStatusBranch = null;
-		this.renderPullRequestStatus(null);
+		// The pull requests of the previous repository don't apply to the new one: drop them and
+		// forget which repositories were already requested, so switching back re-requests them
+		// (otherwise the badges would never come back after the switch cleared them)
+		this.pullRequestsByHead = {};
+		this.prStatusRepos.clear();
 		this.renderFetchButton();
 		this.renderFilterButton();
 		closeCommitDetails(this, false);
@@ -797,58 +806,38 @@ class GitGraphView {
 		if (this.currentRepoRefreshState.loadRepoInfoRefreshId !== msg.refreshId) return;
 		if (msg.error === null) {
 			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo, msg.remoteRefsPending === true);
-			this.requestPullRequestStatus();
+			this.requestPullRequests();
 		} else {
 			this.displayLoadDataError(strings.errLoadRepoInfo, msg.error);
 		}
 	}
 
 	/**
-	 * Request the pull/merge request status of the checked-out branch from the extension host
-	 * (only when the pull request integration is enabled). One request per branch: the request
-	 * is skipped when the status of this branch was already requested.
+	 * Request the pull/merge requests of the current repository from the extension host (only
+	 * when the pull request integration is enabled). One request per repository: the requests
+	 * drive the badges on the commit rows, which don't depend on the checked-out branch.
 	 */
-	private requestPullRequestStatus() {
-		const branch = this.gitBranchHead;
-		if (!this.config.pullRequests.enabled || branch === null) {
-			this.prStatusBranch = null;
-			this.renderPullRequestStatus(null);
-			return;
-		}
-		if (this.prStatusBranch === branch) return;
-		this.prStatusBranch = branch;
-		sendMessage({ command: 'fetchPullRequest', repo: this.currentRepo, branch: branch });
+	private requestPullRequests() {
+		if (!this.config.pullRequests.enabled) return;
+		if (this.prStatusRepos.has(this.currentRepo)) return;
+		this.prStatusRepos.add(this.currentRepo);
+		sendMessage({ command: 'fetchPullRequest', repo: this.currentRepo });
 	}
 
 	/**
-	 * Process a pull request status response (ignored when the checked-out branch changed since).
+	 * Process a pull request response (ignored for other repositories): index the requests by the
+	 * commit each one points at and re-render, so the loaded commits carrying a pull request get
+	 * their badge. A NULL list (the status couldn't be determined) keeps the current badges.
 	 */
 	public processPullRequestStatus(msg: GG.ResponsePullRequestStatus) {
-		if (this.gitBranchHead !== msg.branch || this.prStatusBranch !== msg.branch) return;
-		this.renderPullRequestStatus(msg.pr);
-	}
-
-	/**
-	 * Render the pull request status badge in the header (hidden when there is no matching PR/MR).
-	 */
-	private renderPullRequestStatus(pr: GG.PullRequestInfo | null) {
-		const elem = document.getElementById('prStatus');
-		if (elem === null) return;
-		if (pr === null) {
-			elem.style.display = 'none';
-			elem.innerHTML = '';
-			return;
+		if (this.currentRepo !== msg.repo || msg.prs === null) return;
+		const pullRequestsByHead: { [hash: string]: GG.PullRequestInfo } = {};
+		for (const pr of msg.prs) {
+			if (pr.headHash !== '') pullRequestsByHead[pr.headHash] = pr;
 		}
-		const stateText = pr.state === 'merged' ? strings.prStateMerged : pr.state === 'closed' ? strings.prStateClosed : pr.state === 'draft' ? strings.prStateDraft : strings.prStateOpen;
-		const author = pr.author !== '' ? ' · ' + escapeHtml(pr.author) : '';
-		elem.innerHTML = '<a class="prBadge st-' + pr.state + '" tabindex="-1" title="' + escapeHtml(formatStr(strings.prStatusTitle, '#' + pr.number, pr.title)) + '">' + strings.prLabel + ' #' + pr.number + ' · ' + stateText + author + '</a>';
-		elem.style.display = 'block';
-		const badge = elem.querySelector('.prBadge');
-		if (badge !== null) {
-			badge.addEventListener('click', () => {
-				if (pr.url !== '') runAction({ command: 'openExternalUrl', url: pr.url }, strings.prOpening);
-			});
-		}
+		if (pullRequestMapsEqual(this.pullRequestsByHead, pullRequestsByHead)) return;
+		this.pullRequestsByHead = pullRequestsByHead;
+		this.render();
 	}
 
 	public processLoadCommitsResponse(msg: GG.ResponseLoadCommits) {
@@ -1589,6 +1578,9 @@ class GitGraphView {
 			refGerrit = getGerritBadgeHtml(this, gerritState);
 		}
 
+		const pullRequest = this.pullRequestsByHead[commit.hash];
+		const refPullRequest = typeof pullRequest !== 'undefined' ? getPullRequestBadgeHtml(pullRequest) : '';
+
 		if (commit.stash !== null) {
 			refName = escapeHtml(commit.stash.selector);
 			refBranches = '<span class="gitRef stash" data-name="' + refName + '">' + SVG_ICONS.stash + '<span class="gitRefName" data-fullref="' + refName + '">' + escapeHtml(commit.stash.selector.substring(5)) + '</span></span>' + refBranches;
@@ -1611,7 +1603,7 @@ class GitGraphView {
 			? '<span class="openChangesBtn" title="' + escapeHtml(formatStr(strings.openChangesTitleWithSubject, openChangesSubject)) + '">' + SVG_ICONS.openChanges + '</span>'
 			: '';
 		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">' +
-			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + message + openChangesBtn + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + message + openChangesBtn) + '</span></td>' +
+			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + refPullRequest + message + openChangesBtn + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + refPullRequest + message + openChangesBtn) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + getResizeColHtml(2) + date.formatted + '</td>' : '') +
 			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" decoding="sync" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
 			(colVisibility.commit ? '<td class="text" title="' + escapeHtml(commit.hash) + '">' + getResizeColHtml(4) + abbrevCommit(commit.hash) + '</td>' : '') +
@@ -2988,6 +2980,18 @@ function findCommitElemWithId(id: number | null) {
 	// Use an attribute selector (backed by the browser's query engine) instead of scanning every
 	// commit row: with many loaded commits this lookup runs on every vertex hover / interaction
 	return document.querySelector('tr.commit[data-id="' + id.toString() + '"]') as HTMLElement | null;
+}
+
+/** Whether two pull request indexes (keyed by the commit each request points at) carry the same requests. */
+function pullRequestMapsEqual(a: { [hash: string]: GG.PullRequestInfo }, b: { [hash: string]: GG.PullRequestInfo }) {
+	const aHashes = Object.keys(a), bHashes = Object.keys(b);
+	return aHashes.length === bHashes.length && aHashes.every((hash) => {
+		const x = a[hash], y = b[hash];
+		// every field, not only the badge's: the details dialog reads the map too, and must not
+		// keep showing a stale description, author or branches after the request was updated
+		return typeof y !== 'undefined' && x.number === y.number && x.state === y.state && x.title === y.title &&
+			x.author === y.author && x.url === y.url && x.sourceBranch === y.sourceBranch && x.targetBranch === y.targetBranch && x.body === y.body;
+	});
 }
 
 function generateSignatureHtml(signature: GG.GitSignature) {

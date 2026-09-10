@@ -6,6 +6,12 @@ export interface PullRequestInfo {
 	author: string;
 	url: string;
 	sourceBranch: string;
+	/** The branch the pull request is opened against (GitHub's `base.ref`, GitLab's `target_branch`). */
+	targetBranch: string;
+	/** The commit the pull request currently points at (GitHub's `head.sha`, GitLab's `sha`). */
+	headHash: string;
+	/** The description of the pull request (GitHub's `body`, GitLab's `description`). */
+	body: string;
 }
 
 export type PullRequestState = 'open' | 'merged' | 'closed' | 'draft';
