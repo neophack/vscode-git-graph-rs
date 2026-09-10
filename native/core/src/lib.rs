@@ -16,6 +16,7 @@ pub mod log;
 pub mod refs;
 pub mod repository;
 pub mod stash;
+pub mod stats;
 pub mod status;
 pub mod types;
 

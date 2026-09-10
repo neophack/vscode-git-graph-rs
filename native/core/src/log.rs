@@ -583,7 +583,7 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
 }
 
 /// The commit `refs/stash` points at, if a stash exists.
-fn stash_tip(repo: &Repo) -> Option<ObjectId> {
+pub(crate) fn stash_tip(repo: &Repo) -> Option<ObjectId> {
     let git = repo.borrow();
     git.try_find_reference("refs/stash")
         .ok()
