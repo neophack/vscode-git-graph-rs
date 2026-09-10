@@ -697,7 +697,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 					+ (expandedCommit.avatar !== null ? '<span class="cdvSummaryAvatar"><img src="' + expandedCommit.avatar + '"></span>' : '')
 
-					+ '</span></span><br><br>' + textFormatter.format(commitDetails.body);
+					+ '</span></span><br><br>' + renderCommitMessageBody(view, expandedCommit, commitDetails.body, textFormatter);
 
 			} else {
 
@@ -794,6 +794,12 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 
 	makeCdvResizable(view);
+
+	const markdownToggle = document.getElementById('cdvMarkdownToggle');
+	if (markdownToggle !== null) {
+		makeKeyboardActivatable(markdownToggle);
+		markdownToggle.addEventListener('click', () => toggleCommitMessageMarkdown(view));
+	}
 
 	document.getElementById('cdvClose')!.addEventListener('click', () => {
 
@@ -1275,6 +1281,40 @@ function setFileViewType(view: GitGraphView, type: GG.FileViewType) {
 
 }
 
+
+/**
+ * Render a commit message body: as block-level Markdown (with a toggle to switch to the plain
+ * inline-formatted view) when the `git-graph-rs.markdown` setting is on and the message looks
+ * like it contains Markdown, otherwise exactly as before (inline formatting only).
+ */
+function renderCommitMessageBody(view: GitGraphView, expandedCommit: ExpandedCommit, body: string, textFormatter: TextFormatter): string {
+	const offerToggle = view.config.markdown && hasMarkdown(body);
+	const showMarkdown = offerToggle && expandedCommit.showMarkdown;
+	return '<span id="cdvMessageBody">' + (showMarkdown ? renderMarkdown(body) : textFormatter.format(body)) + '</span>'
+		+ (offerToggle ? '<span id="cdvMarkdownToggle" class="cdvMarkdownToggle" role="button" tabindex="0">' + escapeHtml(showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel) + '</span>' : '');
+}
+
+/** Flips the Markdown/Plain toggle for the currently open commit, re-rendering only the message body and its toggle control (no full panel re-render, so nothing scrolls or flashes). */
+function toggleCommitMessageMarkdown(view: GitGraphView) {
+	const expandedCommit = view.expandedCommit;
+	if (expandedCommit === null || expandedCommit.commitDetails === null || expandedCommit.commitHash === UNCOMMITTED) return;
+
+	expandedCommit.showMarkdown = !expandedCommit.showMarkdown;
+
+	const textFormatter = new TextFormatter(view.commits, view.gitRepos[view.currentRepo].issueLinkingConfig, {
+		commits: true,
+		emoji: true,
+		issueLinking: true,
+		markdown: view.config.markdown,
+		multiline: true,
+		urls: true
+	});
+	const bodyElem = document.getElementById('cdvMessageBody'), toggleElem = document.getElementById('cdvMarkdownToggle');
+	if (bodyElem === null || toggleElem === null) return;
+
+	bodyElem.innerHTML = expandedCommit.showMarkdown ? renderMarkdown(expandedCommit.commitDetails.body) : textFormatter.format(expandedCommit.commitDetails.body);
+	toggleElem.textContent = expandedCommit.showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel;
+}
 
 function changeFileViewType(view: GitGraphView, type: GG.FileViewType) {
 

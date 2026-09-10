@@ -105,6 +105,10 @@ class GitGraphView {
 
 	public readonly findWidget: FindWidget;
 	public readonly settingsWidget: SettingsWidget;
+	public readonly conflictBanner: ConflictBanner;
+	public readonly reflogView: ReflogView;
+	public readonly worktreeDialog: WorktreeDialog;
+	public readonly statisticsView: StatisticsView;
 	public readonly repoDropdown: Dropdown;
 	public readonly branchDropdown: Dropdown;
 	public readonly authorDropdown: Dropdown;
@@ -197,6 +201,10 @@ class GitGraphView {
 
 		this.findWidget = new FindWidget(this);
 		this.settingsWidget = new SettingsWidget(this);
+		this.conflictBanner = new ConflictBanner(this);
+		this.reflogView = new ReflogView(this);
+		this.worktreeDialog = new WorktreeDialog(this);
+		this.statisticsView = new StatisticsView(this);
 
 		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, this.config.referenceLabels.branchLabelsAlignedToGraph);
 		alterClass(document.body, CLASS_TAG_LABELS_RIGHT_ALIGNED, this.config.referenceLabels.tagLabelsOnRight);
@@ -241,7 +249,7 @@ class GitGraphView {
 			this.saveState();
 		}
 
-		const currentBtn = document.getElementById('currentBtn')!, fetchBtn = document.getElementById('fetchBtn')!, findBtn = document.getElementById('findBtn')!, settingsBtn = document.getElementById('settingsBtn')!, terminalBtn = document.getElementById('terminalBtn')!;
+		const currentBtn = document.getElementById('currentBtn')!, fetchBtn = document.getElementById('fetchBtn')!, findBtn = document.getElementById('findBtn')!, reflogBtn = document.getElementById('reflogBtn')!, worktreeBtn = document.getElementById('worktreeBtn')!, statisticsBtn = document.getElementById('statisticsBtn')!, settingsBtn = document.getElementById('settingsBtn')!, terminalBtn = document.getElementById('terminalBtn')!;
 		currentBtn.title = strings.scrollToHeadTitle;
 		currentBtn.innerHTML = SVG_ICONS.current;
 		currentBtn.addEventListener('click', () => {
@@ -255,6 +263,15 @@ class GitGraphView {
 		findBtn.title = strings.findTitle;
 		findBtn.innerHTML = SVG_ICONS.search;
 		findBtn.addEventListener('click', () => this.findWidget.show(true));
+		reflogBtn.title = strings.reflogTitle;
+		reflogBtn.innerHTML = SVG_ICONS.commit;
+		reflogBtn.addEventListener('click', () => this.reflogView.show());
+		worktreeBtn.title = strings.worktreeDialogTitle;
+		worktreeBtn.innerHTML = SVG_ICONS.package;
+		worktreeBtn.addEventListener('click', () => this.worktreeDialog.show());
+		statisticsBtn.title = strings.statisticsTitle;
+		statisticsBtn.innerHTML = SVG_ICONS.info;
+		statisticsBtn.addEventListener('click', () => this.statisticsView.show());
 		settingsBtn.title = strings.settingsTitle;
 		settingsBtn.innerHTML = SVG_ICONS.gear;
 		settingsBtn.addEventListener('click', () => this.settingsWidget.show(this.currentRepo));
@@ -276,7 +293,7 @@ class GitGraphView {
 		// These toolbar icons are styled <div>s rather than native <button>s, so they need to be
 		// wired into the tab order and given Enter/Space activation manually (the CSS already has
 		// :focus-visible rules for them, they just weren't reachable by keyboard)
-		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn].forEach((btn) => {
+		[currentBtn, fetchBtn, findBtn, reflogBtn, worktreeBtn, statisticsBtn, settingsBtn, terminalBtn, filterBtn].forEach((btn) => {
 			if (btn === null) return;
 			btn.tabIndex = 0;
 			btn.setAttribute('role', 'button');
@@ -804,6 +821,7 @@ class GitGraphView {
 		// this one was in flight) must not apply the old repository's branches/head/remotes to the
 		// current view.
 		if (this.currentRepoRefreshState.loadRepoInfoRefreshId !== msg.refreshId) return;
+		this.conflictBanner.update(msg.operationState);
 		if (msg.error === null) {
 			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo, msg.remoteRefsPending === true);
 			this.requestPullRequests();
@@ -1258,6 +1276,7 @@ class GitGraphView {
 			lastViewedFile: null,
 			loading: true,
 			entered: false,
+			showMarkdown: true,
 			lineCounts: {
 				pending: null,
 				requested: new Set<string>(),
@@ -2395,6 +2414,9 @@ window.addEventListener('load', () => {
 	 */
 	function handleResponseMessage(msg: GG.ResponseMessage) {
 		switch (msg.command) {
+			case 'abortOperation':
+				refreshOrDisplayError(msg.error, strings.errAbortOperation);
+				break;
 			case 'addRemote':
 				refreshOrDisplayError(msg.error, strings.errAddRemote, true);
 				break;
@@ -2424,6 +2446,29 @@ window.addEventListener('load', () => {
 			case 'cleanUntrackedFiles':
 				refreshOrDisplayError(msg.error, strings.errCleanUntracked);
 				break;
+			case 'commitFixup':
+				refreshOrDisplayError(msg.error, strings.errCommitFixup);
+				break;
+			case 'commitSquash':
+				refreshOrDisplayError(msg.error, strings.errCommitSquash);
+				break;
+			case 'continueOperation':
+				refreshOrDisplayError(msg.error, strings.errContinueOperation);
+				break;
+			case 'predictConflicts': {
+				// Only patches the dialog if it is still showing (or fading out) for the same
+				// ours/theirs pair the prediction was requested for - a stale response for a
+				// dialog the user has since replaced with a different one must not patch it. A
+				// NULL prediction (git too old, or the probe itself failed) leaves the placeholder
+				// hidden, and a clean prediction never surfaces to the user.
+				const box = document.getElementById('predictedConflicts');
+				if (box !== null && box.getAttribute('data-ours') === msg.ours && box.getAttribute('data-theirs') === msg.theirs && msg.prediction !== null && msg.prediction.conflicted) {
+					box.style.display = '';
+					box.innerHTML = '<br><span class="dialogAlert warning">' + SVG_ICONS.alert + escapeHtml(strings.conflictPredictedTitle) + '</span>'
+						+ '<span class="messageContent"><b>' + escapeHtml(strings.conflictBannerFilesLabel) + '</b> ' + msg.prediction.files.map((file) => escapeHtml(file)).join(', ') + '</span>';
+				}
+				break;
+			}
 			case 'commitDetails':
 				if (msg.commitDetails !== null) {
 					showCommitDetails(gitGraph, msg.commitDetails, createFileTree(gitGraph, msg.commitDetails.fileChanges, msg.codeReview), msg.avatar, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
@@ -2527,6 +2572,27 @@ window.addEventListener('load', () => {
 				break;
 			case 'loadRepoInfo':
 				gitGraph.processLoadRepoInfoResponse(msg);
+				break;
+			case 'reflog':
+				gitGraph.reflogView.processResponse(msg);
+				break;
+			case 'worktreeList':
+				gitGraph.worktreeDialog.processListResponse(msg);
+				break;
+			case 'repoStatistics':
+				gitGraph.statisticsView.processResponse(msg);
+				break;
+			case 'worktreeAdd':
+				refreshOrDisplayError(msg.error, strings.errWorktreeAdd);
+				gitGraph.worktreeDialog.refresh();
+				break;
+			case 'worktreeRemove':
+				refreshOrDisplayError(msg.error, strings.errWorktreeRemove);
+				gitGraph.worktreeDialog.refresh();
+				break;
+			case 'worktreePrune':
+				refreshOrDisplayError(msg.error, strings.errWorktreePrune);
+				gitGraph.worktreeDialog.refresh();
 				break;
 			case 'loadRepos':
 				gitGraph.loadRepos(msg.repos, msg.lastActiveRepo, msg.loadViewTo);

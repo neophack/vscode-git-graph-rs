@@ -653,6 +653,7 @@ const STRINGS_EN = {
 	noCommitsInRepo: 'There are no commits in this repository.',
 	retryAction: 'Retry',
 	unexpectedErrorHandlingMessage: 'An unexpected error occurred while handling a message from the extension: {0}',
+	errAbortOperation: 'Unable to Abort',
 	errAddRemote: 'Unable to Add Remote',
 	errAddTag: 'Unable to Add Tag',
 	errApplyStash: 'Unable to Apply Stash',
@@ -664,6 +665,9 @@ const STRINGS_EN = {
 	errCleanUntracked: 'Unable to Clean Untracked Files',
 	errCommitDetails: 'Unable to load Commit Details',
 	errCommitComparison: 'Unable to load Commit Comparison',
+	errCommitFixup: 'Unable to Create Fixup Commit',
+	errCommitSquash: 'Unable to Create Squash Commit',
+	errContinueOperation: 'Unable to Continue',
 	errCopyFilePath: 'Unable to Copy File Path to Clipboard',
 	errCopyToClipboard: 'Unable to Copy {0} to Clipboard',
 	errCreateArchive: 'Unable to Create Archive',
@@ -818,7 +822,78 @@ const STRINGS_EN = {
 	graphTooltipStashes: 'Stashes: ',
 	filterDropdownPlaceholder: 'Filter {0}...',
 	dropdownNoResults: 'No results found.',
-	findZeroLengthMatch: 'Cannot use a regular expression which has zero length matches'
+	findZeroLengthMatch: 'Cannot use a regular expression which has zero length matches',
+
+	/* Conflict Banner */
+	conflictBannerTitleMerge: 'Merge Conflict',
+	conflictBannerTitleRebase: 'Rebase Conflict',
+	conflictBannerTitleCherryPick: 'Cherry Pick Conflict',
+	conflictBannerTitleRevert: 'Revert Conflict',
+	conflictBannerRebaseProgress: 'Step {0} of {1}',
+	conflictBannerFilesLabel: 'Conflicted Files:',
+	conflictBannerContinue: 'Continue',
+	conflictBannerAbort: 'Abort',
+	conflictBannerAbortConfirm: 'Are you sure you want to abort this {0}?',
+	conflictPredictedTitle: 'This is predicted to conflict',
+
+	/* Reflog */
+	reflogTitle: 'Reflog',
+	reflogEmpty: 'The reflog is empty.',
+	reflogDangling: 'This commit is no longer reachable from any branch, tag, remote-tracking branch or stash.',
+	reflogLoadMore: 'Load More Entries',
+	reflogMenuReset: 'Reset current branch to here',
+	reflogMenuCopySelector: 'Copy Reflog Selector to Clipboard',
+
+	/* Worktrees */
+	worktreeDialogTitle: 'Worktrees',
+	worktreeNoneFound: 'No worktrees were found.',
+	worktreeMainBadge: 'main',
+	worktreeLocked: 'locked',
+	worktreePrunable: 'prunable',
+	worktreePrunableInfo: 'The working directory for this worktree no longer exists on disk.',
+	worktreeDetached: 'Detached',
+	worktreeAlreadyCheckedOut: '(checked out in another worktree)',
+	worktreeAddTitle: 'Add Worktree',
+	worktreePathLabel: 'Worktree Path',
+	worktreePathPlaceholder: 'Absolute path for the new worktree',
+	worktreeStartPointLabel: 'Branch / Start Point',
+	worktreeNewBranchLabel: 'New Branch Name',
+	worktreeNewBranchPlaceholder: 'Leave blank to check out the branch above as-is',
+	worktreeNewBranchInfo: 'When set, a new branch is created at the selected start point and checked out in the worktree, instead of checking out the existing branch directly.',
+	addingWorktree: 'Adding Worktree ...',
+	worktreeRemoveTitle: 'Remove Worktree',
+	worktreeRemoveConfirm: 'Are you sure you want to remove the worktree at "{0}"?',
+	worktreeForceCheckbox: 'Force',
+	worktreeRemoveForceInfo: 'Required if the worktree has uncommitted changes, or is locked.',
+	removingWorktree: 'Removing Worktree ...',
+	worktreePruneTitle: 'Prune Worktrees',
+	worktreePruneConfirm: 'Are you sure you want to prune worktree administrative files for worktrees that no longer exist on disk?',
+	errWorktreeAdd: 'Unable to Add Worktree',
+	errWorktreeRemove: 'Unable to Remove Worktree',
+	errWorktreePrune: 'Unable to Prune Worktrees',
+
+	/* Statistics */
+	statisticsTitle: 'Statistics',
+	statisticsAuthorsTitle: 'Commits by Author',
+	statisticsHeatmapTitle: 'Commit Activity',
+	statisticsNoData: 'No data is available.',
+	statisticsHeatmapCellInfo: '{0} commit(s) on {1} at {2}:00',
+
+	/* Markdown Commit Messages */
+	markdownToggleLabel: 'View as Markdown',
+	plainTextToggleLabel: 'View as Plain Text',
+
+	/* Fixup / Squash */
+	menuCreateFixupCommit: 'Create Fixup Commit',
+	menuCreateSquashCommit: 'Create Squash Commit',
+	fixupConfirm: 'Are you sure you want to commit your staged changes as a fixup of commit {0}?',
+	squashConfirm: 'Are you sure you want to commit your staged changes as a squash of commit {0}?',
+	yesFixup: 'Yes, create fixup commit',
+	yesSquash: 'Yes, create squash commit',
+	creatingFixupCommit: 'Creating Fixup Commit...',
+	creatingSquashCommit: 'Creating Squash Commit...',
+	autosquashRebaseCheckbox: 'Automatically Squash Commits',
+	autosquashRebaseInfo: 'Fold fixup!/squash! commits into their target commits (--autosquash). Only applies when Launch Interactive Rebase in new Terminal is also enabled.'
 };
 
 type WebviewStrings = typeof STRINGS_EN;
@@ -1467,6 +1542,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	noCommitsInRepo: '此仓库没有任何提交。',
 	retryAction: '重试',
 	unexpectedErrorHandlingMessage: '处理来自扩展的消息时发生意外错误：{0}',
+	errAbortOperation: '无法中止',
 	errAddRemote: '无法添加远程',
 	errAddTag: '无法添加标签',
 	errApplyStash: '无法应用贮藏',
@@ -1478,6 +1554,9 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	errCleanUntracked: '无法清理未跟踪文件',
 	errCommitDetails: '无法加载提交详情',
 	errCommitComparison: '无法加载提交比较',
+	errCommitFixup: '无法创建修正（fixup）提交',
+	errCommitSquash: '无法创建压缩（squash）提交',
+	errContinueOperation: '无法继续',
 	errCopyFilePath: '无法复制文件路径到剪贴板',
 	errCopyToClipboard: '无法将{0}复制到剪贴板',
 	errCreateArchive: '无法创建归档',
@@ -1632,7 +1711,78 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	graphTooltipStashes: '贮藏：',
 	filterDropdownPlaceholder: '过滤{0}...',
 	dropdownNoResults: '未找到结果。',
-	findZeroLengthMatch: '不能使用会产生零长度匹配的正则表达式'
+	findZeroLengthMatch: '不能使用会产生零长度匹配的正则表达式',
+
+	/* 冲突提示条 */
+	conflictBannerTitleMerge: '合并冲突',
+	conflictBannerTitleRebase: '变基冲突',
+	conflictBannerTitleCherryPick: '拣选冲突',
+	conflictBannerTitleRevert: '还原冲突',
+	conflictBannerRebaseProgress: '第 {0} 步，共 {1} 步',
+	conflictBannerFilesLabel: '冲突文件：',
+	conflictBannerContinue: '继续',
+	conflictBannerAbort: '中止',
+	conflictBannerAbortConfirm: '确定要中止此{0}吗？',
+	conflictPredictedTitle: '预测此操作将产生冲突',
+
+	/* Reflog */
+	reflogTitle: '引用日志',
+	reflogEmpty: '引用日志为空。',
+	reflogDangling: '此提交已无法从任何分支、标签、远程跟踪分支或贮藏中访问到。',
+	reflogLoadMore: '加载更多条目',
+	reflogMenuReset: '将当前分支重置到此处',
+	reflogMenuCopySelector: '复制引用日志选择器到剪贴板',
+
+	/* Worktree（工作树） */
+	worktreeDialogTitle: '工作树',
+	worktreeNoneFound: '未找到工作树。',
+	worktreeMainBadge: '主工作树',
+	worktreeLocked: '已锁定',
+	worktreePrunable: '可清理',
+	worktreePrunableInfo: '此工作树对应的工作目录已不存在于磁盘上。',
+	worktreeDetached: '分离头指针',
+	worktreeAlreadyCheckedOut: '（已在另一个工作树中检出）',
+	worktreeAddTitle: '添加工作树',
+	worktreePathLabel: '工作树路径',
+	worktreePathPlaceholder: '新工作树的绝对路径',
+	worktreeStartPointLabel: '分支/起点',
+	worktreeNewBranchLabel: '新分支名称',
+	worktreeNewBranchPlaceholder: '留空以直接检出上方选择的分支',
+	worktreeNewBranchInfo: '设置后，将在所选起点创建一个新分支并在工作树中检出，而不是直接检出现有分支。',
+	addingWorktree: '正在添加工作树...',
+	worktreeRemoveTitle: '移除工作树',
+	worktreeRemoveConfirm: '确定要移除位于 "{0}" 的工作树吗？',
+	worktreeForceCheckbox: '强制',
+	worktreeRemoveForceInfo: '当工作树存在未提交的更改或已被锁定时需要勾选此项。',
+	removingWorktree: '正在移除工作树...',
+	worktreePruneTitle: '清理工作树',
+	worktreePruneConfirm: '确定要清理磁盘上已不存在的工作树的管理文件吗？',
+	errWorktreeAdd: '无法添加工作树',
+	errWorktreeRemove: '无法移除工作树',
+	errWorktreePrune: '无法清理工作树',
+
+	/* Statistics（统计） */
+	statisticsTitle: '统计',
+	statisticsAuthorsTitle: '按作者统计提交',
+	statisticsHeatmapTitle: '提交活跃度',
+	statisticsNoData: '暂无数据。',
+	statisticsHeatmapCellInfo: '{1} {2}:00 有 {0} 次提交',
+
+	/* Markdown 提交信息 */
+	markdownToggleLabel: '以 Markdown 形式查看',
+	plainTextToggleLabel: '以纯文本形式查看',
+
+	/* 修正（Fixup）/ 压缩（Squash） */
+	menuCreateFixupCommit: '创建修正（fixup）提交',
+	menuCreateSquashCommit: '创建压缩（squash）提交',
+	fixupConfirm: '确定要将当前暂存的更改作为提交 {0} 的修正（fixup）提交吗？',
+	squashConfirm: '确定要将当前暂存的更改作为提交 {0} 的压缩（squash）提交吗？',
+	yesFixup: '是，创建修正提交',
+	yesSquash: '是，创建压缩提交',
+	creatingFixupCommit: '正在创建修正提交...',
+	creatingSquashCommit: '正在创建压缩提交...',
+	autosquashRebaseCheckbox: '自动压缩提交',
+	autosquashRebaseInfo: '将 fixup!/squash! 提交折叠到其目标提交中（--autosquash）。仅在同时启用"在新终端中启动交互式变基"时生效。'
 };
 
 /**
