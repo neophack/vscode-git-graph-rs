@@ -265,7 +265,29 @@ export class CommitComparisonView extends Disposable {
 	#fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; gap: 8px; }
 	#fileHeader:empty { display: none; }
 	#filePath { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-	#fileHeader button { flex-shrink: 0; }
+	#fileHeader button {
+		/* VS Code secondary button, using the exact token pair VS Code's own .monaco-button.secondary
+		   uses: secondaryForeground rides on secondaryBackground (dark text on the light/white
+		   secondary backgrounds of light and high-contrast-light themes, light text elsewhere), so
+		   the label stays readable in every theme (a UA-default button renders as a light grey
+		   3D block with black text that clashes with every theme). */
+		flex-shrink: 0;
+		box-sizing: border-box;
+		padding: 3px 12px;
+		border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
+		border-radius: 2px;
+		background: var(--vscode-button-secondaryBackground, #3a3d41);
+		color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground, #ffffff));
+		font-family: inherit;
+		font-size: 12px;
+		line-height: 17px;
+		cursor: pointer;
+		user-select: none;
+		transition: background-color 100ms ease;
+	}
+	#fileHeader button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground, #45494e)); }
+	#fileHeader button:active { opacity: 0.85; }
+	#fileHeader button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 	#diffArea { flex: 1; overflow: auto; }
 	.status { padding: 16px; opacity: 0.8; }
 		table.diff { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 19px; }

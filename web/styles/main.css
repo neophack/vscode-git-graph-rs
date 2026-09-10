@@ -524,15 +524,15 @@ table { border-collapse: collapse; }
 	vertical-align:0 !important;
 }
 .signatureInfo.G svg, .signatureInfo.X svg{
-	fill:#009028;
+	fill:var(--vscode-charts-green, #009028);
 	opacity:0.9;
 }
 .signatureInfo.U svg, .signatureInfo.Y svg, .signatureInfo.R svg, .signatureInfo.E svg{
-	fill:#f09000;
+	fill:var(--vscode-editorWarning-foreground, #f09000);
 	opacity:1;
 }
 .signatureInfo.B svg{
-	fill:#e00000;
+	fill:var(--vscode-charts-red, #e00000);
 	opacity:0.8;
 }
 
@@ -1433,13 +1433,16 @@ body.tagLabelsRightAligned .tagsWrapper {
 	--gg-approved:var(--vscode-charts-green, #2da44e);
 	--gg-approval-weak:var(--vscode-charts-green, #84d16d);
 	--gg-neutral:var(--vscode-descriptionForeground, #8b949e);
-	--gg-disapproval-weak:var(--vscode-charts-orange, #e08c38);
+	--gg-disapproval-weak:#e08c38;
 	--gg-rejected:var(--vscode-charts-red, #d1242f);
 	--gg-merged:var(--vscode-charts-green, #7ca690);
 	--gg-muted-foreground:var(--vscode-descriptionForeground, rgba(139, 148, 158, 0.95));
 	--gg-muted-border:var(--vscode-descriptionForeground, rgba(139, 148, 158, 0.55));
 	--gg-muted-detail:rgba(139, 148, 158, 0.14);
 	--gg-muted-detail-background:rgba(139, 148, 158, 0.12);
+}
+body.vscode-light, body.vscode-high-contrast-light{
+	--gg-disapproval-weak:#9a6700;
 }
 body.vscode-high-contrast{
 	--gg-icon:var(--vscode-editorLightBulb-foreground, #f5a623);
