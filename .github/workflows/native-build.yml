@@ -59,7 +59,25 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
+        if: matrix.os != 'ubuntu-latest'
         run: cargo test --workspace
+
+      # Coverage only needs to run once; ubuntu is where clippy/fmt already run.
+      - name: Install cargo-llvm-cov
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Test with coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # One prebuilt binary per platform the extension ships for, built through @napi-rs/cli. napi-rs
   # resolves the Node-API symbols at load time rather than linking against them, so none of these

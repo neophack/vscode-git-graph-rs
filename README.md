@@ -2,7 +2,9 @@
 
 [![Visual Studio Marketplace version](https://vsmarketplacebadges.dev/version/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
 [![Installs](https://vsmarketplacebadges.dev/installs/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/neophack/git-graph-rs.svg)](https://open-vsx.org/extension/neophack/git-graph-rs)
 [![Build and test](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml/badge.svg)](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml)
+[![codecov](https://codecov.io/gh/neophack/vscode-git-graph-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/neophack/vscode-git-graph-rs)
 
 A rewrite of the Git Graph VS Code extension with its Git backend in Rust, loaded
 into the extension host as a Node-API addon through [napi-rs], reading repositories with [gix].

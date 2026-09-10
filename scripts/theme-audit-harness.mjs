@@ -376,7 +376,6 @@ body{position:static;display:block;overflow:visible;background-color:var(--vscod
 #view{position:static !important;overflow:visible !important}
 .sectionTitle{margin:28px 12px 10px 12px;font-size:15px;border-bottom:1px solid rgba(128,128,128,0.35);padding-bottom:4px}
 :root{${vars}}
-body.vscode-high-contrast, body.vscode-high-contrast-light, body.vscode-light{ }
 .gg-open-btn{color:inherit}
 a{color:var(--vscode-textLink-foreground)}
 .contextMenu li.contextMenuItem:hover{background-color:var(--vscode-menu-selectionBackground)}
