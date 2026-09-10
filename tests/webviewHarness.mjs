@@ -85,10 +85,11 @@ const VIEW_HTML = `<!DOCTYPE html><html><head></head><body>
 			<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
 		</div>
 		<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
-		<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
+		<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="reflogBtn"></div><div id="worktreeBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
 		<div id="prStatus" style="display:none"></div>
 		<div id="pinnedControls" style="display:none"></div>
 	</div>
+	<div id="conflictBanner" style="display:none"></div>
 	<div id="content">
 		<div id="commitGraph"></div>
 		<div id="commitTable"></div>
@@ -253,7 +254,7 @@ export async function bootView(total, options = {}) {
 	};
 	const respond = async (message) => {
 		if (message.command === 'loadRepoInfo') {
-			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null });
+			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } });
 		} else if (message.command === 'loadCommits') {
 			/* One merged response. The extension's real multi-stage delivery (a first response
 			 * without the working-tree status, then the Uncommitted Changes row and its count in a

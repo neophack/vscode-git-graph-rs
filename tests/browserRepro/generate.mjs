@@ -81,7 +81,7 @@ window.__respond = async function () {
 		const queue = sent.splice(0);
 		for (const message of queue) {
 			if (message.command === 'loadRepoInfo') {
-				dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null });
+				dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } });
 			} else if (message.command === 'loadCommits') {
 				/* deep-copy: a synthetic MessageEvent does NOT structured-clone its data, so the
 				 * response's commit objects would alias __state and every mutation the scenarios
@@ -423,10 +423,11 @@ const html = `<!DOCTYPE html><html><head><link rel="stylesheet" href="/media/out
 			<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
 		</div>
 		<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
-		<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
+		<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="reflogBtn"></div><div id="worktreeBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
 		<div id="prStatus" style="display:none"></div>
 		<div id="pinnedControls" style="display:none"></div>
 	</div>
+	<div id="conflictBanner" style="display:none"></div>
 	<div id="content">
 		<div id="commitGraph"></div>
 		<div id="commitTable"></div>

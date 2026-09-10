@@ -845,6 +845,23 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.deepEqual(authorsA.map((author) => author.name), ['Second Author', 'Test User']);
 		assert.deepEqual(authorsA[1], { name: 'Test User', email: 'test@example.com' });
 
+		// The Statistics view's two reads: commits-per-author (across all refs, merges excluded)
+		// and the activity heatmap. The fixture has a merge, a stash and two authors, so both the
+		// --no-merges exclusion and the --all ref coverage (including refs/stash) are exercised.
+		const [statsA, statsB] = await Promise.all([rust.getAuthorStatistics(root), cli.getAuthorStatistics(root)]);
+		const sortStats = (stats) => [...stats].sort((a, b) => a.email.localeCompare(b.email));
+		assert.deepEqual(sortStats(statsA), sortStats(statsB));
+		const secondAuthorStat = statsA.find((s) => s.email === 'second@example.com');
+		assert.ok(secondAuthorStat !== undefined && secondAuthorStat.commits === 1);
+		const testUserStat = statsA.find((s) => s.email === 'test@example.com');
+		assert.ok(testUserStat !== undefined && testUserStat.commits > 1);
+
+		const [heatmapA, heatmapB] = await Promise.all([rust.getActivityHeatmap(root), cli.getActivityHeatmap(root)]);
+		const sortCells = (cells) => [...cells].sort((a, b) => a.weekday - b.weekday || a.hour - b.hour);
+		assert.deepEqual(sortCells(heatmapA), sortCells(heatmapB));
+		assert.ok(heatmapA.length > 0);
+		assert.ok(heatmapA.every((cell) => cell.count > 0), 'no zero-count cell should ever be emitted');
+
 		// The configuration of both locations: the fixture's HOME holds no global file, so both
 		// sides agree there is nothing global, and the local entries match key for key.
 		const [localA, localB] = await Promise.all([rust.getConfigList(root, 'local'), cli.getConfigList(root, 'local')]);
@@ -1236,6 +1253,12 @@ describe('git semantics the fixtures do not cover', () => {
 		gitIn(['tag', '-d', 'v-remote']);
 		gitIn(['update-ref', 'refs/remotes/origin/tags/v-remote', remoteTagObject]);
 
+		// A commit dated with a non-+0000 offset: 2024-01-01 was a Monday, and the literal hour
+		// digit is 23 even though the +05:00 offset puts the true UTC instant at 18:00 the same
+		// day - the activity heatmap must bin by the printed digits, not the UTC instant, and both
+		// backends must agree on which cell that is.
+		gitIn(['commit', '--quiet', '--allow-empty', '--date=2024-01-01T23:30:00+05:00', '-m', 'a commit with an unusual offset']);
+
 		rust = new NativeBackend();
 		cli = new CliBackend();
 		root = await rust.openRepository(repoDir);
@@ -1274,6 +1297,18 @@ describe('git semantics the fixtures do not cover', () => {
 		const names = a.map((author) => author.name);
 		assert.ok(names.includes('Test User'), `the raw spelling must be kept: ${names}`);
 		assert.ok(!names.includes('Mapped Name'), '.mailmap must not be applied');
+	});
+
+	it('bins a non-+0000-offset commit into the same activity heatmap cell on both backends', async () => {
+		const [a, b] = await Promise.all([rust.getActivityHeatmap(root), cli.getActivityHeatmap(root)]);
+		const sortCells = (cells) => [...cells].sort((x, y) => x.weekday - y.weekday || x.hour - y.hour);
+		assert.deepEqual(sortCells(a), sortCells(b));
+
+		// 2024-01-01T23:30:00+05:00: Monday (weekday 1), hour 23 - read from the printed digits,
+		// not the true UTC instant (which would be 18:00 the same day).
+		const cell = a.find((c) => c.weekday === 1 && c.hour === 23);
+		assert.ok(cell !== undefined, `expected a Monday/23:00 cell, got: ${JSON.stringify(a)}`);
+		assert.equal(cell.count, 1);
 	});
 
 	it('agrees a type change is not a listed status', async () => {
