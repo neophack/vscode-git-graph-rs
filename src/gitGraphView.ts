@@ -4,12 +4,14 @@ import * as vscode from 'vscode';
 
 /**
  * Cache-busting version appended to the webview media URIs.
- * Must be bumped whenever web/ sources change, so that already-open webviews
+ * Must change whenever web/ sources change, so that already-open webviews
  * don't keep serving a stale cached out.min.js / out.min.css after an update.
- * Derived from the extension's own version, which every release bumps: serving
- * a webview bundle that predates the extension host running it has produced
- * hard-to-reproduce webview errors (a host and a webview disagreeing about a
- * message field), so the buster must never be forgotten.
+ * Derived from the extension's own version (which every release bumps) plus the
+ * package file's modification time: the local dev loop reinstalls builds without
+ * bumping the version, and a version-only buster then serves the previous install's
+ * webview bundle to the new extension host - exactly the stale-bundle disagreement
+ * (a host and a webview disagreeing about a message field) that has produced
+ * hard-to-reproduce webview errors before, so the buster must never be forgotten.
  */
 let mediaCacheVersion: string | null = null;
 function getMediaCacheVersion(extensionPath: string): string {
@@ -17,7 +19,9 @@ function getMediaCacheVersion(extensionPath: string): string {
 	if (cached !== null) return cached;
 	let version: string;
 	try {
-		version = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8')).version;
+		const packageJsonPath = path.join(extensionPath, 'package.json');
+		// Every install rewrites package.json, so its mtime distinguishes same-version reinstalls
+		version = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')).version + '+' + fs.statSync(packageJsonPath).mtime.getTime();
 	} catch (_) {
 		version = String(Date.now()); // unreadable version: bust every session instead
 	}
