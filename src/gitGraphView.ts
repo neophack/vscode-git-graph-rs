@@ -333,11 +333,12 @@ export class GitGraphView extends Disposable {
 	 * checkout, leaving the current-position marker on the previously checked-out commit.
 	 */
 	private static readonly REPO_MUTATING_COMMANDS: ReadonlySet<string> = new Set([
-		'addRemote', 'addTag', 'applyStash', 'branchFromStash', 'checkoutBranch', 'checkoutCommit', 'cherrypickCommit',
-		'cleanUntrackedFiles', 'createBranch', 'createPullRequest', 'deleteBranch', 'deleteRemote', 'deleteRemoteBranch',
+		'abortOperation', 'addRemote', 'addTag', 'applyStash', 'branchFromStash', 'checkoutBranch', 'checkoutCommit', 'cherrypickCommit',
+		'cleanUntrackedFiles', 'commitFixup', 'commitSquash', 'continueOperation', 'createBranch', 'createPullRequest', 'deleteBranch', 'deleteRemote', 'deleteRemoteBranch',
 		'deleteTag', 'dropCommit', 'dropStash', 'editRemote', 'editUserDetails', 'fetch', 'fetchIntoLocalBranch', 'gerritSetFetchRefs', 'merge',
 		'popStash', 'pruneRemote', 'pullBranch', 'pushBranch', 'pushStash', 'pushTag', 'rebase', 'renameBranch',
-		'resetFileToRevision', 'resetToCommit', 'revertCommit', 'editCommitMessage', 'undoLastCommit'
+		'resetFileToRevision', 'resetToCommit', 'revertCommit', 'editCommitMessage', 'undoLastCommit',
+		'worktreeAdd', 'worktreeRemove', 'worktreePrune'
 	]);
 
 	/**
@@ -587,6 +588,12 @@ export class GitGraphView extends Disposable {
 		let errorInfos: ErrorInfo[];
 
 		switch (msg.command) {
+			case 'abortOperation':
+				this.sendMessage({
+					command: 'abortOperation',
+					error: await this.dataSource.abortOperation(msg.repo, msg.type)
+				});
+				break;
 			case 'addRemote':
 				this.sendMessage({
 					command: 'addRemote',
@@ -656,6 +663,75 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({
 					command: 'cleanUntrackedFiles',
 					error: await this.dataSource.cleanUntrackedFiles(msg.repo, msg.directories)
+				});
+				break;
+			case 'commitFixup':
+				this.sendMessage({
+					command: 'commitFixup',
+					error: await this.dataSource.createFixupCommit(msg.repo, msg.commitHash)
+				});
+				break;
+			case 'commitSquash':
+				this.sendMessage({
+					command: 'commitSquash',
+					error: await this.dataSource.createSquashCommit(msg.repo, msg.commitHash)
+				});
+				break;
+			case 'continueOperation':
+				this.sendMessage({
+					command: 'continueOperation',
+					error: await this.dataSource.continueOperation(msg.repo, msg.type)
+				});
+				break;
+			case 'repoStatistics': {
+				const [authors, activity] = await Promise.all([
+					this.dataSource.getAuthorStatistics(msg.repo),
+					this.dataSource.getActivityHeatmap(msg.repo)
+				]);
+				this.sendMessage({ command: 'repoStatistics', authors: authors, activity: activity });
+				break;
+			}
+			case 'worktreeList':
+				this.sendMessage({
+					command: 'worktreeList',
+					worktrees: await this.dataSource.getWorktrees(msg.repo)
+				});
+				break;
+			case 'worktreeAdd':
+				this.sendMessage({
+					command: 'worktreeAdd',
+					error: await this.dataSource.addWorktree(msg.repo, msg.path, msg.branch, msg.newBranch)
+				});
+				break;
+			case 'worktreeRemove':
+				this.sendMessage({
+					command: 'worktreeRemove',
+					error: await this.dataSource.removeWorktree(msg.repo, msg.path, msg.force)
+				});
+				break;
+			case 'worktreePrune':
+				this.sendMessage({
+					command: 'worktreePrune',
+					error: await this.dataSource.pruneWorktrees(msg.repo)
+				});
+				break;
+			case 'reflog': {
+				const reflog = await this.dataSource.getReflog(msg.repo, msg.ref, msg.limit);
+				this.sendMessage({
+					command: 'reflog',
+					ref: msg.ref,
+					entries: reflog.entries,
+					moreAvailable: reflog.moreAvailable,
+					error: reflog.error
+				});
+				break;
+			}
+			case 'predictConflicts':
+				this.sendMessage({
+					command: 'predictConflicts',
+					ours: msg.ours,
+					theirs: msg.theirs,
+					prediction: await this.dataSource.predictConflicts(msg.repo, msg.ours, msg.theirs)
 				});
 				break;
 			case 'commitDetails': {
@@ -1006,7 +1082,10 @@ export class GitGraphView extends Disposable {
 				// blink the remote entries out of the dropdown and back on a soft refresh, so the
 				// complete list is scanned for this response right away.
 				const deferRemoteRefs = msg.showRemoteBranches && !this.viewHasCommits;
-				const repoInfo = await this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, deferRemoteRefs);
+				const [repoInfo, operationState] = await Promise.all([
+					this.dataSource.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, deferRemoteRefs),
+					this.dataSource.getOperationState(msg.repo)
+				]);
 				let isRepo = true;
 				if (repoInfo.error) {
 					// If an error occurred, check to make sure the repo still exists
@@ -1018,7 +1097,8 @@ export class GitGraphView extends Disposable {
 					refreshId: msg.refreshId,
 					...repoInfo,
 					isRepo: isRepo,
-					remoteRefsPending: deferRemoteRefs || undefined
+					remoteRefsPending: deferRemoteRefs || undefined,
+					operationState: operationState
 				});
 				this.logger.log('Loaded repository info in ' + (Date.now() - startTime) + ' ms (' + repoInfo.branches.length + ' branches)');
 				if (msg.repo !== this.currentRepo) {
@@ -1136,7 +1216,7 @@ export class GitGraphView extends Disposable {
 					command: 'rebase',
 					actionOn: msg.actionOn,
 					interactive: msg.interactive,
-					error: await this.dataSource.rebase(msg.repo, msg.obj, msg.actionOn, msg.ignoreDate, msg.interactive)
+					error: await this.dataSource.rebase(msg.repo, msg.obj, msg.actionOn, msg.ignoreDate, msg.interactive, msg.autosquash)
 				});
 				break;
 			case 'renameBranch':
@@ -1419,6 +1499,9 @@ export class GitGraphView extends Disposable {
 					<div id="currentBtn"></div>
 						<div id="findBtn"></div>
 						<div id="filterBtn"></div>
+						<div id="reflogBtn"></div>
+						<div id="worktreeBtn"></div>
+						<div id="statisticsBtn"></div>
 						<div id="terminalBtn"></div>
 						<div id="settingsBtn"></div>
 						<div id="fetchBtn"></div>
@@ -1428,6 +1511,7 @@ export class GitGraphView extends Disposable {
 						<span id="pinnedRowLabel" class="unselectable pinnedRowLabel"></span>
 					</div>
 				</div>
+				<div id="conflictBanner" style="display:none"></div>
 				<div id="content">
 					<div id="commitGraph"></div>
 					<div id="commitTable"></div>
@@ -1435,6 +1519,7 @@ export class GitGraphView extends Disposable {
 				<div id="footer"></div>
 			</div>
 			<script nonce="${nonce}">var initialState = ${encodeJsonForInlineScript(JSON.stringify(initialState))}, globalState = ${encodeJsonForInlineScript(JSON.stringify(globalState))}, workspaceState = ${encodeJsonForInlineScript(JSON.stringify(workspaceState))};</script>
+			<script nonce="${nonce}" src="${this.getMediaUri('vendor/markdown-it.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			<script nonce="${nonce}" src="${this.getMediaUri('out.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			</body>`;
 		} else {
