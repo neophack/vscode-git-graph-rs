@@ -1,8 +1,13 @@
 /**
- * Measure the two backends against each other on a real repository.
+ * Measure the backend the extension ships against the `git` CLI on a real repository.
  *
  *   node scripts/bench.mjs <repo-path> [--commits 300] [--runs 10] [--tags]
  *   node scripts/bench.mjs <repo-path> --all [--runs 5] [--json]
+ *
+ * The measured side is exactly what `createBackend()` hands the extension on this machine: the
+ * Rust engine wrapped in the CLI fallback, so an operation the engine declines is timed as the
+ * user experiences it — including the fallback spawn — rather than as the engine alone. The
+ * other side is the bare CLI backend, which is what the original extension does for everything.
  *
  * The number that matters is a *view load*: the repository info and the first page of commits,
  * which is what the user waits for when they open the graph. `--all` goes further and times every
@@ -16,7 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // An absolute Windows path is not a valid ESM specifier, so it goes through a file:// URL.
-const { CliBackend, NativeBackend } = await import(
+const { CliBackend, createBackend, describeBackend } = await import(
 	pathToFileURL(path.join(root, 'out', 'backend', 'index.js')).href
 );
 
@@ -50,9 +55,16 @@ const logOptions = {
 	commitOrdering: 'date'
 };
 
-const rust = new NativeBackend();
+// The shipped backend: the engine with the CLI fallback wherever both are available, and
+// whatever `createBackend()` would pick otherwise (the bare CLI on a platform with no engine —
+// in which case the comparison is CLI vs CLI and says so).
+const shipped = createBackend();
 const cli = new CliBackend();
-const repo = await rust.openRepository(options.repo);
+const shippedName = describeBackend();
+if (shippedName === 'git-cli') {
+	console.warn('Warning: no engine binary for this platform; both sides are the git CLI.');
+}
+const repo = await shipped.openRepository(options.repo);
 await cli.openRepository(options.repo);
 
 /** One view load: what the user waits for when the graph opens. */
@@ -71,21 +83,21 @@ async function viewLoad(backend) {
  * backends are measured against exactly the same question.
  */
 async function buildOperations() {
-	const page = await rust.getCommits(repo, logOptions);
+	const page = await shipped.getCommits(repo, logOptions);
 	const hashes = page.commits
 		.filter((commit) => commit.hash !== '*')
 		.slice(0, 50)
 		.map((commit) => commit.hash);
 	const head = page.head ?? hashes[0];
 	const first = hashes[hashes.length - 1] ?? head;
-	// The file the per-object reads target: one the commit tree actually holds, when the page
-	// offers one, with a conventional name as the fallback.
-	const file = 'README.md';
 	// The paths the deferred-counts operation asks for: the head commit's own file list.
-	const headPaths = (await rust.getCommitDetails(repo, head)).fileChanges.map((change) => change.newFilePath);
+	const headPaths = (await shipped.getCommitDetails(repo, head)).fileChanges.map((change) => change.newFilePath);
+	// The file the per-object reads target: one the head commit actually changed, so that the
+	// single-file diff row does real work, with a conventional name as the fallback.
+	const file = headPaths.find((p) => p !== null) ?? 'README.md';
 	const [info, refData] = await Promise.all([
-		rust.getRepoInfo(repo, { showRemoteBranches: true }),
-		rust.getRefs(repo, { showRemoteBranches: false })
+		shipped.getRepoInfo(repo, { showRemoteBranches: true }),
+		shipped.getRefs(repo, { showRemoteBranches: false })
 	]);
 	const remote = info.remotes[0] ?? 'origin';
 	const annotated = refData.tags.find((tag) => tag.annotated);
@@ -151,20 +163,20 @@ if (options.all) {
 	const rows = [];
 	for (const operation of operations) {
 		const row = { operation: operation.label };
-		for (const backend of [cli, rust]) {
-			row[backend.name] = await measure(() => operation.run(backend));
-		}
+		row.cli = await measure(() => operation.run(cli));
+		row.shipped = await measure(() => operation.run(shipped));
 		rows.push(row);
 	}
 
 	if (options.json) {
-		console.log(JSON.stringify({ repository: repo, runs: options.runs, commits: options.commits, results: rows }, null, 2));
+		console.log(JSON.stringify({ repository: repo, backend: shipped.name, runs: options.runs, commits: options.commits, results: rows }, null, 2));
 	} else {
 		console.log(`Repository: ${repo}`);
+		console.log(`Shipped backend: ${shipped.name}`);
 		console.log(`${options.runs} runs per operation, median reported\n`);
-		console.log(`${'operation'.padEnd(42)} ${'git-cli'.padStart(10)} ${'engine'.padStart(10)} ${'speedup'.padStart(8)}   returns`);
+		console.log(`${'operation'.padEnd(42)} ${'git-cli'.padStart(10)} ${'shipped'.padStart(10)} ${'speedup'.padStart(8)}   returns`);
 		for (const row of rows) {
-			const a = row['git-cli'], b = row['rust'];
+			const a = row.cli, b = row.shipped;
 			if (a.error !== undefined || b.error !== undefined) {
 				const reason = (a.error ?? b.error).slice(0, 60);
 				console.log(`${row.operation.padEnd(42)} ${(a.error !== undefined ? 'failed' : a.median.toFixed(1) + ' ms').padStart(10)} ${(b.error !== undefined ? 'failed' : b.median.toFixed(1) + ' ms').padStart(10)} ${'—'.padStart(8)}   ${reason}`);
@@ -178,7 +190,7 @@ if (options.all) {
 } else {
 	// The headline comparison: one number per backend for what opening the graph costs.
 	const results = [];
-	for (const backend of [cli, rust]) {
+	for (const [name, backend] of [['git-cli', cli], ['shipped', shipped]]) {
 		const commits = await viewLoad(backend).then((count) => count, () => 0);
 		const samples = [];
 		for (let i = 0; i < options.runs; i++) {
@@ -188,7 +200,7 @@ if (options.all) {
 		}
 		samples.sort((a, b) => a - b);
 		results.push({
-			name: backend.name,
+			name,
 			commits,
 			median: samples[Math.floor(samples.length / 2)],
 			best: samples[0],
@@ -197,6 +209,7 @@ if (options.all) {
 	}
 
 	console.log(`Repository: ${repo}`);
+	console.log(`Shipped backend: ${shipped.name}`);
 	console.log(`Walking ${options.commits} commits, ${options.runs} runs each\n`);
 	for (const result of results) {
 		console.log(
@@ -217,4 +230,5 @@ if (options.all) {
 	console.log(`\nSpeedup: ${(before.median / after.median).toFixed(1)}x`);
 }
 
-rust.closeAllRepositories();
+shipped.closeAllRepositories();
+cli.closeAllRepositories();

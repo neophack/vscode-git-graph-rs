@@ -249,29 +249,31 @@ describe('the benchmark runner', () => {
 		fs.rmSync(repoPath, { recursive: true, force: true });
 	});
 
-	it('compares the backends on a view load', () => {
+	it('compares the shipped backend with the git CLI on a view load', () => {
 		const output = runNode('bench.mjs', [repoPath, '--runs', '1']);
 		assert.match(output, /Repository: /);
+		assert.match(output, /Shipped backend: /);
 		assert.match(output, /git-cli .* median .* ms/);
-		assert.match(output, /rust .* median .* ms/);
+		assert.match(output, /shipped .* median .* ms/);
 		assert.match(output, /Speedup: \d+\.\d+x/);
 	});
 
 	it('times every read operation in --all mode, and can emit JSON', () => {
 		const json = JSON.parse(runNode('bench.mjs', [repoPath, '--all', '--runs', '1', '--json']));
 		assert.equal(typeof json.repository, 'string');
+		assert.equal(typeof json.backend, 'string');
 		assert.ok(Array.isArray(json.results) && json.results.length >= 18, `expected every operation to be timed, got ${json.results?.length}`);
 		for (const row of json.results) {
-			assert.ok(row['git-cli'] !== undefined && row.rust !== undefined, `missing a backend column for ${row.operation}`);
+			assert.ok(row.cli !== undefined && row.shipped !== undefined, `missing a backend column for ${row.operation}`);
 			// An operation may legitimately fail on a repository without the object it needs
 			// (no annotated tag, no README), but the tooling itself must never blow up.
-			assert.ok(row.rust.error !== undefined || typeof row.rust.median === 'number', `${row.operation} has no measurement`);
+			assert.ok(row.shipped.error !== undefined || typeof row.shipped.median === 'number', `${row.operation} has no measurement`);
 		}
 	});
 
 	it('prints the per-operation table', () => {
 		const output = runNode('bench.mjs', [repoPath, '--all', '--runs', '1']);
-		assert.match(output, /operation\s+git-cli\s+engine\s+speedup/);
+		assert.match(output, /operation\s+git-cli\s+shipped\s+speedup/);
 		assert.match(output, /getCommitDetails/);
 		assert.match(output, /searchHistory/);
 	});
