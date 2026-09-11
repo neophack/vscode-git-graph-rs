@@ -800,15 +800,33 @@ class GitGraphView {
 	}
 
 	/**
-	 * Apply a change of the Gerrit status filter (the Repository Settings checkboxes): the badges
-	 * re-render immediately from the already-loaded states, and the commit graph is reloaded in
-	 * the background (debounced, so toggling several checkboxes triggers a single load), because
-	 * only the extension knows which change refs to inject for the new filter.
-	 * @param status The status whose checkbox changed ('merged' never affects the graph).
+	 * The Gerrit changes whose badge is rendered: the `gerrit.fetchLimit` (or the repository's own
+	 * override) most recent changes passing the status filter whose head commit has a row on the
+	 * page (the extension injects their change refs, which pins their commits onto the page; a
+	 * change without a row has nothing to carry its badge, so it claims none of the limit's badge
+	 * slots). Mirrors the extension's `selectDisplayedChangeStates` selection on the same page, so
+	 * the fetch limit counts the badges DISPLAYED: the number set is the number of pills shown -
+	 * one per change number / patchset.
 	 */
-	public applyGerritFilterChange(status: keyof GG.GerritStatusFilter) {
+	private getGerritVisibleChanges(): Set<number> {
+		const limit = this.gitRepos[this.currentRepo].gerritFetchLimit;
+		const effective = typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= 10000 ? limit : this.config.gerrit.fetchLimit;
+		const passing = Object.values(this.gerritStates)
+			.filter((state) => this.gerritPassesFilter(state) && typeof this.commitLookup[state.headHash] === 'number')
+			.sort((a, b) => b.change - a.change);
+		return new Set((effective > 0 ? passing.slice(0, effective) : passing).map((state) => state.change));
+	}
+
+	/**
+	 * Apply a change of the Gerrit status filter (the Repository Settings checkboxes): the badges
+	 * re-render immediately from the already-loaded states (the fetch limit re-applied under the
+	 * new filter), and the commit graph is reloaded in the background (debounced, so toggling
+	 * several checkboxes triggers a single load): only the extension knows which change refs to
+	 * inject for the new filter, and its response also carries the event timelines of the changes
+	 * that became visible — they ride along the visible states only (see gerritPageStates).
+	 */
+	public applyGerritFilterChange() {
 		this.render();
-		if (status === 'merged') return; // merged changes are never injected into the graph (see the extension's buildGerritViewData)
 		if (this.gerritFilterRefreshTimer !== null) window.clearTimeout(this.gerritFilterRefreshTimer);
 		this.gerritFilterRefreshTimer = window.setTimeout(() => {
 			this.gerritFilterRefreshTimer = null;
@@ -868,10 +886,12 @@ class GitGraphView {
 			// increments it.
 			if (refreshState.loadCommitsRefreshId === msg.refreshId) {
 				// The Gerrit states ride along every loadCommits response: swap the map in and force
-				// a re-render when it changed (the extension serves ALL cached states, so the status
-				// filter of the Repository Settings is applied locally by this view). The array is
-				// checked (not merely non-null): a response from a mismatched extension build that
-				// omits the field entirely (undefined) must keep the current states, never crash.
+				// a re-render when it changed (the extension serves the fetched states of the cache
+				// entry — the event timelines of the visible ones only — so the status filter and
+				// the fetch limit of the Repository Settings are applied locally by this view). The
+				// array is checked (not merely non-null): a response from a mismatched extension
+				// build that omits the field entirely (undefined) must keep the current states,
+				// never crash.
 				//
 				// The staged Gerrit load delivers the states in two parts: the light part the badges
 				// render (arriving with the change refs), then the event timelines (which only the
@@ -1513,6 +1533,9 @@ class GitGraphView {
 			widthsAtVertices: this.config.referenceLabels.branchLabelsAlignedToGraph ? this.graph.getWidthsAtVertices() : [],
 			mutedCommits: this.graph.getMutedCommits(currentHash),
 			pinnedCommitHashes: new Set(this.getPinnedCommits().map((pinned) => pinned.hash)),
+			// The Gerrit badges displayable under the fetch limit: computed once per render, so the
+			// rows built and the rows reconciled during the same render check the same set
+			gerritVisibleChanges: this.getGerritVisibleChanges(),
 			textFormatter: new TextFormatter(this.commits, this.gitRepos[this.currentRepo].issueLinkingConfig, {
 				emoji: true,
 				issueLinking: true,
@@ -1593,7 +1616,7 @@ class GitGraphView {
 
 		let refGerrit = '';
 		const gerritState = this.gerritStates[commit.hash];
-		if (typeof gerritState !== 'undefined' && this.gerritPassesFilter(gerritState)) {
+		if (typeof gerritState !== 'undefined' && ctx.gerritVisibleChanges.has(gerritState.change)) {
 			refGerrit = getGerritBadgeHtml(this, gerritState);
 		}
 

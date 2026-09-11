@@ -177,9 +177,9 @@ class SettingsWidget {
 			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionGerrit + '</h3>' +
 				SettingsWidget.checkbox('settingsGerritFetchRefs', strings.settingsGerritFetchRefs, this.repo.gerritFetchRefs, strings.settingsGerritFetchRefsInfo);
 			if (this.repo.gerritFetchRefs) {
-				// The per-repository fetch limit: how many of the most recent changes are fetched.
-				// NULL (the default) follows the gerrit.fetchLimit Extension Setting, which the row
-				// names so the effective value is always visible.
+				// The per-repository fetch limit: how many changes are DISPLAYED (the most recent
+				// ones passing the status filter). NULL (the default) follows the gerrit.fetchLimit
+				// Extension Setting, which the row names so the effective value is always visible.
 				const gerritFetchLimit = this.repo.gerritFetchLimit ?? null;
 				const globalFetchLimit = this.view.config.gerrit.fetchLimit;
 				const fetchLimitStr = gerritFetchLimit !== null
@@ -599,7 +599,7 @@ class SettingsWidget {
 					this.view.saveRepoStateValue(this.currentRepo, 'gerritStatusFilter', statusFilter);
 					// The badges re-render instantly from the loaded states; the graph reload (which
 					// change refs are injected) follows in the background
-					this.view.applyGerritFilterChange(field.status);
+					this.view.applyGerritFilterChange();
 				});
 			}
 

@@ -305,7 +305,7 @@ const STRINGS_EN = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit Change Refs',
 	settingsGerritFetchRefs: 'Fetch Gerrit change refs (refs/changes/*)',
-	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each, as many as the fetch limit allows - set it below, or globally via the git-graph-rs.gerrit.fetchLimit setting). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
+	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each; the fetch limit counts the changes DISPLAYED after the status filter - up to four times as many of the most recent changes are fetched, since a change\'s status is only known once its meta has been fetched; set it below, or globally via the git-graph-rs.gerrit.fetchLimit setting). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
 	settingsGerritStatusFilterLabel: 'Show changes with status:',
 	settingsGerritStatusOpen: 'Open',
 	settingsGerritStatusMerged: 'Merged',
@@ -336,9 +336,9 @@ const STRINGS_EN = {
 	gerritTimelineLabel: 'Review Activity',
 	gerritEventsPending: 'The review activity is still being loaded …',
 	settingsGerritFetchLimitLabel: 'Fetch limit',
-	settingsGerritFetchLimitInfo: 'How many of the most recent Gerrit changes are fetched into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each). Range 1–10000; leaving the input empty follows the git-graph-rs.gerrit.fetchLimit setting.',
+	settingsGerritFetchLimitInfo: 'How many Gerrit changes are DISPLAYED: the most recent changes passing the status filter. Up to four times as many of the most recent changes are fetched into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each), because a change\'s status is only known once its meta has been fetched. Range 1–10000; leaving the input empty follows the git-graph-rs.gerrit.fetchLimit setting.',
 	settingsGerritFetchLimitEditTitle: 'Edit the Gerrit fetch limit',
-	settingsGerritFetchLimitInput: 'Changes to fetch',
+	settingsGerritFetchLimitInput: 'Changes to display',
 	settingsGerritFetchLimitPlaceholder: 'empty = the global setting',
 	settingsGerritFetchLimitGlobal: 'Global setting ({0})',
 
@@ -1199,7 +1199,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit 变更引用',
 	settingsGerritFetchRefs: '获取 Gerrit 变更引用 (refs/changes/*)',
-	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用，数量上限可在下方设置，或通过 git-graph-rs.gerrit.fetchLimit 设置全局默认）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
+	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用；数量上限按状态过滤后显示的变更数计——实际会按其 4 倍超采样获取最近的变更，因为变更状态只有获取其 meta 后才能确定；可在下方设置，或通过 git-graph-rs.gerrit.fetchLimit 设置全局默认）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
 	settingsGerritStatusFilterLabel: '显示以下状态的变更：',
 	settingsGerritStatusOpen: '开放',
 	settingsGerritStatusMerged: '已合并',
@@ -1230,9 +1230,9 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	gerritTimelineLabel: '评审记录',
 	gerritEventsPending: '评审记录仍在加载中 …',
 	settingsGerritFetchLimitLabel: '获取上限',
-	settingsGerritFetchLimitInfo: '将最近多少个 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/ 下（每个变更的最新补丁集与 NoteDb meta 引用）。范围 1–10000；输入留空时跟随 git-graph-rs.gerrit.fetchLimit 设置。',
+	settingsGerritFetchLimitInfo: '显示多少个 Gerrit 变更（胶囊）：按状态过滤后取最近的变更。实际会按其 4 倍超采样，将最近的变更获取到 refs/remotes/<gerrit.remote>/changes/ 下（每个变更的最新补丁集与 NoteDb meta 引用），因为变更状态只有获取其 meta 后才能确定。范围 1–10000；输入留空时跟随 git-graph-rs.gerrit.fetchLimit 设置。',
 	settingsGerritFetchLimitEditTitle: '编辑 Gerrit 获取上限',
-	settingsGerritFetchLimitInput: '获取的变更数量',
+	settingsGerritFetchLimitInput: '显示的变更数量',
 	settingsGerritFetchLimitPlaceholder: '留空 = 全局设置',
 	settingsGerritFetchLimitGlobal: '全局设置（{0}）',
 

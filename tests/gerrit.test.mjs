@@ -43,7 +43,9 @@ Module._load = function (request, parent, isMain) {
 
 const {
 	parseChangeRef, changeShard, parseLsRemoteChanges, limitChanges, buildFetchRefspecs, buildKeepPatterns,
-	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, GerritDataSource
+	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, limitChangeStates,
+	selectDisplayedChangeStates,
+	nextGerritSampleWindow, GERRIT_FETCH_WINDOW_FACTOR_MAX, GerritDataSource
 } = await import('../out/gerrit.js');
 const { NativeBackend } = await import('../out/backend/index.js');
 
@@ -281,6 +283,79 @@ describe('status filtering', () => {
 	it('shows merged and abandoned changes when their flags are on', () => {
 		const kept = filterChangeStates([state('merged'), state('abandoned')], { ...filter, merged: true, abandoned: true });
 		assert.deepEqual(kept.map((s) => s.status), ['merged', 'abandoned']);
+	});
+});
+
+describe('display limiting (the fetch limit counts the changes shown)', () => {
+	const state = (change, status, wip = false) => ({ change, patchset: 1, codeReview: 0, verified: 0, status, wip, headHash: 'h' + change, events: [], url: null });
+	const filter = { new: true, merged: false, abandoned: false, wip: false };
+
+	it('keeps the most recent changes PASSING the filter, reaching past newer filtered-out ones', () => {
+		// The most recent changes are merged: an open-only filter must still surface the 2 most recent OPEN ones
+		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'merged'), state(6, 'abandoned'), state(5, 'new'), state(4, 'new')];
+		assert.deepEqual(limitChangeStates(states, filter, 2).map((s) => s.change), [8, 5]);
+	});
+
+	it('returns the passing changes most recent first, whatever the input order', () => {
+		const states = [state(3, 'new'), state(11, 'new'), state(7, 'new')];
+		assert.deepEqual(limitChangeStates(states, filter, 0).map((s) => s.change), [11, 7, 3]);
+	});
+
+	it('applies the limit after the WIP rule of the status filter', () => {
+		const states = [state(9, 'new', true), state(8, 'new', true), state(7, 'new')];
+		assert.deepEqual(limitChangeStates(states, { ...filter, wip: true }, 2).map((s) => s.change), [9, 8]);
+		assert.deepEqual(limitChangeStates(states, filter, 5).map((s) => s.change), [7]);
+	});
+});
+
+describe('badge selection on a loaded page (selectDisplayedChangeStates)', () => {
+	const state = (change, status, wip = false) => ({ change, patchset: 1, codeReview: 0, verified: 0, status, wip, headHash: 'h' + change, events: [], url: null });
+	const all = { new: true, merged: true, abandoned: true, wip: true };
+	const onPage = (...changes) => (hash) => changes.some((change) => hash === 'h' + change);
+
+	it('displays the most recent passing changes that have a row on the page, one badge per change', () => {
+		// 9's injected ref did not resolve (no row): its slot goes to the next change
+		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'new'), state(6, 'merged'), state(5, 'new')];
+		assert.deepEqual(selectDisplayedChangeStates(states, all, 2, onPage(8, 6, 5)).map((s) => s.change), [8, 6]);
+		assert.deepEqual(selectDisplayedChangeStates(states, all, 0, onPage(8, 6, 5)).map((s) => s.change), [8, 6, 5]);
+	});
+
+	it('applies the status filter before the page check', () => {
+		const states = [state(9, 'merged'), state(8, 'new')];
+		assert.deepEqual(selectDisplayedChangeStates(states, { ...all, merged: false }, 5, onPage(9, 8)).map((s) => s.change), [8]);
+	});
+
+	it('reduces to limitChangeStates when every selected change is on the page', () => {
+		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'abandoned')];
+		assert.deepEqual(selectDisplayedChangeStates(states, all, 2, () => true), limitChangeStates(states, all, 2));
+	});
+});
+
+describe('the adaptive Gerrit sample window (nextGerritSampleWindow)', () => {
+	it('stops once enough sampled changes pass the filter', () => {
+		assert.equal(nextGerritSampleWindow(80, 20, 20, 1000), null);
+		assert.equal(nextGerritSampleWindow(80, 25, 20, 1000), null);
+	});
+
+	it('doubles the window while too few sampled changes pass the filter', () => {
+		assert.equal(nextGerritSampleWindow(80, 5, 20, 1000), 160);
+		assert.equal(nextGerritSampleWindow(160, 10, 20, 1000), 320);
+	});
+
+	it('stops at the remote size instead of overshooting it', () => {
+		assert.equal(nextGerritSampleWindow(80, 5, 20, 100), 100);
+		assert.equal(nextGerritSampleWindow(100, 5, 20, 100), null); // window already covers the whole remote
+	});
+
+	it('caps the deepening at GERRIT_FETCH_WINDOW_FACTOR_MAX times the fetch limit', () => {
+		const cap = 20 * GERRIT_FETCH_WINDOW_FACTOR_MAX;
+		assert.equal(nextGerritSampleWindow(cap, 5, 20, 10000), null);
+		assert.equal(nextGerritSampleWindow(cap / 2, 5, 20, 10000), cap);
+	});
+
+	it('never stops solely on the cap or remote size once the target is already reached', () => {
+		// passing >= fetchLimit is checked first, so it short-circuits even mid-window
+		assert.equal(nextGerritSampleWindow(20, 20, 20, 10000), null);
 	});
 });
 
