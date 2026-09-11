@@ -45,7 +45,7 @@ export const DEFAULT_REPO_STATE: GitRepoState = {
 	workspaceFolderIndex: null
 };
 
-const DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE: GitGraphViewGlobalState = {
+export const DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE: GitGraphViewGlobalState = {
 	alwaysAcceptCheckoutCommit: false,
 	issueLinkingConfig: null,
 	pushTagSkipRemoteCheck: false
