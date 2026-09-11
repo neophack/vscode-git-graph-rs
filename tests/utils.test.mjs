@@ -71,9 +71,12 @@ describe('path helpers', () => {
 		const canonical = await utils.realpath(workspaceRoot);
 		assert.equal(await utils.resolveToSymbolicPath(canonical), workspacePath);
 		assert.equal(await utils.resolveToSymbolicPath(canonical + '/child'), workspacePath + '/child');
-		// A parent of the workspace folder resolves to itself (walking the symbolic path upwards)
+		// A parent of the workspace folder maps back onto the same level of the symbolic path
+		// (identical strings when the workspace path has no symbolic links, but on macOS the
+		// temp dir lives below /var, which realpath resolves to /private/var)
 		const parent = canonical.substring(0, canonical.lastIndexOf('/'));
-		assert.equal(await utils.resolveToSymbolicPath(parent), parent);
+		const symbolicParent = workspacePath.substring(0, workspacePath.lastIndexOf('/'));
+		assert.equal(await utils.resolveToSymbolicPath(parent), symbolicParent);
 		assert.equal(await utils.resolveToSymbolicPath('/unrelated/path'), '/unrelated/path');
 	});
 
