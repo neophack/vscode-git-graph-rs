@@ -190,3 +190,48 @@ describe('the Statistics heatmap tooltips', () => {
 		assert.equal(h.document.getElementById('ggHelpTooltip'), null, 'the tooltip popup closed');
 	});
 });
+
+describe('the Worktrees overlay tooltips', () => {
+	/** Boot the view and render the Worktrees overlay with a prunable, locked secondary worktree. */
+	async function bootWithWorktrees() {
+		const h = await bootView(5);
+		click(h, h.document.getElementById('settingsBtn'));
+		click(h, h.document.getElementById('openWorktreeDialog'));
+		h.dispatch({
+			command: 'worktreeList',
+			worktrees: [
+				{ path: '/repo', hash: 'c0000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', branch: 'main', detached: false, locked: false, prunable: false, isMain: true },
+				{ path: '/repo-wt', hash: 'c0001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', branch: 'feature', detached: false, locked: true, prunable: true, isMain: false }
+			]
+		});
+		return h;
+	}
+
+	it('keeps the prunable badge and remove button tooltips on the single class attribute', async () => {
+		const h = await bootWithWorktrees();
+
+		// The badges and the remove button carry their own classes, which must ride inside the
+		// tooltip attributes: a preceding class attribute would win over the tooltip's, and the
+		// parser would drop the latter - silently disabling the tooltip (as it did for the
+		// Statistics heatmap cells before they were fixed)
+		for (const selector of ['.worktreeBadgePrunable', '.worktreeRemoveBtn']) {
+			const elem = h.document.querySelector(selector);
+			assert.ok(elem !== null, selector + ' rendered');
+			assert.match(elem.className, /(^| )gg-helpTooltip( |$)/, selector + ' keeps the tooltip hook on the single class attribute');
+			assert.notEqual(elem.getAttribute('data-tooltip'), '', selector + ' has tooltip text');
+		}
+	});
+
+	it('pops the shared tooltip over the prunable badge', async () => {
+		const h = await bootWithWorktrees();
+		const badge = h.document.querySelector('.worktreeBadgePrunable');
+		badge.dispatchEvent(new h.window.MouseEvent('mouseover', { bubbles: true }));
+
+		const popup = h.document.getElementById('ggHelpTooltip');
+		assert.ok(popup !== null, 'the tooltip popup rendered');
+		assert.equal(popup.textContent, badge.getAttribute('data-tooltip'));
+
+		badge.dispatchEvent(new h.window.MouseEvent('mouseout', { bubbles: true }));
+		assert.equal(h.document.getElementById('ggHelpTooltip'), null, 'the tooltip popup closed');
+	});
+});
