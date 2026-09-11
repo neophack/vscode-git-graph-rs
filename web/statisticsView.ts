@@ -101,7 +101,12 @@ class StatisticsView {
 			for (let h = 0; h < 24; h++) {
 				const count = counts[w][h];
 				const opacity = max > 0 && count > 0 ? Math.max(0.12, count / max) : 0;
-				html += '<span class="statisticsHeatmapCell" style="opacity:' + opacity.toFixed(2) + '" ' + (count > 0 ? helpTooltipAttrs(formatStr(strings.statisticsHeatmapCellInfo, count.toString(), STATISTICS_WEEKDAYS[w], h.toString())) : '') + '></span>';
+				// The tooltip hook must share the cell's single class attribute (a second class
+				// attribute would be dropped by the HTML parser, disabling the tooltip), and the
+				// cells must not carry helpTooltipAttrs' tabindex: 168 cells would become 168 tab
+				// stops. Every cell gets the tooltip, including zero-count ones.
+				const info = escapeHtml(formatStr(strings.statisticsHeatmapCellInfo, count.toString(), STATISTICS_WEEKDAYS[w], h.toString()));
+				html += '<span class="statisticsHeatmapCell gg-helpTooltip" data-tooltip="' + info + '" aria-label="' + info + '" style="opacity:' + opacity.toFixed(2) + '"></span>';
 			}
 			html += '</div>';
 		}
