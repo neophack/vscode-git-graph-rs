@@ -1375,6 +1375,33 @@ describe('git semantics the fixtures do not cover', () => {
 			[alice]
 		);
 	});
+
+	it('pins the injected Gerrit change commits onto the page, however old they are', async () => {
+		// The change's patchset is the second commit of the fixture: older than every commit a
+		// page of 2 holds, so the page cut would drop it — and with it the badge the Gerrit fetch
+		// limit promised. Both backends read it back onto the page, below the newer commits.
+		const ref = 'refs/remotes/origin/changes/34/1234/1';
+		execFileSync('git', ['update-ref', ref, changed], { cwd: repoDir, encoding: 'utf8' });
+		const options = { maxCommits: 2, showTags: true, showRemoteBranches: true, remotes: ['origin'], commitOrdering: 'date', gerritRefs: [ref] };
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assert.equal(a.error, null, `the engine failed: ${a.error}`);
+		assert.equal(b.error, null, `the CLI failed: ${b.error}`);
+		for (const [name, data] of [['engine', a], ['CLI', b]]) {
+			assert.ok(data.moreCommitsAvailable, `${name}: the page is a cut of the history`);
+			assert.equal(data.commits.length, 3, `${name}: the pinned patchset rides along the page of 2`);
+			assert.equal(data.commits[2].hash, changed, `${name}: the pinned patchset sits below the newer commits`);
+			assert.ok(!data.commits.slice(0, 2).some((commit) => commit.hash === changed), `${name}: the patchset is not duplicated`);
+		}
+		assert.deepEqual(a.commits.map((c) => c.hash).sort(), b.commits.map((c) => c.hash).sort());
+
+		// A page holding the patchset anyway neither duplicates nor moves it
+		const [c, d] = await Promise.all([rust.getCommits(root, { ...options, maxCommits: 100 }), cli.getCommits(root, { ...options, maxCommits: 100 })]);
+		for (const [name, data] of [['engine', c], ['CLI', d]]) {
+			assert.equal(data.commits.filter((commit) => commit.hash === changed).length, 1, `${name}: the patchset appears once`);
+		}
+		assertSameCommits(c.commits, d.commits, 'getCommits (pinned change on the page)');
+		execFileSync('git', ['update-ref', '-d', ref], { cwd: repoDir, encoding: 'utf8' });
+	});
 });
 
 describe('the backend selection', () => {

@@ -436,6 +436,43 @@ fn order(records: Vec<CommitRecord>, ordering: CommitOrdering, limit: usize) -> 
     ordered
 }
 
+/// Keep the commits at `pinned` on the page, wherever the walk left them.
+///
+/// The page is the newest `limit` commits reachable from the tips, so a tip whose commit is older
+/// than the page's last commit — a Gerrit change opened months ago, say — is walked from and then
+/// dropped by the page cut. The Gerrit integration promises a badge for every change it injects,
+/// so each pinned commit missing from `records` is read and inserted at its date position: below
+/// every newer commit (its children, if any are on the page, are newer than it) and above every
+/// older one (its parents), which keeps the page's topological ordering intact. A pinned commit
+/// that does not resolve is skipped rather than failing the load.
+pub fn pin_commits(
+    repo: &Repo,
+    records: &mut Vec<CommitRecord>,
+    pinned: &[ObjectId],
+) -> Result<()> {
+    if pinned.is_empty() {
+        return Ok(());
+    }
+    let git = repo.borrow();
+    let mut present: HashSet<String> = records.iter().map(|record| record.hash.clone()).collect();
+    for id in pinned {
+        if present.contains(&id.to_string()) {
+            continue;
+        }
+        let Ok(commit) = git.find_commit(*id) else {
+            continue;
+        };
+        let record = read_commit(&commit)?;
+        let position = records
+            .iter()
+            .position(|existing| existing.date < record.date)
+            .unwrap_or(records.len());
+        present.insert(record.hash.clone());
+        records.insert(position, record);
+    }
+    Ok(())
+}
+
 /// Resolve the revisions a view load starts its walk from.
 ///
 /// Anything that does not resolve is skipped rather than failing the load: a stale branch name in

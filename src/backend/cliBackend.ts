@@ -49,6 +49,16 @@ import {
  * The original extension uses this exact string; keeping it identical means the two
  * implementations parse the same output the same way.
  */
+/** One commit of the `git log` output, before the refs, stashes and the working tree are attached. */
+interface LogRecord {
+	hash: string;
+	parents: string[];
+	author: string;
+	email: string;
+	date: number;
+	message: string;
+}
+
 const SEPARATOR = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
 
 const EOL = /\r\n|\r|\n/;
@@ -142,6 +152,7 @@ export class CliBackend implements GitBackend {
 			let commits = records;
 			const moreCommitsAvailable = commits.length > options.maxCommits;
 			if (moreCommitsAvailable) commits = commits.slice(0, options.maxCommits);
+			await this.pinGerritChangeCommits(repo, commits, options.gerritRefs ?? []);
 
 			const nodes = commits.map((record) => ({
 				...record,
@@ -899,7 +910,7 @@ export class CliBackend implements GitBackend {
 
 	/* ---------- Internals ---------- */
 
-	private async getLog(repo: string, options: LogOptions) {
+	private async getLog(repo: string, options: LogOptions): Promise<LogRecord[]> {
 		const order = options.commitOrdering ?? 'date';
 		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
 		// One extra commit, so that the caller can tell whether the page was truncated.
@@ -943,7 +954,7 @@ export class CliBackend implements GitBackend {
 		args.push('--', ...paths);
 
 		const out = await this.run(args, repo);
-		const records = [];
+		const records: LogRecord[] = [];
 		for (const record of out.replace(/\0$/, '').split('\0')) {
 			const fields = record.split(SEPARATOR);
 			if (fields.length < 6) continue;
@@ -957,6 +968,45 @@ export class CliBackend implements GitBackend {
 			});
 		}
 		return records;
+	}
+
+	/**
+	 * Keep the commits of the injected Gerrit change refs on the page, exactly as the engine does
+	 * (see `log::pin_commits`): the log keeps the newest `maxCommits` commits only, so a change
+	 * whose patchset is older than the page's last commit would lose its row — and with it the
+	 * badge the fetch limit promised. Each missing patchset commit is read and inserted at its
+	 * date position (below every newer commit, above every older one). A ref that does not
+	 * resolve is skipped rather than failing the load.
+	 */
+	private async pinGerritChangeCommits(repo: string, commits: LogRecord[], gerritRefs: ReadonlyArray<string>) {
+		if (gerritRefs.length === 0) return;
+		const present = new Set(commits.map((commit) => commit.hash));
+		const missing: string[] = [];
+		for (const ref of gerritRefs) {
+			const hash = await this.run(['rev-parse', '--verify', '--quiet', ref + '^{commit}'], repo).then((out) => out.trim()).catch(() => '');
+			if (hash !== '' && !present.has(hash)) {
+				present.add(hash);
+				missing.push(hash);
+			}
+		}
+		if (missing.length === 0) return;
+		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
+		const out = await this.run(['-c', 'log.showSignature=false', 'log', '--no-walk=unsorted', `--format=${format}`, '-z', ...missing], repo);
+		for (const record of out.replace(/\0$/, '').split('\0')) {
+			const fields = record.split(SEPARATOR);
+			if (fields.length < 6) continue;
+			const pinned: LogRecord = {
+				hash: fields[0],
+				parents: fields[1] ? fields[1].split(' ') : [],
+				author: fields[2],
+				email: fields[3],
+				date: parseInt(fields[4], 10),
+				message: fields.slice(5).join(SEPARATOR)
+			};
+			let position = commits.findIndex((commit) => commit.date < pinned.date);
+			if (position === -1) position = commits.length;
+			commits.splice(position, 0, pinned);
+		}
 	}
 
 	/**

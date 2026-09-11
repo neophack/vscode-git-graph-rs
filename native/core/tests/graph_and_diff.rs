@@ -74,6 +74,54 @@ fn reports_when_more_commits_are_available() {
 }
 
 #[test]
+fn keeps_the_injected_gerrit_change_commits_on_the_page() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let base = repo.commit_file("a.txt", "0", "base");
+    // An old change: its patchset was uploaded right after the base commit, long before the
+    // branch moved on
+    repo.git(&["checkout", "--quiet", "-b", "change"]);
+    let patchset = repo.commit_file("c.txt", "change", "old change");
+    repo.git(&["checkout", "--quiet", "main"]);
+    for index in 1..=10 {
+        repo.commit_file("a.txt", &index.to_string(), &format!("commit {index}"));
+    }
+    repo.git(&["branch", "--quiet", "-D", "change"]);
+    repo.update_ref("refs/remotes/origin/changes/45/12345/1", &patchset);
+
+    let engine = open(&repo);
+    let change_ref = "refs/remotes/origin/changes/45/12345/1".to_string();
+
+    // A page of 4 holds the 4 newest branch commits: the change's patchset is older than all of
+    // them, so the page cut would drop it — and with it the badge the fetch limit promised
+    let mut options = view_options(4);
+    options.gerrit_refs = Some(vec![change_ref.clone()]);
+    let data = graph::load_commits(&engine, &options).unwrap();
+    assert!(data.more_commits_available);
+    let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
+    assert_eq!(
+        hashes.len(),
+        5,
+        "the pinned patchset rides along the page of 4"
+    );
+    assert_eq!(
+        hashes[4], patchset,
+        "the pinned patchset sits below every newer commit"
+    );
+    assert!(!hashes.contains(&base.as_str()));
+
+    // A page holding the change's patchset anyway neither duplicates nor moves it
+    let mut options = view_options(50);
+    options.gerrit_refs = Some(vec![change_ref]);
+    let data = graph::load_commits(&engine, &options).unwrap();
+    let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
+    assert_eq!(hashes.len(), 12);
+    assert_eq!(hashes.iter().filter(|h| **h == patchset).count(), 1);
+    assert_eq!(hashes[10], patchset);
+    assert_eq!(hashes[11], base);
+}
+
+#[test]
 fn declines_graphs_that_include_reflog_commits() {
     require_git!();
     let mut repo = TestRepo::new();
