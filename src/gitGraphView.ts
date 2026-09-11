@@ -1499,8 +1499,6 @@ export class GitGraphView extends Disposable {
 					<div id="currentBtn"></div>
 						<div id="findBtn"></div>
 						<div id="filterBtn"></div>
-						<div id="reflogBtn"></div>
-						<div id="worktreeBtn"></div>
 						<div id="statisticsBtn"></div>
 						<div id="terminalBtn"></div>
 						<div id="settingsBtn"></div>

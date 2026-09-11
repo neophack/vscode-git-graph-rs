@@ -249,7 +249,7 @@ class GitGraphView {
 			this.saveState();
 		}
 
-		const currentBtn = document.getElementById('currentBtn')!, fetchBtn = document.getElementById('fetchBtn')!, findBtn = document.getElementById('findBtn')!, reflogBtn = document.getElementById('reflogBtn')!, worktreeBtn = document.getElementById('worktreeBtn')!, statisticsBtn = document.getElementById('statisticsBtn')!, settingsBtn = document.getElementById('settingsBtn')!, terminalBtn = document.getElementById('terminalBtn')!;
+		const currentBtn = document.getElementById('currentBtn')!, fetchBtn = document.getElementById('fetchBtn')!, findBtn = document.getElementById('findBtn')!, settingsBtn = document.getElementById('settingsBtn')!, terminalBtn = document.getElementById('terminalBtn')!;
 		currentBtn.title = strings.scrollToHeadTitle;
 		currentBtn.innerHTML = SVG_ICONS.current;
 		currentBtn.addEventListener('click', () => {
@@ -263,15 +263,6 @@ class GitGraphView {
 		findBtn.title = strings.findTitle;
 		findBtn.innerHTML = SVG_ICONS.search;
 		findBtn.addEventListener('click', () => this.findWidget.show(true));
-		reflogBtn.title = strings.reflogTitle;
-		reflogBtn.innerHTML = SVG_ICONS.commit;
-		reflogBtn.addEventListener('click', () => this.reflogView.show());
-		worktreeBtn.title = strings.worktreeDialogTitle;
-		worktreeBtn.innerHTML = SVG_ICONS.package;
-		worktreeBtn.addEventListener('click', () => this.worktreeDialog.show());
-		statisticsBtn.title = strings.statisticsTitle;
-		statisticsBtn.innerHTML = SVG_ICONS.info;
-		statisticsBtn.addEventListener('click', () => this.statisticsView.show());
 		settingsBtn.title = strings.settingsTitle;
 		settingsBtn.innerHTML = SVG_ICONS.gear;
 		settingsBtn.addEventListener('click', () => this.settingsWidget.show(this.currentRepo));
@@ -289,11 +280,17 @@ class GitGraphView {
 			filterBtn.addEventListener('click', () => this.showPathFilterDialog());
 			this.renderFilterButton();
 		}
+		const statisticsBtn = document.getElementById('statisticsBtn');
+		if (statisticsBtn !== null) {
+			statisticsBtn.title = strings.statisticsTitle;
+			statisticsBtn.innerHTML = SVG_ICONS.graph;
+			statisticsBtn.addEventListener('click', () => this.statisticsView.show());
+		}
 
 		// These toolbar icons are styled <div>s rather than native <button>s, so they need to be
 		// wired into the tab order and given Enter/Space activation manually (the CSS already has
 		// :focus-visible rules for them, they just weren't reachable by keyboard)
-		[currentBtn, fetchBtn, findBtn, reflogBtn, worktreeBtn, statisticsBtn, settingsBtn, terminalBtn, filterBtn].forEach((btn) => {
+		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn, statisticsBtn].forEach((btn) => {
 			if (btn === null) return;
 			btn.tabIndex = 0;
 			btn.setAttribute('role', 'button');

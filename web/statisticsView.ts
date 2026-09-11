@@ -1,7 +1,7 @@
 /**
  * Implements the Git Graph View's Statistics Widget: an overlay (matching the SettingsWidget /
- * ReflogView / WorktreeDialog pattern) showing commits-by-author and a commit-activity heatmap
- * (weekday x hour, binned by each commit author's own local time). Read-only - no actions.
+ * ReflogView / WorktreeDialog pattern) showing a commit-activity heatmap (weekday x hour, binned
+ * by each commit author's own local time) above commits-by-author. Read-only - no actions.
  */
 
 const STATISTICS_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -56,8 +56,8 @@ class StatisticsView {
 	}
 
 	private render(authors: ReadonlyArray<GG.GitAuthorStat>, activity: ReadonlyArray<GG.GitActivityCell>) {
-		this.contentElem.innerHTML = '<h3>' + escapeHtml(strings.statisticsAuthorsTitle) + '</h3>' + this.renderAuthors(authors)
-			+ '<h3>' + escapeHtml(strings.statisticsHeatmapTitle) + '</h3>' + this.renderHeatmap(activity);
+		this.contentElem.innerHTML = '<h3>' + escapeHtml(strings.statisticsHeatmapTitle) + '</h3>' + this.renderHeatmap(activity)
+			+ '<h3>' + escapeHtml(strings.statisticsAuthorsTitle) + '</h3>' + this.renderAuthors(authors);
 	}
 
 	private renderAuthors(authors: ReadonlyArray<GG.GitAuthorStat>): string {

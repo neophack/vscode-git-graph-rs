@@ -429,6 +429,11 @@ const STRINGS_EN = {
 	settingsBackendAreaConfig: 'Repository configuration',
 	settingsBackendAreaWrites: 'Write operations (fetch, push, merge, rebase, stash…)',
 
+	/* Settings: the Repository Tools section (entries of the Reflog / Worktrees overlays; Statistics lives in the toolbar) */
+	settingsSectionTools: 'Repository Tools',
+	settingsOpenReflog: 'View Reflog',
+	settingsOpenWorktrees: 'Manage Worktrees',
+
 	settingsExportRepoConfig: 'Export Repository Configuration',
 	settingsExportRepoConfigConfirm: 'Exporting the Git Graph Repository Configuration will generate a file that can be committed in this repository. It allows others working in this repository to use the same configuration.',
 	settingsYesExport: 'Yes, export',
@@ -1317,6 +1322,11 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	settingsBackendAreaCounting: '提交计数（跳转定位）',
 	settingsBackendAreaConfig: '仓库配置读取',
 	settingsBackendAreaWrites: '写操作（fetch、push、merge、rebase、stash……）',
+
+	/* Settings: the Repository Tools section (entries of the Reflog / Worktrees overlays; Statistics lives in the toolbar) */
+	settingsSectionTools: '仓库工具',
+	settingsOpenReflog: '查看引用日志',
+	settingsOpenWorktrees: '管理工作树',
 
 	settingsExportRepoConfig: '导出仓库配置',
 	settingsExportRepoConfigConfirm: '导出 Git Graph 仓库配置会生成一个可以提交到此仓库的文件，使在此仓库中工作的其他人可以使用相同的配置。',
