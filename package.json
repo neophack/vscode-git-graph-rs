@@ -63,6 +63,7 @@
 			"media/**",
 			"scripts/**",
 			"tests/**",
+			"out/types/**",
 			"web/**",
 			"**/*.d.ts"
 		]
