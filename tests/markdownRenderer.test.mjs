@@ -96,12 +96,16 @@ describe('renderMarkdown - rendering fidelity (against the real markdown-it libr
 		assert.equal(renderMarkdown('**bold** *em* `code`'), '<p><strong>bold</strong> <em>em</em> <code>code</code></p>');
 	});
 
-	it('renders a bullet list', () => {
-		assert.equal(renderMarkdown('- one\n- two'), '<ul><li><p>one</p></li><li><p>two</p></li></ul>');
+	it('renders a tight bullet list without wrapping each item in a <p>', () => {
+		assert.equal(renderMarkdown('- one\n- two'), '<ul><li>one</li><li>two</li></ul>');
+	});
+
+	it('renders a loose bullet list (blank line between items) with each item wrapped in a <p>', () => {
+		assert.equal(renderMarkdown('- one\n\n- two'), '<ul><li><p>one</p></li><li><p>two</p></li></ul>');
 	});
 
 	it('renders an ordered list starting at a non-1 value with a start attribute', () => {
-		assert.equal(renderMarkdown('3. three\n4. four'), '<ol start="3"><li><p>three</p></li><li><p>four</p></li></ol>');
+		assert.equal(renderMarkdown('3. three\n4. four'), '<ol start="3"><li>three</li><li>four</li></ol>');
 	});
 
 	it('renders a table', () => {

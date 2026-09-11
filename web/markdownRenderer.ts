@@ -94,7 +94,10 @@ function renderMarkdownContainer(token: MarkdownItToken, innerHtml: string): str
 			return '<' + tag + '>' + innerHtml + '</' + tag + '>';
 		}
 		case 'paragraph_open':
-			return '<p>' + innerHtml + '</p>';
+			// Inside a tight list (no blank lines between items), markdown-it marks the item's
+			// paragraph tokens `hidden` to signal the <p> wrapper should be omitted - matching
+			// GitHub/GitLab/markdown-it's own HTML renderer, which all skip it for tight lists.
+			return token.hidden ? innerHtml : '<p>' + innerHtml + '</p>';
 		case 'blockquote_open':
 			return '<blockquote>' + innerHtml + '</blockquote>';
 		case 'bullet_list_open':

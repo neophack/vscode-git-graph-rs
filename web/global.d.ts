@@ -179,6 +179,8 @@ declare global {
 		readonly info: string;
 		/** Only on `inline`: this token's own nested flat token stream (walked the same way as the top-level one). */
 		readonly children: ReadonlyArray<MarkdownItToken> | null;
+		/** True on `paragraph_open`/`paragraph_close` inside a "tight" list (no blank lines between items) - the wrapping tag should be omitted for these. */
+		readonly hidden: boolean;
 		/** Reads an attribute set on this token (e.g. `href` on `link_open`, `src`/`alt` on `image`, `start` on `ordered_list_open`), or NULL if absent. Most are strings; `start` comes back as a number. */
 		attrGet(name: string): string | number | null;
 	}
