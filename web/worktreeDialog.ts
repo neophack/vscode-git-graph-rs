@@ -72,14 +72,18 @@ class WorktreeDialog {
 		} else {
 			html = '<table class="worktreeTable"><tbody>';
 			for (const worktree of this.worktrees) {
+				// The tooltip targets (the prunable badge, the remove button) must pass their own
+				// classes through helpTooltipAttrs' className parameter: a separate class attribute
+				// before it would win over the tooltip's, and the parser would drop the latter -
+				// silently disabling the tooltip
 				const badges = (worktree.isMain ? ' <span class="worktreeBadge worktreeBadgeMain">' + escapeHtml(strings.worktreeMainBadge) + '</span>' : '')
 					+ (worktree.locked ? ' <span class="worktreeBadge worktreeBadgeLocked">' + escapeHtml(strings.worktreeLocked) + '</span>' : '')
-					+ (worktree.prunable ? ' <span class="worktreeBadge worktreeBadgePrunable" ' + helpTooltipAttrs(strings.worktreePrunableInfo) + '>' + escapeHtml(strings.worktreePrunable) + '</span>' : '');
+					+ (worktree.prunable ? ' <span ' + helpTooltipAttrs(strings.worktreePrunableInfo, 'worktreeBadge worktreeBadgePrunable') + '>' + escapeHtml(strings.worktreePrunable) + '</span>' : '');
 				html += '<tr class="worktreeRow" data-path="' + escapeHtml(worktree.path) + '">'
 					+ '<td class="worktreePathCol">' + escapeHtml(worktree.path) + badges + '</td>'
 					+ '<td class="worktreeBranchCol">' + (worktree.branch !== null ? escapeHtml(worktree.branch) : '<i>' + escapeHtml(strings.worktreeDetached) + ' (' + abbrevCommit(worktree.hash) + ')</i>') + '</td>'
 					+ '<td class="worktreeActionsCol">'
-					+ (worktree.isMain ? '' : '<span class="worktreeRemoveBtn" role="button" tabindex="0" ' + helpTooltipAttrs(strings.worktreeRemoveTitle) + '>' + SVG_ICONS.trash + '</span>')
+					+ (worktree.isMain ? '' : '<span ' + helpTooltipAttrs(strings.worktreeRemoveTitle, 'worktreeRemoveBtn') + ' role="button">' + SVG_ICONS.trash + '</span>')
 					+ '</td></tr>';
 			}
 			html += '</tbody></table>';
