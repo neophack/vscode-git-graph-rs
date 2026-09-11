@@ -47,10 +47,25 @@
 		"test": "npm run test:rust && npm run test:node",
 		"test:rust": "cargo test --workspace",
 		"test:node": "node scripts/run-tests.mjs",
+		"test:node:cov": "c8 node scripts/run-tests.mjs",
 		"bench": "node scripts/bench.mjs",
 		"bench:all": "node scripts/bench.mjs --all",
 		"analyze-log": "node scripts/analyze-log.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+	},
+	"c8": {
+		"all": true,
+		"include": ["out/**"],
+		"reporter": ["text", "lcov"],
+		"report-dir": "coverage",
+		"exclude": [
+			"coverage/**",
+			"media/**",
+			"scripts/**",
+			"tests/**",
+			"web/**",
+			"**/*.d.ts"
+		]
 	},
 	"dependencies": {
 		"iconv-lite": "0.5.0"
@@ -61,6 +76,7 @@
 		"@types/node": "^8.10.66",
 		"@types/vscode": "1.38.0",
 		"@vscode/vsce": "^2.19.0",
+		"c8": "^12.0.0",
 		"esbuild": "^0.25.12",
 		"highlight.js": "^11.12.0",
 		"jsdom": "^29.1.1",
