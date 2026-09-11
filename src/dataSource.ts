@@ -10,7 +10,7 @@ import { getConfig } from './config';
 import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitFileChange, GitLineCounts, GitPushBranchMode, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
+import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitActivityCell, GitAuthorStat, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitConflictPrediction, GitFileChange, GitLineCounts, GitOperationState, GitOperationType, GitPushBranchMode, GitReflogEntry, GitWorktree, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
 import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -245,6 +245,286 @@ export class DataSource extends Disposable {
 			this.backend.getRefs(repo, { showRemoteBranches: true }),
 			this.backend.getStashes(repo)
 		]).then(([refs, stashes]) => JSON.stringify([refs.head, refs.heads, refs.tags, refs.remotes, stashes]), () => null);
+	}
+
+	/**
+	 * Detect whether a merge, rebase, cherry-pick or revert is currently in progress, and (if so)
+	 * which files are still unresolved. Rides along with `getRepoInfo` so the conflict banner is
+	 * refreshed on every view load and after every action, without a separate poll. Never rejects:
+	 * any failure to read the repository's state resolves to "no operation in progress", since a
+	 * transient failure here must not break the repository info load it rides along with.
+	 * @param repo The path of the repository.
+	 * @returns The current Git operation state.
+	 */
+	public getOperationState(repo: string): Promise<GitOperationState> {
+		const none: GitOperationState = { type: null, conflictedFiles: [], progress: null };
+		return this.gitOutput(['rev-parse', '--git-dir'], repo, (stdout) => stdout.trim()).then(async (gitDirOutput) => {
+			const gitDir = path.isAbsolute(gitDirOutput) ? gitDirOutput : path.join(repo, gitDirOutput);
+			let type: GitOperationType | null = null;
+			let progress: { step: number, total: number } | null = null;
+
+			if (fs.existsSync(path.join(gitDir, 'rebase-merge'))) {
+				type = GitOperationType.Rebase;
+				progress = readRebaseProgress(path.join(gitDir, 'rebase-merge', 'msgnum'), path.join(gitDir, 'rebase-merge', 'end'));
+			} else if (fs.existsSync(path.join(gitDir, 'rebase-apply'))) {
+				type = GitOperationType.Rebase;
+				progress = readRebaseProgress(path.join(gitDir, 'rebase-apply', 'next'), path.join(gitDir, 'rebase-apply', 'last'));
+			} else if (fs.existsSync(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
+				type = GitOperationType.CherryPick;
+			} else if (fs.existsSync(path.join(gitDir, 'REVERT_HEAD'))) {
+				type = GitOperationType.Revert;
+			} else if (fs.existsSync(path.join(gitDir, 'MERGE_HEAD'))) {
+				type = GitOperationType.Merge;
+			}
+
+			if (type === null) return none;
+
+			const conflictedFiles = await this.gitOutput(['diff', '--name-only', '--diff-filter=U'], repo, (stdout) => stdout.split(EOL_REGEX).filter((line) => line !== ''))
+				.catch(() => [] as string[]);
+
+			return { type, conflictedFiles, progress };
+		}).catch(() => none);
+	}
+
+	/**
+	 * Continue an in-progress merge, rebase, cherry-pick or revert.
+	 * @param repo The path of the repository.
+	 * @param type The type of operation to continue.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public continueOperation(repo: string, type: GitOperationType) {
+		return this.runGitCommand([type, '--continue'], repo);
+	}
+
+	/**
+	 * Abort an in-progress merge, rebase, cherry-pick or revert.
+	 * @param repo The path of the repository.
+	 * @param type The type of operation to abort.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public abortOperation(repo: string, type: GitOperationType) {
+		return this.runGitCommand([type, '--abort'], repo);
+	}
+
+	/**
+	 * Predict whether merging `theirs` into `ours` would conflict, via a single
+	 * `git merge-tree --write-tree` probe (no working-tree side effects, so it is safe to run
+	 * ahead of the merge/rebase confirmation dialog). Requires Git 2.40+; on an older Git this
+	 * resolves to "no prediction available" (`conflicted: false, files: []`) rather than an error,
+	 * since the prediction is advisory and a stale/incompatible Git must not block the action.
+	 * @param repo The path of the repository.
+	 * @param ours The tip the operation would apply onto.
+	 * @param theirs The object being merged/rebased in.
+	 * @returns The predicted conflict, or NULL if the prediction could not be made.
+	 */
+	public predictConflicts(repo: string, ours: string, theirs: string): Promise<GitConflictPrediction | null> {
+		if (this.gitExecutable === null || !doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.MergeTreeConflictPrediction)) {
+			return Promise.resolve(null);
+		}
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['ours', ours, 'ref'], ['theirs', theirs, 'ref']);
+		if (unsafeArgs !== null) return Promise.resolve(null);
+
+		return this.gitOutput(['merge-tree', '--write-tree', ours, theirs], repo, () => {
+			// Exit code 0 (no rejection) means a clean merge: no conflicted paths.
+			return <GitConflictPrediction>{ conflicted: false, files: [] };
+		}).catch((errorMessage: string) => {
+			// A real (non-transient) conflict exits non-zero with output made of several sections
+			// (the merged tree OID, the conflicted file info, then free-text informational
+			// messages), separated by blank lines whose exact position isn't worth depending on -
+			// every line is instead matched against the fixed porcelain index-entry shape of a
+			// conflicted file info line, `<mode> <oid> <stage>\t<path>` (stage 1/2/3 =
+			// base/ours/theirs - the same path can appear up to three times, once per stage), which
+			// a free-text informational message cannot accidentally match.
+			const files = new Set<string>();
+			for (const line of errorMessage.split(EOL_REGEX)) {
+				const match = line.match(/^[0-7]{6} [0-9a-f]+ [1-3]\t(.+)$/);
+				if (match !== null) files.add(match[1]);
+			}
+			return files.size > 0 ? <GitConflictPrediction>{ conflicted: true, files: [...files] } : null;
+		});
+	}
+
+	/**
+	 * Get a page of the reflog of a reference (defaulting to `HEAD`), newest first, with dangling
+	 * (unreachable-from-any-branch) commits flagged.
+	 * @param repo The path of the repository.
+	 * @param ref The reference whose reflog is read (e.g. `HEAD`, or a branch name).
+	 * @param limit The maximum number of entries to return.
+	 * @returns The reflog page (empty with an error message if it could not be read).
+	 */
+	public async getReflog(repo: string, ref: string, limit: number): Promise<GitReflogData> {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['ref', ref, 'ref']);
+		if (unsafeArgs !== null) return { entries: [], moreAvailable: false, error: unsafeArgs };
+
+		let lines: string[];
+		try {
+			// %gd is the reflog selector, but under --date=unix it switches from the index form
+			// (ref@{N}) to the date form (ref@{<unix time>}) - the index is instead rebuilt below
+			// from each entry's position in this (newest-first) page, and the unix time is read out
+			// of the same field instead of needing a second, separately-formatted column for it.
+			lines = await this.gitOutput(
+				['reflog', 'show', ref, '--format=%H\x1f%h\x1f%gd\x1f%gs', '--date=unix', '-n', String(limit + 1)],
+				repo,
+				(stdout) => stdout.split(EOL_REGEX).filter((line) => line !== '')
+			);
+		} catch (errorMessage) {
+			return { entries: [], moreAvailable: false, error: <string>errorMessage };
+		}
+
+		const moreAvailable = lines.length > limit;
+		if (moreAvailable) lines = lines.slice(0, limit);
+
+		const parsed = lines.map((line) => {
+			const parts = line.split('\x1f');
+			const dateMatch = parts.length === 4 ? parts[2].match(/\{(\d+)\}/) : null;
+			return parts.length === 4 && dateMatch !== null
+				? { hash: parts[0], abbrevHash: parts[1], date: parseInt(dateMatch[1], 10), message: parts[3] }
+				: null;
+		}).filter((entry): entry is { hash: string, abbrevHash: string, date: number, message: string } => entry !== null);
+
+		const uniqueHashes = [...new Set(parsed.map((entry) => entry.hash))];
+		const dangling = new Set<string>();
+		if (uniqueHashes.length > 0) {
+			try {
+				const batchCheckOutput = await this.gitOutputWithInput(['cat-file', '--batch-check'], repo, uniqueHashes.join('\n') + '\n', (stdout) => stdout);
+				for (const line of batchCheckOutput.split(EOL_REGEX)) {
+					const match = line.match(/^([0-9a-f]+)\s+missing\b/);
+					if (match !== null) dangling.add(match[1]);
+				}
+			} catch (_) {
+				// Leave every entry non-dangling rather than fail the whole reflog over a
+				// best-effort annotation.
+			}
+		}
+
+		return {
+			entries: parsed.map((entry, index) => (<GitReflogEntry>{
+				hash: entry.hash,
+				abbrevHash: entry.abbrevHash,
+				selector: ref + '@{' + index + '}',
+				date: entry.date,
+				message: entry.message,
+				dangling: dangling.has(entry.hash)
+			})),
+			moreAvailable: moreAvailable,
+			error: null
+		};
+	}
+
+	/**
+	 * Get the worktrees of a repository.
+	 * @param repo The path of the repository.
+	 * @returns The worktrees, in the order Git reports them (the first is always the repository's
+	 * own working directory).
+	 */
+	public async getWorktrees(repo: string): Promise<GitWorktree[]> {
+		let lines: string[];
+		try {
+			lines = await this.gitOutput(['worktree', 'list', '--porcelain'], repo, (stdout) => stdout.split(EOL_REGEX));
+		} catch (_) {
+			return [];
+		}
+
+		const worktrees: GitWorktree[] = [];
+		let current: { path: string, hash: string, branch: string | null, detached: boolean, locked: boolean, prunable: boolean } | null = null;
+		const flush = () => {
+			if (current !== null) {
+				worktrees.push({ ...current, isMain: worktrees.length === 0 });
+			}
+		};
+		for (const line of lines) {
+			if (line.startsWith('worktree ')) {
+				flush();
+				current = { path: line.substring(9), hash: '', branch: null, detached: false, locked: false, prunable: false };
+			} else if (current === null) {
+				continue;
+			} else if (line.startsWith('HEAD ')) {
+				current.hash = line.substring(5);
+			} else if (line.startsWith('branch ')) {
+				const ref = line.substring(7);
+				current.branch = ref.startsWith('refs/heads/') ? ref.substring(11) : ref;
+			} else if (line === 'detached') {
+				current.detached = true;
+			} else if (line === 'locked' || line.startsWith('locked ')) {
+				current.locked = true;
+			} else if (line === 'prunable' || line.startsWith('prunable ')) {
+				current.prunable = true;
+			}
+		}
+		flush();
+		return worktrees;
+	}
+
+	/**
+	 * Add a worktree.
+	 * @param repo The path of the repository.
+	 * @param path The path the worktree should be created at.
+	 * @param branch An existing branch to check out in the worktree, or NULL to use `newBranch` instead.
+	 * @param newBranch A new branch name to create (starting at `branch`, or HEAD if `branch` is NULL), or NULL to check out `branch` as-is.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public addWorktree(repo: string, path: string, branch: string | null, newBranch: string | null) {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['path', path, 'url'], ['branch', branch, 'ref'], ['newBranch', newBranch, 'ref']);
+		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+
+		const args = ['worktree', 'add'];
+		if (newBranch !== null) args.push('-b', newBranch);
+		args.push(path);
+		if (branch !== null) args.push(branch);
+		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Remove a worktree.
+	 * @param repo The path of the repository.
+	 * @param path The path of the worktree to remove.
+	 * @param force Is `--force` enabled (needed when the worktree has uncommitted changes, or is locked).
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public removeWorktree(repo: string, path: string, force: boolean) {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['path', path, 'url']);
+		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+
+		const args = ['worktree', 'remove'];
+		if (force) args.push('--force');
+		args.push(path);
+		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Prune worktree administrative files for worktrees that no longer exist on disk.
+	 * @param repo The path of the repository.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public pruneWorktrees(repo: string) {
+		return this.runGitCommand(['worktree', 'prune'], repo);
+	}
+
+	/**
+	 * Get the number of commits by each author, across all branches.
+	 *
+	 * Served by the Rust engine when available (it scales with repository size much better than
+	 * spawning `git shortlog` — this and `getActivityHeatmap` are the only two of the newer
+	 * read methods that actually walk full history, so they're the only two worth the engine
+	 * path; see GAPS.md for the others, which stay CLI-only because they're bounded by something
+	 * other than commit count).
+	 * @param repo The path of the repository.
+	 * @returns The author statistics (empty if they could not be read).
+	 */
+	public getAuthorStatistics(repo: string): Promise<GitAuthorStat[]> {
+		return this.backend.getAuthorStatistics(repo).then((stats) => [...stats], () => []);
+	}
+
+	/**
+	 * Get the commit activity heatmap of a repository, binned by the author's local weekday and
+	 * hour (i.e. `%aI`'s own UTC offset, not the machine running Git Graph's timezone).
+	 *
+	 * Served by the Rust engine when available; see the note on `getAuthorStatistics`.
+	 * @param repo The path of the repository.
+	 * @returns The non-zero cells of the heatmap (empty if it could not be read).
+	 */
+	public getActivityHeatmap(repo: string): Promise<GitActivityCell[]> {
+		return this.backend.getActivityHeatmap(repo).then((cells) => [...cells], () => []);
 	}
 
 	/**
@@ -1318,9 +1598,11 @@ export class DataSource extends Disposable {
 	 * @param actionOn Is the rebase on a branch or commit.
 	 * @param ignoreDate Is `--ignore-date` enabled.
 	 * @param interactive Should the rebase be performed interactively.
+	 * @param autosquash Is `--autosquash` enabled (interactive rebase only: it has no effect on
+	 * a headless rebase without an explicit `rebase.autoSquash` config).
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public rebase(repo: string, obj: string, actionOn: RebaseActionOn, ignoreDate: boolean, interactive: boolean) {
+	public rebase(repo: string, obj: string, actionOn: RebaseActionOn, ignoreDate: boolean, interactive: boolean, autosquash: boolean = false) {
 		const unsafeArgs = actionOn === RebaseActionOn.Branch
 			? DataSource.checkUnsafeGitArgs(['obj', obj, 'ref'])
 			: DataSource.checkUnsafeGitArgs(['obj', obj, 'hash']);
@@ -1331,7 +1613,7 @@ export class DataSource extends Disposable {
 			// command that is sent to the integrated terminal.
 			return this.openGitTerminal(
 				repo,
-				'rebase --interactive ' + (getConfig().signCommits ? '-S ' : '') + (actionOn === RebaseActionOn.Branch ? quoteShellArg(obj) : obj),
+				'rebase --interactive ' + (autosquash ? '--autosquash ' : '') + (getConfig().signCommits ? '-S ' : '') + (actionOn === RebaseActionOn.Branch ? quoteShellArg(obj) : obj),
 				'Rebase on "' + (actionOn === RebaseActionOn.Branch ? obj : abbrevCommit(obj)) + '"'
 			);
 		} else {
@@ -1413,6 +1695,43 @@ export class DataSource extends Disposable {
 			args.push('-m', parentIndex.toString());
 		}
 		args.push(commitHash);
+		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Commit the currently staged changes as a `fixup!` commit of a target commit, ready to be
+	 * folded in later by an interactive rebase with `--autosquash`. Git resolves the target's
+	 * subject and prefixes it itself; no subject lookup is done here.
+	 * @param repo The path of the repository.
+	 * @param commitHash The hash of the commit the staged changes are a fixup of.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public createFixupCommit(repo: string, commitHash: string) {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
+		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+
+		const args = ['commit', '--fixup', commitHash];
+		if (getConfig().signCommits) {
+			args.push('-S');
+		}
+		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Commit the currently staged changes as a `squash!` commit of a target commit, ready to be
+	 * folded in later by an interactive rebase with `--autosquash`.
+	 * @param repo The path of the repository.
+	 * @param commitHash The hash of the commit the staged changes are a squash of.
+	 * @returns The ErrorInfo from the executed command.
+	 */
+	public createSquashCommit(repo: string, commitHash: string) {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
+		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+
+		const args = ['commit', '--squash', commitHash];
+		if (getConfig().signCommits) {
+			args.push('-S');
+		}
 		return this.runGitCommand(args, repo);
 	}
 
@@ -1986,6 +2305,39 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Run a Git command that reads from standard input and whose `stdout` is the data being
+	 * requested (e.g. `git cat-file --batch-check`, used to check which of a batch of hashes are
+	 * still present in the object database). Unlike `runGitCommandWithInput`, this does not
+	 * invalidate the ref cache: it is a read, not a write.
+	 * @param args The arguments to pass to Git.
+	 * @param repo The repository to run the command in.
+	 * @param input The command stream to write to the standard input of the Git process.
+	 * @param resolveValue A callback invoked to resolve the data from `stdout`.
+	 * @returns A promise resolving to the resolved value, or rejecting with the failure reason.
+	 */
+	public gitOutputWithInput<T>(args: string[], repo: string, input: string, resolveValue: { (stdout: string): T }): Promise<T> {
+		return new Promise<T>((resolve, reject) => {
+			if (this.gitExecutable === null) {
+				return reject(unableToFindGitMsg());
+			}
+
+			const cmd = cp.spawn(this.gitExecutable.path, args, {
+				cwd: repo,
+				env: Object.assign({}, process.env, this.askpassEnv)
+			});
+			let stdout = '', stderr = '';
+			cmd.stdout.on('data', (d: Buffer) => { stdout += d; });
+			cmd.stderr.on('data', (d: Buffer) => { stderr += d; });
+			cmd.on('error', (error) => reject(error.message));
+			cmd.on('close', (code) => code === 0 ? resolve(resolveValue(stdout)) : reject(getErrorMessage(null, Buffer.from(stdout), stderr)));
+			cmd.stdin.on('error', () => { /* ignore EPIPE: the command already failed */ });
+			cmd.stdin.end(input);
+
+			this.logger.logCmd('git', args);
+		});
+	}
+
+	/**
 	 * Spawn Git, with the return value resolved from `stdout` as a string (public wrapper used by the Git Graph View).
 	 * @param args The arguments to pass to Git.
 	 * @param repo The repository to run the command in.
@@ -2070,6 +2422,27 @@ function getConfigValue(configs: GitConfigSet, key: string) {
 }
 
 /**
+ * Read a rebase's step counter out of two single-integer marker files in its state directory
+ * (`rebase-merge/msgnum` + `rebase-merge/end`, or `rebase-apply/next` + `rebase-apply/last`).
+ * @param stepFile The path of the file holding the current step number.
+ * @param totalFile The path of the file holding the total number of steps.
+ * @returns The progress, or NULL if either file is missing or not a plain integer.
+ */
+function readRebaseProgress(stepFile: string, totalFile: string): { step: number, total: number } | null {
+	const step = readIntFile(stepFile), total = readIntFile(totalFile);
+	return step !== null && total !== null ? { step, total } : null;
+}
+
+function readIntFile(file: string): number | null {
+	try {
+		const value = parseInt(fs.readFileSync(file).toString().trim(), 10);
+		return isNaN(value) ? null : value;
+	} catch (_) {
+		return null;
+	}
+}
+
+/**
  * Produce a suitable error message from a spawned Git command that terminated with an erroneous status code.
  * @param error An error generated by JavaScript (optional).
  * @param stdoutBuffer A buffer containing the data outputted to `stdout`.
@@ -2115,6 +2488,12 @@ export interface GitCommitData {
 
 export interface GitCommitDetailsData {
 	commitDetails: GitCommitDetails | null;
+	error: ErrorInfo;
+}
+
+export interface GitReflogData {
+	entries: GitReflogEntry[];
+	moreAvailable: boolean;
 	error: ErrorInfo;
 }
 

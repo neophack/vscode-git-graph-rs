@@ -272,13 +272,13 @@
 	width:12px !important;
 	height:12px !important;
 }
-.settingsSectionButtons > div.addBtn svg, .settingsSectionButtons > div.removeBtn svg, #openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg{
+.settingsSectionButtons > div.addBtn svg, .settingsSectionButtons > div.removeBtn svg, .settingsSectionButtons > div.toolBtn svg, #openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg{
 	vertical-align:top;
 	width:14px !important;
 	height:14px !important;
 	margin:5px;
 }
-#openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg{
+#openExtensionSettings svg, #exportRepositoryConfig svg, #openLogFile svg, .settingsSectionButtons > div.toolBtn svg{
 	margin-top:6px;
 }
 #exportRepositoryConfig svg{

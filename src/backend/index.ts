@@ -11,7 +11,9 @@ import { isAddonAvailable, loadAddon, platformKey } from './addon';
 import { CliBackend } from './cliBackend';
 import { BackendCapability, BackendReport } from '../types';
 import {
+	GitActivityCell,
 	GitAuthor,
+	GitAuthorStat,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -238,6 +240,14 @@ class FallbackBackend implements GitBackend {
 
 	public getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>> {
 		return this.attempt('getAuthors', (backend) => backend.getAuthors(repo));
+	}
+
+	public getAuthorStatistics(repo: string): Promise<ReadonlyArray<GitAuthorStat>> {
+		return this.attempt('getAuthorStatistics', (backend) => backend.getAuthorStatistics(repo));
+	}
+
+	public getActivityHeatmap(repo: string): Promise<ReadonlyArray<GitActivityCell>> {
+		return this.attempt('getActivityHeatmap', (backend) => backend.getActivityHeatmap(repo));
 	}
 
 	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {

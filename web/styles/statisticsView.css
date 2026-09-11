@@ -1,0 +1,129 @@
+/* Statistics Widget: mirrors the Settings Widget / Reflog Widget / Worktree Widget fixed-overlay pattern */
+
+#statisticsWidget{
+	display:block;
+	position:fixed;
+	top:-158px;
+	right:28px;
+	width:560px;
+	max-width:calc(100vw - 56px);
+	box-sizing:border-box;
+	min-height:80px;
+	max-height:80vh;
+	padding:0 10px 10px 10px;
+	z-index:31;
+	background-color:var(--vscode-editorWidget-background);
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	color:var(--vscode-editorSuggestWidget-foreground);
+	fill:var(--vscode-editorSuggestWidget-foreground);
+	fill-opacity:0.7;
+	font-size:13px;
+	overflow-x:hidden;
+	overflow-y:auto;
+	transition:top var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
+}
+#statisticsWidget.active{
+	top:0;
+}
+
+#statisticsWidget h2{
+	margin:8px 10px;
+	padding:0;
+	font-size:16px;
+	line-height:24px;
+	text-align:center;
+}
+#statisticsContent h3{
+	margin:14px 4px 6px 4px;
+	padding:0;
+	font-size:13px;
+	font-weight:600;
+	opacity:0.85;
+}
+
+#statisticsClose{
+	position:absolute;
+	width:24px;
+	height:24px;
+	top:8px;
+	right:10px;
+	cursor:pointer;
+	z-index:33;
+}
+#statisticsClose svg{
+	position:absolute;
+	left:4px;
+	top:4px;
+	width:16px !important;
+	height:16px !important;
+}
+#statisticsClose:hover{
+	fill-opacity:1;
+}
+
+.statisticsLoading, .statisticsEmpty{
+	text-align:center;
+	padding:20px 0;
+	opacity:0.7;
+}
+.statisticsLoading svg{
+	width:24px;
+	height:32px;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+
+.statisticsAuthorsTable{
+	width:100%;
+	border-collapse:collapse;
+	table-layout:fixed;
+}
+.statisticsAuthorsTable td{
+	padding:2px 4px;
+	vertical-align:middle;
+}
+.statisticsAuthorName{
+	width:150px;
+	white-space:nowrap;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.statisticsAuthorBarCol{
+	width:auto;
+}
+.statisticsAuthorBar{
+	height:10px;
+	min-width:3px;
+	border-radius:2px;
+	background-color:var(--vscode-button-background, #0085d9);
+}
+.statisticsAuthorCount{
+	width:40px;
+	text-align:right;
+	opacity:0.8;
+}
+
+.statisticsHeatmap{
+	display:flex;
+	flex-direction:column;
+	gap:2px;
+}
+.statisticsHeatmapRow{
+	display:flex;
+	align-items:center;
+	gap:2px;
+}
+.statisticsHeatmapLabel{
+	width:28px;
+	flex-shrink:0;
+	font-size:11px;
+	opacity:0.7;
+}
+.statisticsHeatmapCell{
+	flex:1 1 0;
+	height:12px;
+	border-radius:2px;
+	background-color:var(--vscode-button-background, #0085d9);
+	background-clip:padding-box;
+	box-sizing:border-box;
+	border:1px solid transparent;
+}

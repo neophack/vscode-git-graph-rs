@@ -1,7 +1,7 @@
 import type { GerritChangeState, GerritStatusFilter } from './gerrit';
 import type {
 	GitCommit, GitCommitDetails, GitCommitStash,
-	GitConfigLocation, GitFileChange, GitFileStatus, GitLineCounts, GitPushBranchMode, GitRepoConfig,
+	GitActivityCell, GitAuthorStat, GitConfigLocation, GitConflictPrediction, GitFileChange, GitFileStatus, GitLineCounts, GitOperationState, GitOperationType, GitPushBranchMode, GitReflogEntry, GitRepoConfig, GitWorktree,
 	GitResetMode, GitStash, GitTagDetails
 } from './git';
 import type { PullRequestConfig, PullRequestInfo } from './pullRequest';
@@ -427,7 +427,7 @@ export interface RequestLoadCommits extends RepoRequest {
 	readonly hideRemotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;
 	readonly gerritFetchRefs: boolean; // false => the Gerrit integration is disabled for this repository
-	readonly gerritFetchLimit: number | null; // how many of the most recent changes to fetch (NULL => the gerrit.fetchLimit Extension Setting)
+	readonly gerritFetchLimit: number | null; // how many of the most recent Gerrit changes passing the status filter are DISPLAYED (NULL => the gerrit.fetchLimit Extension Setting)
 	readonly gerritStatusFilter: GerritStatusFilter; // which change statuses may appear in the graph
 	readonly filterPath?: string | null; // only show commits that modified the file(s) at this path (relative to the repository root); null/undefined => no path filter
 }
@@ -501,6 +501,90 @@ export interface ResponseLoadRepoInfo extends ResponseWithErrorInfo {
 	readonly stashes: ReadonlyArray<GitStash>;
 	readonly isRepo: boolean;
 	readonly remoteRefsPending?: boolean; // true => the branch list is local-only: the remote-tracking refs are still being scanned and follow with a loadCommits response
+	readonly operationState: GitOperationState;
+}
+
+export interface RequestContinueOperation extends RepoRequest {
+	readonly command: 'continueOperation';
+	readonly type: GitOperationType;
+}
+export interface ResponseContinueOperation extends ResponseWithErrorInfo {
+	readonly command: 'continueOperation';
+}
+
+export interface RequestRepoStatistics extends RepoRequest {
+	readonly command: 'repoStatistics';
+}
+export interface ResponseRepoStatistics extends BaseMessage {
+	readonly command: 'repoStatistics';
+	readonly authors: ReadonlyArray<GitAuthorStat>;
+	readonly activity: ReadonlyArray<GitActivityCell>;
+}
+
+export interface RequestWorktreeList extends RepoRequest {
+	readonly command: 'worktreeList';
+}
+export interface ResponseWorktreeList extends BaseMessage {
+	readonly command: 'worktreeList';
+	readonly worktrees: ReadonlyArray<GitWorktree>;
+}
+
+export interface RequestWorktreeAdd extends RepoRequest {
+	readonly command: 'worktreeAdd';
+	readonly path: string;
+	readonly branch: string | null;
+	readonly newBranch: string | null;
+}
+export interface ResponseWorktreeAdd extends ResponseWithErrorInfo {
+	readonly command: 'worktreeAdd';
+}
+
+export interface RequestWorktreeRemove extends RepoRequest {
+	readonly command: 'worktreeRemove';
+	readonly path: string;
+	readonly force: boolean;
+}
+export interface ResponseWorktreeRemove extends ResponseWithErrorInfo {
+	readonly command: 'worktreeRemove';
+}
+
+export interface RequestWorktreePrune extends RepoRequest {
+	readonly command: 'worktreePrune';
+}
+export interface ResponseWorktreePrune extends ResponseWithErrorInfo {
+	readonly command: 'worktreePrune';
+}
+
+export interface RequestReflog extends RepoRequest {
+	readonly command: 'reflog';
+	readonly ref: string;
+	readonly limit: number;
+}
+export interface ResponseReflog extends ResponseWithErrorInfo {
+	readonly command: 'reflog';
+	readonly ref: string;
+	readonly entries: ReadonlyArray<GitReflogEntry>;
+	readonly moreAvailable: boolean;
+}
+
+export interface RequestPredictConflicts extends RepoRequest {
+	readonly command: 'predictConflicts';
+	readonly ours: string;
+	readonly theirs: string;
+}
+export interface ResponsePredictConflicts extends BaseMessage {
+	readonly command: 'predictConflicts';
+	readonly ours: string;
+	readonly theirs: string;
+	readonly prediction: GitConflictPrediction | null;
+}
+
+export interface RequestAbortOperation extends RepoRequest {
+	readonly command: 'abortOperation';
+	readonly type: GitOperationType;
+}
+export interface ResponseAbortOperation extends ResponseWithErrorInfo {
+	readonly command: 'abortOperation';
 }
 
 export interface RequestLoadRepos extends BaseMessage {
@@ -666,11 +750,28 @@ export interface RequestRebase extends RepoRequest {
 	readonly actionOn: RebaseActionOn;
 	readonly ignoreDate: boolean;
 	readonly interactive: boolean;
+	readonly autosquash: boolean;
 }
 export interface ResponseRebase extends ResponseWithErrorInfo {
 	readonly command: 'rebase';
 	readonly actionOn: RebaseActionOn;
 	readonly interactive: boolean;
+}
+
+export interface RequestCommitFixup extends RepoRequest {
+	readonly command: 'commitFixup';
+	readonly commitHash: string;
+}
+export interface ResponseCommitFixup extends ResponseWithErrorInfo {
+	readonly command: 'commitFixup';
+}
+
+export interface RequestCommitSquash extends RepoRequest {
+	readonly command: 'commitSquash';
+	readonly commitHash: string;
+}
+export interface ResponseCommitSquash extends ResponseWithErrorInfo {
+	readonly command: 'commitSquash';
 }
 
 export interface ResponseRefresh extends BaseMessage {
@@ -896,7 +997,8 @@ export interface ResponseSetGlobalSetting extends ResponseWithErrorInfo {
 }
 
 export type RequestMessage =
-	RequestAddRemote
+	RequestAbortOperation
+	| RequestAddRemote
 	| RequestAddTag
 	| RequestApplyStash
 	| RequestBranchFromStash
@@ -904,6 +1006,9 @@ export type RequestMessage =
 	| RequestCheckoutCommit
 	| RequestCherrypickCommit
 	| RequestCleanUntrackedFiles
+	| RequestCommitFixup
+	| RequestCommitSquash
+	| RequestContinueOperation
 	| RequestCountCommitsBefore
 	| RequestCommitBodies
 	| RequestCommitDetails
@@ -944,12 +1049,14 @@ export type RequestMessage =
 	| RequestOpenLogFile
 	| RequestOpenTerminal
 	| RequestPopStash
+	| RequestPredictConflicts
 	| RequestPruneRemote
 	| RequestPullBranch
 	| RequestPushBranch
 	| RequestPushStash
 	| RequestPushTag
 	| RequestRebase
+	| RequestReflog
 	| RequestRenameBranch
 	| RequestRescanForRepos
 	| RequestResetFileToRevision
@@ -969,10 +1076,16 @@ export type RequestMessage =
 	| RequestViewScm
 	| RequestFetchPullRequest
 	| RequestSetGlobalSetting
-	| RequestSetInterfaceLanguage;
+	| RequestSetInterfaceLanguage
+	| RequestRepoStatistics
+	| RequestWorktreeList
+	| RequestWorktreeAdd
+	| RequestWorktreeRemove
+	| RequestWorktreePrune;
 
 export type ResponseMessage =
-	ResponseAddRemote
+	ResponseAbortOperation
+	| ResponseAddRemote
 	| ResponseAddTag
 	| ResponseLossWarning
 	| ResponseApplyStash
@@ -981,6 +1094,9 @@ export type ResponseMessage =
 	| ResponseCheckoutCommit
 	| ResponseCherrypickCommit
 	| ResponseCleanUntrackedFiles
+	| ResponseCommitFixup
+	| ResponseCommitSquash
+	| ResponseContinueOperation
 	| ResponseCountCommitsBefore
 	| ResponseCompareCommits
 	| ResponseCommitBodies
@@ -1020,6 +1136,7 @@ export type ResponseMessage =
 	| ResponseOpenLogFile
 	| ResponseOpenTerminal
 	| ResponsePopStash
+	| ResponsePredictConflicts
 	| ResponsePruneRemote
 	| ResponsePullBranch
 	| ResponsePushBranch
@@ -1027,6 +1144,7 @@ export type ResponseMessage =
 	| ResponsePushTag
 	| ResponseRebase
 	| ResponseRefresh
+	| ResponseReflog
 	| ResponseRenameBranch
 	| ResponseResetFileToRevision
 	| ResponseResetToCommit
@@ -1042,4 +1160,9 @@ export type ResponseMessage =
 	| ResponseViewScm
 	| ResponsePullRequestStatus
 	| ResponseSetGlobalSetting
-	| ResponseSetInterfaceLanguage;
+	| ResponseSetInterfaceLanguage
+	| ResponseRepoStatistics
+	| ResponseWorktreeList
+	| ResponseWorktreeAdd
+	| ResponseWorktreeRemove
+	| ResponseWorktreePrune;

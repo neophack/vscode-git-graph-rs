@@ -14,7 +14,7 @@ use napi_derive::napi;
 
 use git_graph_core::types::{LogOptions, RefReadOptions};
 use git_graph_core::{
-    blob, config, details, diff, gerrit, graph, log, refs, stash, status, Error, ErrorKind,
+    blob, config, details, diff, gerrit, graph, log, refs, stash, stats, status, Error, ErrorKind,
     RepoManager,
 };
 
@@ -344,6 +344,28 @@ pub async fn authors(path: String) -> Result<String> {
     run(move || {
         let repo = RepoManager::global().get(&path)?;
         encode(&log::authors(&repo)?)
+    })
+    .await
+}
+
+/// Commit counts per author across all refs (branches, tags, remote-tracking, the stash), merge
+/// commits excluded, as a JSON array - what the Statistics view's author table lists.
+#[napi]
+pub async fn author_stats(path: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&stats::author_stats(&repo)?)
+    })
+    .await
+}
+
+/// The commit-activity heatmap (author-local weekday/hour) across all refs, merge commits
+/// excluded, as a JSON array of non-zero cells.
+#[napi]
+pub async fn activity_heatmap(path: String) -> Result<String> {
+    run(move || {
+        let repo = RepoManager::global().get(&path)?;
+        encode(&stats::activity_heatmap(&repo)?)
     })
     .await
 }

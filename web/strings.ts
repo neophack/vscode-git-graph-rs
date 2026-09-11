@@ -305,7 +305,7 @@ const STRINGS_EN = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit Change Refs',
 	settingsGerritFetchRefs: 'Fetch Gerrit change refs (refs/changes/*)',
-	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each, as many as the fetch limit allows - set it below, or globally via the git-graph-rs.gerrit.fetchLimit setting). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
+	settingsGerritFetchRefsInfo: 'Fetch the most recent Gerrit changes into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each; the fetch limit counts the changes DISPLAYED after the status filter - up to four times as many of the most recent changes are fetched, since a change\'s status is only known once its meta has been fetched; set it below, or globally via the git-graph-rs.gerrit.fetchLimit setting). Commits belonging to a change get a change badge - click it to see the review information. Unchecking deletes the locally fetched change refs and stops the fetching.',
 	settingsGerritStatusFilterLabel: 'Show changes with status:',
 	settingsGerritStatusOpen: 'Open',
 	settingsGerritStatusMerged: 'Merged',
@@ -336,9 +336,9 @@ const STRINGS_EN = {
 	gerritTimelineLabel: 'Review Activity',
 	gerritEventsPending: 'The review activity is still being loaded …',
 	settingsGerritFetchLimitLabel: 'Fetch limit',
-	settingsGerritFetchLimitInfo: 'How many of the most recent Gerrit changes are fetched into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each). Range 1–10000; leaving the input empty follows the git-graph-rs.gerrit.fetchLimit setting.',
+	settingsGerritFetchLimitInfo: 'How many Gerrit changes are DISPLAYED: the most recent changes passing the status filter. Up to four times as many of the most recent changes are fetched into refs/remotes/<gerrit.remote>/changes/ (the latest patchset and the NoteDb meta ref of each), because a change\'s status is only known once its meta has been fetched. Range 1–10000; leaving the input empty follows the git-graph-rs.gerrit.fetchLimit setting.',
 	settingsGerritFetchLimitEditTitle: 'Edit the Gerrit fetch limit',
-	settingsGerritFetchLimitInput: 'Changes to fetch',
+	settingsGerritFetchLimitInput: 'Changes to display',
 	settingsGerritFetchLimitPlaceholder: 'empty = the global setting',
 	settingsGerritFetchLimitGlobal: 'Global setting ({0})',
 
@@ -428,6 +428,11 @@ const STRINGS_EN = {
 	settingsBackendAreaCounting: 'Commit counting (jump to commit)',
 	settingsBackendAreaConfig: 'Repository configuration',
 	settingsBackendAreaWrites: 'Write operations (fetch, push, merge, rebase, stash…)',
+
+	/* Settings: the Repository Tools section (entries of the Reflog / Worktrees overlays; Statistics lives in the toolbar) */
+	settingsSectionTools: 'Repository Tools',
+	settingsOpenReflog: 'View Reflog',
+	settingsOpenWorktrees: 'Manage Worktrees',
 
 	settingsExportRepoConfig: 'Export Repository Configuration',
 	settingsExportRepoConfigConfirm: 'Exporting the Git Graph Repository Configuration will generate a file that can be committed in this repository. It allows others working in this repository to use the same configuration.',
@@ -653,6 +658,7 @@ const STRINGS_EN = {
 	noCommitsInRepo: 'There are no commits in this repository.',
 	retryAction: 'Retry',
 	unexpectedErrorHandlingMessage: 'An unexpected error occurred while handling a message from the extension: {0}',
+	errAbortOperation: 'Unable to Abort',
 	errAddRemote: 'Unable to Add Remote',
 	errAddTag: 'Unable to Add Tag',
 	errApplyStash: 'Unable to Apply Stash',
@@ -664,6 +670,9 @@ const STRINGS_EN = {
 	errCleanUntracked: 'Unable to Clean Untracked Files',
 	errCommitDetails: 'Unable to load Commit Details',
 	errCommitComparison: 'Unable to load Commit Comparison',
+	errCommitFixup: 'Unable to Create Fixup Commit',
+	errCommitSquash: 'Unable to Create Squash Commit',
+	errContinueOperation: 'Unable to Continue',
 	errCopyFilePath: 'Unable to Copy File Path to Clipboard',
 	errCopyToClipboard: 'Unable to Copy {0} to Clipboard',
 	errCreateArchive: 'Unable to Create Archive',
@@ -818,7 +827,78 @@ const STRINGS_EN = {
 	graphTooltipStashes: 'Stashes: ',
 	filterDropdownPlaceholder: 'Filter {0}...',
 	dropdownNoResults: 'No results found.',
-	findZeroLengthMatch: 'Cannot use a regular expression which has zero length matches'
+	findZeroLengthMatch: 'Cannot use a regular expression which has zero length matches',
+
+	/* Conflict Banner */
+	conflictBannerTitleMerge: 'Merge Conflict',
+	conflictBannerTitleRebase: 'Rebase Conflict',
+	conflictBannerTitleCherryPick: 'Cherry Pick Conflict',
+	conflictBannerTitleRevert: 'Revert Conflict',
+	conflictBannerRebaseProgress: 'Step {0} of {1}',
+	conflictBannerFilesLabel: 'Conflicted Files:',
+	conflictBannerContinue: 'Continue',
+	conflictBannerAbort: 'Abort',
+	conflictBannerAbortConfirm: 'Are you sure you want to abort this {0}?',
+	conflictPredictedTitle: 'This is predicted to conflict',
+
+	/* Reflog */
+	reflogTitle: 'Reflog',
+	reflogEmpty: 'The reflog is empty.',
+	reflogDangling: 'This commit is no longer reachable from any branch, tag, remote-tracking branch or stash.',
+	reflogLoadMore: 'Load More Entries',
+	reflogMenuReset: 'Reset current branch to here',
+	reflogMenuCopySelector: 'Copy Reflog Selector to Clipboard',
+
+	/* Worktrees */
+	worktreeDialogTitle: 'Worktrees',
+	worktreeNoneFound: 'No worktrees were found.',
+	worktreeMainBadge: 'main',
+	worktreeLocked: 'locked',
+	worktreePrunable: 'prunable',
+	worktreePrunableInfo: 'The working directory for this worktree no longer exists on disk.',
+	worktreeDetached: 'Detached',
+	worktreeAlreadyCheckedOut: '(checked out in another worktree)',
+	worktreeAddTitle: 'Add Worktree',
+	worktreePathLabel: 'Worktree Path',
+	worktreePathPlaceholder: 'Absolute path for the new worktree',
+	worktreeStartPointLabel: 'Branch / Start Point',
+	worktreeNewBranchLabel: 'New Branch Name',
+	worktreeNewBranchPlaceholder: 'Leave blank to check out the branch above as-is',
+	worktreeNewBranchInfo: 'When set, a new branch is created at the selected start point and checked out in the worktree, instead of checking out the existing branch directly.',
+	addingWorktree: 'Adding Worktree ...',
+	worktreeRemoveTitle: 'Remove Worktree',
+	worktreeRemoveConfirm: 'Are you sure you want to remove the worktree at "{0}"?',
+	worktreeForceCheckbox: 'Force',
+	worktreeRemoveForceInfo: 'Required if the worktree has uncommitted changes, or is locked.',
+	removingWorktree: 'Removing Worktree ...',
+	worktreePruneTitle: 'Prune Worktrees',
+	worktreePruneConfirm: 'Are you sure you want to prune worktree administrative files for worktrees that no longer exist on disk?',
+	errWorktreeAdd: 'Unable to Add Worktree',
+	errWorktreeRemove: 'Unable to Remove Worktree',
+	errWorktreePrune: 'Unable to Prune Worktrees',
+
+	/* Statistics */
+	statisticsTitle: 'Statistics',
+	statisticsAuthorsTitle: 'Commits by Author',
+	statisticsHeatmapTitle: 'Commit Activity',
+	statisticsNoData: 'No data is available.',
+	statisticsHeatmapCellInfo: '{0} commit(s) on {1} at {2}:00',
+
+	/* Markdown Commit Messages */
+	markdownToggleLabel: 'View as Markdown',
+	plainTextToggleLabel: 'View as Plain Text',
+
+	/* Fixup / Squash */
+	menuCreateFixupCommit: 'Create Fixup Commit',
+	menuCreateSquashCommit: 'Create Squash Commit',
+	fixupConfirm: 'Are you sure you want to commit your staged changes as a fixup of commit {0}?',
+	squashConfirm: 'Are you sure you want to commit your staged changes as a squash of commit {0}?',
+	yesFixup: 'Yes, create fixup commit',
+	yesSquash: 'Yes, create squash commit',
+	creatingFixupCommit: 'Creating Fixup Commit...',
+	creatingSquashCommit: 'Creating Squash Commit...',
+	autosquashRebaseCheckbox: 'Automatically Squash Commits',
+	autosquashRebaseInfo: 'Fold fixup!/squash! commits into their target commits (--autosquash). Only applies when Launch Interactive Rebase in new Terminal is also enabled.'
 };
 
 type WebviewStrings = typeof STRINGS_EN;
@@ -1119,7 +1199,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	/* Repository Settings > Gerrit */
 	settingsSectionGerrit: 'Gerrit 变更引用',
 	settingsGerritFetchRefs: '获取 Gerrit 变更引用 (refs/changes/*)',
-	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用，数量上限可在下方设置，或通过 git-graph-rs.gerrit.fetchLimit 设置全局默认）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
+	settingsGerritFetchRefsInfo: '将最近的 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/（每个变更的最新补丁集和 NoteDb meta 引用；数量上限按状态过滤后显示的变更数计——实际会按其 4 倍超采样获取最近的变更，因为变更状态只有获取其 meta 后才能确定；可在下方设置，或通过 git-graph-rs.gerrit.fetchLimit 设置全局默认）。属于某个变更的提交会显示变更徽章——点击徽章可查看评审信息。取消勾选会删除本地已获取的变更引用并停止获取。',
 	settingsGerritStatusFilterLabel: '显示以下状态的变更：',
 	settingsGerritStatusOpen: '开放',
 	settingsGerritStatusMerged: '已合并',
@@ -1150,9 +1230,9 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	gerritTimelineLabel: '评审记录',
 	gerritEventsPending: '评审记录仍在加载中 …',
 	settingsGerritFetchLimitLabel: '获取上限',
-	settingsGerritFetchLimitInfo: '将最近多少个 Gerrit 变更获取到 refs/remotes/<gerrit.remote>/changes/ 下（每个变更的最新补丁集与 NoteDb meta 引用）。范围 1–10000；输入留空时跟随 git-graph-rs.gerrit.fetchLimit 设置。',
+	settingsGerritFetchLimitInfo: '显示多少个 Gerrit 变更（胶囊）：按状态过滤后取最近的变更。实际会按其 4 倍超采样，将最近的变更获取到 refs/remotes/<gerrit.remote>/changes/ 下（每个变更的最新补丁集与 NoteDb meta 引用），因为变更状态只有获取其 meta 后才能确定。范围 1–10000；输入留空时跟随 git-graph-rs.gerrit.fetchLimit 设置。',
 	settingsGerritFetchLimitEditTitle: '编辑 Gerrit 获取上限',
-	settingsGerritFetchLimitInput: '获取的变更数量',
+	settingsGerritFetchLimitInput: '显示的变更数量',
 	settingsGerritFetchLimitPlaceholder: '留空 = 全局设置',
 	settingsGerritFetchLimitGlobal: '全局设置（{0}）',
 
@@ -1242,6 +1322,11 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	settingsBackendAreaCounting: '提交计数（跳转定位）',
 	settingsBackendAreaConfig: '仓库配置读取',
 	settingsBackendAreaWrites: '写操作（fetch、push、merge、rebase、stash……）',
+
+	/* Settings: the Repository Tools section (entries of the Reflog / Worktrees overlays; Statistics lives in the toolbar) */
+	settingsSectionTools: '仓库工具',
+	settingsOpenReflog: '查看引用日志',
+	settingsOpenWorktrees: '管理工作树',
 
 	settingsExportRepoConfig: '导出仓库配置',
 	settingsExportRepoConfigConfirm: '导出 Git Graph 仓库配置会生成一个可以提交到此仓库的文件，使在此仓库中工作的其他人可以使用相同的配置。',
@@ -1467,6 +1552,7 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	noCommitsInRepo: '此仓库没有任何提交。',
 	retryAction: '重试',
 	unexpectedErrorHandlingMessage: '处理来自扩展的消息时发生意外错误：{0}',
+	errAbortOperation: '无法中止',
 	errAddRemote: '无法添加远程',
 	errAddTag: '无法添加标签',
 	errApplyStash: '无法应用贮藏',
@@ -1478,6 +1564,9 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	errCleanUntracked: '无法清理未跟踪文件',
 	errCommitDetails: '无法加载提交详情',
 	errCommitComparison: '无法加载提交比较',
+	errCommitFixup: '无法创建修正（fixup）提交',
+	errCommitSquash: '无法创建压缩（squash）提交',
+	errContinueOperation: '无法继续',
 	errCopyFilePath: '无法复制文件路径到剪贴板',
 	errCopyToClipboard: '无法将{0}复制到剪贴板',
 	errCreateArchive: '无法创建归档',
@@ -1632,7 +1721,78 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	graphTooltipStashes: '贮藏：',
 	filterDropdownPlaceholder: '过滤{0}...',
 	dropdownNoResults: '未找到结果。',
-	findZeroLengthMatch: '不能使用会产生零长度匹配的正则表达式'
+	findZeroLengthMatch: '不能使用会产生零长度匹配的正则表达式',
+
+	/* 冲突提示条 */
+	conflictBannerTitleMerge: '合并冲突',
+	conflictBannerTitleRebase: '变基冲突',
+	conflictBannerTitleCherryPick: '拣选冲突',
+	conflictBannerTitleRevert: '还原冲突',
+	conflictBannerRebaseProgress: '第 {0} 步，共 {1} 步',
+	conflictBannerFilesLabel: '冲突文件：',
+	conflictBannerContinue: '继续',
+	conflictBannerAbort: '中止',
+	conflictBannerAbortConfirm: '确定要中止此{0}吗？',
+	conflictPredictedTitle: '预测此操作将产生冲突',
+
+	/* Reflog */
+	reflogTitle: '引用日志',
+	reflogEmpty: '引用日志为空。',
+	reflogDangling: '此提交已无法从任何分支、标签、远程跟踪分支或贮藏中访问到。',
+	reflogLoadMore: '加载更多条目',
+	reflogMenuReset: '将当前分支重置到此处',
+	reflogMenuCopySelector: '复制引用日志选择器到剪贴板',
+
+	/* Worktree（工作树） */
+	worktreeDialogTitle: '工作树',
+	worktreeNoneFound: '未找到工作树。',
+	worktreeMainBadge: '主工作树',
+	worktreeLocked: '已锁定',
+	worktreePrunable: '可清理',
+	worktreePrunableInfo: '此工作树对应的工作目录已不存在于磁盘上。',
+	worktreeDetached: '分离头指针',
+	worktreeAlreadyCheckedOut: '（已在另一个工作树中检出）',
+	worktreeAddTitle: '添加工作树',
+	worktreePathLabel: '工作树路径',
+	worktreePathPlaceholder: '新工作树的绝对路径',
+	worktreeStartPointLabel: '分支/起点',
+	worktreeNewBranchLabel: '新分支名称',
+	worktreeNewBranchPlaceholder: '留空以直接检出上方选择的分支',
+	worktreeNewBranchInfo: '设置后，将在所选起点创建一个新分支并在工作树中检出，而不是直接检出现有分支。',
+	addingWorktree: '正在添加工作树...',
+	worktreeRemoveTitle: '移除工作树',
+	worktreeRemoveConfirm: '确定要移除位于 "{0}" 的工作树吗？',
+	worktreeForceCheckbox: '强制',
+	worktreeRemoveForceInfo: '当工作树存在未提交的更改或已被锁定时需要勾选此项。',
+	removingWorktree: '正在移除工作树...',
+	worktreePruneTitle: '清理工作树',
+	worktreePruneConfirm: '确定要清理磁盘上已不存在的工作树的管理文件吗？',
+	errWorktreeAdd: '无法添加工作树',
+	errWorktreeRemove: '无法移除工作树',
+	errWorktreePrune: '无法清理工作树',
+
+	/* Statistics（统计） */
+	statisticsTitle: '统计',
+	statisticsAuthorsTitle: '按作者统计提交',
+	statisticsHeatmapTitle: '提交活跃度',
+	statisticsNoData: '暂无数据。',
+	statisticsHeatmapCellInfo: '{1} {2}:00 有 {0} 次提交',
+
+	/* Markdown 提交信息 */
+	markdownToggleLabel: '以 Markdown 形式查看',
+	plainTextToggleLabel: '以纯文本形式查看',
+
+	/* 修正（Fixup）/ 压缩（Squash） */
+	menuCreateFixupCommit: '创建修正（fixup）提交',
+	menuCreateSquashCommit: '创建压缩（squash）提交',
+	fixupConfirm: '确定要将当前暂存的更改作为提交 {0} 的修正（fixup）提交吗？',
+	squashConfirm: '确定要将当前暂存的更改作为提交 {0} 的压缩（squash）提交吗？',
+	yesFixup: '是，创建修正提交',
+	yesSquash: '是，创建压缩提交',
+	creatingFixupCommit: '正在创建修正提交...',
+	creatingSquashCommit: '正在创建压缩提交...',
+	autosquashRebaseCheckbox: '自动压缩提交',
+	autosquashRebaseInfo: '将 fixup!/squash! 提交折叠到其目标提交中（--autosquash）。仅在同时启用"在新终端中启动交互式变基"时生效。'
 };
 
 /**

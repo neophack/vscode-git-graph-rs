@@ -19,9 +19,9 @@ the whole extension runs on the CLI, matching the original behaviour.
 To find out which backend is currently in use: the Settings widget's **Backend (this platform)**
 section shows, per functional area, whether the Rust engine or the `git` CLI serves it on this
 platform (and the engine's version, or that it is absent); `describeBackend()` answers the same
-question in one string. To compare both backends' timings on the same repository:
-`node scripts/bench.mjs <repo-path>` (the view load) or `node scripts/bench.mjs <repo-path> --all`
-(every read operation, one table row each). While `git-graph-rs.enableLog` is on, spawned commands
+question in one string. To compare the shipped backend (what `createBackend()` returns on this machine) against the
+bare CLI on the same repository: `node scripts/bench.mjs <repo-path>` (the view load) or
+`node scripts/bench.mjs <repo-path> --all` (every read operation, one table row each). While `git-graph-rs.enableLog` is on, spawned commands
 are logged with their durations and fallbacks with their reasons; `node scripts/analyze-log.mjs
 <logfile>` turns a session log into a summary of where the time went, which methods fell back to
 the CLI, and what failed.
@@ -92,7 +92,7 @@ when `useMailmap` is on and the work tree carries a `.mailmap` (served with `log
 ## Why this split
 
 - **Read hot paths first**: view loading (repoInfo + the first page of commits) is what the
-  user actually waits for, and the engine is roughly 3.5× faster there (see the README).
+  user actually waits for, and the shipped backend is 4–8× faster there (see the README).
   Rarely-used reads stay on the CLI and never affect the daily experience.
 - **All writes stay on the CLI**: git's write paths have the subtlest behaviour (reflog,
   hooks, merge state files, …), so the engine's payoff is small while its risk is large.

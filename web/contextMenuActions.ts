@@ -491,6 +491,38 @@ function getCommitContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 		}, {
 
+			title: strings.menuCreateFixupCommit,
+
+			visible: visibility.fixup,
+
+			onClick: () => {
+
+				dialog.showConfirmation(formatStr(strings.fixupConfirm, abbrevCommit(hash)), strings.yesFixup, () => {
+
+					runAction({ command: 'commitFixup', repo: view.currentRepo, commitHash: hash }, strings.creatingFixupCommit);
+
+				}, target);
+
+			}
+
+		}, {
+
+			title: strings.menuCreateSquashCommit,
+
+			visible: visibility.squash,
+
+			onClick: () => {
+
+				dialog.showConfirmation(formatStr(strings.squashConfirm, abbrevCommit(hash)), strings.yesSquash, () => {
+
+					runAction({ command: 'commitSquash', repo: view.currentRepo, commitHash: hash }, strings.creatingSquashCommit);
+
+				}, target);
+
+			}
+
+		}, {
+
 			title: strings.menuRevert + ELLIPSIS,
 
 			visible: visibility.revert,

@@ -177,9 +177,9 @@ class SettingsWidget {
 			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionGerrit + '</h3>' +
 				SettingsWidget.checkbox('settingsGerritFetchRefs', strings.settingsGerritFetchRefs, this.repo.gerritFetchRefs, strings.settingsGerritFetchRefsInfo);
 			if (this.repo.gerritFetchRefs) {
-				// The per-repository fetch limit: how many of the most recent changes are fetched.
-				// NULL (the default) follows the gerrit.fetchLimit Extension Setting, which the row
-				// names so the effective value is always visible.
+				// The per-repository fetch limit: how many changes are DISPLAYED (the most recent
+				// ones passing the status filter). NULL (the default) follows the gerrit.fetchLimit
+				// Extension Setting, which the row names so the effective value is always visible.
 				const gerritFetchLimit = this.repo.gerritFetchLimit ?? null;
 				const globalFetchLimit = this.view.config.gerrit.fetchLimit;
 				const fetchLimitStr = gerritFetchLimit !== null
@@ -296,6 +296,15 @@ class SettingsWidget {
 				}
 				repoHtml += '</div>';
 			}
+
+			// The Repository Tools: the entries of the Reflog / Worktrees overlays. (Statistics
+			// lives in the toolbar instead, between the path filter and the terminal buttons.)
+			// They act on the repository open in the view, so they live in this (Repository) column
+			// and follow the same button style as the other section action buttons.
+			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionTools + '</h3><div class="settingsSectionButtons">' +
+				'<div id="openReflogView" class="toolBtn">' + SVG_ICONS.commit + strings.settingsOpenReflog + '</div>' +
+				'<div id="openWorktreeDialog" class="toolBtn">' + SVG_ICONS.package + strings.settingsOpenWorktrees + '</div>' +
+				'</div></div>';
 
 			repoHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionConfig + '</h3><div class="settingsSectionButtons">' +
 				'<div id="exportRepositoryConfig">' + SVG_ICONS.package + strings.settingsExportRepoConfig + '</div>' +
@@ -590,7 +599,7 @@ class SettingsWidget {
 					this.view.saveRepoStateValue(this.currentRepo, 'gerritStatusFilter', statusFilter);
 					// The badges re-render instantly from the loaded states; the graph reload (which
 					// change refs are injected) follows in the background
-					this.view.applyGerritFilterChange(field.status);
+					this.view.applyGerritFilterChange();
 				});
 			}
 
@@ -851,6 +860,11 @@ class SettingsWidget {
 				}, null);
 			});
 
+			// The Repository Tools open as overlays over the view: close the Settings Widget first,
+			// so the tool slides down in its place instead of the two overlays stacking
+			document.getElementById('openReflogView')!.addEventListener('click', () => this.openRepositoryTool(this.view.reflogView));
+			document.getElementById('openWorktreeDialog')!.addEventListener('click', () => this.openRepositoryTool(this.view.worktreeDialog));
+
 			makeKeyboardActivatableCollection(this.widgetElem, '.settingsSectionButtons > div, .settingsSection > table td.btns > div, .hideRemoteBtn, .authorSwitchRow');
 		}
 
@@ -1029,6 +1043,18 @@ class SettingsWidget {
 
 
 	/* Private Helper Methods */
+
+	/**
+	 * Open one of the Repository Tools (the Reflog, Worktrees or Statistics overlay) from the
+	 * Settings Widget: the Settings Widget is closed first, so the tool takes its place instead
+	 * of the two overlays stacking on top of each other.
+	 * @param tool The overlay to show.
+	 */
+	private openRepositoryTool(tool: { show(): void }) {
+		if (this.currentRepo === null) return;
+		this.close();
+		tool.show();
+	}
 
 	/**
 	 * While the `git-graph-rs.commitAuthors` Extension Setting is empty, the author list shown

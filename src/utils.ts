@@ -873,6 +873,7 @@ export async function getGitExecutableFromPaths(paths: string[]): Promise<GitExe
 export const enum GitVersionRequirement {
 	FetchAndPruneTags = '2.17.0',
 	GpgInfo = '2.4.0',
+	MergeTreeConflictPrediction = '2.40.0',
 	PushStash = '2.13.2',
 	TagDetails = '1.7.8'
 }

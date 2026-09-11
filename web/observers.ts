@@ -440,6 +440,24 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 				handledEvent(e);
 
+			} else if (view.reflogView.isVisible()) {
+
+				view.reflogView.close();
+
+				handledEvent(e);
+
+			} else if (view.worktreeDialog.isVisible()) {
+
+				view.worktreeDialog.close();
+
+				handledEvent(e);
+
+			} else if (view.statisticsView.isVisible()) {
+
+				view.statisticsView.close();
+
+				handledEvent(e);
+
 			} else if (view.expandedCommit !== null) {
 
 				closeCommitDetails(view, true);

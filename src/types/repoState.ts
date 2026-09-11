@@ -14,8 +14,9 @@ export interface GitRepoState {
 	fileViewType: FileViewType;
 	gerritFetchRefs: boolean;
 	/**
-	 * How many of the most recent Gerrit changes this repository fetches (NULL => the
-	 * `gerrit.fetchLimit` Extension Setting). Set in the Repository Settings.
+	 * How many Gerrit changes this repository DISPLAYS: the most recent changes passing the
+	 * status filter, counted after the filter (NULL => the `gerrit.fetchLimit` Extension
+	 * Setting). Set in the Repository Settings.
 	 */
 	gerritFetchLimit: number | null;
 	gerritStatusFilter: GerritStatusFilter;

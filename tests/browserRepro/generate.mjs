@@ -81,7 +81,7 @@ window.__respond = async function () {
 		const queue = sent.splice(0);
 		for (const message of queue) {
 			if (message.command === 'loadRepoInfo') {
-				dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null });
+				dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } });
 			} else if (message.command === 'loadCommits') {
 				/* deep-copy: a synthetic MessageEvent does NOT structured-clone its data, so the
 				 * response's commit objects would alias __state and every mutation the scenarios
@@ -167,14 +167,33 @@ window.__respond = async function () {
 								{ oldFilePath: 'README.md', newFilePath: 'README.md', type: 'M', additions: 1, deletions: 1 }
 							]
 					}
-				});
+					});
+				} else if (message.command === 'repoStatistics') {
+					/* A small deterministic dataset: office-hours activity on weekdays, so the
+					 * Statistics overlay's heatmap and tooltips can be checked in a real layout. */
+					const activity = [];
+					const authors = [
+						{ name: 'Alice', email: 'alice@example.com', commits: 12 },
+						{ name: 'Bob', email: 'bob@example.com', commits: 7 },
+						{ name: 'Carol', email: 'carol@example.com', commits: 3 }
+					];
+					for (let w = 1; w <= 5; w++) {
+						for (let h = 8; h <= 18; h++) {
+							activity.push({ weekday: w, hour: h, count: ((w * h) % 9) + 1 });
+						}
+					}
+					activity.push({ weekday: 6, hour: 11, count: 2 });
+					dispatch({ command: 'repoStatistics', authors: authors, activity: activity });
+				}
 			}
-		}
 		await new Promise((r) => setTimeout(r, 30));
 		if (sent.length === 0 && document.querySelectorAll('#commitTable tr.commit').length > 0) return;
 	}
 };
 window.addEventListener('load', async () => { await window.__respond(); });
+/* A real extension host answers every request as it arrives; pump the queue periodically so
+ * requests sent outside __run (e.g. opening the Statistics overlay) are answered as well. */
+setInterval(() => { if (sent.length > 0) window.__respond(); }, 400);
 
 /* ---------- measurement ---------- */
 const TRACK = ['commit 145', 'commit 150', 'commit 160', 'commit 0'];
@@ -423,10 +442,11 @@ const html = `<!DOCTYPE html><html><head><link rel="stylesheet" href="/media/out
 			<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
 		</div>
 		<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
-		<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
+			<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
 		<div id="prStatus" style="display:none"></div>
 		<div id="pinnedControls" style="display:none"></div>
 	</div>
+	<div id="conflictBanner" style="display:none"></div>
 	<div id="content">
 		<div id="commitGraph"></div>
 		<div id="commitTable"></div>

@@ -199,6 +199,8 @@ export interface ContextMenuActionsVisibility {
 		readonly reset: boolean;
 			readonly undo: boolean;
 			readonly editMessage: boolean;
+			readonly fixup: boolean;
+			readonly squash: boolean;
 			readonly copyHash: boolean;
 		readonly copySubject: boolean;
 	};
@@ -339,7 +341,8 @@ export interface DialogDefaults {
 	};
 	readonly rebase: {
 		readonly ignoreDate: boolean,
-		readonly interactive: boolean
+		readonly interactive: boolean,
+		readonly autosquash: boolean
 	};
 	readonly resetCommit: {
 		readonly mode: GitResetMode

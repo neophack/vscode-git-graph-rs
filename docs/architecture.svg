@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="964" height="908" viewBox="0 0 964 908" role="img" aria-label="Architecture: the webview talks to the extension host TypeScript layer, which loads the Rust engine through a Node-API addon; the engine reads repositories with gix, and anything it does not reach falls back to the git CLI">
+  <title>Git Graph (Rust) architecture</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-fallback" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#94A3B8"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="964" height="908" fill="#FFFFFF"/>
+
+  <g font-family="-apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+
+    <!-- flow arrows -->
+    <g stroke="#64748B" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <line x1="430" y1="88"  x2="430" y2="124"/>
+      <line x1="430" y1="372" x2="430" y2="428"/>
+      <line x1="430" y1="496" x2="430" y2="544"/>
+      <line x1="430" y1="776" x2="430" y2="822"/>
+    </g>
+    <text x="444" y="404" font-size="13" font-style="italic" fill="#64748B">a handful of functions, JSON payloads</text>
+
+    <!-- CLI fallback path -->
+    <path d="M 780 250 H 870 V 606" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-fallback)"/>
+    <text transform="rotate(90 888 428)" x="888" y="428" text-anchor="middle" font-size="12.5" font-style="italic" fill="#94A3B8">fallback — what the engine does not reach</text>
+
+    <!-- webview -->
+    <rect x="230" y="24" width="400" height="64" rx="10" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="430" y="53" text-anchor="middle" font-size="18" font-weight="700" fill="#1D4ED8">webview</text>
+    <text x="430" y="74" text-anchor="middle" font-size="12.5" fill="#6B7280">ported from the original</text>
+
+    <!-- extension host -->
+    <rect x="80" y="128" width="700" height="244" rx="10" fill="#FFFBEB" stroke="#FBBF24" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="104" y="157" font-size="17" font-weight="700" fill="#B45309">extension host — TypeScript</text>
+    <g stroke="#FDE68A" stroke-opacity="0.55">
+      <line x1="104" y1="220" x2="756" y2="220"/>
+      <line x1="104" y1="264" x2="756" y2="264"/>
+      <line x1="104" y1="308" x2="756" y2="308"/>
+    </g>
+    <g font-family="ui-monospace, 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#92400E">
+      <text x="104" y="203">src/backend/index.ts</text>
+      <text x="104" y="247">src/backend/api.ts</text>
+      <text x="104" y="291">src/backend/cliBackend.ts</text>
+      <text x="104" y="335">src/backend/addon.ts</text>
+    </g>
+    <g font-size="14" fill="#6B7280">
+      <text x="330" y="203">createBackend(): engine first, CLI fallback</text>
+      <text x="330" y="247">the GitBackend interface, the native implementation</text>
+      <text x="330" y="291">the same interface over the git CLI</text>
+      <text x="330" y="335">binary loading, promises, error mapping</text>
+    </g>
+
+    <!-- Node-API addon -->
+    <rect x="230" y="432" width="400" height="64" rx="10" fill="#F5F3FF" stroke="#A78BFA" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="430" y="461" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#6D28D9">git-graph.node</text>
+    <text x="430" y="481" text-anchor="middle" font-size="12.5" fill="#6B7280">Node-API addon (napi-rs)</text>
+
+    <!-- Rust engine -->
+    <rect x="80" y="548" width="700" height="228" rx="10" fill="#FFF7ED" stroke="#FB923C" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="104" y="577" font-size="17" font-weight="700" fill="#C2410C">Rust engine — native/core</text>
+    <g font-family="ui-monospace, 'Cascadia Mono', 'JetBrains Mono', Menlo, Consolas, monospace" font-size="13.5" font-weight="700" fill="#9A3412">
+      <text x="104" y="612">repository.rs</text>
+      <text x="438" y="612">refs.rs</text>
+      <text x="104" y="654">log.rs</text>
+      <text x="438" y="654">graph.rs</text>
+      <text x="104" y="696">diff.rs</text>
+      <text x="438" y="696">status.rs</text>
+      <text x="104" y="738">stash.rs</text>
+      <text x="438" y="738">details.rs</text>
+    </g>
+    <g font-size="12.5" fill="#6B7280">
+      <text x="104" y="630">discovery, the handle cache</text>
+      <text x="438" y="630">reference scanning</text>
+      <text x="104" y="672">the commit walk and its ordering</text>
+      <text x="438" y="672">assembling the graph the view renders</text>
+      <text x="104" y="714">tree diffing, rename detection, line counts</text>
+      <text x="438" y="714">the working tree</text>
+      <text x="104" y="756">the stash</text>
+      <text x="438" y="756">the Commit Details view</text>
+    </g>
+
+    <!-- git CLI (fallback) -->
+    <rect x="792" y="612" width="156" height="64" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#shadow)"/>
+    <text x="870" y="639" text-anchor="middle" font-size="15" font-weight="700" fill="#334155">git CLI</text>
+    <text x="870" y="659" text-anchor="middle" font-size="11.5" fill="#64748B">spawned per command</text>
+
+    <!-- gix -->
+    <rect x="340" y="826" width="180" height="58" rx="10" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="430" y="853" text-anchor="middle" font-size="17" font-weight="700" fill="#334155">gix</text>
+    <text x="430" y="873" text-anchor="middle" font-size="12" fill="#64748B">an implementation detail</text>
+
+  </g>
+</svg>

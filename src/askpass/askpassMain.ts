@@ -16,7 +16,7 @@ function fatal(err: any): void {
 }
 
 function main(argv: string[]): void {
-	if (argv.length !== 5) return fatal('Wrong number of arguments');
+	if (argv.length !== 4) return fatal('Wrong number of arguments');
 	if (!process.env['VSCODE_GIT_GRAPH_ASKPASS_HANDLE']) return fatal('Missing handle');
 	if (!process.env['VSCODE_GIT_GRAPH_ASKPASS_PIPE']) return fatal('Missing pipe');
 
@@ -41,7 +41,7 @@ function main(argv: string[]): void {
 	});
 
 	req.on('error', () => fatal('Error in request'));
-	req.write(JSON.stringify({ request: argv[2], host: argv[4].substring(1, argv[4].length - 2) }));
+	req.write(JSON.stringify({ request: argv[2], host: argv[3].substring(1, argv[3].length - 2) }));
 	req.end();
 }
 

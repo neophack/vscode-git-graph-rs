@@ -514,6 +514,79 @@ table { border-collapse: collapse; }
 	border-radius:4px;
 }
 
+.cdvMarkdownToggle{
+	display:inline-block;
+	margin-left:8px;
+	padding:0 6px;
+	border-radius:8px;
+	font-size:11px;
+	line-height:16px;
+	vertical-align:middle;
+	cursor:pointer;
+	background-color:rgba(128,128,128,0.15);
+	color:var(--vscode-textLink-foreground);
+}
+.cdvMarkdownToggle:hover, .cdvMarkdownToggle:focus-visible{
+	background-color:rgba(128,128,128,0.3);
+}
+
+#cdvMessageBody h1, #cdvMessageBody h2, #cdvMessageBody h3, #cdvMessageBody h4, #cdvMessageBody h5, #cdvMessageBody h6{
+	margin:8px 0 4px 0;
+	font-weight:600;
+	line-height:1.3;
+}
+#cdvMessageBody h1{ font-size:1.4em; }
+#cdvMessageBody h2{ font-size:1.25em; }
+#cdvMessageBody h3{ font-size:1.1em; }
+#cdvMessageBody h4, #cdvMessageBody h5, #cdvMessageBody h6{ font-size:1em; }
+#cdvMessageBody p{
+	margin:4px 0;
+}
+#cdvMessageBody ul, #cdvMessageBody ol{
+	margin:4px 0;
+	padding-left:22px;
+}
+#cdvMessageBody blockquote{
+	margin:4px 0;
+	padding:2px 10px;
+	border-left:3px solid rgba(128,128,128,0.5);
+	opacity:0.85;
+}
+#cdvMessageBody pre{
+	margin:6px 0;
+	padding:6px 8px;
+	border-radius:4px;
+	background-color:rgba(128,128,128,0.12);
+	overflow-x:auto;
+}
+#cdvMessageBody code{
+	padding:1px 4px;
+	border-radius:3px;
+	background-color:rgba(128,128,128,0.15);
+	font-family:var(--vscode-editor-font-family, monospace);
+	font-size:0.95em;
+}
+#cdvMessageBody pre code{
+	padding:0;
+	background-color:transparent;
+}
+#cdvMessageBody table{
+	margin:6px 0;
+	border-collapse:collapse;
+}
+#cdvMessageBody th, #cdvMessageBody td{
+	padding:3px 8px;
+	border:1px solid rgba(128,128,128,0.4);
+}
+#cdvMessageBody img{
+	max-width:100%;
+}
+#cdvMessageBody hr{
+	margin:8px 0;
+	border:none;
+	border-top:1px solid rgba(128,128,128,0.4);
+}
+
 .signatureInfo{
 	cursor:help;
 	margin-left:4px;
@@ -938,7 +1011,7 @@ body.tagLabelsRightAligned .gitRef.tag{
 	right:0;
 	top:0;
 	white-space:nowrap;
-	padding:4px 162px 4px 0;
+	padding:4px 174px 4px 0;
 	background-color: var(--vscode-editor-background);
 	border-bottom:1px solid rgba(128,128,128,0.5);
 	line-height:32px;
@@ -975,7 +1048,7 @@ body.tagLabelsRightAligned .gitRef.tag{
 	max-width:16vw;
 }
 
-#currentBtn, #findBtn, #filterBtn, #terminalBtn, #settingsBtn, #fetchBtn, #refreshBtn{
+#currentBtn, #findBtn, #filterBtn, #statisticsBtn, #terminalBtn, #settingsBtn, #fetchBtn, #refreshBtn{
 	position:absolute;
 	top:50%;
 	width:20px;
@@ -987,31 +1060,34 @@ body.tagLabelsRightAligned .gitRef.tag{
 	border-radius:4px;
 	transition:transform 80ms var(--gg-ease);
 }
-#currentBtn:active, #findBtn:active, #filterBtn:active, #terminalBtn:active, #settingsBtn:active, #fetchBtn:active{
+#currentBtn:active, #findBtn:active, #filterBtn:active, #statisticsBtn:active, #terminalBtn:active, #settingsBtn:active, #fetchBtn:active{
 	transform:scale(0.88);
 }
-#currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
+#currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #statisticsBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:2px;
 }
 #currentBtn{
-	right:160px;
+	right:172px;
 }
 #findBtn{
-	right:130px;
+	right:145px;
 }
 #filterBtn{
-	right:100px;
+	right:118px;
+}
+#statisticsBtn{
+	right:91px;
 }
 #terminalBtn{
-	right:70px;
+	right:64px;
 }
 #settingsBtn{
-	right:40px;
+	right:37px;
 }
 #fetchBtn{
 	display:none;
-	right:40px;
+	right:37px;
 }
 #refreshBtn{
 	right:10px;
@@ -1019,7 +1095,7 @@ body.tagLabelsRightAligned .gitRef.tag{
 #refreshBtn.refreshing{
 	cursor:default;
 }
-#currentBtn svg, #findBtn svg, #filterBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg, #refreshBtn svg{
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg, #refreshBtn svg{
 	position:absolute;
 	fill:var(--vscode-editor-foreground);
 	opacity:0.8;
@@ -1027,17 +1103,17 @@ body.tagLabelsRightAligned .gitRef.tag{
 	stroke-opacity:0.5;
 	stroke-width:0;
 }
-#currentBtn svg, #findBtn svg, #filterBtn svg, #terminalBtn svg{
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg{
 	stroke-width:0.5px;
 }
-#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #terminalBtn:hover svg, #settingsBtn:hover svg, #fetchBtn:hover svg, #refreshBtn:hover svg{
+#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #statisticsBtn:hover svg, #terminalBtn:hover svg, #settingsBtn:hover svg, #fetchBtn:hover svg, #refreshBtn:hover svg{
 	opacity:1;
 	stroke-width:0.5px;
 }
-#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #terminalBtn:hover svg{
+#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #statisticsBtn:hover svg, #terminalBtn:hover svg{
 	stroke-width:1px;
 }
-#currentBtn svg, #findBtn svg, #filterBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg{
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg{
 	left:1px;
 	top:1px;
 	width:18px !important;
@@ -1062,22 +1138,25 @@ body.tagLabelsRightAligned .gitRef.tag{
 }
 
 #controls.fetchSupported{
-	padding-right:192px;
+	padding-right:201px;
 }
 #controls.fetchSupported #currentBtn{
-	right:190px;
+	right:199px;
 }
 #controls.fetchSupported #findBtn{
-	right:160px;
+	right:172px;
 }
 #controls.fetchSupported #filterBtn{
-	right:130px;
+	right:145px;
+}
+#controls.fetchSupported #statisticsBtn{
+	right:118px;
 }
 #controls.fetchSupported #terminalBtn{
-	right:100px;
+	right:91px;
 }
 #controls.fetchSupported #settingsBtn{
-	right:70px;
+	right:64px;
 }
 #controls.fetchSupported #fetchBtn{
 	display:block;
@@ -1760,4 +1839,37 @@ body.vscode-high-contrast{
 
 .gg-event.expanded .gg-event-detail {
 	display:block;
+}
+
+
+/* Conflict Banner: shown while a merge/rebase/cherry-pick/revert is left in progress */
+#conflictBanner{
+	display:none;
+	align-items:center;
+	flex-wrap:wrap;
+	gap:8px 12px;
+	padding:6px 12px;
+	background-color:var(--vscode-inputValidation-warningBackground, rgba(255,196,0,0.1));
+	border-bottom:1px solid var(--vscode-inputValidation-warningBorder, rgba(255,196,0,0.5));
+	color:var(--vscode-inputValidation-warningForeground, inherit);
+	font-size:13px;
+}
+.conflictBannerIcon{
+	display:flex;
+	flex-shrink:0;
+	fill:currentColor;
+}
+.conflictBannerTitle{
+	font-weight:600;
+	flex-shrink:0;
+}
+.conflictBannerFiles{
+	flex:1 1 auto;
+	min-width:0;
+	overflow-wrap:break-word;
+}
+#conflictBanner .roundedBtn{
+	flex-shrink:0;
+	padding:3px 12px;
+	border-radius:3px;
 }

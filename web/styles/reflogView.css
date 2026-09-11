@@ -1,0 +1,139 @@
+/* Reflog Widget: mirrors the Settings Widget's fixed-overlay pattern (slides down from the top) */
+
+#reflogWidget{
+	display:block;
+	position:fixed;
+	top:-158px;
+	right:28px;
+	width:720px;
+	max-width:calc(100vw - 56px);
+	box-sizing:border-box;
+	min-height:80px;
+	max-height:80vh;
+	padding:0 10px 10px 10px;
+	z-index:31;
+	background-color:var(--vscode-editorWidget-background);
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	color:var(--vscode-editorSuggestWidget-foreground);
+	fill:var(--vscode-editorSuggestWidget-foreground);
+	fill-opacity:0.7;
+	font-size:13px;
+	overflow-x:hidden;
+	overflow-y:auto;
+	transition:top var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
+}
+#reflogWidget.active{
+	top:0;
+}
+
+#reflogWidget h2{
+	margin:8px 10px;
+	padding:0;
+	font-size:16px;
+	line-height:24px;
+	text-align:center;
+}
+
+#reflogClose{
+	position:absolute;
+	width:24px;
+	height:24px;
+	top:8px;
+	right:10px;
+	cursor:pointer;
+	z-index:33;
+}
+#reflogClose svg{
+	position:absolute;
+	left:4px;
+	top:4px;
+	width:16px !important;
+	height:16px !important;
+}
+#reflogClose:hover{
+	fill-opacity:1;
+}
+
+.reflogLoading, .reflogEmpty, .reflogError{
+	text-align:center;
+	padding:20px 0;
+	opacity:0.7;
+}
+.reflogLoading svg{
+	width:24px;
+	height:32px;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+.reflogError{
+	color:var(--vscode-errorForeground, #bb4b4b);
+	opacity:1;
+}
+
+.reflogTable{
+	width:100%;
+	border-collapse:collapse;
+	table-layout:fixed;
+}
+.reflogTable td{
+	padding:3px 6px;
+	vertical-align:middle;
+	white-space:nowrap;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.reflogRow{
+	cursor:pointer;
+}
+.reflogRow:hover, .reflogRow:focus-visible{
+	background-color:rgba(128,128,128,0.15);
+}
+.reflogRow:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:-1px;
+}
+
+.reflogDotCol{
+	width:18px;
+}
+.reflogDot{
+	display:inline-block;
+	width:9px;
+	height:9px;
+	border-radius:50%;
+	background-color:rgba(128,128,128,0.6);
+}
+.reflogDot.reflogEdit{ background-color:#e8972c; }
+.reflogDot.reflogCombine{ background-color:#a300d9; }
+.reflogDot.reflogIntegrate{ background-color:#00b3c6; }
+.reflogDot.reflogFlow{ background-color:#8a8a8a; }
+.reflogDot.reflogAbort{ background-color:#d94040; }
+
+.reflogHashCol{
+	width:76px;
+	font-family:var(--vscode-editor-font-family, monospace);
+	opacity:0.85;
+}
+.reflogMessageCol{
+	white-space:normal;
+	word-break:break-word;
+}
+.reflogMessageCol svg{
+	width:12px !important;
+	height:12px !important;
+	vertical-align:-1px;
+	fill:var(--vscode-errorForeground, #bb4b4b);
+}
+.reflogDateCol{
+	width:150px;
+	text-align:right;
+	opacity:0.7;
+}
+
+#reflogLoadMoreBtn{
+	height:26px;
+	margin:8px auto 4px auto;
+	width:200px;
+	border-radius:13px;
+	line-height:26px;
+	text-align:center;
+}

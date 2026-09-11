@@ -105,6 +105,10 @@ class GitGraphView {
 
 	public readonly findWidget: FindWidget;
 	public readonly settingsWidget: SettingsWidget;
+	public readonly conflictBanner: ConflictBanner;
+	public readonly reflogView: ReflogView;
+	public readonly worktreeDialog: WorktreeDialog;
+	public readonly statisticsView: StatisticsView;
 	public readonly repoDropdown: Dropdown;
 	public readonly branchDropdown: Dropdown;
 	public readonly authorDropdown: Dropdown;
@@ -197,6 +201,10 @@ class GitGraphView {
 
 		this.findWidget = new FindWidget(this);
 		this.settingsWidget = new SettingsWidget(this);
+		this.conflictBanner = new ConflictBanner(this);
+		this.reflogView = new ReflogView(this);
+		this.worktreeDialog = new WorktreeDialog(this);
+		this.statisticsView = new StatisticsView(this);
 
 		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, this.config.referenceLabels.branchLabelsAlignedToGraph);
 		alterClass(document.body, CLASS_TAG_LABELS_RIGHT_ALIGNED, this.config.referenceLabels.tagLabelsOnRight);
@@ -272,11 +280,17 @@ class GitGraphView {
 			filterBtn.addEventListener('click', () => this.showPathFilterDialog());
 			this.renderFilterButton();
 		}
+		const statisticsBtn = document.getElementById('statisticsBtn');
+		if (statisticsBtn !== null) {
+			statisticsBtn.title = strings.statisticsTitle;
+			statisticsBtn.innerHTML = SVG_ICONS.graph;
+			statisticsBtn.addEventListener('click', () => this.statisticsView.show());
+		}
 
 		// These toolbar icons are styled <div>s rather than native <button>s, so they need to be
 		// wired into the tab order and given Enter/Space activation manually (the CSS already has
 		// :focus-visible rules for them, they just weren't reachable by keyboard)
-		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn].forEach((btn) => {
+		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn, statisticsBtn].forEach((btn) => {
 			if (btn === null) return;
 			btn.tabIndex = 0;
 			btn.setAttribute('role', 'button');
@@ -366,6 +380,9 @@ class GitGraphView {
 		this.renderFilterButton();
 		closeCommitDetails(this, false);
 		this.settingsWidget.close();
+		this.reflogView.close();
+		this.worktreeDialog.close();
+		this.statisticsView.close();
 		this.saveState();
 		this.refresh(true);
 	}
@@ -783,15 +800,33 @@ class GitGraphView {
 	}
 
 	/**
-	 * Apply a change of the Gerrit status filter (the Repository Settings checkboxes): the badges
-	 * re-render immediately from the already-loaded states, and the commit graph is reloaded in
-	 * the background (debounced, so toggling several checkboxes triggers a single load), because
-	 * only the extension knows which change refs to inject for the new filter.
-	 * @param status The status whose checkbox changed ('merged' never affects the graph).
+	 * The Gerrit changes whose badge is rendered: the `gerrit.fetchLimit` (or the repository's own
+	 * override) most recent changes passing the status filter whose head commit has a row on the
+	 * page (the extension injects their change refs, which pins their commits onto the page; a
+	 * change without a row has nothing to carry its badge, so it claims none of the limit's badge
+	 * slots). Mirrors the extension's `selectDisplayedChangeStates` selection on the same page, so
+	 * the fetch limit counts the badges DISPLAYED: the number set is the number of pills shown -
+	 * one per change number / patchset.
 	 */
-	public applyGerritFilterChange(status: keyof GG.GerritStatusFilter) {
+	private getGerritVisibleChanges(): Set<number> {
+		const limit = this.gitRepos[this.currentRepo].gerritFetchLimit;
+		const effective = typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= 10000 ? limit : this.config.gerrit.fetchLimit;
+		const passing = Object.values(this.gerritStates)
+			.filter((state) => this.gerritPassesFilter(state) && typeof this.commitLookup[state.headHash] === 'number')
+			.sort((a, b) => b.change - a.change);
+		return new Set((effective > 0 ? passing.slice(0, effective) : passing).map((state) => state.change));
+	}
+
+	/**
+	 * Apply a change of the Gerrit status filter (the Repository Settings checkboxes): the badges
+	 * re-render immediately from the already-loaded states (the fetch limit re-applied under the
+	 * new filter), and the commit graph is reloaded in the background (debounced, so toggling
+	 * several checkboxes triggers a single load): only the extension knows which change refs to
+	 * inject for the new filter, and its response also carries the event timelines of the changes
+	 * that became visible — they ride along the visible states only (see gerritPageStates).
+	 */
+	public applyGerritFilterChange() {
 		this.render();
-		if (status === 'merged') return; // merged changes are never injected into the graph (see the extension's buildGerritViewData)
 		if (this.gerritFilterRefreshTimer !== null) window.clearTimeout(this.gerritFilterRefreshTimer);
 		this.gerritFilterRefreshTimer = window.setTimeout(() => {
 			this.gerritFilterRefreshTimer = null;
@@ -804,6 +839,7 @@ class GitGraphView {
 		// this one was in flight) must not apply the old repository's branches/head/remotes to the
 		// current view.
 		if (this.currentRepoRefreshState.loadRepoInfoRefreshId !== msg.refreshId) return;
+		this.conflictBanner.update(msg.operationState);
 		if (msg.error === null) {
 			this.loadRepoInfo(msg.branches, msg.head, msg.remotes, msg.stashes, msg.isRepo, msg.remoteRefsPending === true);
 			this.requestPullRequests();
@@ -850,10 +886,12 @@ class GitGraphView {
 			// increments it.
 			if (refreshState.loadCommitsRefreshId === msg.refreshId) {
 				// The Gerrit states ride along every loadCommits response: swap the map in and force
-				// a re-render when it changed (the extension serves ALL cached states, so the status
-				// filter of the Repository Settings is applied locally by this view). The array is
-				// checked (not merely non-null): a response from a mismatched extension build that
-				// omits the field entirely (undefined) must keep the current states, never crash.
+				// a re-render when it changed (the extension serves the fetched states of the cache
+				// entry — the event timelines of the visible ones only — so the status filter and
+				// the fetch limit of the Repository Settings are applied locally by this view). The
+				// array is checked (not merely non-null): a response from a mismatched extension
+				// build that omits the field entirely (undefined) must keep the current states,
+				// never crash.
 				//
 				// The staged Gerrit load delivers the states in two parts: the light part the badges
 				// render (arriving with the change refs), then the event timelines (which only the
@@ -1258,6 +1296,7 @@ class GitGraphView {
 			lastViewedFile: null,
 			loading: true,
 			entered: false,
+			showMarkdown: true,
 			lineCounts: {
 				pending: null,
 				requested: new Set<string>(),
@@ -1494,6 +1533,9 @@ class GitGraphView {
 			widthsAtVertices: this.config.referenceLabels.branchLabelsAlignedToGraph ? this.graph.getWidthsAtVertices() : [],
 			mutedCommits: this.graph.getMutedCommits(currentHash),
 			pinnedCommitHashes: new Set(this.getPinnedCommits().map((pinned) => pinned.hash)),
+			// The Gerrit badges displayable under the fetch limit: computed once per render, so the
+			// rows built and the rows reconciled during the same render check the same set
+			gerritVisibleChanges: this.getGerritVisibleChanges(),
 			textFormatter: new TextFormatter(this.commits, this.gitRepos[this.currentRepo].issueLinkingConfig, {
 				emoji: true,
 				issueLinking: true,
@@ -1574,7 +1616,7 @@ class GitGraphView {
 
 		let refGerrit = '';
 		const gerritState = this.gerritStates[commit.hash];
-		if (typeof gerritState !== 'undefined' && this.gerritPassesFilter(gerritState)) {
+		if (typeof gerritState !== 'undefined' && ctx.gerritVisibleChanges.has(gerritState.change)) {
 			refGerrit = getGerritBadgeHtml(this, gerritState);
 		}
 
@@ -2395,6 +2437,9 @@ window.addEventListener('load', () => {
 	 */
 	function handleResponseMessage(msg: GG.ResponseMessage) {
 		switch (msg.command) {
+			case 'abortOperation':
+				refreshOrDisplayError(msg.error, strings.errAbortOperation);
+				break;
 			case 'addRemote':
 				refreshOrDisplayError(msg.error, strings.errAddRemote, true);
 				break;
@@ -2424,6 +2469,29 @@ window.addEventListener('load', () => {
 			case 'cleanUntrackedFiles':
 				refreshOrDisplayError(msg.error, strings.errCleanUntracked);
 				break;
+			case 'commitFixup':
+				refreshOrDisplayError(msg.error, strings.errCommitFixup);
+				break;
+			case 'commitSquash':
+				refreshOrDisplayError(msg.error, strings.errCommitSquash);
+				break;
+			case 'continueOperation':
+				refreshOrDisplayError(msg.error, strings.errContinueOperation);
+				break;
+			case 'predictConflicts': {
+				// Only patches the dialog if it is still showing (or fading out) for the same
+				// ours/theirs pair the prediction was requested for - a stale response for a
+				// dialog the user has since replaced with a different one must not patch it. A
+				// NULL prediction (git too old, or the probe itself failed) leaves the placeholder
+				// hidden, and a clean prediction never surfaces to the user.
+				const box = document.getElementById('predictedConflicts');
+				if (box !== null && box.getAttribute('data-ours') === msg.ours && box.getAttribute('data-theirs') === msg.theirs && msg.prediction !== null && msg.prediction.conflicted) {
+					box.style.display = '';
+					box.innerHTML = '<br><span class="dialogAlert warning">' + SVG_ICONS.alert + escapeHtml(strings.conflictPredictedTitle) + '</span>'
+						+ '<span class="messageContent"><b>' + escapeHtml(strings.conflictBannerFilesLabel) + '</b> ' + msg.prediction.files.map((file) => escapeHtml(file)).join(', ') + '</span>';
+				}
+				break;
+			}
 			case 'commitDetails':
 				if (msg.commitDetails !== null) {
 					showCommitDetails(gitGraph, msg.commitDetails, createFileTree(gitGraph, msg.commitDetails.fileChanges, msg.codeReview), msg.avatar, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
@@ -2527,6 +2595,27 @@ window.addEventListener('load', () => {
 				break;
 			case 'loadRepoInfo':
 				gitGraph.processLoadRepoInfoResponse(msg);
+				break;
+			case 'reflog':
+				gitGraph.reflogView.processResponse(msg);
+				break;
+			case 'worktreeList':
+				gitGraph.worktreeDialog.processListResponse(msg);
+				break;
+			case 'repoStatistics':
+				gitGraph.statisticsView.processResponse(msg);
+				break;
+			case 'worktreeAdd':
+				refreshOrDisplayError(msg.error, strings.errWorktreeAdd);
+				gitGraph.worktreeDialog.refresh();
+				break;
+			case 'worktreeRemove':
+				refreshOrDisplayError(msg.error, strings.errWorktreeRemove);
+				gitGraph.worktreeDialog.refresh();
+				break;
+			case 'worktreePrune':
+				refreshOrDisplayError(msg.error, strings.errWorktreePrune);
+				gitGraph.worktreeDialog.refresh();
 				break;
 			case 'loadRepos':
 				gitGraph.loadRepos(msg.repos, msg.lastActiveRepo, msg.loadViewTo);

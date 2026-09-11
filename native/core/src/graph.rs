@@ -109,6 +109,14 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         records.pop();
     }
 
+    // The injected Gerrit change refs are walked from like any other tip, but the page cut keeps
+    // the newest commits only: a change whose patchset is older than the page would lose its row
+    // — and with it the badge the fetch limit promised. Those commits are pinned onto the page.
+    if let Some(gerrit_refs) = &options.gerrit_refs {
+        let pinned = log::resolve_tips(repo, gerrit_refs)?;
+        log::pin_commits(repo, &mut records, &pinned)?;
+    }
+
     let mut commits: Vec<GitCommit> = records
         .into_iter()
         .map(|record| GitCommit {

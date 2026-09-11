@@ -59,7 +59,25 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
+        if: matrix.os != 'ubuntu-latest'
         run: cargo test --workspace
+
+      # Coverage only needs to run once; ubuntu is where clippy/fmt already run.
+      - name: Install cargo-llvm-cov
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Test with coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # One prebuilt binary per platform the extension ships for, built through @napi-rs/cli. napi-rs
   # resolves the Node-API symbols at load time rather than linking against them, so none of these
@@ -155,8 +173,22 @@ jobs:
       - name: Build the webview assets
         run: npm run compile-web
 
+      # c8 collects V8 coverage through run-tests.mjs's child processes (it propagates
+      # NODE_V8_COVERAGE in the environment) and remaps out/*.js to src/*.ts through the
+      # source maps tsc emits, so the report is filed against the TypeScript sources.
       - name: Test
-        run: npm run test:node
+        run: npm run test:node:cov
+
+      # The TypeScript half of the coverage; the Rust half is uploaded by the engine job.
+      # Codecov merges the two reports for the same commit. Uploading once from ubuntu is
+      # enough — the same suite runs on all three operating systems.
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # Everything in one place, ready to be dropped into a VSIX.
   package:

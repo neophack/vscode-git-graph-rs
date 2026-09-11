@@ -2,601 +2,315 @@
 
 [![Visual Studio Marketplace version](https://vsmarketplacebadges.dev/version/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
 [![Installs](https://vsmarketplacebadges.dev/installs/neophack.git-graph-rs.svg)](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/neophack/git-graph-rs.svg)](https://open-vsx.org/extension/neophack/git-graph-rs)
 [![Build and test](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml/badge.svg)](https://github.com/neophack/vscode-git-graph-rs/actions/workflows/native-build.yml)
+[![codecov](https://codecov.io/gh/neophack/vscode-git-graph-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/neophack/vscode-git-graph-rs)
 
-A rewrite of the Git Graph VS Code extension with its Git backend in Rust, loaded
-into the extension host as a Node-API addon through [napi-rs], reading repositories with [gix].
+A rewrite of the Git Graph VS Code extension with its Git backend in Rust, loaded into the
+extension host as a Node-API addon through [napi-rs] and reading repositories with [gix].
 
-The original extension answered every question by spawning a `git` process and parsing its output.
-This one reads the object database, the refs and the index directly, in-process, from a repository
-handle that stays warm for the whole editor session.
+The original extension answered every question by spawning a `git` process and parsing its
+output. This one reads the object database, the refs and the index directly, in-process, from a
+repository handle that stays warm for the whole editor session. **Every repository read** — the
+view load, commit/stash/uncommitted details, comparisons, file contents and diffs, search, config
+— is served by the Rust engine; anything the engine does not reach, and the whole write path
+(checkout, merge, rebase, push, …), goes through the `git` CLI behind the same interface.
 
 **Install** it from the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=neophack.git-graph-rs)
-(search for "Git Graph RS"), or download the VSIX from
-[GitHub Releases](https://github.com/neophack/vscode-git-graph-rs/releases) and install it with
-`code --install-extension git-graph-rs-<version>.vsix`.
+(search for "Git Graph RS") or [Open VSX](https://open-vsx.org/extension/neophack/git-graph-rs),
+or download a VSIX from [GitHub Releases](https://github.com/neophack/vscode-git-graph-rs/releases)
+and install it with `code --install-extension git-graph-rs-<version>.vsix`.
 
-The source lives at [github.com/neophack/vscode-git-graph-rs](https://github.com/neophack/vscode-git-graph-rs);
-bug reports, feature requests and questions go to
+Bug reports, feature requests and questions go to
 [the issue tracker](https://github.com/neophack/vscode-git-graph-rs/issues).
 
 ## What this fork adds
 
-Beyond the Rust engine (below), these features are new relative to the original
+Beyond the Rust engine, these are new relative to the original
 [mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph):
 
-- **A Gerrit integration, rebuilt.** Per-repository change-ref fetching, a change badge on every commit carrying its
-  change/patchset number and Code-Review/Verified scores, a structured review dialog with the full
-  NoteDb event timeline and an "Open in Gerrit" button, and an open/merged/abandoned/WIP status
-  filter that re-renders instantly from cached states. The NoteDb meta histories are parsed
-  in-process by the engine — not one `git log` spawn per change. The remote is contacted only when
-  the user asks (the Fetch button, enabling the integration, changing its fetch settings); every
-  plain view load reads the locally cached refs and works offline. Configured through
+- **A Gerrit integration, rebuilt.** Per-repository change-ref fetching, a change badge on every
+  commit with its change/patchset number and Code-Review/Verified scores, a review dialog with the
+  full NoteDb event timeline and an "Open in Gerrit" button, and an open/merged/abandoned/WIP
+  status filter. The NoteDb meta histories are parsed in-process by the engine; the remote is only
+  contacted when the user asks (Fetch, enabling the integration, changing its fetch settings) —
+  every plain view load works offline from the locally cached refs. Configured through
   `git-graph-rs.gerrit.remote`, `git-graph-rs.gerrit.fetchLimit` (default 20, overridable per
   repository) and `git-graph-rs.gerrit.showReviewProgress`.
-- **Gerrit commands in the Source Control view**, each offered in English and Simplified Chinese:
-  push the current branch for review to `refs/for/<branch>` (amending a Change-Id onto HEAD first,
-  with the same construction Gerrit's commit-msg hook uses, and never amending a commit already
-  pushed to a remote), and download & install the commit-msg hook from the Gerrit server.
-- **Data-loss protection** on the write path's silent-loss corners — see
+- **Gerrit commands in the Source Control view**: push the current branch for review to
+  `refs/for/<branch>` (adding a Change-Id to HEAD first, exactly as Gerrit's commit-msg hook does,
+  and never amending a commit already pushed to a remote), and install the commit-msg hook from
+  the Gerrit server.
+- **Data-loss protection** on the write operations that can silently strand work — see
   [Data-loss protection](#data-loss-protection).
-- **A Simplified Chinese interface** (`git-graph-rs.interfaceLanguage`: auto / English / 简体中文),
-  covering the webview, the extension host messages and the Source Control menus, with the two
-  language dictionaries held to key parity by a build-time check.
+- **A Simplified Chinese interface** (`git-graph-rs.interfaceLanguage`: auto / English / 简体中文)
+  covering the webview, the extension host messages and the Source Control menus.
 - **Instant first paint, progressive completion.** A view load renders the local branch and tag
-  pills immediately from a local-only ref scan, merges the remote pills in place when the full scan
-  arrives, and chains the "Uncommitted Changes" row and the Gerrit stages onto the same pipeline —
-  no stage waits on a slower one. Commit details render their file list first and settle the
-  `+N/-M` line counts progressively (rows in view, then background batches).
+  pills immediately from a local-only ref scan, merges the remote pills in when the full scan
+  arrives, and chains the "Uncommitted Changes" row and the Gerrit stages onto the same pipeline.
+  Commit details render their file list first and settle the `+N/-M` line counts progressively.
 - **A graph that stays current by itself.** A repository file watcher plus a 5-second background
-  poll of the ref/HEAD/stash signature means a commit made outside the extension — a terminal, another
-  tool — appears on the graph within seconds. Events that arrive while the extension's own Git action
-  is settling are deferred and merged rather than dropped, and re-showing an already-rendered view
-  soft-refreshes it instead of regenerating the HTML, so switching tabs back never blank-flashes; the
-  "Uncommitted Changes" row is likewise kept rendered across every stage of the load pipeline.
-- **Binary file comparison** in the comparison view: a streaming hex view that byte-compares the
-  matched equal suffix, and a picture mode that dyes differing pixels and reports PSNR.
-- **Amend Last Commit** and **Reset Current Branch to Remote (soft)** commands in the Source
-  Control view.
+  poll of the ref/HEAD/stash signature means a commit made from a terminal or another tool appears
+  on the graph within seconds. Re-showing an already-rendered view soft-refreshes it instead of
+  regenerating the HTML, so switching tabs back never blank-flashes.
+- **Binary file comparison**: a streaming hex view that byte-compares the matched equal suffix,
+  and a picture mode that dyes differing pixels and reports PSNR.
+- **Amend Last Commit** and **Reset Current Branch to Remote (soft)** in the Source Control view.
 - **Runs without Git installed** — the whole read path is served in-process by the engine; write
   operations report that they need Git. Conversely, on a platform with no prebuilt engine binary
   the extension runs entirely over the `git` CLI.
 
-## Status
+## Performance
 
-This is a working VS Code extension: the webview and extension host layer are ported from the
-original, and **every repository read** — the view load,
-commit, stash and uncommitted details, comparisons, config, file contents and single-file diffs,
-plus the on-demand reads behind the Find dialogue, the tag details, submodule and upstream
-lookups, and the commit counting the view's jump-to-commit uses — is served by the Rust engine,
-falling back to the `git` CLI wherever the engine does not reach.
-The write path (checkout, merge, rebase and the rest) still goes through the `git` CLI, behind
-the same interface, with the destructive corner of it guarded by [data-loss warnings](#data-loss-protection). See [GAPS.md](GAPS.md) and [Roadmap](#roadmap).
+The numbers below compare **the backend the extension actually ships** with **what the original
+extension does**:
 
-## Why it is faster
+- *shipped* — what `createBackend()` hands the extension on this machine: the Rust engine wrapped
+  in the `git` CLI fallback. An operation the engine declines is timed as the user experiences it,
+  fallback spawn included, not as the engine alone.
+- *git CLI* — the bare `CliBackend`, one `git` spawn per call, which is what the original
+  extension does for everything.
 
-Measured on a repository with 709 commits, 187 tags and two packs — one **view load**, which is the
-repository info plus the first page of 300 commits, the thing the user actually waits for:
+Both sides are driven through the same `GitBackend` interface with the same arguments;
+`node scripts/bench.mjs <repo> --all` reproduces the tables. Each number is the median of 11
+runs after an untimed warm-up (the engine's caches and the OS page cache are warm, so this is the
+steady-state interaction, not the first cold open).
 
-| | per view load |
-|---|---|
-| `git` spawns + parse (what the original does) | ~350 ms |
-| Rust engine | ~95 ms |
+Environment: Windows 11, Intel i7-14650HX, Node 24, git 2.50.1, extension 1.0.23.
 
-`node scripts/bench.mjs <repo-path> --tags` reproduces it. Four things account for the gap, each
-found by measuring rather than by guessing:
+### A real repository (129 commits, 23 tags, uncommitted changes in the working tree)
 
-1. **The repository stays open.** A `git` spawn re-reads the pack index files before doing any
-   useful work, and a single view load makes several such calls. The engine opens a repository once
-   and keeps its pack indexes and object cache resident.
-   ([`repository.rs`](native/core/src/repository.rs))
-
-2. **Refs are filtered by name before any object is read.** A ref the view is not showing costs a
-   string comparison and nothing more, and remote-tracking refs are never peeled — peeling is an
-   object lookup per ref, several times the cost of the scan itself. On a Gerrit remote whose
-   `changes/` tree holds tens of thousands of refs, this is the difference between reading all of
-   them and reading none. ([`refs.rs`](native/core/src/refs.rs))
-
-3. **Revisions that are already hashes skip the revspec parser.** The tips of a view load come
-   straight from the refs that were just read, so they are already full hashes; sending a few
-   hundred of them through gix's revision *parser* rather than looking them up directly was, on
-   its own, 4× the cost of the whole walk. ([`repository.rs`](native/core/src/repository.rs))
-
-4. **One call crosses the boundary per request, not one per commit.** Results are serialised once
-   in Rust and parsed once in JavaScript. Building JS objects property by property over Node-API
-   would cost a call per field, and a page of a thousand commits has tens of thousands of them.
-   ([`native/node/src/lib.rs`](native/node/src/lib.rs))
-
-## Benchmarks: engine vs `git` CLI, by operation and repository size
-
-Measured with `node scripts/bench.mjs <repo> --all` on three synthetic repositories of
-increasing size, plus this repository itself (a real working tree with uncommitted changes).
-Each repository is walked by both
-backends through the same interface; the numbers are the median of 7 runs after a warm-up
-(the engine's caches and the OS page cache are warm, so this measures steady-state
-interaction, not the first cold open).
-
-Environment: Windows 11, Intel i7-14650HX (16 cores), Node 24, git 2.50.1.
-
-| Repository | Commits | Tags | Pack size |
-|---|---|---|---|
-| small | 100 | 10 | loose objects |
-| medium | 1 000 | 100 | loose objects |
-| large | 10 000 | 1 000 | ~6 MiB |
-
-### This repository (3 commits, a real working tree with uncommitted changes)
-
-| operation | git CLI | engine | speedup |
+| operation | git CLI | shipped | speedup |
 |---|---:|---:|---:|
-| view load (repoInfo + first page) | 282.0 ms | 11.3 ms | **24.9×** |
-| getRepoInfo | 124.3 ms | 1.1 ms | **108.7×** |
-| getCommits (a page of the graph) | 142.9 ms | 12.0 ms | **11.9×** |
-| getRefs | 81.4 ms | 0.9 ms | **90.0×** |
-| getCommitDetails | 136.7 ms | 31.4 ms | **4.4×** |
-| getCommitBodies (3 commits) | 36.9 ms | 0.6 ms | **60.0×** |
-| getCommitSummaries (3 commits) | 45.8 ms | 0.7 ms | **62.6×** |
-| getCommitSubject | 35.3 ms | 0.3 ms | **137.5×** |
-| searchHistory | 38.2 ms | 1.6 ms | **24.2×** |
-| getConfig | 74.1 ms | 0.3 ms | **271.7×** |
-| getStashes | 41.5 ms | 0.6 ms | **67.7×** |
-| getUncommittedChangeCount | 50.1 ms | 9.3 ms | **5.4×** |
-| compareCommits | 100.1 ms | 31.4 ms | **3.2×** |
-| countCommitsBefore | 51.7 ms | 1.6 ms | **31.8×** |
-| getCommitFile (the 15 000-line webview bundle) | 45.8 ms | 0.9 ms | **52.7×** |
-| getCommitFileDiff (same file) | 136.9 ms | 28.1 ms | **4.9×** |
-| getCurrentBranchUpstream | 45.4 ms | 0.3 ms | **140.4×** |
-| getRemoteUrl | 39.7 ms | 0.3 ms | **127.4×** |
+| **view load** (repoInfo + first page — what the user waits for) | 331.1 ms | 69.0 ms | **4.8×** |
+| getRepoInfo (branches/tags/remotes/stashes) | 170.9 ms | 11.3 ms | **15.1×** |
+| getCommits (a page of the graph) | 203.9 ms | 63.8 ms | **3.2×** |
+| getRefs | 141.2 ms | 13.6 ms | **10.4×** |
+| getCommitDetails | 129.1 ms | 3.3 ms | **38.7×** |
+| getLineCounts (the details view's deferred counts) | 46.7 ms | 4.4 ms | **10.6×** |
+| getCommitBodies (50 commits) | 76.9 ms | 12.2 ms | **6.3×** |
+| getCommitSummaries (50 commits) | 116.5 ms | 11.0 ms | **10.6×** |
+| getCommitSubject | 41.5 ms | 0.7 ms | **60.6×** |
+| searchHistory ('' matches everything) | 74.8 ms | 36.2 ms | **2.1×** |
+| getConfig | 68.2 ms | 0.2 ms | **432×** |
+| getStashes | 47.3 ms | 0.5 ms | **94.3×** |
+| getUncommittedChangeCount | 59.7 ms | 15.1 ms | **3.9×** |
+| compareCommits | 64.2 ms | 25.5 ms | **2.5×** |
+| countCommitsBefore | 70.7 ms | 35.1 ms | **2.0×** |
+| getCommitFile | 45.3 ms | 1.3 ms | **36.2×** |
+| getCommitFileDiff | 98.1 ms | 4.0 ms | **24.6×** |
+| getCurrentBranchUpstream | 45.4 ms | 0.7 ms | **68.3×** |
+| getRemoteUrl | 42.6 ms | 0.1 ms | **458×** |
 
-This is the everyday shape: a tiny history, but real files — diffing the 15 000-line webview
-bundle is real work for both sides, and the engine still returns it 5× sooner.
+### Synthetic repository (10 000 commits, 1 000 annotated tags, one ~9.5 MiB pack)
 
-### Small (100 commits)
-
-| operation | git CLI | engine | speedup |
+| operation | git CLI | shipped | speedup |
 |---|---:|---:|---:|
-| view load (repoInfo + first page) | 292.8 ms | 29.3 ms | **10.0×** |
-| getRepoInfo | 125.2 ms | 4.0 ms | **31.5×** |
-| getCommits (a page of the graph) | 167.6 ms | 27.1 ms | **6.2×** |
-| getRefs | 97.3 ms | 4.5 ms | **21.4×** |
-| getCommitDetails | 123.1 ms | 3.4 ms | **35.9×** |
-| getCommitBodies (50 commits) | 60.4 ms | 5.1 ms | **11.7×** |
-| getCommitSummaries (50 commits) | 68.7 ms | 5.8 ms | **11.8×** |
-| getCommitSubject | 46.3 ms | 0.5 ms | **99.8×** |
-| searchHistory ('' matches everything) | 66.3 ms | 19.3 ms | **3.4×** |
-| getConfig | 74.2 ms | 0.2 ms | **309×** |
-| getStashes | 46.1 ms | 0.8 ms | **59.5×** |
-| getUncommittedChangeCount | 51.8 ms | 9.0 ms | **5.8×** |
-| compareCommits | 85.2 ms | 11.7 ms | **7.3×** |
-| countCommitsBefore | 59.5 ms | 14.4 ms | **4.1×** |
-| getCommitFile | 46.3 ms | 0.6 ms | **75.7×** |
-| getCommitFileDiff | 92.0 ms | 2.3 ms | **40.9×** |
-| getCurrentBranchUpstream | 42.2 ms | 0.3 ms | **146×** |
-| getSubmodules | 0.0 ms | 0.2 ms | 0.2× ¹ |
-| getRemoteUrl | 41.5 ms | 0.2 ms | **230×** |
-| getTagDetails (annotated tag) | 45.3 ms | 0.6 ms | **76.1×** |
+| **view load** (repoInfo + first page of 300) | 429.7 ms | 96.5 ms | **4.5×** |
+| getRepoInfo (branches/tags/remotes/stashes) | 198.7 ms | 31.8 ms | **6.2×** |
+| getCommits (a page of the graph) | 240.5 ms | 55.8 ms | **4.3×** |
+| getRefs | 118.8 ms | 29.7 ms | **4.0×** |
+| getCommitDetails | 125.7 ms | 0.7 ms | **185×** |
+| getLineCounts (the details view's deferred counts) | 47.8 ms | 0.9 ms | **53.5×** |
+| getCommitBodies (50 commits) | 67.2 ms | 0.7 ms | **95.2×** |
+| getCommitSummaries (50 commits) | 66.8 ms | 0.5 ms | **123×** |
+| getCommitSubject | 51.1 ms | 0.1 ms | **353×** |
+| searchHistory ('' matches everything) | 74.7 ms | 37.1 ms | **2.0×** |
+| getConfig | 69.6 ms | 0.1 ms | **481×** |
+| getStashes | 50.7 ms | 0.4 ms | **133×** |
+| getUncommittedChangeCount | 52.8 ms | 12.0 ms | **4.4×** |
+| compareCommits | 49.8 ms | 0.9 ms | **55.0×** |
+| countCommitsBefore | 63.4 ms | 33.8 ms | **1.9×** |
+| getCommitFile | 48.3 ms | 0.2 ms | **217×** |
+| getCommitFileDiff | 96.0 ms | 0.6 ms | **169×** |
+| getCurrentBranchUpstream | 47.8 ms | 0.6 ms | **79.5×** |
+| getRemoteUrl | 44.9 ms | 0.1 ms | **334×** |
+| getTagDetails (annotated tag) | 46.7 ms | 0.3 ms | **149×** |
 
-### Medium (1 000 commits)
-
-| operation | git CLI | engine | speedup |
-|---|---:|---:|---:|
-| view load (repoInfo + first page) | 318.0 ms | 118.9 ms | **2.7×** |
-| getRepoInfo | 156.2 ms | 33.9 ms | **4.6×** |
-| getCommits (a page of the graph) | 230.1 ms | 110.4 ms | **2.1×** |
-| getRefs | 107.4 ms | 33.8 ms | **3.2×** |
-| getCommitDetails | 119.5 ms | 3.0 ms | **40.3×** |
-| getCommitBodies (50 commits) | 59.2 ms | 5.7 ms | **10.3×** |
-| getCommitSummaries (50 commits) | 70.7 ms | 5.7 ms | **12.4×** |
-| getCommitSubject | 44.7 ms | 0.6 ms | **77.0×** |
-| searchHistory | 82.5 ms | 46.2 ms | **1.8×** |
-| getConfig | 66.2 ms | 0.3 ms | **255×** |
-| getStashes | 43.6 ms | 0.4 ms | **111×** |
-| getUncommittedChangeCount | 45.5 ms | 7.0 ms | **6.5×** |
-| compareCommits | 78.1 ms | 13.0 ms | **6.0×** |
-| countCommitsBefore | 150.6 ms | 159.4 ms | 0.9× ² |
-| getCommitFile | 46.7 ms | 0.9 ms | **50.8×** |
-| getCommitFileDiff | 92.6 ms | 2.6 ms | **35.5×** |
-| getCurrentBranchUpstream | 46.3 ms | 0.6 ms | **74.2×** |
-| getSubmodules | 0.1 ms | 0.3 ms | 0.2× ¹ |
-| getRemoteUrl | 48.4 ms | 0.2 ms | **288×** |
-| getTagDetails (annotated tag) | 55.9 ms | 0.7 ms | **83.5×** |
-
-### Large (10 000 commits, 1 000 tags)
-
-| operation | git CLI | engine | speedup |
-|---|---:|---:|---:|
-| view load (repoInfo + first page) | 292.7 ms | 120.7 ms | **2.4×** |
-| getRepoInfo | 130.4 ms | 40.7 ms | **3.2×** |
-| getCommits (a page of the graph) | 192.3 ms | 111.9 ms | **1.7×** |
-| getRefs | 98.6 ms | 37.6 ms | **2.6×** |
-| getCommitDetails | 121.6 ms | 5.5 ms | **22.2×** |
-| getCommitBodies (50 commits) | 76.6 ms | 8.0 ms | **9.6×** |
-| getCommitSummaries (50 commits) | 85.4 ms | 6.0 ms | **14.3×** |
-| getCommitSubject | 54.5 ms | 0.6 ms | **84.3×** |
-| searchHistory | 112.6 ms | 63.6 ms | **1.8×** |
-| getConfig | 69.0 ms | 0.3 ms | **211×** |
-| getStashes | 46.3 ms | 0.4 ms | **105×** |
-| getUncommittedChangeCount | 52.6 ms | 8.8 ms | **6.0×** |
-| compareCommits | 86.2 ms | 21.6 ms | **4.0×** |
-| countCommitsBefore | 119.6 ms | 93.5 ms | **1.3×** |
-| getCommitFile | 51.2 ms | 0.6 ms | **83.6×** |
-| getCommitFileDiff | 106.4 ms | 2.9 ms | **37.1×** |
-| getCurrentBranchUpstream | 47.5 ms | 0.5 ms | **88.8×** |
-| getSubmodules | 0.0 ms | 0.3 ms | 0.2× ¹ |
-| getRemoteUrl | 45.6 ms | 0.2 ms | **230×** |
-| getTagDetails (annotated tag) | 52.2 ms | 0.5 ms | **107×** |
-
-¹ `getSubmodules` on the CLI backend answers from the working tree (no `.gitmodules` — no
-process spawn), so this row compares a no-op against the engine reading the index; it is not
-a real defeat. On any repository *with* submodules the CLI spawns `git config -f .gitmodules`
-at the ~45 ms floor every other CLI row shows.
-
-² `countCommitsBefore` on the 1 000-commit repository was the one row where the engine lost
-(159.4 ms vs 150.6 ms): counting every commit before an early revision walks essentially the
-whole history, which is `git rev-list --count`'s best case. On the 10 000-commit repository —
-where the pack is built and the walk reads packed objects — the engine is ahead again (1.3×).
+`getSubmodules` is omitted: on a repository without a `.gitmodules` the CLI backend answers from
+the working tree without spawning anything, so both sides take ~0.1 ms.
 
 ### What the numbers say
 
-- **The single-object reads win by two orders of magnitude** (`getConfig`, `getRemoteUrl`,
-  `getCommitSubject`, `getStashes`, `getCurrentBranchUpstream`) at every repository size. On the
-  CLI side these all cost one `git` spawn (~45 ms floor on Windows), while the engine answers
-  from its warm repository handle in well under a millisecond. The gap does not narrow as the
-  repository grows, because the spawn is the cost.
-- **The graph walk (`view load`, `getCommits`) wins by 10× on the small repository and settles
-  around 2× on the larger ones.** Page size is capped at 300 commits, so the engine's cost is
-  roughly constant while the CLI's cost is dominated by ref scanning (1 000 tags in the large
-  repository) and pack reads. Two× off the number the user waits for on every repository open
-  remains the difference between a view that loads instantly and one that visibly pauses.
-- **Repository size moves the engine's cost, ref count moves both.** The rows that scan refs
-  (`getRepoInfo`, `getRefs`) grow with the tag count for both backends; the rows that read
-  individual objects stay flat from 100 to 10 000 commits.
-- **The only operations that approach parity are full-history walks** (`searchHistory` with a
-  pattern that matches everything, `countCommitsBefore`), where the work is proportional to the
-  history and `git`'s walker is highly optimised. The engine still leads, but by 1.3–1.8×
-  rather than 10×.
+- **The view load — the number the user waits for on every open — is 4–5× faster.** Page size
+  is capped at 300 commits, so the shipped backend's cost stays roughly flat as the history grows,
+  while the CLI's is dominated by ref scanning and pack reads on top of several process spawns.
+- **Single-object reads win by one to two orders of magnitude** (`getConfig`, `getRemoteUrl`,
+  `getCommitSubject`, `getStashes`, `getCurrentBranchUpstream`, `getCommitDetails`). On the CLI
+  side each costs one `git` spawn — a ~40–70 ms floor on Windows — while the warm repository
+  handle answers in well under a millisecond. The gap does not narrow as the repository grows,
+  because the spawn is the cost.
+- **Full-history walks are where the two come closest** (`searchHistory` with a pattern that
+  matches everything, `countCommitsBefore`): the work is proportional to the history and `git`'s
+  walker is highly optimised. The shipped backend still leads, by about 2× rather than 100×.
+
+### Why it is faster
+
+Four things account for the gap, each found by measuring rather than by guessing:
+
+1. **The repository stays open.** A `git` spawn re-reads the pack index files before doing any
+   useful work, and a single view load makes several such calls. The engine opens a repository
+   once and keeps its pack indexes and object cache resident.
+   ([`repository.rs`](native/core/src/repository.rs))
+2. **Refs are filtered by name before any object is read.** A ref the view is not showing costs a
+   string comparison and nothing more, and remote-tracking refs are never peeled. On a Gerrit
+   remote whose `changes/` tree holds tens of thousands of refs, this is the difference between
+   reading all of them and reading none. ([`refs.rs`](native/core/src/refs.rs))
+3. **Revisions that are already hashes skip the revspec parser.** The tips of a view load come
+   straight from the refs that were just read, so they are looked up directly rather than sent
+   through gix's revision parser — which was, on its own, 4× the cost of the whole walk.
+4. **One call crosses the boundary per request, not one per commit.** Results are serialised once
+   in Rust and parsed once in JavaScript rather than built property by property over Node-API.
+   ([`native/node/src/lib.rs`](native/node/src/lib.rs))
 
 ## Architecture
 
-```
-  webview  ─────────────────────────────────┐
-                                            │  (unchanged from the original)
-  extension host (TypeScript)               │
-    src/backend/index.ts    backend selection, CLI fallback
-    src/backend/api.ts      the GitBackend interface, the native implementation
-    src/backend/cliBackend.ts   the same interface over the `git` CLI
-    src/backend/addon.ts    binary loading, promises, error mapping
-              │
-              │  a handful of functions, JSON payloads
-              ▼
-  git-graph.node            Node-API addon (napi-rs)
-              │
-              ▼
-  Rust engine (native/core)
-    repository.rs    discovery, the handle cache
-    refs.rs          reference scanning
-    log.rs           the commit walk and its ordering
-    graph.rs         assembling the graph the view renders
-    diff.rs          tree diffing, rename detection, line counts
-    status.rs        the working tree
-    stash.rs         the stash
-    details.rs       the Commit Details view
-              │
-              ▼
-             gix
-```
+![Architecture](docs/architecture.svg)
 
 Three rules hold the shape together:
 
-1. **Rust is the Git engine and nothing else.** It knows nothing about VS Code, and it is exercised
-   by `cargo test` with no Node in the picture.
+1. **Rust is the Git engine and nothing else.** It knows nothing about VS Code, never shells out,
+   and is exercised by `cargo test` with no Node in the picture.
 2. **TypeScript does the UI and the VS Code API, and never parses Git itself.**
-3. **gix is an implementation detail.** Nothing above `native/core` names it, so a capability gix
-   does not cover yet can be reimplemented or delegated without the extension noticing.
+3. **gix is an implementation detail.** Nothing above `native/core` names it.
 
-The *lane* layout — which column a commit's dot sits in — deliberately stays in the webview. It is
-a rendering decision that depends on the viewport; the engine's job ends at the commits and their
-parent relationships.
+The *lane* layout — which column a commit's dot sits in — deliberately stays in the webview: it is
+a rendering decision that depends on the viewport.
 
-## The fallback, and why it is not temporary yet
+### The fallback
 
 `createBackend()` returns the Rust engine wrapped so that anything it cannot answer reaches the
-`git` CLI instead:
+`git` CLI instead. Only two kinds of failure are fallen back over: *this is not a repository I can
+open*, and *I do not implement this*. A genuine Git failure — a bad revision, a corrupt object —
+**is** the answer, and re-running it through `git` would produce the same failure more slowly.
 
-```
-GitBackend
-├── NativeBackend  ──► gix
-└── CliBackend     ──► git
-```
+On a platform with no prebuilt binary the CLI backend is used alone and the extension behaves
+exactly as the original did; the Settings widget's **Backend** section shows which areas run on
+which backend on this machine. Which operations the engine serves and which still spawn `git` is
+documented in [docs/BACKENDS.md](docs/BACKENDS.md).
 
-Only two kinds of failure are fallen back over: *this is not a repository I can open*, and *I do
-not implement this*. A genuine Git failure — a bad revision, a corrupt object — **is** the answer,
-and re-running it through `git` would produce the same failure more slowly.
+The write path (checkout, merge, rebase, stash operations, remotes, tags) is not on the
+`GitBackend` interface yet and still spawns `git` directly, exactly as the original did;
+[GAPS.md](GAPS.md) is the inventory of what is missing.
 
-On a platform with no prebuilt binary the CLI backend is used alone, and the extension behaves
-exactly as the original did.
-
-## No git process in the shipped path
-
-The engine never shells out. Tests are the deliberate exception:
-[`native/core/tests/common/mod.rs`](native/core/tests/common/mod.rs) builds fixture repositories
-with the `git` command line, and every reader is checked against what git itself reports for the
-same question. Git is the reference implementation; comparing against it is the strongest
-correctness signal available.
-
-`tests/backends.test.mjs` goes further and runs **both backends over the same repository through
-the same interface**, asserting they agree field by field — because the webview above them cannot
-tell which one it is talking to, so any disagreement is a user-visible behaviour change.
+Correctness is checked against Git itself: the engine's tests build fixture repositories with the
+`git` command line and compare every reader to what git reports, and `tests/backends.test.mjs`
+runs **both backends over the same repository through the same interface**, asserting they agree
+field by field — the webview cannot tell which one it is talking to, so any disagreement is a
+user-visible behaviour change.
 
 ## Known deviations from git
 
-- **Commit and tag signatures are verified by Git when a CLI is available.** The Rust engine still
-  reads signature presence in-process, then the extension delegates verification to Git/GPG so the
-  status, key id and signer match the user's local keyring. On a machine without Git, or when the
-  signing key is unavailable, the status remains `E` ("cannot be checked") instead of claiming a
-  signature is valid.
-
-- **Ordering reads a bounded window.** All three of git's orderings are topologically constrained,
-  and gix's traversal offers no such guarantee, so the ordering is done here: a window of commits
-  is collected and re-ordered by a topological sort whose ready set is ranked by the requested
-  ordering. The window is a multiple of the requested page rather than the whole history, so
-  ordering is exact within the window and commits beyond it are not considered. Every ordering
-  guarantees that a commit never appears before one of its children.
-
-- **A file modified in the working tree but not staged has no line counts** when comparing an
-  arbitrary revision against the working tree. Getting them means hashing the worktree file, which
-  costs more than the counts are worth on the critical path. For the same reason, a comparison
-  against the working tree shows no counts at all — a number that is exact for part of the list
-  and missing for the rest reads worse than none.
-
-- **Line counts arrive after the file list.** Opening a commit (or a comparison) renders its file
-  list first and settles the `+N/-M` counts progressively — the rows in view, then the rest in
-  background batches — because every file's counts cost two blob reads, which dominates the load
-  of a commit touching thousands of files. Everywhere except a working-tree comparison the counts
-  are exact once settled.
+- **Signatures are verified by Git when a CLI is available.** The engine reads signature presence
+  in-process; verification is delegated to Git/GPG so the status, key id and signer match the
+  user's keyring. Without Git the status stays `E` ("cannot be checked").
+- **Ordering reads a bounded window.** gix's traversal offers no topological guarantee, so a window
+  of commits — a multiple of the requested page — is collected and re-ordered here. Ordering is
+  exact within the window; a commit never appears before one of its children.
+- **A comparison against the working tree shows no line counts**, because getting them means
+  hashing every worktree file, which costs more than the counts are worth on the critical path.
+- **Line counts arrive after the file list.** Opening a commit renders its files first and settles
+  the `+N/-M` counts progressively; everywhere except a working-tree comparison they are exact once
+  settled.
 
 ## Data-loss protection
 
 Some write operations can lose work that no ref keeps reachable — silently, because the `git`
-command that does it exits successfully (its "you are leaving commits behind" warning goes to
-stderr, which a successful command discards). Those operations do not run on the first click:
-the view shows its standard data-loss dialog — a warning banner, the mascot, and a single
-"I understand the risk" button — and only re-sends the action when the user presses it.
-The guarded operations:
+command that does it exits successfully. Those operations do not run on the first click: the view
+shows a warning dialog stating the actual recoverability of the case, and only re-sends the action
+when the user confirms. The guarded operations:
 
-- **Leaving a detached HEAD that has its own commits** — switching to a branch, checking out
-  another commit, or creating a branch somewhere else with checkout. The commits are held by no
-  branch, tag, remote or stash; after the switch they are reachable only from the local reflog,
-  and only until `git gc` prunes them. Creating the branch *at* HEAD anchors them, so it is never
-  asked. A stash anchors its base commit's history the same way — every stash entry counts, not
-  just the top one — so leaving a detached position that has a stash on it loses nothing and is
-  never asked either; only commits made *after* that stash are still stranded.
-- **A hard reset while the working tree has uncommitted changes.** Those contents are recorded
-  in no reflog; at most previously staged versions might be found with `git fsck`. The
-  "reset uncommitted changes" action is itself an explicit choice to discard, so it is not asked
-  again.
+- **Leaving a detached HEAD that has its own commits** — switching branch, checking out another
+  commit, or creating a branch elsewhere with checkout. After the switch those commits are
+  reachable only from the reflog, and only until `git gc` prunes them. Creating the branch *at*
+  HEAD anchors them, and so does a stash whose base is on them, so neither is asked.
+- **A hard reset while the working tree has uncommitted changes.** Those contents are recorded in
+  no reflog.
 - **A force push.** The commits the remote has that the push does not contain become unreachable
-  *there*; whether they can be recovered depends on the remote — hosted services usually only
-  keep them accessible by hash, for a while. `--force-with-lease` is the guarded variant and is
-  not confirmed a second time.
-
-The dialog wording states the actual recoverability of each case, verified against real
-repositories: which things the reflog keeps (and for how long), which need `git fsck` (dropping
-a stash deletes its reflog with it; so does force-deleting an unmerged branch), and which depend
-on the remote.
+  *there*. `--force-with-lease` is the guarded variant and is not confirmed a second time.
 
 ## Building
 
-Requires Rust 1.85+ and Node 18+. There is deliberately no node-gyp, no Python, and no download of
-Node headers: napi-rs resolves the Node-API symbols at load time rather than linking against them.
+Requires Rust 1.85+ and Node 18+. There is no node-gyp, no Python and no download of Node
+headers: napi-rs resolves the Node-API symbols at load time.
 
 ```sh
 npm install
-npm run build              # the addon (debug) + the TypeScript
-npm run build:native:release
-npm test                   # cargo tests + the cross-backend integration tests
-npm run bench -- <repo-path> --tags
-npm run bench:all -- <repo-path>   # every read operation, engine vs CLI, one table
-npm run lint               # clippy + rustfmt
+npm run build                    # the addon (debug) + the TypeScript
+npm run build:native:release     # the addon as it ships
+npm test                         # cargo tests + the cross-backend integration tests
+npm run bench -- <repo-path>     # one view load, shipped backend vs git CLI
+npm run bench:all -- <repo-path> # every read operation, one table row each (--json for machines)
+npm run lint                     # clippy + rustfmt
 ```
 
-On Windows, `build-and-install.bat` runs the whole chain — native addon, TypeScript, webview,
-tests — packages the vsix and installs it into VS Code, stopping at the first failure.
+On Windows, `build-and-install.bat` runs the whole chain — addon, TypeScript, webview, tests —
+packages the VSIX and installs it into VS Code, stopping at the first failure.
 
-Which operations the Rust engine serves and which still spawn `git` is documented in
-[docs/BACKENDS.md](docs/BACKENDS.md); what the engine depends on — including why a pure-Rust
-addon still needs platform linkers — is documented in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+While `git-graph-rs.enableLog` is on, every spawned `git` command is logged with its duration and
+every engine→CLI fallback with its reason; `node scripts/analyze-log.mjs <logfile>` summarises a
+session log into where the time went and which methods fell back.
 
-### Measuring, and reading the measurements
-
-`node scripts/bench.mjs <repo-path>` reports the number that matters — one view load — for both
-backends; `--all` times **every** read operation the extension performs, one table row per
-operation with the speedup and what each side returned (`--json` emits the same measurements for
-trend tracking). While `git-graph-rs.enableLog` is on, every spawned `git` command is logged with
-its duration and every engine→CLI fallback with its reason; `node scripts/analyze-log.mjs
-<logfile>` summarises a session log into where the time went, which methods fell back, and what
-failed.
-
-The icon set (the marketplace PNG, the themed menu icons, and the mobile notification set —
-all the same crab-and-graph motif) is regenerated from the SVG masters with
-`node scripts/generate-icons.mjs`.
-
-Cross-compiling for another platform:
-
-```sh
-node scripts/build-addon.mjs --release --target aarch64-apple-darwin
-build-rust.bat                        # the four common targets, one command (Windows host)
-build-rust.bat --full                 # all six, adding Windows arm64 and macOS x64
-```
-
-The build is delegated to [`@napi-rs/cli`](https://napi.rs) (`napi build`), with three routes
-behind it. A target of a foreign OS family goes through `--cross-compile`, which builds with
-`cargo-zigbuild` — Linux targets get their cross glibc linker from zig, and so do the macOS
-targets (zig bundles the macOS libc, so no Apple SDK is needed); `zig` comes from the PATH or
-from the pip `ziglang` package. The Windows arm64 target from a Windows host is linked directly
-by `rust-lld` against the Windows SDK's arm64 libraries and the ARM64 CRT vsix from cargo-xwin's
-cache — neither the VS "C++ ARM64 build tools" component nor symlink privileges (which
-cargo-xwin's own extraction needs) are required. Everything else builds natively. The binaries
-that ship are the ones CI builds on native runners for each platform, not local cross-builds.
+Cross-compiling goes through [`@napi-rs/cli`](https://napi.rs):
+`node scripts/build-addon.mjs --release --target <triple>` builds one target, `build-rust.bat`
+builds the four common ones from a Windows host (`--full` adds Windows arm64 and macOS x64).
+Foreign-OS targets use `cargo-zigbuild` (no Apple SDK needed); Windows arm64 links with `rust-lld`
+against the Windows SDK. What the engine depends on is documented in
+[docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
 ## Supported platforms
 
-The native engine is built for the six platforms Visual Studio Code itself ships for — every
-desktop OS in both x64 and arm64. (32-bit x86 is not listed because VS Code no longer ships 32-bit
-builds.) Only the four common ones ship by default: Windows ARM64 and macOS x64 have few users, and
-on them the extension runs over the `git` CLI backend instead (see below) — a `full` release run or
-`build-rust.bat --full` builds and packages all six.
+The engine is built for the six platforms VS Code itself ships for. The four common ones ship by
+default; Windows arm64 and macOS x64 are built only by a `full` release run, and on them the
+extension otherwise runs over the `git` CLI.
 
-| Platform | Target | CI | On a Windows host | On a Linux host | On a macOS host |
-|---|---|---|---|---|---|
-| Windows x64 | `x86_64-pc-windows-msvc` | ✅ | ✅ local MSVC | — | — |
-| Windows arm64 | `aarch64-pc-windows-msvc` | ✅ full only | ✅ `rust-lld` + SDK/CRT (see above) | — | — |
-| Linux x64 | `x86_64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ native | — |
-| Linux arm64 | `aarch64-unknown-linux-gnu` | ✅ | ✅ `cargo-zigbuild` | ✅ `gcc-aarch64-linux-gnu` | — |
-| macOS x64 | `x86_64-apple-darwin` | ✅ full only | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
-| macOS arm64 | `aarch64-apple-darwin` | ✅ | ✅ `cargo-zigbuild` | ✅ `cargo-zigbuild` | ✅ Xcode clang |
-
-¹ A cross-built binary has not run on the platform it targets: the cross-builds are for
-development and packaging convenience, and the binaries that ship are still the ones CI builds on
-native runners. A binary cross-built with zig links only the platform's libc, which is also why
-no Apple SDK is needed for the darwin targets.
-
-A platform whose binary is missing from the VSIX is still fully functional: the extension detects
-at load time that no engine matches `process.platform` + `process.arch` and serves every query
-through the `git` CLI backend instead — the view loads normally, with an informational notice, and
-the Settings widget's **Backend** section shows exactly which areas run on which backend. The
-engine is a speed optimisation, never a requirement.
-
-The reverse also holds: **a machine without Git installed runs the extension on the engine alone**
-— the whole read path (graph, details, comparisons, search, settings panel data) is served
-in-process, the view loads normally, and write operations report that they need Git. The write
-path (fetch/push, merge, rebase, stash operations, branch and tag maintenance) still runs through
-the `git` CLI — including where gix itself has no implementation yet (push above all).
-
-## Shipping
-
-[`.github/workflows/native-build.yml`](.github/workflows/native-build.yml) builds one binary per
-platform — the four common ones by default, all six when its `full` input is set — and assembles
-them into the layout the extension loads from:
-
-```
-native/
-├── win32-x64-msvc/git-graph.node
-├── win32-arm64-msvc/git-graph.node      # full runs only
-├── linux-x64-gnu/git-graph.node
-├── linux-arm64-gnu/git-graph.node
-├── darwin-x64/git-graph.node            # full runs only
-└── darwin-arm64/git-graph.node
-```
-
-At load time the extension picks the directory for `process.platform` + `process.arch`. One VSIX
-holds every engine that was built; installing it needs no Git, Rust, Cargo, Python or CMake on the
-user's machine. That universal VSIX is also the package every editor older than 1.61 receives —
-see ["Publishing a release"](#publishing-a-release) for how the two package kinds split the
-installed base between them.
-
-### Publishing a release
-
-[`.github/workflows/release.yml`](.github/workflows/release.yml) is triggered by hand — the
-Actions tab ("Release" → "Run workflow") or `gh workflow run release.yml -f version=v0.2.0`. It
-runs the whole build-and-test pipeline on native runners, assembles the VSIX from exactly the
-binaries that run produced, and publishes a GitHub Release with the VSIX and the per-platform
-VSIXs as assets. By default the engines and the per-platform VSIXs are the four common ones;
-check `full` (or `gh workflow run release.yml -f full=true`) to ship all six. The tag defaults to
-`package.json`'s version; an override updates the VSIX's version to match. Nothing is published
-unless every test passed.
-
-The GitHub Release carries two kinds of VSIX for the same version, each declaring exactly the
-editors that can receive it:
-
-- **The universal VSIX** (`git-graph-rs-<version>.vsix`) — every built engine in one package,
-  keeping package.json's own `engines.vscode` (`^1.38.0`); the extension picks its engine at load
-  time by `process.platform` + `process.arch`.
-- **The per-platform VSIXs** (`git-graph-rs-<version>-<platform>.vsix`) — one engine each, built
-  with `vsce package --target <target>` and stamped `engines.vscode ^1.61.0` (see below).
-
-On the Marketplace that split works without any per-user setup: editors **1.61 and newer** ask
-the gallery for their platform's package and are handed the small per-platform VSIX, while
-editors **older than 1.61** — and 1.61+ editors on a platform with no package of its own, such
-as Alpine — query without a target platform and receive the universal VSIX, which is the
-documented fallback behaviour: *"a package built without a platform flag will be used as a
-fallback for all platforms that have no platform-specific package"*
-([Platform-specific extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions)).
-
-`vsce package --target` refuses to run while `engines.vscode` is below 1.61, so
-[`scripts/package-platforms.mjs`](scripts/package-platforms.mjs) temporarily raises it to
-`^1.61.0` for the per-platform runs and restores the original file afterwards. That is the honest
-declaration, not a workaround: a per-platform package only ever reaches a 1.61+ editor, so
-`^1.61.0` is exactly what it can rely on, while the ^1.38.0 claim stays where it applies — on
-the universal package old editors actually install.
-
-Publishing to the Marketplace is a manual `vsce publish --packagePath <file>` per asset (using a
-token with publish rights), once per release after the GitHub Release is up — the universal
-VSIX first so the fallback exists, then each per-platform asset:
-
-```
-vsce publish --packagePath git-graph-rs-<version>.vsix
-vsce publish --packagePath git-graph-rs-<version>-<platform>.vsix   # for each built platform
-```
-
-`--target` is not passed to publish: the VSIX already carries it, and vsce rejects passing both
-options at once. The two platform spellings involved are different things, though: the file name
-carries the Rust-style `native/` directory name of the engine the VSIX contains, while the
-`--target` stamped at package time is the VS Code target identifier it is published as:
-
-| VSIX file (`<platform>`) | `--target` value |
-| ------------------------ | ---------------- |
-| `win32-x64-msvc`         | `win32-x64`      |
-| `win32-arm64-msvc`       | `win32-arm64`    |
-| `linux-x64-gnu`          | `linux-x64`      |
-| `linux-arm64-gnu`        | `linux-arm64`    |
-| `darwin-x64`             | `darwin-x64`     |
-| `darwin-arm64`           | `darwin-arm64`   |
-
-## Roadmap
-
-The phases below follow the rewrite plan this project was started from.
-
-| Phase | | Status |
+| Platform | Target | Ships by default |
 |---|---|---|
-| 0 | Abstract the Git backend behind an interface | **done** — `GitBackend`, both implementations |
-| 1 | napi-rs foundations, repository lifecycle | **done** — handle cache, error mapping, async off the JS thread |
-| 2 | log, status, diff, refs, stashes | **done** |
-| 3 | Graph engine — traversal, ordering, ref attachment | **done** (lane layout stays in the webview by design) |
-| 15–16 | Cross-platform build, VSIX layout | **done** — CI matrix, six targets |
-| 17 | Fallback to the `git` CLI | **done** |
-| 18 | Behaviour tests against git | **done** — engine tests and cross-backend tests |
-| 4 | Remote / fetch / push | not started |
-| 5 | Worktree | not started |
-| 6 | Merge / cherry-pick / revert | not started |
-| 7–8 | Stash operations, rebase, interactive rebase | not started (the stash is *read* today) |
-| 9–10 | Bisect, reflog, Git Undo | not started |
-| 11 | Plumbing (objects, refs, index) | partial — the read side exists internally |
-| 12 | Gerrit changes and patchsets | **done** — change refs fetched and cached locally, NoteDb metas parsed in-process, badges, review dialog, status filter, SCM push/hook commands |
-| 13–14 | Large-repository work, cache invalidation | partial — handles and object caches are warm; no incremental invalidation yet |
+| Windows x64 | `x86_64-pc-windows-msvc` | ✅ |
+| Windows arm64 | `aarch64-pc-windows-msvc` | full runs only |
+| Linux x64 | `x86_64-unknown-linux-gnu` | ✅ |
+| Linux arm64 | `aarch64-unknown-linux-gnu` | ✅ |
+| macOS x64 | `x86_64-apple-darwin` | full runs only |
+| macOS arm64 | `aarch64-apple-darwin` | ✅ |
 
-The **whole read path** is on `GitBackend`, implemented twice — engine and CLI — and asserted to
-agree in the cross-backend test; that is what makes a platform without a prebuilt binary work. The
-write path (checkout, merge, rebase, stash operations, remotes, tags) is on neither backend yet:
-it still spawns `git` directly in `DataSource`, and those phases need the interface extended
-first, then both implementations, as [Roadmap](#roadmap) says. See `GAPS.md` for the full
-inventory of what is missing.
+A platform whose binary is missing is still fully functional: the extension detects at load time
+that no engine matches `process.platform` + `process.arch` and serves every query through the
+`git` CLI, with an informational notice. The engine is a speed optimisation, never a requirement.
+The reverse also holds: a machine without Git runs the whole read path on the engine alone, and
+write operations report that they need Git.
+
+## Releasing
+
+[`native-build.yml`](.github/workflows/native-build.yml) builds one binary per platform on native
+runners and assembles them into `native/<platform>/git-graph.node`, the layout the extension
+loads from. [`release.yml`](.github/workflows/release.yml) is triggered by hand
+(`gh workflow run release.yml -f version=vX.Y.Z`, add `-f full=true` for all six platforms); it
+runs the whole pipeline and publishes a GitHub Release with two kinds of VSIX, nothing being
+published unless every test passed:
+
+- **the universal VSIX** (`git-graph-rs-<version>.vsix`) — every built engine in one package,
+  `engines.vscode ^1.38.0`; the engine is picked at load time;
+- **the per-platform VSIXs** (`git-graph-rs-<version>-<platform>.vsix`) — one engine each, built
+  with `vsce package --target` and stamped `^1.61.0`, since only 1.61+ editors request
+  platform-specific packages. Editors older than 1.61, and platforms with no package of their own,
+  receive the universal VSIX as the Marketplace's documented fallback.
+
+Publishing to the Marketplace is `vsce publish --packagePath <file>` per asset, the universal VSIX
+first so the fallback exists, then each per-platform one.
 
 ## License & credits
 
-The Rust engine (`native/`), the build scripts, the custom-made icons and the
-`git-graph-rs-*` assets are original to this project and released under the
-[MIT license](LICENSE).
+The Rust engine (`native/`), the build scripts, the custom-made icons and the `git-graph-rs-*`
+assets are original to this project and released under the [MIT license](LICENSE).
 
 The webview and extension host layers are ported and modified from
-[mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph),
-whose license (`licenses/LICENSE_GIT_GRAPH`) does not permit publishing
-derivative works — see `LICENSE` for how that applies to this repository.
-Further credits: the Visual Studio Code Git Extension (Askpass, Find Git
-Executable — MIT), Octicons, vscode-icons and Icons8 for icons, and the
-[gix][gix] and [napi-rs][napi-rs] ecosystems the engine builds on
-(MIT OR Apache-2.0). The full inventory lives in
-[`licenses/THIRD-PARTY-NOTICES.md`](licenses/THIRD-PARTY-NOTICES.md).
+[mhutchie/vscode-git-graph](https://github.com/mhutchie/vscode-git-graph), whose license
+(`licenses/LICENSE_GIT_GRAPH`) does not permit publishing derivative works — see `LICENSE` for how
+that applies to this repository. Further credits: the Visual Studio Code Git Extension (Askpass,
+Find Git Executable — MIT), Octicons, vscode-icons and Icons8 for icons, and the [gix][gix] and
+[napi-rs][napi-rs] ecosystems the engine builds on (MIT OR Apache-2.0). The full inventory lives
+in [`licenses/THIRD-PARTY-NOTICES.md`](licenses/THIRD-PARTY-NOTICES.md).
 
 [napi-rs]: https://napi.rs
 [gix]: https://github.com/GitoxideLabs/gitoxide

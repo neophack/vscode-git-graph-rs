@@ -10,7 +10,9 @@
 import { call, callJson, loadAddon } from './addon';
 import { GerritChangeState } from '../types';
 import {
+	GitActivityCell,
 	GitAuthor,
+	GitAuthorStat,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -158,6 +160,12 @@ export interface GitBackend {
 
 	/** The distinct commit authors of the current branch's history (`git shortlog -s -n -e`). */
 	getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>>;
+
+	/** Commit counts per author across all refs, merge commits excluded (`git shortlog -sne --all --no-merges`). */
+	getAuthorStatistics(repo: string): Promise<ReadonlyArray<GitAuthorStat>>;
+
+	/** The commit-activity heatmap (author-local weekday/hour) across all refs, merge commits excluded. */
+	getActivityHeatmap(repo: string): Promise<ReadonlyArray<GitActivityCell>>;
 
 	/** The config entries of one location, last value per key (`git config --list -z --includes`). */
 	getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }>;
@@ -357,6 +365,14 @@ export class NativeBackend implements GitBackend {
 
 	public getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>> {
 		return callJson(() => this.addon.authors(repo));
+	}
+
+	public getAuthorStatistics(repo: string): Promise<ReadonlyArray<GitAuthorStat>> {
+		return callJson(() => this.addon.authorStats(repo));
+	}
+
+	public getActivityHeatmap(repo: string): Promise<ReadonlyArray<GitActivityCell>> {
+		return callJson(() => this.addon.activityHeatmap(repo));
 	}
 
 	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {

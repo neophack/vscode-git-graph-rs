@@ -145,12 +145,12 @@ export function encodeDiffDocUri(repo: string, filePath: string, commit: string,
  */
 export function decodeDiffDocUri(uri: vscode.Uri): DiffDocUriData {
 	let query = uri.query;
-	// In VS Code > 1.38 (and especially 1.80+), URI query parameters may be URL encoded automatically.
-	// We must decode the URI component before decoding the base64 string to prevent padding errors.
-	if (query.includes('%')) {
-		query = decodeURIComponent(query);
-	}
 	try {
+		// In VS Code > 1.38 (and especially 1.80+), URI query parameters may be URL encoded automatically.
+		// We must decode the URI component before decoding the base64 string to prevent padding errors.
+		if (query.includes('%')) {
+			query = decodeURIComponent(query);
+		}
 		return JSON.parse(Buffer.from(query, 'base64').toString());
 	} catch (e) {
 		throw new Error(t('malformedDiffDocUri'));

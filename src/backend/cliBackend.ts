@@ -17,7 +17,9 @@ import * as path from 'path';
 import { GitBackend } from './api';
 import { parseGitSignatureOutput } from './signatures';
 import {
+	GitActivityCell,
 	GitAuthor,
+	GitAuthorStat,
 	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
@@ -47,6 +49,16 @@ import {
  * The original extension uses this exact string; keeping it identical means the two
  * implementations parse the same output the same way.
  */
+/** One commit of the `git log` output, before the refs, stashes and the working tree are attached. */
+interface LogRecord {
+	hash: string;
+	parents: string[];
+	author: string;
+	email: string;
+	date: number;
+	message: string;
+}
+
 const SEPARATOR = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
 
 const EOL = /\r\n|\r|\n/;
@@ -140,6 +152,7 @@ export class CliBackend implements GitBackend {
 			let commits = records;
 			const moreCommitsAvailable = commits.length > options.maxCommits;
 			if (moreCommitsAvailable) commits = commits.slice(0, options.maxCommits);
+			await this.pinGerritChangeCommits(repo, commits, options.gerritRefs ?? []);
 
 			const nodes = commits.map((record) => ({
 				...record,
@@ -809,6 +822,60 @@ export class CliBackend implements GitBackend {
 		return authors;
 	}
 
+	/** Commit counts per author, across all refs (branches, tags, remote-tracking, the stash), merge commits excluded. */
+	public async getAuthorStatistics(repo: string): Promise<GitAuthorStat[]> {
+		let lines: string[];
+		try {
+			lines = (await this.run(['shortlog', '-sne', '--all', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
+		} catch (_) {
+			return [];
+		}
+
+		const stats: GitAuthorStat[] = [];
+		for (const line of lines) {
+			const match = line.match(/^\s*(\d+)\s+(.+?)\s+<(.*?)>$/);
+			if (match !== null) {
+				stats.push({ commits: parseInt(match[1], 10), name: match[2], email: match[3] });
+			}
+		}
+		return stats;
+	}
+
+	/**
+	 * The commit-activity heatmap of a repository, binned by the author's local weekday and hour
+	 * (i.e. `%aI`'s own UTC offset, not the machine running Git Graph's timezone).
+	 */
+	public async getActivityHeatmap(repo: string): Promise<GitActivityCell[]> {
+		let lines: string[];
+		try {
+			lines = (await this.run(['log', '--all', '--format=%aI', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
+		} catch (_) {
+			return [];
+		}
+
+		const counts = new Map<string, number>();
+		for (const line of lines) {
+			// %aI is strict ISO 8601 (author date), e.g. 2026-05-02T10:00:00+09:00. The weekday is
+			// deliberately computed from ONLY the Y/M/D digits (as a UTC midnight), not by parsing
+			// the full string with its offset into a real Date: `new Date(iso)` would convert to
+			// the *local* time of the machine running Git Graph, shifting the weekday/hour near
+			// midnight for an author in a different timezone than whoever is viewing the graph.
+			const match = line.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})/);
+			if (match === null) continue;
+			const weekday = new Date(Date.UTC(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))).getUTCDay();
+			const hour = parseInt(match[4], 10);
+			const key = weekday + '-' + hour;
+			counts.set(key, (counts.get(key) || 0) + 1);
+		}
+
+		const cells: GitActivityCell[] = [];
+		counts.forEach((count, key) => {
+			const [weekday, hour] = key.split('-').map((n) => parseInt(n, 10));
+			cells.push({ weekday, hour, count });
+		});
+		return cells;
+	}
+
 	/** The config entries of one location, last value per key. */
 	public async getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
 		const out = await this.run(
@@ -843,7 +910,7 @@ export class CliBackend implements GitBackend {
 
 	/* ---------- Internals ---------- */
 
-	private async getLog(repo: string, options: LogOptions) {
+	private async getLog(repo: string, options: LogOptions): Promise<LogRecord[]> {
 		const order = options.commitOrdering ?? 'date';
 		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
 		// One extra commit, so that the caller can tell whether the page was truncated.
@@ -887,7 +954,7 @@ export class CliBackend implements GitBackend {
 		args.push('--', ...paths);
 
 		const out = await this.run(args, repo);
-		const records = [];
+		const records: LogRecord[] = [];
 		for (const record of out.replace(/\0$/, '').split('\0')) {
 			const fields = record.split(SEPARATOR);
 			if (fields.length < 6) continue;
@@ -901,6 +968,45 @@ export class CliBackend implements GitBackend {
 			});
 		}
 		return records;
+	}
+
+	/**
+	 * Keep the commits of the injected Gerrit change refs on the page, exactly as the engine does
+	 * (see `log::pin_commits`): the log keeps the newest `maxCommits` commits only, so a change
+	 * whose patchset is older than the page's last commit would lose its row — and with it the
+	 * badge the fetch limit promised. Each missing patchset commit is read and inserted at its
+	 * date position (below every newer commit, above every older one). A ref that does not
+	 * resolve is skipped rather than failing the load.
+	 */
+	private async pinGerritChangeCommits(repo: string, commits: LogRecord[], gerritRefs: ReadonlyArray<string>) {
+		if (gerritRefs.length === 0) return;
+		const present = new Set(commits.map((commit) => commit.hash));
+		const missing: string[] = [];
+		for (const ref of gerritRefs) {
+			const hash = await this.run(['rev-parse', '--verify', '--quiet', ref + '^{commit}'], repo).then((out) => out.trim()).catch(() => '');
+			if (hash !== '' && !present.has(hash)) {
+				present.add(hash);
+				missing.push(hash);
+			}
+		}
+		if (missing.length === 0) return;
+		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
+		const out = await this.run(['-c', 'log.showSignature=false', 'log', '--no-walk=unsorted', `--format=${format}`, '-z', ...missing], repo);
+		for (const record of out.replace(/\0$/, '').split('\0')) {
+			const fields = record.split(SEPARATOR);
+			if (fields.length < 6) continue;
+			const pinned: LogRecord = {
+				hash: fields[0],
+				parents: fields[1] ? fields[1].split(' ') : [],
+				author: fields[2],
+				email: fields[3],
+				date: parseInt(fields[4], 10),
+				message: fields.slice(5).join(SEPARATOR)
+			};
+			let position = commits.findIndex((commit) => commit.date < pinned.date);
+			if (position === -1) position = commits.length;
+			commits.splice(position, 0, pinned);
+		}
 	}
 
 	/**

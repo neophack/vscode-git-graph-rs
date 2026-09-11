@@ -2,7 +2,7 @@
 	"name": "git-graph-rs",
 	"displayName": "%displayName%",
 	"description": "%extension.description%",
-	"version": "1.0.22",
+	"version": "1.0.23",
 	"license": "MIT",
 	"private": true,
 	"publisher": "neophack",
@@ -39,18 +39,34 @@
 		"build:native:release": "node scripts/build-addon.mjs --release",
 		"build:ts": "tsc -p tsconfig.json",
 		"compile-src": "tsc -p ./src && node scripts/package-src.js",
-		"compile-web": "tsc -p ./web && node scripts/package-web.js && node scripts/package-highlight.js",
-		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug && node scripts/package-highlight.js debug",
+		"compile-web": "tsc -p ./web && node scripts/package-web.js && node scripts/package-highlight.js && node scripts/package-markdown.js",
+		"compile-web-debug": "tsc -p ./web && node scripts/package-web.js debug && node scripts/package-highlight.js debug && node scripts/package-markdown.js debug",
 		"clean": "node scripts/clean.js",
 		"compile": "npm run clean && npm run compile-src && npm run compile-web",
 		"package": "vsce package --baseContentUrl https://example.invalid --baseImagesUrl https://example.invalid",
 		"test": "npm run test:rust && npm run test:node",
 		"test:rust": "cargo test --workspace",
 		"test:node": "node scripts/run-tests.mjs",
+		"test:node:cov": "c8 node scripts/run-tests.mjs",
 		"bench": "node scripts/bench.mjs",
 		"bench:all": "node scripts/bench.mjs --all",
 		"analyze-log": "node scripts/analyze-log.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+	},
+	"c8": {
+		"all": true,
+		"include": ["out/**"],
+		"reporter": ["text", "lcov"],
+		"report-dir": "coverage",
+		"exclude": [
+			"coverage/**",
+			"media/**",
+			"scripts/**",
+			"tests/**",
+			"out/types/**",
+			"web/**",
+			"**/*.d.ts"
+		]
 	},
 	"dependencies": {
 		"iconv-lite": "0.5.0"
@@ -61,9 +77,11 @@
 		"@types/node": "^8.10.66",
 		"@types/vscode": "1.38.0",
 		"@vscode/vsce": "^2.19.0",
+		"c8": "^12.0.0",
 		"esbuild": "^0.25.12",
 		"highlight.js": "^11.12.0",
 		"jsdom": "^29.1.1",
+		"markdown-it": "^12.3.2",
 		"sharp": "^0.35.3",
 		"typescript": "^5.4.0"
 	},
@@ -327,6 +345,14 @@
 								"reset": {
 									"type": "boolean",
 									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.reset.title%"
+								},
+								"fixup": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.fixup.title%"
+								},
+								"squash": {
+									"type": "boolean",
+									"title": "%config.git-graph-rs.contextMenuActionsVisibility.commit.squash.title%"
 								},
 								"copyHash": {
 									"type": "boolean",
@@ -804,6 +830,11 @@
 					"type": "boolean",
 					"default": false,
 					"description": "%config.git-graph-rs.dialog.rebase.launchInteractiveRebase.description%"
+				},
+				"git-graph-rs.dialog.rebase.autosquash": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.dialog.rebase.autosquash.description%"
 				},
 				"git-graph-rs.dialog.resetCurrentBranchToCommit.mode": {
 					"type": "string",

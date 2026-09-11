@@ -12,6 +12,27 @@ function getRebaseActionOnName(actionOn: GG.RebaseActionOn): string {
 	return actionOn === GG.RebaseActionOn.Branch ? strings.actionOnBranch : strings.actionOnCommit;
 }
 
+/**
+ * Fire a conflict-prediction probe (a single `git merge-tree`, no working-tree side effects) for
+ * a merge/rebase dialog that is about to be shown. The dialog opens immediately without waiting
+ * for this - it is advisory, not blocking - and the result (if it still applies once it arrives,
+ * see the `predictConflicts` case in `handleResponseMessage`) is patched into the
+ * `#predictedConflicts` placeholder already present in the dialog's message HTML.
+ */
+function requestConflictPrediction(view: GitGraphView, ours: string, theirs: string) {
+	sendMessage({ command: 'predictConflicts', repo: view.currentRepo, ours: ours, theirs: theirs });
+}
+
+/**
+ * A hidden placeholder, patched in place once the conflict prediction for this dialog arrives.
+ * `ours`/`theirs` are stashed as data attributes so a response that arrives after the user has
+ * already closed this dialog and opened a different one (for a different ref pair) is recognised
+ * as stale and ignored, rather than patching conflict data onto the wrong dialog.
+ */
+function predictedConflictsPlaceholder(ours: string, theirs: string): string {
+	return '<div id="predictedConflicts" data-ours="' + escapeHtml(ours) + '" data-theirs="' + escapeHtml(theirs) + '" style="display:none"></div>';
+}
+
 function addTagAction(view: GitGraphView, hash: string, initialName: string, initialType: GG.TagType, initialMessage: string, initialPushToRemote: string | null, target: DialogTarget & CommitTarget, isInitialLoad: boolean = true) {
 
 	let mostRecentTagsIndex = -1;
@@ -275,7 +296,9 @@ function mergeAction(view: GitGraphView, obj: string, name: string, actionOn: GG
 
 	const actionOnName = getMergeActionOnName(actionOn);
 
-	dialog.showForm(formatStr(strings.mergeConfirm, actionOnName, escapeHtml(name), view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain), [
+	requestConflictPrediction(view, 'HEAD', obj);
+
+	dialog.showForm(formatStr(strings.mergeConfirm, actionOnName, escapeHtml(name), view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain) + predictedConflictsPlaceholder('HEAD', obj), [
 
 		{ type: DialogInputType.Checkbox, name: strings.noFastForwardCheckbox, value: view.config.dialogDefaults.merge.noFastForward },
 
@@ -294,17 +317,21 @@ function mergeAction(view: GitGraphView, obj: string, name: string, actionOn: GG
 
 function rebaseAction(view: GitGraphView, obj: string, name: string, actionOn: GG.RebaseActionOn, target: DialogTarget & (CommitTarget | RefTarget)) {
 
-	dialog.showForm(formatStr(strings.rebaseConfirm, view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain, getRebaseActionOnName(actionOn), escapeHtml(name)), [
+	requestConflictPrediction(view, 'HEAD', obj);
+
+	dialog.showForm(formatStr(strings.rebaseConfirm, view.gitBranchHead !== null ? '<b><i>' + escapeHtml(view.gitBranchHead) + '</i></b>' + strings.currentBranchSuffix : strings.currentBranchPlain, getRebaseActionOnName(actionOn), escapeHtml(name)) + predictedConflictsPlaceholder('HEAD', obj), [
 
 		{ type: DialogInputType.Checkbox, name: strings.interactiveRebaseCheckbox, value: view.config.dialogDefaults.rebase.interactive },
 
-		{ type: DialogInputType.Checkbox, name: strings.ignoreDateCheckbox, value: view.config.dialogDefaults.rebase.ignoreDate, info: strings.ignoreDateInfo }
+		{ type: DialogInputType.Checkbox, name: strings.ignoreDateCheckbox, value: view.config.dialogDefaults.rebase.ignoreDate, info: strings.ignoreDateInfo },
+
+		{ type: DialogInputType.Checkbox, name: strings.autosquashRebaseCheckbox, value: view.config.dialogDefaults.rebase.autosquash, info: strings.autosquashRebaseInfo }
 
 	], strings.yesRebase, (values) => {
 
 		let interactive = <boolean>values[0];
 
-		runAction({ command: 'rebase', repo: view.currentRepo, obj: obj, actionOn: actionOn, ignoreDate: <boolean>values[1], interactive: interactive }, interactive ? strings.launchingInteractiveRebase : formatStr(strings.rebasingOnActionOn, getRebaseActionOnName(actionOn)));
+		runAction({ command: 'rebase', repo: view.currentRepo, obj: obj, actionOn: actionOn, ignoreDate: <boolean>values[1], interactive: interactive, autosquash: <boolean>values[2] }, interactive ? strings.launchingInteractiveRebase : formatStr(strings.rebasingOnActionOn, getRebaseActionOnName(actionOn)));
 
 	}, target);
 

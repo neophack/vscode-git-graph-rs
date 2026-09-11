@@ -47,6 +47,8 @@ declare global {
 		 * happens to be implemented - can never make the panel visibly "flash" again.
 		 */
 		entered: boolean;
+		/** Whether the message body is currently rendered as Markdown (vs. plain/inline-formatted) - only meaningful when `hasMarkdown()` offers the toggle at all. Defaults to TRUE (rendered). */
+		showMarkdown: boolean;
 		/**
 		 * The deferred `+N/-M` line counts of the file list. The details arrive without them (every
 		 * file costs two blob reads, which dominates the load of a many-file commit); the paths
@@ -157,6 +159,35 @@ declare global {
 	interface RefTarget extends CommitTarget {
 		ref: string;
 	}
+
+
+	/* markdown-it (media/vendor/markdown-it.min.js, loaded before out.min.js - see
+	   markdown-entry.js / package-markdown.js): a minimal hand-written ambient type covering only
+	   the token shape `web/markdownRenderer.ts` actually consumes, not markdown-it's full public
+	   surface. Verified against the real library (markdown-it 12.3.2, already vendored
+	   transitively via @vscode/vsce) rather than assumed from documentation alone. */
+
+	interface MarkdownItToken {
+		readonly type: string;
+		/** +1 = opening a container (e.g. `heading_open`), -1 = closing it, 0 = a leaf token. */
+		readonly nesting: -1 | 0 | 1;
+		/** The rendered tag this token corresponds to, e.g. `h1`, `p`, `ul`, `a` ('' for `inline`/`text`). */
+		readonly tag: string;
+		/** Present on `fence` (the code) and `inline` (the raw source text of the inline run). */
+		readonly content: string;
+		/** Only on `fence`: the info string after the opening \`\`\` (typically a language name). */
+		readonly info: string;
+		/** Only on `inline`: this token's own nested flat token stream (walked the same way as the top-level one). */
+		readonly children: ReadonlyArray<MarkdownItToken> | null;
+		/** True on `paragraph_open`/`paragraph_close` inside a "tight" list (no blank lines between items) - the wrapping tag should be omitted for these. */
+		readonly hidden: boolean;
+		/** Reads an attribute set on this token (e.g. `href` on `link_open`, `src`/`alt` on `image`, `start` on `ordered_list_open`), or NULL if absent. Most are strings; `start` comes back as a number. */
+		attrGet(name: string): string | number | null;
+	}
+
+	const markdownit: {
+		parse(src: string, env: object): MarkdownItToken[];
+	};
 }
 
 export as namespace GG;
