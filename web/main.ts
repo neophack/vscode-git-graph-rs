@@ -383,6 +383,9 @@ class GitGraphView {
 		this.renderFilterButton();
 		closeCommitDetails(this, false);
 		this.settingsWidget.close();
+		this.reflogView.close();
+		this.worktreeDialog.close();
+		this.statisticsView.close();
 		this.saveState();
 		this.refresh(true);
 	}

@@ -39,6 +39,14 @@ class WorktreeDialog {
 		if (!this.isOpen) return;
 		this.isOpen = false;
 		this.widgetElem.classList.remove(CLASS_ACTIVE);
+		// The widget is hidden by sliding up to top:-158px: the content must be cleared so the
+		// widget collapses below that offset, otherwise the lower part of a tall worktree list
+		// stays visible on screen (the same approach SettingsWidget.close takes)
+		this.contentElem.innerHTML = '';
+	}
+
+	public isVisible() {
+		return this.isOpen;
 	}
 
 	/** Re-request the worktree list, e.g. after a refresh-triggering action. */

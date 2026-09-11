@@ -54,7 +54,7 @@ class ReflogView {
 		closeBtn.addEventListener('click', () => this.close());
 	}
 
-	public isActive() {
+	public isVisible() {
 		return this.isOpen;
 	}
 
@@ -71,6 +71,10 @@ class ReflogView {
 		if (!this.isOpen) return;
 		this.isOpen = false;
 		this.widgetElem.classList.remove(CLASS_ACTIVE);
+		// The widget is hidden by sliding up to top:-158px: the content must be cleared so the
+		// widget collapses below that offset, otherwise the lower part of a tall entry list stays
+		// visible on screen (the same approach SettingsWidget.close takes)
+		this.contentElem.innerHTML = '';
 	}
 
 	/** Re-request the currently shown page, e.g. after a refresh-triggering action. */
