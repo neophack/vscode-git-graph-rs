@@ -79,29 +79,29 @@ steady-state interaction, not the first cold open).
 
 Environment: Windows 11, Intel i7-14650HX, Node 24, git 2.50.1, extension 1.0.23.
 
-### This repository (124 commits, 23 tags, a real working tree with uncommitted changes)
+### A real repository (129 commits, 23 tags, uncommitted changes in the working tree)
 
 | operation | git CLI | shipped | speedup |
 |---|---:|---:|---:|
-| **view load** (repoInfo + first page — what the user waits for) | 440.1 ms | 53.1 ms | **8.3×** |
-| getRepoInfo (branches/tags/remotes/stashes) | 227.3 ms | 9.2 ms | **24.8×** |
-| getCommits (a page of the graph) | 315.7 ms | 64.5 ms | **4.9×** |
-| getRefs | 177.3 ms | 8.8 ms | **20.2×** |
-| getCommitDetails | 176.7 ms | 1.9 ms | **95.3×** |
-| getLineCounts (the details view's deferred counts) | 62.4 ms | 8.1 ms | **7.7×** |
-| getCommitBodies (50 commits) | 79.3 ms | 6.9 ms | **11.5×** |
-| getCommitSummaries (50 commits) | 114.0 ms | 10.3 ms | **11.0×** |
-| getCommitSubject | 61.6 ms | 0.5 ms | **123.7×** |
-| searchHistory ('' matches everything) | 92.6 ms | 24.5 ms | **3.8×** |
-| getConfig | 104.5 ms | 0.2 ms | **453×** |
-| getStashes | 66.7 ms | 0.4 ms | **155×** |
-| getUncommittedChangeCount | 69.6 ms | 16.4 ms | **4.2×** |
-| compareCommits | 94.3 ms | 24.6 ms | **3.8×** |
-| countCommitsBefore | 77.1 ms | 30.3 ms | **2.5×** |
-| getCommitFile | 71.4 ms | 0.8 ms | **84.3×** |
-| getCommitFileDiff | 136.7 ms | 4.0 ms | **34.4×** |
-| getCurrentBranchUpstream | 58.9 ms | 0.6 ms | **101×** |
-| getRemoteUrl | 65.1 ms | 0.3 ms | **240×** |
+| **view load** (repoInfo + first page — what the user waits for) | 331.1 ms | 69.0 ms | **4.8×** |
+| getRepoInfo (branches/tags/remotes/stashes) | 170.9 ms | 11.3 ms | **15.1×** |
+| getCommits (a page of the graph) | 203.9 ms | 63.8 ms | **3.2×** |
+| getRefs | 141.2 ms | 13.6 ms | **10.4×** |
+| getCommitDetails | 129.1 ms | 3.3 ms | **38.7×** |
+| getLineCounts (the details view's deferred counts) | 46.7 ms | 4.4 ms | **10.6×** |
+| getCommitBodies (50 commits) | 76.9 ms | 12.2 ms | **6.3×** |
+| getCommitSummaries (50 commits) | 116.5 ms | 11.0 ms | **10.6×** |
+| getCommitSubject | 41.5 ms | 0.7 ms | **60.6×** |
+| searchHistory ('' matches everything) | 74.8 ms | 36.2 ms | **2.1×** |
+| getConfig | 68.2 ms | 0.2 ms | **432×** |
+| getStashes | 47.3 ms | 0.5 ms | **94.3×** |
+| getUncommittedChangeCount | 59.7 ms | 15.1 ms | **3.9×** |
+| compareCommits | 64.2 ms | 25.5 ms | **2.5×** |
+| countCommitsBefore | 70.7 ms | 35.1 ms | **2.0×** |
+| getCommitFile | 45.3 ms | 1.3 ms | **36.2×** |
+| getCommitFileDiff | 98.1 ms | 4.0 ms | **24.6×** |
+| getCurrentBranchUpstream | 45.4 ms | 0.7 ms | **68.3×** |
+| getRemoteUrl | 42.6 ms | 0.1 ms | **458×** |
 
 ### Synthetic repository (10 000 commits, 1 000 annotated tags, one ~9.5 MiB pack)
 
@@ -133,17 +133,17 @@ the working tree without spawning anything, so both sides take ~0.1 ms.
 
 ### What the numbers say
 
-- **The view load — the number the user waits for on every open — is 4–8× faster.** Page size
+- **The view load — the number the user waits for on every open — is 4–5× faster.** Page size
   is capped at 300 commits, so the shipped backend's cost stays roughly flat as the history grows,
   while the CLI's is dominated by ref scanning and pack reads on top of several process spawns.
-- **Single-object reads win by two orders of magnitude** (`getConfig`, `getRemoteUrl`,
+- **Single-object reads win by one to two orders of magnitude** (`getConfig`, `getRemoteUrl`,
   `getCommitSubject`, `getStashes`, `getCurrentBranchUpstream`, `getCommitDetails`). On the CLI
-  side each costs one `git` spawn — a ~45–70 ms floor on Windows — while the warm repository
+  side each costs one `git` spawn — a ~40–70 ms floor on Windows — while the warm repository
   handle answers in well under a millisecond. The gap does not narrow as the repository grows,
   because the spawn is the cost.
 - **Full-history walks are where the two come closest** (`searchHistory` with a pattern that
   matches everything, `countCommitsBefore`): the work is proportional to the history and `git`'s
-  walker is highly optimised. The shipped backend still leads, by 2–4× rather than 100×.
+  walker is highly optimised. The shipped backend still leads, by about 2× rather than 100×.
 
 ### Why it is faster
 
