@@ -40,7 +40,7 @@ pub fn repo_info(
 
     Ok(GitRepoInfo {
         branches: snapshot.branches,
-        head: snapshot.ref_data.head,
+        head: snapshot.branch_head,
         remotes: repo.remote_names(),
         stashes,
         tags: snapshot.tag_names,

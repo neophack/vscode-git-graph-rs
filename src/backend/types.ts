@@ -93,6 +93,7 @@ export interface RefReadOptions {
 
 export interface GitRepoInfo {
 	readonly branches: ReadonlyArray<string>;
+	/** The checked-out branch's short name, or NULL when HEAD is detached. */
 	readonly head: string | null;
 	readonly remotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;

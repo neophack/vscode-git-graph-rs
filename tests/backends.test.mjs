@@ -216,6 +216,7 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.equal(a.error, null);
 		assert.equal(b.error, null);
 		assert.equal(a.head, b.head);
+		assert.equal(a.head, 'main');
 		assert.deepEqual([...a.branches].sort(), [...b.branches].sort());
 		assert.deepEqual([...a.remotes], [...b.remotes]);
 		assert.deepEqual([...a.tags], [...b.tags]);
@@ -1152,7 +1153,7 @@ describe('reftable repositories', () => {
 		const backend = createBackend({ onFallback: (method) => fallbacks.push(method) });
 		const info = await backend.getRepoInfo(repoPath, { showRemoteBranches: true, showStashes: true });
 		assert.deepEqual([...info.branches], ['main']);
-		assert.equal(info.head, git(['rev-parse', 'HEAD']).trim());
+		assert.equal(info.head, 'main');
 
 		const options = {
 			maxCommits: 100,
@@ -1164,7 +1165,7 @@ describe('reftable repositories', () => {
 		const graph = await backend.getCommits(repoPath, options);
 		assert.equal(graph.error, null);
 		assert.equal(graph.commits.length, 1);
-		assert.equal(graph.commits[0].hash, info.head);
+		assert.equal(graph.commits[0].hash, git(['rev-parse', 'HEAD']).trim());
 		assert.deepEqual([...graph.commits[0].heads], ['main']);
 		assert.ok(fallbacks.includes('getRepoInfo') && fallbacks.includes('getCommits'));
 	});

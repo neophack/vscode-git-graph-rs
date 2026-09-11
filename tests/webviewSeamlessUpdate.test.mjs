@@ -23,6 +23,17 @@ import { describe, it } from 'node:test';
 import { ROW_HEIGHT, bootView, commit } from './webviewHarness.mjs';
 
 describe('seamless updates while viewing a commit in the middle of the history', () => {
+	it('renders the checked-out branch as the leftmost branch label', async () => {
+		const h = await bootView(3);
+		h.state.history[0] = { ...h.state.history[0], heads: ['another-branch', 'main'] };
+		h.dispatch({ command: 'refresh' });
+		await h.pump();
+
+		const labels = [...h.rows()[0].querySelectorAll('.gitRef.head')];
+		assert.deepEqual(labels.map((label) => label.dataset.name), ['main', 'another-branch']);
+		assert.ok(labels[0].classList.contains('active'));
+	});
+
 	it('boots, virtualizes a 300-commit history and settles at the scrolled position', async () => {
 		const h = await bootView(300);
 		await h.scrollTo(150);

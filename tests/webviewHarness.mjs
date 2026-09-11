@@ -159,6 +159,7 @@ export async function bootView(total, options = {}) {
 	const state = {
 		history: history,
 		head: history[0].hash,
+		branchHead: options.branchHead ?? 'main',
 		uncommitted: null, // null => working tree clean, no Uncommitted Changes row
 		uncommittedCount: null,
 		/* Non-null: the repository is LONGER than the loaded window (initialLoadCommits, 300 by
@@ -253,7 +254,7 @@ export async function bootView(total, options = {}) {
 	};
 	const respond = async (message) => {
 		if (message.command === 'loadRepoInfo') {
-			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null });
+			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.branchHead, remotes: [], stashes: [], isRepo: true, error: null });
 		} else if (message.command === 'loadCommits') {
 			/* One merged response. The extension's real multi-stage delivery (a first response
 			 * without the working-tree status, then the Uncommitted Changes row and its count in a

@@ -699,7 +699,7 @@ fn reports_the_repository_info_the_view_opens_with() {
     };
     let info = graph::repo_info(&engine, &options, true).unwrap();
 
-    assert_eq!(info.head.as_deref(), Some(head.as_str()));
+    assert_eq!(info.head.as_deref(), Some("main"));
     assert_eq!(info.remotes, vec!["origin"]);
     assert_eq!(info.tags, vec!["v1.0"]);
     assert!(info.branches.contains(&"main".to_string()));

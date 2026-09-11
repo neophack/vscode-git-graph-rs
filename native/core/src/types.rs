@@ -120,6 +120,7 @@ pub struct RefReadOptions {
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoInfo {
     pub branches: Vec<String>,
+    /// The checked-out branch's short name, or `None` when HEAD is detached.
     pub head: Option<String>,
     pub remotes: Vec<String>,
     pub stashes: Vec<GitStash>,

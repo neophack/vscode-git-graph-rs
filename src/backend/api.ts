@@ -55,7 +55,7 @@ export interface GitBackend {
 	/** Release every repository handle. */
 	closeAllRepositories(): void;
 
-	/** The branches, tags, remotes, stashes and HEAD the view opens with. */
+	/** The branches, checked-out branch, tags, remotes and stashes the view opens with. */
 	getRepoInfo(repo: string, options?: RefReadOptions): Promise<GitRepoInfo>;
 
 	/** A page of the graph. */
