@@ -2467,6 +2467,7 @@ function getErrorMessage(error: Error | null, stdoutBuffer: Buffer, stderr: stri
 
 interface GitBranchData {
 	branches: string[];
+	/** The checked-out branch's short name, or null when HEAD is detached. */
 	head: string | null;
 	error: ErrorInfo;
 }

@@ -495,6 +495,7 @@ export interface ResponseLoadRepoInfo extends ResponseWithErrorInfo {
 	readonly command: 'loadRepoInfo';
 	readonly refreshId: number;
 	readonly branches: ReadonlyArray<string>;
+	/** The checked-out branch's short name, or null when HEAD is detached. */
 	readonly head: string | null;
 	readonly remotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;

@@ -105,7 +105,7 @@ export class CliBackend implements GitBackend {
 			]);
 			return {
 				branches: refs.branches,
-				head: refs.refData.head,
+				head: refs.branchHead,
 				remotes,
 				stashes,
 				tags: refs.tagNames,
