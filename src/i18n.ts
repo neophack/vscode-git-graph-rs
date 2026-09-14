@@ -58,7 +58,6 @@ const EN = {
 
 	filterByFileUndetermined: 'Unable to determine the file to filter the Git Graph view by.',
 	filterByFileNotInRepo: 'The file "{0}" is not within a repository known to Git Graph.',
-	filterByFileMultipleRepos: 'All selected files must be within the same repository.',
 	repoAdded: 'The repository "{0}" was added to Git Graph.',
 	repoAddFailed: '{0} Therefore it could not be added to Git Graph.',
 	folderNotInWorkspace: 'The folder "{0}" is not within the opened Visual Studio Code workspace, and therefore could not be added to Git Graph.',
@@ -261,7 +260,6 @@ const ZH_CN: Record<MessageKey, string> = {
 
 	filterByFileUndetermined: '无法确定用于过滤 Git Graph 视图的文件。',
 	filterByFileNotInRepo: '文件“{0}”不在 Git Graph 已知的仓库中。',
-	filterByFileMultipleRepos: '所有选中的文件必须位于同一仓库中。',
 	repoAdded: '已将仓库“{0}”添加到 Git Graph。',
 	repoAddFailed: '{0} 因此无法将其添加到 Git Graph。',
 	folderNotInWorkspace: '文件夹“{0}”不在当前打开的 Visual Studio Code 工作区内，因此无法添加到 Git Graph。',

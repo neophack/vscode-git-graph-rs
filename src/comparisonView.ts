@@ -632,11 +632,14 @@ export class CommitComparisonView extends Disposable {
 		return { oldRanges: changedTokenRanges(oldTokens, oldChanged), newRanges: changedTokenRanges(newTokens, newChanged) };
 	}
 	// Converts a per-token changed[] flag array into merged character ranges within the joined text.
+	// Whitespace-only tokens never enter a range: a change that is entirely whitespace (indent or
+	// trailing-space edits) would otherwise render the <mark> tint as a bare coloured bar with no
+	// visible text under it - VS Code's diff editor shows no word highlight for such lines either.
 	function changedTokenRanges(tokens, changed) {
 		const ranges = [];
 		let offset = 0, rangeStart = -1;
 		for (let i = 0; i < tokens.length; i++) {
-			if (changed[i]) {
+			if (changed[i] && !/^\s+$/.test(tokens[i])) {
 				if (rangeStart === -1) rangeStart = offset;
 			} else if (rangeStart !== -1) {
 				ranges.push({ start: rangeStart, end: offset });

@@ -809,3 +809,35 @@ fn keeps_repository_handles_open_across_requests() {
     manager.close(repo.path());
     assert_eq!(manager.open_count(), 0);
 }
+
+#[test]
+fn flags_the_unmerged_paths_of_a_stopped_merge() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("shared.txt", "base\n", "base");
+    repo.commit_file("other.txt", "untouched\n", "sibling");
+    repo.git(&["checkout", "--quiet", "-b", "feature"]);
+    repo.commit_file("shared.txt", "feature\n", "feature change");
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.commit_file("shared.txt", "main\n", "main change");
+    repo.write("other.txt", "edited\n");
+    // Both sides changed the same line: the merge stops with `shared.txt` unmerged.
+    repo.git_allow_failure(&["merge", "feature"]);
+
+    let engine = open(&repo);
+    let changes = status::scm_changes(&engine).unwrap();
+    let by_path = |path: &str| {
+        changes
+            .iter()
+            .find(|change| change.path == path)
+            .expect("missing change")
+    };
+    assert!(
+        by_path("shared.txt").conflicted,
+        "the merge stopped on shared.txt"
+    );
+    assert!(
+        !by_path("other.txt").conflicted,
+        "an ordinary edit is not a conflict"
+    );
+}

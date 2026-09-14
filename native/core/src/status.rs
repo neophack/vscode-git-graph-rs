@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use gix::bstr::ByteSlice;
+use serde::Serialize;
 
 use crate::error::{Result, ResultExt};
 use crate::repository::Repo;
@@ -26,6 +27,9 @@ struct PathState {
     /// The change between the index and the working tree (git's second column).
     unstaged: Option<GitFileStatus>,
     untracked: bool,
+    /// The index holds conflict stages for the path (a merge / rebase / cherry-pick stopped on
+    /// it); git shows it as `UU` / `AA` / … and lists it under "Unmerged paths".
+    conflicted: bool,
     /// The pre-rename path, when `staged` is `Renamed` — the current path (the map key) is the
     /// destination, so the source has to be carried separately.
     old_path: Option<String>,
@@ -73,6 +77,7 @@ fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathSta
                     let state = states.entry(path).or_default();
                     state.unstaged = Some(status);
                     state.untracked |= untracked;
+                    state.conflicted |= is_conflict(&item);
                 }
             }
         }
@@ -100,6 +105,17 @@ fn classify_staged(change: &gix::diff::index::Change) -> (String, GitFileStatus,
             Some(source_location.to_string()),
         ),
     }
+}
+
+/// Whether an index-to-worktree finding is a path the index holds conflict stages for.
+fn is_conflict(item: &gix::status::index_worktree::Item) -> bool {
+    matches!(
+        item,
+        gix::status::index_worktree::Item::Modification {
+            status: gix::status::plumbing::index_as_worktree::EntryStatus::Conflict { .. },
+            ..
+        }
+    )
 }
 
 /// Classify one index-to-worktree finding, returning `None` for the ones that are not changes.
@@ -208,6 +224,48 @@ pub fn uncommitted_changes(repo: &Repo) -> Result<Vec<GitFileChange>> {
         });
     }
     Ok(changes)
+}
+
+/// One path as the Source Control view lists it: the staged and unstaged halves of its change
+/// kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScmChange {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub staged: Option<&'static str>,
+    pub unstaged: Option<&'static str>,
+    pub untracked: bool,
+    /// The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control
+    /// view lists it under "Merge Changes" and opens it in the merge editor.
+    pub conflicted: bool,
+}
+
+fn status_name(status: GitFileStatus) -> &'static str {
+    match status {
+        GitFileStatus::Added => "added",
+        GitFileStatus::Modified => "modified",
+        GitFileStatus::Deleted => "deleted",
+        GitFileStatus::Renamed => "renamed",
+        GitFileStatus::Untracked => "untracked",
+    }
+}
+
+/// The working tree's changes as the Source Control view lists them, staged and unstaged halves
+/// separate, so it can fill its two sections without a second read.
+pub fn scm_changes(repo: &Repo) -> Result<Vec<ScmChange>> {
+    let states = scan(repo, true)?;
+    Ok(states
+        .into_iter()
+        .map(|(path, state)| ScmChange {
+            path,
+            old_path: state.old_path,
+            staged: state.staged.map(status_name),
+            unstaged: state.unstaged.map(status_name),
+            untracked: state.untracked,
+            conflicted: state.conflicted,
+        })
+        .collect())
 }
 
 /// Is anything uncommitted at all?

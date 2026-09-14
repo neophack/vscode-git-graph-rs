@@ -380,8 +380,9 @@ export class CommandManager extends Disposable {
 
 	/**
 	 * The method run when the `git-graph-rs.filterByFile` command is invoked.
-	 * Opens the Git Graph view filtered to only show commits that modified any of the specified
-	 * files (multiple selected files are combined into a comma-separated filter).
+	 * Opens the Git Graph view filtered to only show commits that modified the specified file.
+	 * In VS Code the command stays single-file: when the explorer passes a multi-selection,
+	 * only the first entry is used (multi-file filtering is a Git Graph Studio extension).
 	 * @param arg The argument passed to the command (file URIs, or objects containing file URIs).
 	 */
 	private async filterByFile(arg: any) {
@@ -397,22 +398,12 @@ export class CommandManager extends Disposable {
 			return;
 		}
 
-		// Compute the paths of the files relative to the repository root (using forward slashes, as
-		// expected by git), joined into a comma-separated filter (paths containing commas are not
-		// supported by this filter syntax)
-		const filterPaths: string[] = [];
-		for (const uri of uris) {
-			const filePath = getPathFromUri(uri);
-			if (this.repoManager.getRepoContainingFile(filePath) !== repo) {
-				showErrorMessage(t('filterByFileMultipleRepos'));
-				return;
-			}
-			let filterPath = getPathFromStr(path.relative(repo, filePath));
-			if (filterPath === '') filterPath = '.';
-			if (!filterPaths.includes(filterPath)) filterPaths.push(filterPath);
-		}
+		// Compute the path of the file relative to the repository root (using forward slashes, as
+		// expected by git)
+		let filterPath = getPathFromStr(path.relative(repo, getPathFromUri(uris[0])));
+		if (filterPath === '') filterPath = '.';
 
-		GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, filterPath: filterPaths.join(',') });
+		GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, filterPath: filterPath });
 	}
 
 	/**

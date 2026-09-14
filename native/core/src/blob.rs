@@ -61,6 +61,43 @@ pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFil
 
 /* ---------- Single-file unified diff ---------- */
 
+/* ---------- File content in the index ---------- */
+
+/// Read one file's staged copy — what the index holds, between "Modified" and "Staged".
+///
+/// The same text/binary contract as [`commit_file`]: a blob that is binary or not valid UTF-8
+/// comes back with `contents: None`.
+pub fn index_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
+    let git = repo.borrow();
+    let index = git.index().git_ctx("Could not read the index")?;
+    let entry = index
+        .entry_by_path(file_path.as_bytes().into())
+        .ok_or_else(|| Error::not_found(format!("'{file_path}' is not in the index")))?;
+
+    let data = git
+        .find_blob(entry.id)
+        .git_ctx("Could not read the blob")?
+        .data
+        .to_vec();
+
+    if is_binary(&data) {
+        return Ok(CommitFile {
+            contents: None,
+            binary: true,
+        });
+    }
+    match String::from_utf8(data) {
+        Ok(contents) => Ok(CommitFile {
+            contents: Some(contents),
+            binary: false,
+        }),
+        Err(_) => Ok(CommitFile {
+            contents: None,
+            binary: true,
+        }),
+    }
+}
+
 /// The unified diff of one file between a commit and its first parent.
 ///
 /// Mirrors `git diff <parent> <commit> -- <file>`: a file the commit renamed is diffed across the
