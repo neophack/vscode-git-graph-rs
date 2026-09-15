@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-gix = { version = "0.87", default-features = true, features = [
+gix = { version = "0.87", default-features = false, features = [
     "revision",
     "blob-diff",
     "status",
@@ -15,6 +15,7 @@ gix = { version = "0.87", default-features = true, features = [
     "index",
     "parallel",
     "mailmap",
+    "sha1",
 ] }
 bstr = "1"
 thiserror.workspace = true
