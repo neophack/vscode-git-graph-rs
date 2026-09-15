@@ -25,6 +25,17 @@ and install it with `code --install-extension git-graph-rs-<version>.vsix`.
 Bug reports, feature requests and questions go to
 [the issue tracker](https://github.com/neophack/vscode-git-graph-rs/issues).
 
+## Git Graph Studio
+
+The engine in `native/core` is not confined to this extension: it is linked in-process into
+[Git Graph Studio](https://github.com/neophack/git-graph-studio), a standalone desktop
+application (Tauri 2 + TypeScript + Rust) that hosts it inside a VS Code-class workbench —
+a File Explorer with git status decoration, Source Control, a tabbed editor suite with
+split groups, an integrated terminal, a VSIX / `.ggx` extension platform and a CAN trace
+analyzer — with the Git Graph view served by this extension's webview, unchanged, behind an
+`acquireVsCodeApi` shim. Every repository read in the app crosses the same engine; writes go
+through the `git` CLI, as they do here.
+
 ## What this fork adds
 
 Beyond the Rust engine, these are new relative to the original
