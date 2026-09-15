@@ -186,10 +186,14 @@ describe('git-graph-rs.view', () => {
 describe('git-graph-rs.filterByFile', () => {
 	beforeEach(() => { doubles.repoManager.repos['/ws/repo'] = { name: null }; doubles.repoManager.repos['/ws/other'] = { name: null }; });
 
-	it('filters by the selected file(s), relative to the repository root', async () => {
+	it('filters by the first selected file, relative to the repository root', async () => {
 		vscode.runCommand('git-graph-rs.filterByFile', [vscode.Uri.file('/ws/repo/src/a.ts'), { resourceUri: vscode.Uri.file('/ws/repo/src/b.ts') }, { uri: vscode.Uri.file('/ws/repo/src/a.ts') }]);
 		await flush();
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', filterPath: 'src/a.ts,src/b.ts' });
+		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', filterPath: 'src/a.ts' });
+
+		vscode.runCommand('git-graph-rs.filterByFile', [vscode.Uri.file('/ws/other/b.ts'), vscode.Uri.file('/ws/repo/a.ts')]);
+		await flush();
+		assert.deepEqual(viewCalls[1][6], { repo: '/ws/other', filterPath: 'b.ts' });
 	});
 
 	it('uses "." for the repository root itself and falls back to the active editor', async () => {
@@ -203,7 +207,7 @@ describe('git-graph-rs.filterByFile', () => {
 		assert.deepEqual(viewCalls[1][6], { repo: '/ws/repo', filterPath: 'x.ts' });
 	});
 
-	it('reports when no file, a file outside any repository, or files from several repositories are given', async () => {
+	it('reports when no file or a file outside any repository is given', async () => {
 		vscode.runCommand('git-graph-rs.filterByFile', undefined);
 		await flush();
 		assert.equal(lastError(), t('filterByFileUndetermined'));
@@ -211,10 +215,6 @@ describe('git-graph-rs.filterByFile', () => {
 		vscode.runCommand('git-graph-rs.filterByFile', vscode.Uri.file('/elsewhere/a.ts'));
 		await flush();
 		assert.equal(lastError(), t('filterByFileNotInRepo', '/elsewhere/a.ts'));
-
-		vscode.runCommand('git-graph-rs.filterByFile', [vscode.Uri.file('/ws/repo/a.ts'), vscode.Uri.file('/ws/other/b.ts')]);
-		await flush();
-		assert.equal(lastError(), t('filterByFileMultipleRepos'));
 		assert.equal(viewCalls.length, 0);
 	});
 });
