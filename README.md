@@ -177,7 +177,7 @@ Four things account for the gap, each found by measuring rather than by guessing
 
 ## Architecture
 
-![Architecture](docs/architecture.svg)
+![Architecture](docs/architecture.png)
 
 Three rules hold the shape together:
 
