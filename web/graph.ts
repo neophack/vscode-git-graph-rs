@@ -774,9 +774,13 @@ class Graph {
 
 	private setDimensions(contentWidth: number, height: number) {
 		this.setSvgWidth(contentWidth);
-		this.svg.setAttribute('height', height.toString());
+		// The height is reconstructed from measured dimensions; whatever collapses the
+		// measurement (a view rendered from a zero-height layout) can leave it a hair below
+		// zero, and SVG rejects negative lengths outright - so it is clamped at zero here.
+		const svgHeight = Math.max(0, height);
+		this.svg.setAttribute('height', svgHeight.toString());
 		this.maskRect.setAttribute('width', contentWidth.toString());
-		this.maskRect.setAttribute('height', height.toString());
+		this.maskRect.setAttribute('height', svgHeight.toString());
 	}
 
 	private applyMaxWidth(contentWidth: number) {

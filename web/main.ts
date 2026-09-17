@@ -1485,10 +1485,20 @@ class GitGraphView {
 		this.config.graph.grid.expandY = expandedCommitElem !== null
 			? expandedCommitElem.getBoundingClientRect().height
 			: cdvHeight;
-		this.config.graph.grid.y = this.commits.length > 0 && this.tableElem.children.length > 0
+		// The row height is MEASURED from the rendered table (real rows can deviate from the
+		// configured graph.rowHeight), but a layout reporting no height - a hidden view
+		// (a backgrounded tab measures every clientHeight as 0) or a table not yet laid out -
+		// must not overwrite the last good grid: the graph's total height is reconstructed from
+		// these values, and reconstructing it from a zero measurement leaves floating point noise
+		// around zero, which SVG rejects outright once it tips negative. Keep the current grid
+		// (the configured one before the first measurable render) until a real layout is seen.
+		const measuredRowHeight = this.commits.length > 0 && this.tableElem.children.length > 0
 			? (this.tableElem.children[0].clientHeight - headerHeight - (expandedCommit !== null ? cdvHeight : 0) - metaRowsHeight) / this.commits.length
-			: this.config.graph.grid.y;
-		this.config.graph.grid.offsetY = headerHeight + this.config.graph.grid.y / 2;
+			: 0;
+		if (measuredRowHeight > 0) {
+			this.config.graph.grid.y = measuredRowHeight;
+			this.config.graph.grid.offsetY = headerHeight + measuredRowHeight / 2;
+		}
 
 		this.graph.render(expandedCommit, metaExpansions, this.renderedRange);
 	}
