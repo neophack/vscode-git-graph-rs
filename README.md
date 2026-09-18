@@ -241,6 +241,75 @@ when the user confirms. The guarded operations:
 - **A force push.** The commits the remote has that the push does not contain become unreachable
   *there*. `--force-with-lease` is the guarded variant and is not confirmed a second time.
 
+## Automation testing
+
+Every control in the Git Graph view — buttons, context menus, dialogs, widgets — can drive and
+verify itself, with per-action timings, to answer two questions about a real install: *does
+every control still work?* and *how long does each take?* Two ways to run it, both built in.
+
+### The button (no setup)
+
+Open the Git Graph view and click the **beaker button** in the editor title bar (command
+*Git Graph RS: Run Automation Test*). The extension runs the whole suite in-process — real DOM
+clicks through the view itself, no external driver, no port — shows progress in a notification,
+and opens a **report page** when it finishes: summary cards, a per-action table with timings
+and pass/fail/skip badges, a filter box, and **Save as HTML / Save as JSON** buttons.
+
+The **read suite** (no repository changes) runs against any repository. The **write suite**
+(real checkouts, merges, tags, stashes, …) runs only when the active repository is a fixture
+clone carrying the `.gg-fixture` marker — the clone is rebuilt from its bare remote first, so
+the button can be pressed forever without touching a real repository. Build one with:
+
+```sh
+node scripts/automation/fixture.mjs --out /tmp/gg-fixture --commits 20000
+# open /tmp/gg-fixture/fixture in VS Code, then press the button
+```
+
+### The remote interface (for CI and debugging)
+
+The same suite speaks JSON-RPC 2.0, newline-delimited, over a localhost TCP socket — an
+external test driver can connect, run actions, and collect timings:
+
+```sh
+# 1. enable it (VS Code setting, or settings.json) — it listens on 127.0.0.1 only
+"code": { "git-graph-rs.automationPort": 4711 }
+
+# 2. run the driver against the open view — every action, timed, verified, tabulated
+node scripts/automation/client.mjs --port 4711 --repo /tmp/gg-fixture/fixture --suite all --repeat 3
+```
+
+The driver speaks JSON-RPC 2.0, newline-delimited, over the socket: `gg.ping`, `gg.status`,
+`gg.openView`, `gg.catalog`, `gg.run {id, mode: 'ui'|'request'}`, `gg.invoke`, `gg.query`,
+`gg.eval`, `gg.stats` (full list and semantics: `src/automation/server.ts`). Each catalogued
+action runs two ways:
+
+- **UI mode** — the real DOM path: the in-page shim (injected with the page, `out.min.js`
+  untouched) clicks the actual button / right-clicks the actual row / fills and confirms the
+  actual dialog, so the timing includes webview rendering. Menu items are matched by their
+  visible English text.
+- **request mode** — the same action's request message(s) injected straight into the extension
+  host's message pipeline: same backend path a click takes, without rendering in the loop, for
+  stable engine-vs-CLI timings.
+
+A run is *verified*: the expected host responses must all arrive (the driver auto-confirms the
+data-loss warning dialog exactly like a user would), and write actions additionally check the
+resulting repository state (HEAD moved, branch gone, ...). `gg.run` returns per-response timings;
+`gg.stats` aggregates min / p50 / p90 / max per action.
+
+Safety rails, because this interface can drive real writes:
+
+- Off by default; only `127.0.0.1`; one driver connection at a time.
+- Data-loss-guarded operations still require the normal confirm — the driver answers it, and the
+  confirmation round trip is part of the measured flow.
+- The `write` suite only runs against a clone carrying the `.gg-fixture` marker, and the driver
+  re-clones from the bare remote before every iteration, so write actions can run forever without
+  destroying anything.
+- `gg.eval` executes JavaScript in the webview — localhost debugging power, treat the port
+  accordingly and leave it off when not testing.
+
+`tests/automationServer.test.mjs` drives the whole thing over a real socket against the real
+compiled extension and webview in CI.
+
 ## Building
 
 Requires Rust 1.85+ and Node 18+. There is no node-gyp, no Python and no download of Node
