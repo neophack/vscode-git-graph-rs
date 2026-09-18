@@ -24,6 +24,8 @@ const EN = {
 	noGitRunsOnEngine: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).',
 
 	/* Command palette / quick picks & notifications */
+	automationTestRunning: 'Running the automation test suite — the Git Graph view drives itself; the report opens when it finishes.',
+	automationTestFailedToStart: 'Unable to run the automation test suite: {0}',
 	selectRepoForCommand: 'Select the repository to run the command on:',
 	leavingCommitsBehind: 'Data loss risk: HEAD is currently detached with {0} commit(s) that no branch, tag, remote or stash keeps reachable. Switching now leaves them behind, recoverable from the local reflog only until git gc prunes them. Create a branch at HEAD to keep them (a stash made on them keeps them too).',
 	leavingCommitsBehindProceed: 'Switch Anyway',
@@ -232,6 +234,8 @@ const ZH_CN: Record<MessageKey, string> = {
 	noGitRunsOnEngine: 'Git Graph RS：未找到 Git，将通过 Rust 引擎运行（查看、比较、搜索等全部可用；写入类操作需要安装 Git）。',
 
 	/* 命令面板 / 快速选择与通知 */
+	automationTestRunning: '正在运行自动化测试套件 —— Git Graph 视图将自行驱动所有操作，完成后自动打开报告。',
+	automationTestFailedToStart: '无法运行自动化测试套件：{0}',
 	selectRepoForCommand: '选择要在其上运行命令的仓库：',
 	unableToAmendLastCommit: '无法修正上一次提交：{0}',
 	amendedLastCommit: '已修正“{0}”中的上一次提交。',

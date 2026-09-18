@@ -155,6 +155,13 @@
 			},
 			{
 				"category": "Git Graph RS",
+				"command": "git-graph-rs.runAutomationTest",
+				"title": "%command.git-graph-rs.runAutomationTest.title%",
+				"icon": "$(beaker)",
+				"enablement": "git-graph-rs:codiconsSupported"
+			},
+			{
+				"category": "Git Graph RS",
 				"command": "git-graph-rs.amendLastCommit",
 				"title": "Amend Last Commit",
 				"icon": "$(edit)"
@@ -206,6 +213,14 @@
 			"type": "object",
 			"title": "%config.title%",
 			"properties": {
+				"git-graph-rs.automationPort": {
+					"type": "number",
+					"default": 0,
+					"minimum": 0,
+					"maximum": 65535,
+					"description": "%config.git-graph-rs.automationPort.description%",
+					"markdownDescription": "%config.git-graph-rs.automationPort.markdownDescription%"
+				},
 				"git-graph-rs.commitDetailsView.autoCenter": {
 					"type": "boolean",
 					"default": true,
@@ -1409,6 +1424,13 @@
 			}
 		},
 		"menus": {
+			"editor/title": [
+				{
+					"command": "git-graph-rs.runAutomationTest",
+					"when": "activeWebviewPanelId == git-graph-rs && git-graph-rs:codiconsSupported",
+					"group": "navigation"
+				}
+			],
 			"commandPalette": [
 				{
 					"command": "git-graph-rs.openFile",

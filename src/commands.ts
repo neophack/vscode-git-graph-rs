@@ -1,6 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { runAutomationSuite } from './automation/suiteRunner';
+import { showAutomationReport } from './automation/reportView';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -63,6 +65,7 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-graph-rs.version', () => this.version());
 		this.registerCommand('git-graph-rs.searchCommits', () => this.searchCommits());
 		this.registerCommand('git-graph-rs.openFile', (arg) => this.openFile(arg));
+		this.registerCommand('git-graph-rs.runAutomationTest', () => this.runAutomationTest());
 		this.registerCommand('git-graph-rs.amendLastCommit', (arg) => this.amendLastCommit(arg));
 		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote', (arg) => this.resetCurrentBranchToRemote(arg));
 		this.registerCommand('git-graph-rs.gerritPushRef', (arg) => this.gerritPushRef(arg));
@@ -385,6 +388,27 @@ export class CommandManager extends Disposable {
 	 * only the first entry is used (multi-file filtering is a Git Graph Studio extension).
 	 * @param arg The argument passed to the command (file URIs, or objects containing file URIs).
 	 */
+	/**
+	 * Run the automation test suite against the Git Graph view (in-process; no external driver)
+	 * and open the report page when it finishes. The write suite only runs when the active
+	 * repository is a fixture clone — it is rebuilt from its bare remote first.
+	 */
+	private async runAutomationTest(): Promise<void> {
+		try {
+			const report = await vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: t('automationTestRunning'),
+				cancellable: false
+			}, (progress) => runAutomationSuite({
+				logger: this.logger,
+				onProgress: (p) => progress.report({ message: p.phase + ' ' + p.index + '/' + p.total + ' — ' + p.actionId })
+			}));
+			showAutomationReport(report);
+		} catch (error) {
+			showErrorMessage(t('automationTestFailedToStart', error instanceof Error ? error.message : String(error)));
+		}
+	}
+
 	private async filterByFile(arg: any) {
 		const uris = this.getUrisFromCommandArg(arg);
 		if (uris.length === 0) {
@@ -398,8 +422,7 @@ export class CommandManager extends Disposable {
 			return;
 		}
 
-		// Compute the path of the file relative to the repository root (using forward slashes, as
-		// expected by git)
+		// Compute the path of the file relative to the repository root (using forward slashes, as		// expected by git)
 		let filterPath = getPathFromStr(path.relative(repo, getPathFromUri(uris[0])));
 		if (filterPath === '') filterPath = '.';
 
