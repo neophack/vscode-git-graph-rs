@@ -88,6 +88,23 @@ function rmRecursive(target: string): void {
 	}
 }
 
+/**
+ * Remove a directory tree, waiting out Windows file locks. The load pipeline's fire-and-forget
+ * follow-ups (the remote-refs scan, the "Uncommitted Changes" status) spawn git processes whose
+ * working directory — and the pack files they read — sit inside the clone: deleting it while such
+ * a process lingers fails with EPERM until the process exits, which would leave a marker-less
+ * half-deleted clone every later reseed then refuses to touch. Only the ASYNC rm runs the retry
+ * backoff (the synchronous one fails at the first EPERM), so this must stay awaited.
+ */
+async function rmTreeAwaitingLocks(target: string): Promise<void> {
+	const rm = (fs as unknown as { promises?: { rm?: (p: string, o: object) => Promise<void> } }).promises?.rm;
+	if (rm !== undefined) {
+		await rm(target, { recursive: true, force: true, maxRetries: 12, retryDelay: 200 });
+	} else {
+		rmRecursive(target);
+	}
+}
+
 /** Read the fixture marker (NULL when the repository is not a fixture clone). */
 export function readFixtureMarker(repo: string): { remote: string } | null {
 	try {
@@ -108,9 +125,17 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	const marker = readFixtureMarker(repo);
 	if (marker === null) throw new Error(repo + ' is not a fixture clone (no .gg-fixture marker)');
 	const git = async (args: string[]) => {
-		await execFileAsync('git', args, { timeout: 120000, windowsHide: true });
+		// The same per-call config as scripts/automation/fixture.mjs (GIT_BASE_ARGS): a CI runner
+		// has no global user identity (the commit below would fail with "Author identity unknown"),
+		// and the clone's working tree must keep LF endings like the initial seed's clone.
+		await execFileAsync('git', [
+			'-c', 'core.autocrlf=false',
+			'-c', 'user.name=Fixture',
+			'-c', 'user.email=fixture@fixture.dev',
+			...args
+		], { timeout: 120000, windowsHide: true });
 	};
-	rmRecursive(repo);
+	await rmTreeAwaitingLocks(repo);
 	await git(['clone', marker.remote, repo]);
 	fs.writeFileSync(path.join(repo, '.gg-fixture'), JSON.stringify(marker, null, 2) + '\n');
 

@@ -52,6 +52,10 @@ interface ActiveRun {
 	readonly t0: number;
 	/** Expected response commands still awaited. */
 	readonly pending: Set<string>;
+	/** Highest refresh id per command observed BEFORE this run started (stale-response guard). */
+	readonly baseline: ReadonlyMap<string, number>;
+	/** Refresh ids this run injected itself (request mode and invoke echo them back unchanged). */
+	readonly injectedRefreshIds: Map<string, number>;
 	/** Responses observed so far, with their arrival time relative to t0. */
 	readonly seen: { command: string; atMs: number }[];
 	/** TRUE once the page-side steps have completed (UI mode only). */
@@ -85,6 +89,15 @@ export class AutomationServer {
 	/** Serialises the timing-sensitive methods so their windows never overlap. */
 	private chain: Promise<unknown> = Promise.resolve();
 	private started = false;
+	/**
+	 * Highest refresh id observed per command across the engine's lifetime. The webview increments
+	 * the id of every NEW loadRepoInfo/loadCommits request, while the load pipeline's follow-up
+	 * responses (remote refs, "Uncommitted Changes") reuse the id of the request they complete —
+	 * and can arrive seconds later, during a LATER run. A response belongs to the current run only
+	 * when its id exceeds the baseline snapshot taken at the run's start (or it echoes an id the
+	 * run itself injected, which request mode and invoke pin to 0).
+	 */
+	private readonly maxRefreshIds = new Map<string, number>();
 	private offHostMessage: (() => void) | null = null;
 	private offShimResult: (() => void) | null = null;
 
@@ -192,6 +205,11 @@ export class AutomationServer {
 
 	private onHostMessage(msg: ResponseMessage): void {
 		const run = this.activeRun;
+		const refreshId = (msg as { refreshId?: unknown }).refreshId;
+		if (typeof refreshId === 'number') {
+			const known = this.maxRefreshIds.get(msg.command);
+			if (known === undefined || refreshId > known) this.maxRefreshIds.set(msg.command, refreshId);
+		}
 
 		if (run !== null && msg.command === run.invokeCommand) {
 			run.payload = msg;
@@ -208,6 +226,17 @@ export class AutomationServer {
 		}
 
 		if (run === null || !run.pending.has(msg.command)) return;
+		// The final "Uncommitted Changes" follow-up of a previous load cycle is identifiable by its
+		// `uncommittedCount` payload (the main response never carries it) and can arrive seconds
+		// later — never let it satisfy a run's expectation.
+		if (msg.command === 'loadCommits' && typeof (msg as { uncommittedCount?: unknown }).uncommittedCount === 'number') return;
+		// Stale-response guard: a follow-up of a PREVIOUS load cycle reuses that cycle's refresh id,
+		// which never exceeds the ids already observed when this run started. Matching by command
+		// alone let such a follow-up satisfy the run's expectation before its own responses arrived,
+		// flipping the recorded order and completing the run before the view had re-rendered.
+		if (typeof refreshId === 'number'
+			&& refreshId <= (run.baseline.get(msg.command) ?? -1)
+			&& run.injectedRefreshIds.get(msg.command) !== refreshId) return;
 		run.pending.delete(msg.command);
 		run.seen.push({ command: msg.command, atMs: this.relative(run.t0) });
 		if (run.pending.size === 0 && run.shimComplete) this.completeRun();
@@ -311,7 +340,9 @@ export class AutomationServer {
 
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode, t0: performance.now(),
-			pending: new Set(action.expect.responses), seen: [],
+			pending: new Set(action.expect.responses),
+			baseline: new Map(this.maxRefreshIds), injectedRefreshIds: new Map(),
+			seen: [],
 			shimComplete: mode !== 'ui', shimResult: null,
 			invokeCommand: null, payload: null, waiter: null, timer: null
 		};
@@ -324,7 +355,12 @@ export class AutomationServer {
 				this.bridge.postToWebview({ __automation: { runId: run.runId, steps } });
 			} else {
 				for (const template of action.request ?? []) {
-					this.bridge.inject(expandTemplate(template, context) as unknown as RequestMessage);
+					const message = expandTemplate(template, context) as unknown as RequestMessage;
+					const messageRefreshId = (message as { refreshId?: unknown }).refreshId;
+					if (typeof messageRefreshId === 'number') {
+						run.injectedRefreshIds.set(message.command, messageRefreshId);
+					}
+					this.bridge.inject(message);
 				}
 			}
 
@@ -506,9 +542,14 @@ export class AutomationServer {
 		this.requireView();
 		const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
 		const command = message.command;
+		const injectedRefreshIds = new Map<string, number>();
+		const messageRefreshId = (message as { refreshId?: unknown }).refreshId;
+		if (typeof messageRefreshId === 'number') injectedRefreshIds.set(command, messageRefreshId);
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode: 'request', t0: performance.now(),
-			pending: new Set([command]), seen: [],
+			pending: new Set([command]),
+			baseline: new Map(this.maxRefreshIds), injectedRefreshIds,
+			seen: [],
 			shimComplete: true, shimResult: null,
 			invokeCommand: command, payload: null, waiter: null, timer: null
 		};
@@ -532,7 +573,8 @@ export class AutomationServer {
 		this.requireView();
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode: 'ui', t0: performance.now(),
-			pending: new Set(), seen: [],
+			pending: new Set(), baseline: new Map(), injectedRefreshIds: new Map(),
+			seen: [],
 			shimComplete: false, shimResult: null,
 			invokeCommand: null, payload: null, waiter: null, timer: null
 		};
