@@ -88,20 +88,39 @@ function rmRecursive(target: string): void {
 	}
 }
 
+/** Total budget for one directory-tree removal across every attempt (see {@see rmTreeAwaitingLocks}). */
+const RM_TREE_DEADLINE_MS = 120000;
+/** Pause between removal attempts, sized to outlast a short-lived git child's exit. */
+const RM_TREE_ATTEMPT_INTERVAL_MS = 200;
+
 /**
- * Remove a directory tree, waiting out Windows file locks. The load pipeline's fire-and-forget
- * follow-ups (the remote-refs scan, the "Uncommitted Changes" status) spawn git processes whose
- * working directory — and the pack files they read — sit inside the clone: deleting it while such
- * a process lingers fails with EPERM until the process exits, which would leave a marker-less
- * half-deleted clone every later reseed then refuses to touch. Only the ASYNC rm runs the retry
- * backoff (the synchronous one fails at the first EPERM), so this must stay awaited.
+ * Remove a directory tree, waiting out transient Windows file locks within a bounded budget.
+ * The load pipeline's fire-and-forget follow-ups (the remote-refs scan, the "Uncommitted
+ * Changes" status) spawn git processes whose working directory — and the pack files they read —
+ * sit inside the clone: deleting it while such a process lingers fails with EPERM until the
+ * process exits. The PERSISTENT holder — the engine's warm repository handle, whose memory-mapped
+ * pack reads keep the mapped files undeletable for as long as the handle lives — is released
+ * explicitly by the reseed before this runs; this loop only rides out what is left.
+ *
+ * Each attempt is a SYNCHRONOUS removal — a complete operation that leaves nothing running once
+ * it returns. The awaited fs.promises.rm with maxRetries/retryDelay was tried here first, but on
+ * Node 20 (the CI line) its Windows retry path can stall far beyond the nominal budget and, when
+ * it raced a held file, its promise never settled at all — hanging the whole suite (and with it
+ * the CI job) on a single await. This loop keeps what the awaited rm was chosen for (the thread
+ * still breathes between attempts, locks get waited out) while guaranteeing termination: past
+ * the deadline the last error propagates, so a stubborn lock fails the reseed loudly instead of
+ * hanging CI.
  */
-async function rmTreeAwaitingLocks(target: string): Promise<void> {
-	const rm = (fs as unknown as { promises?: { rm?: (p: string, o: object) => Promise<void> } }).promises?.rm;
-	if (rm !== undefined) {
-		await rm(target, { recursive: true, force: true, maxRetries: 12, retryDelay: 200 });
-	} else {
-		rmRecursive(target);
+export async function rmTreeAwaitingLocks(target: string): Promise<void> {
+	const deadline = Date.now() + RM_TREE_DEADLINE_MS;
+	for (;;) {
+		try {
+			rmRecursive(target);
+			return;
+		} catch (error) {
+			if (Date.now() >= deadline) throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, RM_TREE_ATTEMPT_INTERVAL_MS));
 	}
 }
 
@@ -135,6 +154,12 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 			...args
 		], { timeout: 120000, windowsHide: true });
 	};
+	// The engine keeps one warm repository handle per path for the whole editor session, and its
+	// pack reads are memory-mapped: on Windows an active mapping keeps every mapped file
+	// undeletable, which is the EPERM the removal below kept dying on (reproducibly held by THIS
+	// process, not by any git child). Drop the handle first — the engine re-opens it on the next
+	// load of the re-cloned repository.
+	new HostBridge().closeRepository(repo);
 	await rmTreeAwaitingLocks(repo);
 	await git(['clone', marker.remote, repo]);
 	fs.writeFileSync(path.join(repo, '.gg-fixture'), JSON.stringify(marker, null, 2) + '\n');

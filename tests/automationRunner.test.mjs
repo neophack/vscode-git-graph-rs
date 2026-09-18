@@ -29,8 +29,21 @@ const SELECTED = new Set([
 
 let boot;
 
+/** The same bounded removal as the suite runner's rmTreeAwaitingLocks, usable before boot exists. */
+async function rmTreeBounded(target) {
+	const deadline = Date.now() + 120000;
+	for (;;) {
+		try { fs.rmSync(target, { recursive: true, force: true }); return; }
+		catch (error) { if (Date.now() >= deadline) throw error; }
+		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+}
+
 test.before(async () => {
-	fs.rmSync(outDir, { recursive: true, force: true });
+	// A leftover directory from an aborted run can still be held by a lingering git process or
+	// a mapped engine handle for a while; the bounded removal waits that out instead of failing
+	// every test at the first EPERM.
+	await rmTreeBounded(outDir);
 	await generate({ outDir, commits: 300, branches: 6, tags: 10, authors: 8, force: true });
 	await seedRepo(fixtureDir);
 	boot = await bootRealView(fixtureDir);
@@ -40,9 +53,13 @@ test.before(async () => {
 	}
 });
 
-test.after(() => {
+test.after(async () => {
+	// dispose() releases the engine's warm handle, but a follow-up git child may still be
+	// mid-exit holding a pack file; wait it out (through the product helper now that the module
+	// is loaded) so an interrupted run does not poison the next one's before-hook cleanup.
 	boot?.dispose();
-	fs.rmSync(outDir, { recursive: true, force: true });
+	if (boot) await boot.automation.suiteRunner.rmTreeAwaitingLocks(outDir);
+	else await rmTreeBounded(outDir);
 });
 
 test('the fixture guard recognises marker clones only', () => {

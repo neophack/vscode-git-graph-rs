@@ -565,6 +565,17 @@ export class GitGraphView extends Disposable {
 		void this.respondToMessage(message);
 	}
 
+	/**
+	 * Release the engine's handle (and cached config) of a repository on the automation server's
+	 * behalf. The engine keeps one warm handle per path for the whole session and its pack reads
+	 * are memory-mapped, so a repository about to be deleted on disk (the suite runner's fixture
+	 * reseed) must let go of the handle first — on Windows an active mapping makes every file it
+	 * covers undeletable, which would otherwise fail the reseed's removal with EPERM.
+	 */
+	public automationCloseRepository(repo: string): void {
+		this.dataSource.closeRepository(repo);
+	}
+
 	/** Send a page-level message to the automation shim (never a ResponseMessage). */
 	public postAutomationMessage(message: unknown): void {
 		if (!this.isDisposed()) {

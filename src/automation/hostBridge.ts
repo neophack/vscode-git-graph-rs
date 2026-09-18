@@ -55,6 +55,16 @@ export class HostBridge {
 	}
 
 	/**
+	 * Release the engine's warm handle of a repository (its memory-mapped pack reads keep the
+	 * repository's files undeletable on Windows until the handle drops). A no-op with no view
+	 * open — nothing holds the repository then.
+	 */
+	public closeRepository(repo: string): void {
+		const panel = GitGraphView.currentPanel;
+		if (panel !== undefined) panel.automationCloseRepository(repo);
+	}
+
+	/**
 	 * Observe every message the host sends to the webview. Returns the unsubscribe function.
 	 * The tap is a static hook: it stays installed across view recreations and works even when
 	 * no view is open yet (messages simply don't flow until one opens).
