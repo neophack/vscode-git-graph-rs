@@ -33,6 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { withAutomationExcluded } from './automation-packaging.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const nativeDir = path.join(root, 'native');
@@ -70,7 +71,7 @@ function findBuiltPlatforms() {
 	});
 }
 
-function main() {
+async function main() {
 	const built = findBuiltPlatforms();
 	if (built.length === 0) {
 		console.log('No native/<platform>/git-graph.node found - nothing to package per-platform.');
@@ -158,20 +159,23 @@ function main() {
 			fs.copyFileSync(src, path.join(stash, `${platform}.node`));
 			fs.unlinkSync(src);
 		}
-		for (const platform of platforms) {
-			const target = VSCE_TARGET[platform];
-			const dest = path.join(nativeDir, platform, binaryName);
-			fs.copyFileSync(path.join(stash, `${platform}.node`), dest);
-			const outFile = `git-graph-rs-${version}-${platform}.vsix`;
-			console.log(`  packaging ${outFile} (--target ${target})...`);
-			execFileSync(process.execPath, [
-				vsceEntry, 'package', '--target', target,
-				'--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid',
-				'--out', outFile
-			], { cwd: root, stdio: 'inherit' });
-			produced.push(outFile);
-			fs.unlinkSync(dest);
-		}
+		// Per-platform packages follow the default build's policy: no automation capability.
+		await withAutomationExcluded(async () => {
+			for (const platform of platforms) {
+				const target = VSCE_TARGET[platform];
+				const dest = path.join(nativeDir, platform, binaryName);
+				fs.copyFileSync(path.join(stash, `${platform}.node`), dest);
+				const outFile = `git-graph-rs-${version}-${platform}.vsix`;
+				console.log(`  packaging ${outFile} (--target ${target})...`);
+				execFileSync(process.execPath, [
+					vsceEntry, 'package', '--target', target,
+					'--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid',
+					'--out', outFile
+				], { cwd: root, stdio: 'inherit' });
+				produced.push(outFile);
+				fs.unlinkSync(dest);
+			}
+		});
 	} finally {
 		restore();
 	}
@@ -179,4 +183,4 @@ function main() {
 	console.log(`Done: ${produced.join(', ')}`);
 }
 
-main();
+main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exit(1); });

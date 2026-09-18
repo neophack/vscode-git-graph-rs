@@ -1,8 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { runAutomationSuite } from './automation/suiteRunner';
-import { showAutomationReport } from './automation/reportView';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -17,6 +15,21 @@ import { ErrorInfo } from './types';
 import { GitExecutable, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, isSafeRefName, openExternalUrl, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
+
+/* The automation-testing capability ships only in the automation build (the default build's
+ * packaging moves out/automation aside), so these modules load conditionally. */
+type AutomationModules = {
+	runAutomationSuite: typeof import('./automation/suiteRunner').runAutomationSuite;
+	showAutomationReport: typeof import('./automation/reportView').showAutomationReport;
+};
+let automation: AutomationModules | null = null;
+try {
+	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	const suiteRunner = require('./automation/suiteRunner') as typeof import('./automation/suiteRunner');
+	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	const reportView = require('./automation/reportView') as typeof import('./automation/reportView');
+	automation = { runAutomationSuite: suiteRunner.runAutomationSuite, showAutomationReport: reportView.showAutomationReport };
+} catch (_) { /* the automation modules are absent from this build: not an error */ }
 
 /**
  * Manages the registration and execution of Git Graph Commands.
@@ -65,7 +78,9 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-graph-rs.version', () => this.version());
 		this.registerCommand('git-graph-rs.searchCommits', () => this.searchCommits());
 		this.registerCommand('git-graph-rs.openFile', (arg) => this.openFile(arg));
-		this.registerCommand('git-graph-rs.runAutomationTest', () => this.runAutomationTest());
+		if (automation !== null) {
+			this.registerCommand('git-graph-rs.runAutomationTest', () => this.runAutomationTest());
+		}
 		this.registerCommand('git-graph-rs.amendLastCommit', (arg) => this.amendLastCommit(arg));
 		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote', (arg) => this.resetCurrentBranchToRemote(arg));
 		this.registerCommand('git-graph-rs.gerritPushRef', (arg) => this.gerritPushRef(arg));
@@ -394,16 +409,18 @@ export class CommandManager extends Disposable {
 	 * repository is a fixture clone — it is rebuilt from its bare remote first.
 	 */
 	private async runAutomationTest(): Promise<void> {
+		const modules = automation;
+		if (modules === null) return;
 		try {
 			const report = await vscode.window.withProgress({
 				location: vscode.ProgressLocation.Notification,
 				title: t('automationTestRunning'),
 				cancellable: false
-			}, (progress) => runAutomationSuite({
+			}, (progress) => modules.runAutomationSuite({
 				logger: this.logger,
 				onProgress: (p) => progress.report({ message: p.phase + ' ' + p.index + '/' + p.total + ' — ' + p.actionId })
 			}));
-			showAutomationReport(report);
+			modules.showAutomationReport(report);
 		} catch (error) {
 			showErrorMessage(t('automationTestFailedToStart', error instanceof Error ? error.message : String(error)));
 		}

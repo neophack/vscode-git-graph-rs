@@ -592,7 +592,10 @@ export class GitGraphView extends Disposable {
 				this.automationShimJs = fs.readFileSync(path.join(this.extensionPath, 'resources', 'automation', 'shim.js'), 'utf8');
 			} catch (error) {
 				this.automationShimJs = null;
-				this.logger.logError('Unable to read the automation shim: ' + (error instanceof Error ? error.message : String(error)));
+				// ENOENT => the default (no-automation) build: the shim simply is not injected.
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+					this.logger.logError('Unable to read the automation shim: ' + (error instanceof Error ? error.message : String(error)));
+				}
 			}
 		}
 		return this.automationShimJs ?? '';
