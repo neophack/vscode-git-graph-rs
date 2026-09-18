@@ -842,6 +842,9 @@ export interface RequestEditCommitMessage extends RepoRequest {
 	readonly command: 'editCommitMessage';
 	readonly commitHash: string;
 	readonly message: string;
+	/** The commit's new author name and email (absent => the author is left unchanged). */
+	readonly authorName?: string;
+	readonly authorEmail?: string;
 }
 export interface ResponseEditCommitMessage extends ResponseWithErrorInfo {
 	readonly command: 'editCommitMessage';

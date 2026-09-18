@@ -342,64 +342,117 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 
 	const hash = target.hash;
 
-	const commit = view.commits[view.commitLookup[hash]];
+	const showEditDialog = (message: string) => {
 
-	if (commit === undefined) return; // The commit is no longer loaded (e.g. after a refresh)
+		const commit = view.commits[view.commitLookup[hash]];
+
+		if (commit === undefined) return; // The commit is no longer loaded (e.g. after a refresh)
 
 
 
-	dialog.showForm(
+		dialog.showForm(
 
-		formatStr(strings.editCommitMessagePrompt, abbrevCommit(hash)),
+			formatStr(strings.editCommitMessagePrompt, abbrevCommit(hash)),
 
-		[{
+			[{
 
-			type: DialogInputType.Textarea, lines: 5,
+				type: DialogInputType.Textarea, lines: 5,
 
-			name: strings.commitMessageInput,
+				name: strings.commitMessageInput,
 
-			default: commit.message,
+				default: message,
 
-			placeholder: strings.commitMessagePlaceholder
+				placeholder: strings.commitMessagePlaceholder
 
-		}],
+			}, {
 
-		strings.updateMessageAction,
+				type: DialogInputType.Text,
 
-		(values) => {
+				name: strings.commitAuthorNameInput,
 
-			const newMessage = <string>values[0];
+				default: commit.author,
 
-			if (newMessage.trim() === '') {
+				placeholder: null
 
-				dialog.showError(strings.commitMessageEmptyError, null, null, null);
+			}, {
 
-				return;
+				type: DialogInputType.Text,
 
-			}
+				name: strings.commitAuthorEmailInput,
 
-			if (newMessage === commit.message) {
+				default: commit.email,
 
-				return; // No change needed
+				placeholder: null
 
-			}
+			}],
 
-			runAction({
+			strings.updateMessageAction,
 
-				command: 'editCommitMessage',
+			(values) => {
 
-				repo: view.currentRepo,
+				const newMessage = <string>values[0];
 
-				commitHash: hash,
+				if (newMessage.trim() === '') {
 
-				message: newMessage
+					dialog.showError(strings.commitMessageEmptyError, null, null, null);
 
-			}, strings.editingCommitMessage);
+					return;
 
-		},
+				}
 
-		target
+				const newAuthorName = <string>values[1], newAuthorEmail = <string>values[2];
 
-	);
+				if (newAuthorName.trim() === '') {
+
+					dialog.showError(strings.commitAuthorEmptyError, null, null, null);
+
+					return;
+
+				}
+
+				if (newMessage === message && newAuthorName === commit.author && newAuthorEmail === commit.email) {
+
+					return; // No change needed
+
+				}
+
+				runAction({
+
+					command: 'editCommitMessage',
+
+					repo: view.currentRepo,
+
+					commitHash: hash,
+
+					message: newMessage,
+
+					authorName: newAuthorName,
+
+					authorEmail: newAuthorEmail
+
+				}, strings.editingCommitMessage);
+
+			},
+
+			target
+
+		);
+
+	};
+
+	// The commit list only carries each message's subject line: the dialog must edit the full
+	// message the user actually committed, so it is fetched first (falling back to the subject
+	// when that fails). The commit is re-resolved inside the callback, because it may have been
+	// unloaded by a refresh while the fetch was in flight.
+
+	view.getCommitBody(hash, (body) => {
+
+		const commit = view.commits[view.commitLookup[hash]];
+
+		if (commit === undefined) return; // The commit is no longer loaded (e.g. after a refresh)
+
+		showEditDialog(body !== null ? body : commit.message);
+
+	});
 
 }

@@ -523,8 +523,11 @@ const STRINGS_EN = {
 	editCommitMessagePrompt: 'Edit commit message for <b><i>{0}</i></b>:',
 	commitMessageInput: 'Commit Message',
 	commitMessagePlaceholder: 'Enter the new commit message',
+	commitAuthorNameInput: 'Author Name',
+	commitAuthorEmailInput: 'Author Email',
 	updateMessageAction: 'Update Message',
 	commitMessageEmptyError: 'Commit message cannot be empty.',
+	commitAuthorEmptyError: 'Author name cannot be empty.',
 	editingCommitMessage: 'Editing Commit Message',
 
 	/* Context menu action dialogs */
@@ -1417,8 +1420,11 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	editCommitMessagePrompt: '编辑提交 <b><i>{0}</i></b> 的提交信息：',
 	commitMessageInput: '提交信息',
 	commitMessagePlaceholder: '输入新的提交信息',
+	commitAuthorNameInput: '作者名称',
+	commitAuthorEmailInput: '作者邮箱',
 	updateMessageAction: '更新信息',
 	commitMessageEmptyError: '提交信息不能为空。',
+	commitAuthorEmptyError: '作者名称不能为空。',
 	editingCommitMessage: '正在编辑提交信息',
 
 	/* 右键菜单操作对话框 */

@@ -1,10 +1,12 @@
 /**
- * Editing the commit message of any local unpushed commit: HEAD is amended directly, an earlier
- * commit is reworded through the fully automated `git rebase -i` whose editor scripts
- * dataSource.ts embeds as string literals. Those scripts run standalone under plain Node, so the
- * bundle's own requireWithFallback rewrite (scripts/package-src.js) must never reach into their
- * sources — the bundle once shipped `requireWithFallback(...)` inside them and every reword died
- * with "ReferenceError: requireWithFallback is not defined". These tests drive the real compiled
+ * Editing the commit message (and, since the dialog grew author fields, the commit's author) of
+ * any local unpushed commit: HEAD is amended directly, an earlier commit is rewritten through the
+ * fully automated `git rebase -i` whose editor scripts dataSource.ts embeds as string literals
+ * (a message-only edit rewords the commit; an author change inserts an `exec git commit --amend`
+ * line after its pick). Those scripts run standalone under plain Node, so the bundle's own
+ * requireWithFallback rewrite (scripts/package-src.js) must never reach into their sources — the
+ * bundle once shipped `requireWithFallback(...)` inside them and every reword died with
+ * "ReferenceError: requireWithFallback is not defined". These tests drive the real compiled
  * DataSource against real repositories, so a regressed bundle fails them exactly the way the
  * extension failed.
  */
@@ -88,6 +90,7 @@ describe('editing the message of an earlier commit', () => {
 
 	const subject = (ref) => git(['log', '-1', '--format=%s', ref]).trim();
 	const body = (ref) => git(['log', '-1', '--format=%b', ref]).trim();
+	const author = (ref) => git(['log', '-1', '--format=%an <%ae>', ref]).trim();
 	const hash = (ref) => git(['rev-parse', ref]).trim();
 	const rootHash = () => git(['rev-list', '--max-parents=0', 'HEAD']).trim();
 	const commitCount = () => parseInt(git(['rev-list', '--count', 'HEAD']).trim(), 10);
@@ -150,6 +153,53 @@ describe('editing the message of an earlier commit', () => {
 		assert.equal(error, null, `the reword must succeed, got: ${error}`);
 		assert.equal(fs.readFileSync(path.join(repoPath, 'uncommitted.txt'), 'utf8'), 'work in progress\n');
 		assert.equal(git(['status', '--porcelain']).trim(), '?? uncommitted.txt');
+	});
+
+	it('changes the author of the HEAD commit, keeping its message and author date', async () => {
+		const target = hash('HEAD');
+		const subjectBefore = subject('HEAD');
+		const authorDateBefore = git(['log', '-1', '--format=%at', target]).trim();
+
+		const error = await dataSource.editCommitMessage(repoPath, target, subjectBefore, 'Head Author', 'head@example.com');
+
+		assert.equal(error, null, `the author amend must succeed, got: ${error}`);
+		assert.equal(subject('HEAD'), subjectBefore, 'the message is untouched');
+		assert.equal(author('HEAD'), 'Head Author <head@example.com>');
+		assert.equal(git(['log', '-1', '--format=%at', 'HEAD']).trim(), authorDateBefore, 'the author date is preserved');
+		assert.equal(author('HEAD~1'), 'Test User <test@example.com>', 'earlier commits keep their author');
+	});
+
+	it('changes the author of a commit in the middle of the history', async () => {
+		const tempFilesBefore = amendTempFiles();
+		const target = hash('HEAD~1');
+		const subjectBefore = subject('HEAD~1');
+
+		const error = await dataSource.editCommitMessage(repoPath, target, subjectBefore, 'Mid Author', 'mid@example.com');
+
+		assert.equal(error, null, `the author rewrite must succeed, got: ${error}`);
+		assert.equal(author('HEAD~1'), 'Mid Author <mid@example.com>');
+		assert.equal(subject('HEAD~1'), subjectBefore, 'the message is untouched');
+		assert.equal(author(rootHash()), 'Test User <test@example.com>', 'the root commit keeps its author');
+		assert.equal(author('HEAD'), 'Head Author <head@example.com>', 'the re-created descendant keeps its rewritten author');
+		assert.equal(commitCount(), 3, 'no commit is lost or added');
+		await waitForTempCleanup(tempFilesBefore);
+		assert.deepEqual(amendTempFiles(), tempFilesBefore, 'the temporary editor and message files are cleaned up');
+	});
+
+	it('changes the author of the root commit', async () => {
+		const error = await dataSource.editCommitMessage(repoPath, rootHash(), subject(rootHash()), 'Root Author', 'root@example.com');
+
+		assert.equal(error, null, `the root author rewrite must succeed, got: ${error}`);
+		assert.equal(author(rootHash()), 'Root Author <root@example.com>');
+		assert.equal(author('HEAD~1'), 'Mid Author <mid@example.com>', 'the other re-authored commit is untouched');
+	});
+
+	it('records a name-only author when no email is given', async () => {
+		const error = await dataSource.editCommitMessage(repoPath, hash('HEAD'), subject('HEAD'), 'No Email');
+
+		assert.equal(error, null, `the name-only author amend must succeed, got: ${error}`);
+		assert.equal(git(['log', '-1', '--format=%an', 'HEAD']).trim(), 'No Email');
+		assert.equal(git(['log', '-1', '--format=%ae', 'HEAD']).trim(), '');
 	});
 });
 

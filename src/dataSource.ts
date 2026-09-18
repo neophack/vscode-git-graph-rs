@@ -1849,15 +1849,24 @@ export class DataSource extends Disposable {
 	 * @param message The new commit message.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public async editCommitMessage(repo: string, commitHash: string, message: string): Promise<ErrorInfo> {
+	public async editCommitMessage(repo: string, commitHash: string, message: string, authorName?: string, authorEmail?: string): Promise<ErrorInfo> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
 		if (unsafeArgs !== null) return unsafeArgs;
+
+		// The commit's new author in git's "Name <email>" form (an empty email is written as "<>",
+		// which git records as a name-only author — a bare name is read as an existing-author match),
+		// or null when the caller left the author unchanged
+		const author = typeof authorName === 'string' && authorName.trim() !== ''
+			? (typeof authorEmail === 'string' && authorEmail.trim() !== '' ? `${authorName} <${authorEmail}>` : `${authorName} <>`)
+			: null;
 
 		try {
 			const headCommit = await this.spawnGit(['rev-parse', 'HEAD'], repo, (stdout) => stdout.trim());
 
 			if (headCommit === commitHash) {
-				const args = ['commit', '--amend', '-m', message];
+				const args = ['commit', '--amend'];
+				if (author !== null) args.push('--author=' + author);
+				args.push('-m', message);
 				if (getConfig().signCommits) {
 					args.push('-S');
 				}
@@ -1879,21 +1888,32 @@ export class DataSource extends Disposable {
 
 			const rebaseArgs = parents.length === 1 ? ['rebase', '-i', '--autostash', '--root'] : ['rebase', '-i', '--autostash', commitHash + '^'];
 
-			// Editor scripts git invokes with the todo / commit-message file path appended as the last argument
+			// Editor scripts git invokes with the todo / commit-message file path appended as the last argument.
+			// For a message-only edit the todo marks the commit `reword` and GIT_EDITOR copies the new message
+			// over git's message file; when the author changes too, the todo instead gains an `exec` line after
+			// the commit's `pick`, amending it with the new author and message in one step. The author and the
+			// message file path reach that exec line through environment variables only - embedding them in the
+			// todo text would let a name containing `$` or a backtick be interpreted by the exec shell.
 			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${Date.now()}.js`);
 			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${Date.now()}.js`);
 			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${Date.now()}.txt`);
-			fs.writeFileSync(seqEditorFile, 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);');
+			fs.writeFileSync(seqEditorFile, author === null
+				? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
+				: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$GG_AMEND_AUTHOR\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
 			fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
 			fs.writeFileSync(messageFile, message);
 			const node = `"${process.execPath}"`;
-			const extraEnv = {
+			const extraEnv: { [key: string]: string } = {
 				GIT_SEQUENCE_EDITOR: `${node} "${seqEditorFile}" ${commitHash}`,
 				GIT_EDITOR: `${node} "${msgEditorFile}" "${messageFile}"`,
 				// The extension host may run inside the Electron binary; without this an
 				// Electron process.execPath would launch a window instead of the editor script
 				ELECTRON_RUN_AS_NODE: '1'
 			};
+			if (author !== null) {
+				extraEnv.GG_AMEND_AUTHOR = author;
+				extraEnv.GG_AMEND_MESSAGE = messageFile;
+			}
 
 			try {
 				return await this._spawnGit(rebaseArgs, repo, () => null, false, extraEnv);

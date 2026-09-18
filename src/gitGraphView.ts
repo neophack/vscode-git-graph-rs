@@ -1341,7 +1341,7 @@ export class GitGraphView extends Disposable {
 			case 'editCommitMessage':
 				this.sendMessage({
 					command: 'editCommitMessage',
-					error: await this.dataSource.editCommitMessage(msg.repo, msg.commitHash, msg.message)
+					error: await this.dataSource.editCommitMessage(msg.repo, msg.commitHash, msg.message, msg.authorName, msg.authorEmail)
 				});
 				break;
 

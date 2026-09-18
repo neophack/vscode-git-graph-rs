@@ -63,6 +63,8 @@ class GitGraphView {
 	 */
 	private commitBodies: { [hash: string]: string } = {};
 	private readonly commitBodiesRequested = new Set<string>(); // hashes already requested (avoids re-requesting)
+	/** Callbacks waiting for a commit's body to arrive, keyed by commit hash (see getCommitBody). */
+	private commitBodyWaiters: { [hash: string]: ((body: string | null) => void)[] } = {};
 	private static readonly COMMIT_BODIES_BATCH_LIMIT = 200;
 
 	/**
@@ -2065,6 +2067,27 @@ class GitGraphView {
 	}
 
 	/**
+	 * Get the full message body of one commit, fetching it on demand (the commit list only carries
+	 * subjects). The callback is invoked with the body once it is available - immediately when it
+	 * is already cached, otherwise after it has been fetched - or with null when the fetch fails,
+	 * in which case the caller can fall back to the commit's subject.
+	 * @param hash The hash of the commit.
+	 * @param received Invoked with the commit's full message body, or null when it is unavailable.
+	 */
+	public getCommitBody(hash: string, received: (body: string | null) => void) {
+		const cached = this.commitBodies[hash];
+		if (typeof cached === 'string') {
+			received(cached);
+			return;
+		}
+		(this.commitBodyWaiters[hash] || (this.commitBodyWaiters[hash] = [])).push(received);
+		if (!this.commitBodiesRequested.has(hash)) {
+			this.commitBodiesRequested.add(hash);
+			sendMessage({ command: 'commitBodies', repo: this.currentRepo, commitHashes: [hash] });
+		}
+	}
+
+	/**
 	 * Store a batch of commit message bodies fetched on demand, and re-render the rows so the
 	 * inline bodies ("Show Commit Body Inline") become visible.
 	 */
@@ -2074,9 +2097,34 @@ class GitGraphView {
 			this.commitBodies[hash] = msg.bodies[hash];
 			received = true;
 		}
+		this.resolveCommitBodyWaiters(received ? Object.keys(msg.bodies) : null);
 		if (!received) return;
 		this.renderTable();
 		this.renderGraph();
+	}
+
+	/**
+	 * Resolve the callbacks waiting for commit bodies: every waiter registered for one of the given
+	 * hashes is invoked with its body and removed. NULL (the fetch failed, so the response carried
+	 * no bodies at all) resolves every pending waiter with null, so a dialog waiting on a body
+	 * (e.g. Edit Commit Message) still opens with the subject as a fallback instead of never opening.
+	 */
+	private resolveCommitBodyWaiters(hashes: string[] | null) {
+		const resolved: Array<[string, string | null]> = [];
+		if (hashes === null) {
+			for (const hash in this.commitBodyWaiters) resolved.push([hash, null]);
+		} else {
+			for (const hash of hashes) {
+				const body = this.commitBodies[hash];
+				if (typeof body === 'string') resolved.push([hash, body]);
+			}
+		}
+		for (const [hash, body] of resolved) {
+			const waiters = this.commitBodyWaiters[hash];
+			if (waiters === undefined) continue;
+			delete this.commitBodyWaiters[hash];
+			for (const waiter of waiters) waiter(body);
+		}
 	}
 
 

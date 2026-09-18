@@ -842,6 +842,26 @@ export const CATALOG: readonly AutomationAction[] = [
 		expect: { responses: ['editCommitMessage'] }
 	},
 	{
+		id: 'menu-commit/edit-message-author',
+		title: 'Edit Message… (rewrite the author)',
+		group: 'menu-commit',
+		mutable: true,
+		// The same dialog as edit-message, additionally rewriting the commit's author through the
+		// author fields of the Edit Commit Message dialog (#dialogInput1 name, #dialogInput2 email).
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Edit Message…', '编辑提交信息…') },
+			{ op: 'waitFor', selector: '.dialog' },
+			{ op: 'set', selector: '#dialogInput0', value: 'Reworded and re-authored via automation', event: 'input' },
+			{ op: 'set', selector: '#dialogInput1', value: 'Automation Author', event: 'input' },
+			{ op: 'set', selector: '#dialogInput2', value: 'automation@example.com', event: 'input' },
+			{ op: 'click', selector: '#dialogAction' },
+			DISMISS_ERROR_DIALOG_STEP
+		],
+		request: [{ command: 'editCommitMessage', repo: '{{repo}}', commitHash: '{{commit}}', message: 'Reworded and re-authored via automation', authorName: 'Automation Author', authorEmail: 'automation@example.com' }],
+		expect: { responses: ['editCommitMessage'] }
+	},
+	{
 		id: 'menu-commit/fixup',
 		title: 'Create Fixup Commit',
 		group: 'menu-commit',
