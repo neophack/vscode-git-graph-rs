@@ -10,11 +10,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { bootView } from './webviewHarness.mjs';
+import { bootView, importDefaults } from './webviewHarness.mjs';
 
-/* Importing the harness installs the 'vscode' stub its out/ modules need, so this import must
- * come after it. */
-const { DEFAULT_REPO_STATE } = await import('../out/extensionState.js');
+/* The harness's vscode stub is scoped to its own lazy loader: out/ modules must be imported
+ * through it, not directly (a direct import would try to resolve 'vscode' for real and fail). */
+const { DEFAULT_REPO_STATE } = await importDefaults();
 
 const repoState = (overrides = {}) => ({ ...JSON.parse(JSON.stringify(DEFAULT_REPO_STATE)), ...overrides });
 

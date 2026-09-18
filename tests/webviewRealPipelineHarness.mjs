@@ -62,8 +62,7 @@ http.createServer = function (...args) {
 	return server;
 };
 
-let onDidReceiveMessageHandler = null; // set by the panel stub: the extension's message handler
-let extensionToWebview = null; // set once the jsdom window exists: delivers panel.postMessage into the DOM
+let extensionToWebview = null; // set once the jsdom window exists: delivers the graph panel's postMessage into the DOM
 /** Debug hook: called with every extension -> webview message. */
 let onExtensionMessage = null;
 export function setOnExtensionMessage(fn) { onExtensionMessage = fn; }
@@ -78,25 +77,37 @@ class FakeConfiguration {
 	update() { return Promise.resolve(); }
 }
 
+/* VS Code gives EVERY webview its own panel with its own message handler. A singleton stub
+ * shared with other views (the Commit Comparison view opened by openCompareTab registers its
+ * own onDidReceiveMessage) would let the later view's handler overwrite the graph view's and
+ * silently swallow page->host traffic — so each createWebviewPanel call gets a fresh panel. */
 function makePanel() {
-	return {
+	const panel = {
 		title: '', iconPath: null, visible: true, active: true,
 		webview: {
 			html: '', cspSource: 'https://stub.invalid',
 			asWebviewUri: (uri) => 'media/' + path.basename(uri.fsPath || uri.path || String(uri)),
-			postMessage: (msg) => { if (onExtensionMessage !== null) onExtensionMessage(msg); if (extensionToWebview !== null) extensionToWebview(msg); return Promise.resolve(true); },
-			onDidReceiveMessage: (handler) => { onDidReceiveMessageHandler = handler; return disposable(); }
+			postMessage: (msg) => {
+				if (onExtensionMessage !== null) onExtensionMessage(msg);
+				// Only the graph view's page exists in jsdom; other panels' messages go nowhere.
+				if (extensionToWebview !== null && panel === graphPanel) extensionToWebview(msg);
+				return Promise.resolve(true);
+			},
+			onDidReceiveMessage: (handler) => { panel.webview.__onDidReceive = handler; return disposable(); },
+			__onDidReceive: null
 		},
 		onDidDispose: () => disposable(),
 		onDidChangeViewState: () => disposable(),
 		reveal: () => {}, dispose: () => {}
 	};
+	return panel;
 }
+let graphPanel = null;
 
 /* ---------- boot the real extension + the real webview, wired together ---------- */
 
 export async function bootRealView(repo) {
-	const panel = makePanel();
+	graphPanel = null; // one live graph view per process: a fresh boot takes over the routing
 	const vscodeStub = {
 		Uri: {
 			file: (p) => ({ scheme: 'file', fsPath: path.normalize(p), path: String(p).replace(/\\/g, '/'), with: () => vscodeStub.Uri.file(p) }),
@@ -108,17 +119,30 @@ export async function bootRealView(repo) {
 			onDidChangeConfiguration: () => disposable(),
 			onDidChangeWorkspaceFolders: () => disposable(),
 			createFileSystemWatcher: () => ({ onDidChange: () => disposable(), onDidCreate: () => disposable(), onDidDelete: () => disposable(), dispose: () => {} }),
+			openTextDocument: async () => ({ uri: vscodeStub.Uri.file('stub'), lineCount: 0 }),
 			fs: { stat: async () => { throw new Error('not available'); }, readFile: async () => { throw new Error('not available'); } }
 		},
 		window: {
-			createWebviewPanel: () => panel,
+			createWebviewPanel: () => {
+				const panel = makePanel();
+				if (graphPanel === null) graphPanel = panel; // the first panel is the graph view's
+				return panel;
+			},
 			createOutputChannel: () => ({ appendLine: () => {}, show: () => {}, dispose: () => {} }),
 			showErrorMessage: async () => undefined, showInformationMessage: async () => undefined, showWarningMessage: async () => undefined,
 			createStatusBarItem: () => ({ text: '', show() {}, hide() {}, dispose() {} }),
+			createTerminal: () => ({ show: () => {}, dispose: () => {}, sendText: () => {} }),
+			showTextDocument: async () => undefined,
+			showSaveDialog: async () => undefined,
 			withProgress: (_options, task) => task({ report: () => {} }),
 			activeTextEditor: undefined
 		},
-		commands: { registerCommand: () => disposable(), registerTextEditorCommand: () => disposable() },
+		commands: {
+			registerCommand: () => disposable(), registerTextEditorCommand: () => disposable(),
+			// The automation host commands (openExtensionSettings, viewScm, vscode.diff, ...) resolve
+			// through executeCommand; a no-op keeps those request paths answerable in tests.
+			executeCommand: async () => undefined
+		},
 		RelativePattern: class RelativePattern { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
 		env: { appName: 'VS Code', clipboard: { writeText: async () => {} }, openExternal: async () => false, language: 'en' },
 		ViewColumn: { Active: -1, Beside: -2, One: 1 },
@@ -143,6 +167,13 @@ export async function bootRealView(repo) {
 	const { AvatarManager } = require(path.join(rootDir, 'out', 'avatarManager.js'));
 	const { RepoManager } = require(path.join(rootDir, 'out', 'repoManager.js'));
 	const { GitGraphView } = require(path.join(rootDir, 'out', 'gitGraphView.js'));
+	// The automation server + bridge resolve 'vscode' and gitGraphView too: load them inside the
+	// stub window so tests can drive the real pipeline over the real socket protocol.
+	const { AutomationServer } = require(path.join(rootDir, 'out', 'automation', 'server.js'));
+	const { HostBridge } = require(path.join(rootDir, 'out', 'automation', 'hostBridge.js'));
+	// The in-process suite runner + report page (the "Run Automation Test" button's engine).
+	const suiteRunner = require(path.join(rootDir, 'out', 'automation', 'suiteRunner.js'));
+	const reportView = require(path.join(rootDir, 'out', 'automation', 'reportView.js'));
 	vscodeStubActive = false;
 
 	const logger = new Logger();
@@ -165,7 +196,7 @@ export async function bootRealView(repo) {
 	assert.ok(Object.keys(repoManager.getRepos()).length > 0, 'the repository was discovered');
 
 	GitGraphView.createOrShow(rootDir, dataSource, extensionState, avatarManager, repoManager, new Logger(), null);
-	assert.ok(panel.webview.html.length > 0, 'the webview html was generated');
+	assert.ok(graphPanel.webview.html.length > 0, 'the webview html was generated');
 
 	// The extension (and its AskpassManager HTTP servers) is live from here on: anything that
 	// fails below must still tear it down, or the open servers keep the test process alive and
@@ -184,7 +215,7 @@ export async function bootRealView(repo) {
 	let window, document;
 	let scrollTopValue = 0;
 	try {
-		const dom = new JSDOM(panel.webview.html, {
+		const dom = new JSDOM(graphPanel.webview.html, {
 			runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.invalid/',
 			beforeParse: (w) => {
 				w.acquireVsCodeApi = () => w.__api;
@@ -195,8 +226,10 @@ export async function bootRealView(repo) {
 		window.__api = {
 			getState: () => null,
 			setState: () => {},
-			postMessage: (message) => { onDidReceiveMessageHandler(message); }
+			postMessage: (message) => { graphPanel.webview.__onDidReceive(message); }
 		};
+		// Host → page: the harness delivers extension messages by dispatching a window
+		// MessageEvent (as a real webview does).
 		extensionToWebview = (message) => {
 			setTimeout(() => {
 				window.dispatchEvent(new window.MessageEvent('message', { data: message }));
@@ -229,6 +262,6 @@ export async function bootRealView(repo) {
 		await sleep(120); // let the rAF-debounced window update run
 	};
 	const rows = () => Array.from(document.querySelectorAll('#commitTable tr.commit'));
-	return { window, document, viewElem, scrollTo, rows, GitGraphView, dispose, sleep };
+	return { window, document, viewElem, scrollTo, rows, GitGraphView, dispose, sleep, automation: { AutomationServer, HostBridge, suiteRunner, reportView } };
 }
 

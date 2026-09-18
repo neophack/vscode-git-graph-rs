@@ -59,15 +59,37 @@ const vscodeStub = {
 		})
 	}
 };
+/* The hook is SCOPED (not permanently installed): webviewRealPipelineHarness installs its own
+ * richer stub later in the same process for the real-pipeline tests, and a permanent override
+ * here would capture out/utils.js (clipboard, terminals, ...) for the extension modules its
+ * stub cannot serve. The eager imports below run under this stub; either harness gets the
+ * modules its own stub can serve. */
 const originalLoad = Module._load;
+let stubActive = false;
 Module._load = function (request, parent, isMain) {
-	if (request === 'vscode') return vscodeStub;
+	if (request === 'vscode' && stubActive) return vscodeStub;
 	return originalLoad.apply(this, arguments);
 };
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { getConfig } = await import('../out/config.js');
-const { DEFAULT_REPO_STATE, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE } = await import('../out/extensionState.js');
+let importedDefaults = null;
+export async function importDefaults() {
+	if (importedDefaults === null) {
+		stubActive = true;
+		try {
+			const config = await import('../out/config.js');
+			const extensionState = await import('../out/extensionState.js');
+			importedDefaults = {
+				getConfig: config.getConfig,
+				DEFAULT_REPO_STATE: extensionState.DEFAULT_REPO_STATE,
+				DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE: extensionState.DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE
+			};
+		} finally {
+			stubActive = false;
+		}
+	}
+	return importedDefaults;
+}
 
 export const ROW_HEIGHT = 24;
 export const VIEWPORT_HEIGHT = 600;
@@ -140,6 +162,7 @@ export async function bootView(total, options = {}) {
 	// every setting as a prototype getter over the (stubbed, all-default) workspace configuration;
 	// the few fields the extension renames on the way into initialState are mapped explicitly
 	// (see getHtmlForWebview in src/gitGraphView.ts)
+	const { getConfig, DEFAULT_REPO_STATE, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE } = await importDefaults();
 	const configInstance = getConfig();
 	const settings = {};
 	for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(configInstance))) {
