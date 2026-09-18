@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
 import { hasEngineForPlatform, platformKey } from './backend/addon';
+import { AutomationService } from './automation';
 import { CommandManager } from './commands';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -65,12 +66,15 @@ export async function activate(context: vscode.ExtensionContext) {
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
 	const commandManager = new CommandManager(context, avatarManager, dataSource, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
 	const diffDocProvider = new DiffDocProvider(dataSource);
+	// The remote automation / debugging interface (off unless git-graph-rs.automationPort is set).
+	const automationService = new AutomationService(logger);
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
 				logger.setEnabled(getConfig().enableLog);
+				automationService.refresh();
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {
 				const paths = getConfig().gitPaths;
@@ -91,6 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		diffDocProvider,
 		commandManager,
+		automationService,
 		statusBarItem,
 		repoManager,
 		avatarManager,

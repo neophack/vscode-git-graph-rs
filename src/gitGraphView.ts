@@ -236,6 +236,14 @@ interface GerritCacheEntry {
  */
 export class GitGraphView extends Disposable {
 	public static currentPanel: GitGraphView | undefined;
+	/**
+	 * Automation hooks (owned by the automation server). STATIC, not per-instance: the view can
+	 * be disposed and recreated (e.g. a comparison view taking over the singleton panel slot in
+	 * tests), and the server — which may start before any view exists — must keep observing the
+	 * replacement without re-subscribing.
+	 */
+	private static automationTap: ((msg: ResponseMessage) => void) | null = null;
+	private static automationShimListener: ((result: unknown) => void) | null = null;
 
 	private readonly panel: vscode.WebviewPanel;
 	private readonly extensionPath: string;
@@ -248,6 +256,7 @@ export class GitGraphView extends Disposable {
 	private isGraphViewLoaded: boolean = false;
 	private isPanelVisible: boolean = true;
 	private currentRepo: string | null = null;
+	private automationShimJs: string | null | undefined = undefined;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
 
 	private loadRepoInfoRefreshId: number = 0;
@@ -471,7 +480,7 @@ export class GitGraphView extends Disposable {
 			}),
 
 			// Respond to messages sent from the Webview
-			this.panel.webview.onDidReceiveMessage((msg) => this.respondToMessage(msg)),
+			this.panel.webview.onDidReceiveMessage((msg) => this.onDidReceiveWebviewMessage(msg)),
 
 			// Dispose the Webview Panel when disposed
 			this.panel,
@@ -538,6 +547,70 @@ export class GitGraphView extends Disposable {
 		this.update();
 
 		this.logger.log('Created Git Graph View' + (loadViewTo !== null ? ' (active repo: ' + loadViewTo.repo + ')' : ''));
+	}
+
+	/* ---------- Automation hooks (the automation server is their only consumer) ---------- */
+
+	/** Snapshot of the view state for the automation server (gg.status / gg.query repos). */
+	public automationState(): { viewLoaded: boolean; currentRepo: string | null; repos: string[] } {
+		return {
+			viewLoaded: this.isGraphViewLoaded,
+			currentRepo: this.currentRepo,
+			repos: Object.keys(this.repoManager.getRepos())
+		};
+	}
+
+	/** Inject a request as if the webview had sent it (request-mode automation runs). */
+	public runAutomationRequest(message: RequestMessage): void {
+		void this.respondToMessage(message);
+	}
+
+	/** Send a page-level message to the automation shim (never a ResponseMessage). */
+	public postAutomationMessage(message: unknown): void {
+		if (!this.isDisposed()) {
+			void this.panel.webview.postMessage(message);
+		}
+	}
+
+	/** Observe every ResponseMessage leaving for the webview (timing tap). NULL clears. */
+	public static setAutomationTap(tap: ((msg: ResponseMessage) => void) | null): void {
+		GitGraphView.automationTap = tap;
+	}
+
+	/** Observe automation shim results posted from the page. NULL clears. */
+	public static setAutomationShimListener(listener: ((result: unknown) => void) | null): void {
+		GitGraphView.automationShimListener = listener;
+	}
+
+	/**
+	 * The automation shim source, inlined into the page (with its CSP nonce) so it needs no
+	 * change to the Content-Security-Policy sources. Cached per instance; empty on read failure.
+	 */
+	private getAutomationShimScript(): string {
+		if (this.automationShimJs === undefined) {
+			try {
+				this.automationShimJs = fs.readFileSync(path.join(this.extensionPath, 'resources', 'automation', 'shim.js'), 'utf8');
+			} catch (error) {
+				this.automationShimJs = null;
+				this.logger.logError('Unable to read the automation shim: ' + (error instanceof Error ? error.message : String(error)));
+			}
+		}
+		return this.automationShimJs ?? '';
+	}
+
+	private onDidReceiveWebviewMessage(msg: unknown): void {
+		// Results from the in-page automation shim are not RequestMessages: route them to the
+		// server and keep them away from the message handler's command switch.
+		if (typeof msg === 'object' && msg !== null
+			&& (msg as { __ggAutomationResult?: unknown }).__ggAutomationResult !== undefined) {
+			if (GitGraphView.automationShimListener !== null) {
+				try {
+					GitGraphView.automationShimListener((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
+				} catch (_) { /* the listener must never break message handling */ }
+			}
+			return;
+		}
+		void this.respondToMessage(msg as RequestMessage);
 	}
 
 	/**
@@ -1351,6 +1424,12 @@ export class GitGraphView extends Disposable {
 		if (this.isDisposed()) {
 			this.logger.log('The Git Graph View has already been disposed, ignored sending "' + msg.command + '" message.');
 		} else {
+			// The automation server's timing tap: observes the exact traffic the webview receives.
+			if (GitGraphView.automationTap !== null) {
+				try {
+					GitGraphView.automationTap(msg);
+				} catch (_) { /* a tap must never break message delivery */ }
+			}
 			this.panel.webview.postMessage(msg).then(
 				() => { },
 				() => {
@@ -1517,6 +1596,7 @@ export class GitGraphView extends Disposable {
 				<div id="footer"></div>
 			</div>
 			<script nonce="${nonce}">var initialState = ${encodeJsonForInlineScript(JSON.stringify(initialState))}, globalState = ${encodeJsonForInlineScript(JSON.stringify(globalState))}, workspaceState = ${encodeJsonForInlineScript(JSON.stringify(workspaceState))};</script>
+			<script nonce="${nonce}">${this.getAutomationShimScript()}</script>
 			<script nonce="${nonce}" src="${this.getMediaUri('vendor/markdown-it.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			<script nonce="${nonce}" src="${this.getMediaUri('out.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			</body>`;
