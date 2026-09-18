@@ -57,7 +57,7 @@ test('the fixture guard recognises marker clones only', () => {
 	fs.rmSync(notFixture, { recursive: true, force: true });
 });
 
-test('runAutomationSuite runs the selected actions over the loopback and reports them', async () => {
+test('runAutomationSuite runs the selected actions in-process and reports them', async () => {
 	const progress = [];
 	// No explicit repo: the runner defaults to the view's current repository (passing the raw
 	// fixture path would not match the host-normalised root and trigger a needless re-open).

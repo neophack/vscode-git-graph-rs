@@ -1,19 +1,20 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
-import * as net from 'net';
 import * as path from 'path';
 import { promisify } from 'util';
+import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { AutomationAction, AutomationMode, CATALOG } from './catalog';
 import { HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
 
 /**
- * The in-process automation suite runner — the "Run Automation Test" button's engine. It starts
- * the automation server on an ephemeral localhost port, connects a loopback client to it, and
- * runs the catalog's read suite (safe on any repository) and, when the active repository is a
- * fixture clone (`.gg-fixture` marker), the write suite — reseeding the clone from its bare
- * remote first, so the button never needs an external driver and never touches a real repo.
+ * The in-process automation suite runner — the "Run Automation Test" button's engine. It drives
+ * the automation engine directly (no sockets, no external driver) and runs the catalog's read
+ * suite (safe on any repository) and, when the active repository is a fixture clone
+ * (`.gg-fixture` marker), the write suite — reseeding the clone from its bare remote first, so
+ * the button never touches a real repo. Whatever an action opens (editor tabs, terminals) is
+ * closed again afterwards, leaving the user's workspace as it was.
  */
 
 const execFileAsync = promisify(execFile);
@@ -134,57 +135,57 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	await git(['-C', repo, 'checkout', 'main']);
 }
 
-/* ---------------- The loopback wire client ---------------- */
+/* ---------------- Per-action cleanup (pages and terminals an action opens) ---------------- */
 
-class LoopbackClient {
-	private socket: net.Socket | null = null;
-	private buffer = '';
-	private nextId = 1;
-	private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+/** The Git Graph view's webview panel type — the one tab the cleanup must never close. */
+const GIT_GRAPH_VIEW_TYPE = 'git-graph-rs';
 
-	async connect(port: number): Promise<void> {
-		this.socket = net.createConnection({ host: '127.0.0.1', port });
-		this.socket.setEncoding('utf8');
-		this.socket.on('data', (chunk) => this.onData(String(chunk)));
-		await new Promise<void>((resolve, reject) => {
-			this.socket!.once('connect', resolve);
-			this.socket!.once('error', reject);
-		});
+/**
+ * Identify a tab by its content (view type and/or document URIs) so a before/after snapshot can
+ * diff it. Uses only `any` accesses: the Tab API is younger than the extension's supported VS
+ * Code range, and every cleanup step is feature-detected and skipped where unavailable.
+ */
+function tabKey(tab: any): string {
+	const input = tab.input;
+	if (input === undefined) return 'label:' + tab.label;
+	const parts = [input.viewType, input.uri?.toString(), input.original?.toString(), input.modified?.toString()]
+		.filter((part) => part !== undefined && part !== '');
+	return parts.length > 0 ? parts.join('|') : 'label:' + tab.label;
+}
+
+function openTabs(): any[] {
+	const tabGroups = (vscode.window as any).tabGroups;
+	if (tabGroups === undefined || !Array.isArray(tabGroups.all)) return [];
+	// No flatMap here: src/tsconfig.json targets the es6 lib (the extension's VS Code floor).
+	const tabs: any[] = [];
+	for (const group of tabGroups.all as any[]) {
+		if (Array.isArray(group.tabs)) tabs.push(...group.tabs);
 	}
+	return tabs;
+}
 
-	private onData(chunk: string): void {
-		this.buffer += chunk;
-		let newline: number;
-		while ((newline = this.buffer.indexOf('\n')) !== -1) {
-			const line = this.buffer.slice(0, newline);
-			this.buffer = this.buffer.slice(newline + 1);
-			if (line.trim() === '') continue;
-			const message = JSON.parse(line) as { id?: number; error?: { code: number; message: string } };
-			if (message.id !== undefined && this.pending.has(message.id)) {
-				const entry = this.pending.get(message.id)!;
-				this.pending.delete(message.id);
-				if (message.error !== undefined) {
-					const error = new Error(message.error.message);
-					(error as Error & { code: number }).code = message.error.code;
-					entry.reject(error);
-				} else {
-					entry.resolve(message);
-				}
-			}
+/**
+ * Close every editor tab that appeared while the action ran (diff views, compare pages, opened
+ * files, the settings page, …) and dispose terminals it created. Tabs that existed before and
+ * the Git Graph view itself (which the runner may have re-opened) are left alone, so the user's
+ * own editors are never touched.
+ */
+async function cleanupActionSurfaces(beforeTabs: ReadonlySet<string>, beforeTerminals: ReadonlySet<unknown>): Promise<void> {
+	await new Promise((resolve) => setTimeout(resolve, 150)); // let late-opening surfaces appear
+	const tabGroups = (vscode.window as any).tabGroups;
+	if (tabGroups !== undefined && typeof tabGroups.close === 'function') {
+		for (const tab of openTabs()) {
+			if (tab.input !== undefined && tab.input.viewType === GIT_GRAPH_VIEW_TYPE) continue;
+			if (beforeTabs.has(tabKey(tab))) continue;
+			try { await tabGroups.close(tab, true); } catch (_) { /* the tab is already gone */ }
 		}
 	}
-
-	call(method: string, params?: unknown): Promise<any> {
-		return new Promise((resolve, reject) => {
-			const id = this.nextId++;
-			this.pending.set(id, { resolve: (msg) => resolve((msg as { result: unknown }).result), reject });
-			this.socket!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-		});
-	}
-
-	close(): void {
-		this.socket?.destroy();
-		this.socket = null;
+	for (const terminal of (Array.isArray(vscode.window.terminals) ? vscode.window.terminals : [])) {
+		if (beforeTerminals.has(terminal)) continue;
+		const dispose = (terminal as { dispose?: () => void }).dispose;
+		if (typeof dispose === 'function') {
+			try { dispose.call(terminal); } catch (_) { /* already disposed */ }
+		}
 	}
 }
 
@@ -193,25 +194,19 @@ class LoopbackClient {
 export async function runAutomationSuite(options: SuiteRunOptions): Promise<SuiteReport> {
 	const startedMs = Date.now();
 	const server = new AutomationServer({ logger: options.logger, bridge: new HostBridge(), version: 'in-process' });
-	await server.start(0);
-	const client = new LoopbackClient();
+	server.start();
 	try {
-		await client.connect(server.port);
-		await client.call('gg.ping');
-
 		const timeoutMs = options.actionTimeoutMs ?? 30000;
 		const sameRepo = (a: string | null, b: string) =>
 			a !== null && a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
-		let status = await client.call('gg.status') as { currentRepo: string | null };
-		let repo = options.repo ?? status.currentRepo;
+		let repo = options.repo ?? server.status().currentRepo;
 		if (repo === null || repo === '') {
 			throw new Error('No repository is active in the Git Graph view');
 		}
-		if (!sameRepo(status.currentRepo, repo)) {
-			await client.call('gg.openView', { repo });
+		if (!sameRepo(server.status().currentRepo, repo)) {
+			await server.openView({ repo });
 			for (let i = 0; i < 600; i++) {
-				status = await client.call('gg.status') as { currentRepo: string | null };
-				if (sameRepo(status.currentRepo, repo)) break;
+				if (sameRepo(server.status().currentRepo, repo)) break;
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			}
 		}
@@ -228,9 +223,21 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 			for (let i = 0; i < actions.length; i++) {
 				const action = actions[i];
 				const mode: AutomationMode = action.ui !== undefined ? 'ui' : 'request';
+				// The webview panel can disappear mid-suite (for example a host action opening a
+				// document in the preview slot the view occupies); re-open it so one lost panel
+				// cannot fail the rest of the suite.
+				if (!sameRepo(server.status().currentRepo, repo)) {
+					await server.openView({ repo });
+					for (let j = 0; j < 600; j++) {
+						if (sameRepo(server.status().currentRepo, repo)) break;
+						await new Promise((resolve) => setTimeout(resolve, 100));
+					}
+				}
+				const beforeTabs = new Set(openTabs().map(tabKey));
+				const beforeTerminals = new Set(Array.isArray(vscode.window.terminals) ? vscode.window.terminals : []);
 				let record: ActionRunRecord;
 				try {
-					const outcome = await client.call('gg.run', { id: action.id, mode, timeoutMs }) as {
+					const outcome = await server.run({ id: action.id, mode, timeoutMs }) as {
 						ok: boolean; skipped?: boolean; reason?: string; error?: string;
 						timings?: { totalMs: number; responses: { command: string; atMs: number }[] };
 					};
@@ -249,6 +256,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 						totalMs: null, responses: []
 					};
 				}
+				await cleanupActionSurfaces(beforeTabs, beforeTerminals);
 				runs.push(record);
 				options.onProgress?.({ phase, index: i + 1, total: actions.length, actionId: action.id, mode });
 				void offset; // phases report their own index; grand total is derivable from the report
@@ -281,7 +289,6 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 			totals
 		};
 	} finally {
-		client.close();
 		server.stop();
 	}
 }

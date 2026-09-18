@@ -9,9 +9,8 @@
  *     the default build — extension.ts/commands.ts gate their requires, and the view page
  *     tolerates the shim's absence).
  *   - withAutomationContributions(task): temporarily adds the automation contributions (the
- *     Run Automation Test command + editor-title button, the automationPort setting, and the
- *     nls titles) to package.json / package.nls.json / package.nls.zh-cn.json, then restores
- *     the originals.
+ *     Run Automation Test command + editor-title button, and the nls titles) to package.json /
+ *     package.nls.json / package.nls.zh-cn.json, then restores the originals.
  *
  * Both are self-healing: a leftover backup from a killed previous run is restored first.
  */
@@ -43,24 +42,12 @@ const CONTRIBUTIONS = {
 		when: 'activeWebviewPanelId == git-graph-rs && git-graph-rs:codiconsSupported',
 		group: 'navigation'
 	},
-	configuration: {
-		type: 'number',
-		default: 0,
-		minimum: 0,
-		maximum: 65535,
-		description: '%config.git-graph-rs.automationPort.description%',
-		markdownDescription: '%config.git-graph-rs.automationPort.markdownDescription%'
-	},
 	nls: {
 		'package.nls.json': {
-			'command.git-graph-rs.runAutomationTest.title': 'Run Automation Test',
-			'config.git-graph-rs.automationPort.description': 'TCP port of the remote automation & debugging interface (0 = disabled).',
-			'config.git-graph-rs.automationPort.markdownDescription': 'TCP port of the remote automation & debugging interface, listening on 127.0.0.1 only (0 = disabled). When set, a test driver (see the "Automation testing" README section) can connect to drive every Git Graph view control and collect per-action timings. **Only enable while testing.**'
+			'command.git-graph-rs.runAutomationTest.title': 'Run Automation Test'
 		},
 		'package.nls.zh-cn.json': {
-			'command.git-graph-rs.runAutomationTest.title': '运行自动化测试',
-			'config.git-graph-rs.automationPort.description': '远程自动化与调试接口的 TCP 端口(0 = 关闭)。',
-			'config.git-graph-rs.automationPort.markdownDescription': '远程自动化与调试接口的 TCP 端口,仅监听 127.0.0.1(0 = 关闭)。设置后,测试程序(见 README 的 "Automation testing" 一节)可连接并驱动 Git Graph 视图的每个控件、统计每个动作的耗时。**仅在测试时开启。**'
+			'command.git-graph-rs.runAutomationTest.title': '运行自动化测试'
 		}
 	}
 };
@@ -126,7 +113,6 @@ function applyContributions(root) {
 		...(pkg.contributes.menus['editor/title'] ?? []),
 		{ ...CONTRIBUTIONS.menu }
 	];
-	pkg.contributes.configuration.properties['git-graph-rs.automationPort'] = { ...CONTRIBUTIONS.configuration };
 	fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg, null, '\t') + '\n');
 	for (const [file, keys] of Object.entries(CONTRIBUTIONS.nls)) {
 		const nls = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));

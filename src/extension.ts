@@ -12,7 +12,6 @@ import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { StatusBarItem } from './statusBarItem';
 import { GitExecutable, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
-import { toDisposable } from './utils/disposable';
 import { EventEmitter } from './utils/event';
 
 /**
@@ -66,22 +65,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
 	const commandManager = new CommandManager(context, avatarManager, dataSource, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
 	const diffDocProvider = new DiffDocProvider(dataSource);
-	// The automation-testing capability ships only in the automation build: the default build's
-	// packaging moves out/automation aside, so this require fails there and the extension runs
-	// without the interface (and without the Run Automation Test command).
-	let automationService: { refresh(): void; dispose(): void } | null = null;
-	try {
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const { AutomationService } = require('./automation') as typeof import('./automation');
-		automationService = new AutomationService(logger);
-	} catch (_) { /* the automation modules are absent from this build: not an error */ }
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
 				logger.setEnabled(getConfig().enableLog);
-				automationService?.refresh();
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {
 				const paths = getConfig().gitPaths;
@@ -102,7 +91,6 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		diffDocProvider,
 		commandManager,
-		toDisposable(() => { automationService?.dispose(); }),
 		statusBarItem,
 		repoManager,
 		avatarManager,

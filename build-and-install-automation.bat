@@ -7,8 +7,8 @@ rem  Identical to build-and-install.bat (native addon (release) -> TypeScript ->
 rem  webview -> tests -> vsix -> install), except the packaging step uses
 rem  `npm run package:automation`: the vsix SHIPS the automation-testing
 rem  capability — the in-process suite runner, the Run Automation Test button in
-rem  the editor title bar, the report page, the localhost automation socket and
-rem  its setting. The original bats and CI package WITHOUT it.
+rem  the editor title bar and the report page. The original bats and CI package
+rem  WITHOUT it.
 rem ============================================================================
 
 cd /d "%~dp0"

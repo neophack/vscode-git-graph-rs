@@ -19,8 +19,11 @@ import { describe, it, after } from 'node:test';
 
 /* Isolate the global Git configuration BEFORE anything boots: the DataSource spawns git with
  * the inherited environment, so every `git config --global` of the pipeline hits this file.
- * It holds the identity the badge must stop showing once the list is emptied. */
-const globalConfigFile = path.join(os.tmpdir(), 'gg-author-badge-gitconfig');
+ * It holds the identity the badge must stop showing once the list is emptied. The file lives
+ * in a throwaway directory created PER RUN: an interrupted run leaves git's <file>.lock
+ * behind, and a fixed path would have every later run's writes bounce off that stale lock. */
+const globalConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-author-badge-global-'));
+const globalConfigFile = path.join(globalConfigDir, 'gitconfig');
 fs.writeFileSync(globalConfigFile, '[user]\n\tname = neophack\n\temail = pep3309531@163.com\n');
 process.env.GIT_CONFIG_GLOBAL = globalConfigFile;
 process.env.GIT_CONFIG_NOSYSTEM = '1';
@@ -48,7 +51,7 @@ describe('the Settings Widget global author badge after the identity list was em
 			try { context.window.close(); } catch { /* already closed */ }
 		}
 		fs.rmSync(repoDir, { recursive: true, force: true });
-		fs.rmSync(globalConfigFile, { force: true });
+		fs.rmSync(globalConfigDir, { recursive: true, force: true }); // takes git's lockfile with it
 	});
 
 	it('deleting the last author clears the badge - the config reload FOLLOWS the save, never races it', async () => {

@@ -13,6 +13,10 @@ import { RequestMessage, ResponseMessage } from '../types';
 export interface ShimResult {
 	readonly runId: number;
 	readonly ok: boolean;
+	/** TRUE when a skipIfAbsent precondition ended the batch: the action is skipped, not failed. */
+	readonly skipped?: boolean;
+	/** Human-readable skip reason (which element was absent), when skipped is true. */
+	readonly skipReason?: string;
 	/** Per-step results in execution order (undefined for steps that produce no value). */
 	readonly results: (unknown | undefined)[];
 	/** Index of the step that failed, when ok is false. */

@@ -1,6 +1,6 @@
 /**
- * Deterministic large-repository generator and seeder for the automation driver
- * (scripts/automation/client.mjs). Builds a git history in memory as a `git fast-import`
+ * Deterministic large-repository generator and seeder for the in-process automation suite
+ * (the "Run Automation Test" button). Builds a git history in memory as a `git fast-import`
  * stream — a main line of N commits on `main`, `feature-NNN` branches cut at deterministic
  * intervals (merged back with probability mergeRate, otherwise left open), and v1.x.x tags
  * — imports it into a bare remote, and clones a working fixture from it. The same seed

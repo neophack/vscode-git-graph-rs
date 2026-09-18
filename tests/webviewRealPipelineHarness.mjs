@@ -237,10 +237,22 @@ export async function bootRealView(repo) {
 			}, 5);
 		};
 
-		// jsdom has no layout engine: emulate the scroll container (same model as the standalone harness)
+		// jsdom has no layout engine: emulate the scroll container (same model as the standalone
+		// harness, plus the windowed renderer's spacer rows). scrollHeight grows with the rendered
+		// commit rows PLUS the #virtSpacerTop/Bottom placeholders, which in a real browser keep the
+		// scroll bar proportional to the whole loaded commit list — without them the height would
+		// only ever cover the rendered window, and no test could scroll past it (deep branch
+		// labels, stash rows, pinned rows).
 		const viewElem = document.getElementById('view');
+		const spacerHeight = (selector) => {
+			const td = document.querySelector(selector + ' td');
+			return td !== null ? parseFloat(td.style.height) || 0 : 0;
+		};
 		Object.defineProperty(viewElem, 'scrollTop', { get: () => scrollTopValue, set: (v) => { scrollTopValue = Math.max(0, v); } });
-		Object.defineProperty(viewElem, 'scrollHeight', { get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT });
+		Object.defineProperty(viewElem, 'scrollHeight', {
+			get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT
+				+ spacerHeight('#virtSpacerTop') + spacerHeight('#virtSpacerBottom')
+		});
 		Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT });
 		Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200 });
 		window.Element.prototype.scroll = function () {};

@@ -53,8 +53,8 @@ function extractDomIds() {
 
 /** Placeholders the server's buildContext resolves (plus run params like `name`, `value`). */
 const KNOWN_PLACEHOLDERS = new Set([
-	'repo', 'head', 'branch', 'branchHead', 'remote', 'remoteBranch', 'stash', 'author',
-	'commit', 'commitParent', 'file',
+	'repo', 'head', 'branch', 'branchHead', 'remote', 'remoteBranch', 'stash', 'tag',
+	'annotatedTag', 'findQuery', 'author', 'commit', 'commitParent', 'file',
 	// run params commonly used by dialog flows
 	'name', 'value', 'message', 'path', 'to', 'mode', 'hash'
 ]);
@@ -138,5 +138,33 @@ test('write actions declare how they are verified or are pure host commands', ()
 		if (action.group === 'host') continue;
 		assert.ok(action.verify !== undefined || action.expect.responses.length > 0,
 			action.id + ': a write action needs a verify state check or an expected ack');
+	}
+});
+
+test('exact-text steps stay in sync with the shipped interface languages', () => {
+	// The shim matches menu items and expected text exactly, so the catalog carries one candidate
+	// per interface language (bi(en, zh)). Every candidate must literally appear in web/strings.ts
+	// (as a whole value, a substring of a format template, or without the render-time ellipsis) —
+	// otherwise the entry silently stops matching under that language.
+	const [{ text }] = sourceFiles('web/strings.ts');
+	const zhStart = text.indexOf('const STRINGS_ZH_CN');
+	assert.ok(zhStart > 0, 'web/strings.ts must declare STRINGS_ZH_CN');
+	const enBlock = text.slice(0, zhStart), zhBlock = text.slice(zhStart);
+
+	const candidates = [];
+	for (const action of CATALOG) {
+		for (const step of action.ui ?? []) {
+			if (step.op === 'contextmenu') candidates.push([action.id, ...(Array.isArray(step.item) ? step.item : [step.item])]);
+			if (step.op === 'expectText') candidates.push([action.id, ...(Array.isArray(step.contains) ? step.contains : [step.contains])]);
+		}
+	}
+	assert.ok(candidates.length >= 45, 'expected the catalog to exercise exact-text matching broadly');
+
+	for (const [id, ...texts] of candidates) {
+		for (const text of texts) {
+			const bare = text.replace(/…$/, '').replace(/\.\.\.$/, '');
+			const present = [text, bare].some((form) => enBlock.includes(form) || zhBlock.includes(form));
+			assert.ok(present, id + ': exact-text candidate ' + JSON.stringify(text) + ' matches nothing in web/strings.ts');
+		}
 	}
 });

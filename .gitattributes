@@ -1,0 +1,3 @@
+# Windows batch files are executed by cmd.exe, which cannot parse LF-only
+# line endings (every line after the first loses its leading characters).
+*.bat text eol=crlf

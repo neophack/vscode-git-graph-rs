@@ -1,33 +1,28 @@
-import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { Logger } from '../logger';
 import { RequestMessage, ResponseMessage } from '../types';
 import { AutomationAction, AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
 import { HostBridge, ShimResult } from './hostBridge';
-import {
-	AutomationNotification, AutomationResponse, AutomationWireMessage,
-	ERR_CLIENT_REJECTED, ERR_NO_VIEW,
-	JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_PARAMS, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR,
-	PROTOCOL_VERSION, decodeWireMessages, encodeWireMessage, isRequest, AutomationRequest
-} from './protocol';
 
 /**
- * The automation server: a localhost-only TCP listener inside the extension host speaking
- * JSON-RPC 2.0 (newline-delimited). A test driver connects, asks for the catalog, and runs
- * actions — each run is timed from injection to the last expected host response (plus, in UI
- * mode, completion of the in-page steps). Host→webview traffic is tapped at the single exit
- * point of GitGraphView, so a run measures exactly what a user's click would measure.
+ * The automation engine: the in-process half of the automation interface, driven directly by
+ * the suite runner (the "Run Automation Test" button) — no sockets, no external ports. Each
+ * catalogued action runs against the real view: UI mode posts step batches to the in-page shim,
+ * request mode injects the equivalent request into the extension host's message pipeline, and
+ * every run is timed from injection to the last expected host response. Host→webview traffic
+ * is tapped at the single exit point of GitGraphView, so a run measures exactly what a user's
+ * click would measure.
  *
- * One driver connection at a time (a second is rejected); gg.run/gg.invoke/gg.eval/gg.query
- * are serialised so the timing windows of concurrent runs can never overlap. Exactly one tap
- * is registered on the view for the server's lifetime; every observation (traffic, run
- * expectations, loss-warning confirmations, query payloads) flows through it.
+ * The timing-sensitive methods (run / invoke / eval) are serialised so the timing windows of
+ * concurrent runs can never overlap. Exactly one tap is registered on the view for the engine's
+ * lifetime; every observation (traffic, run expectations, loss-warning confirmations, query
+ * payloads) flows through it.
  */
 
-export interface AutomationServerDeps {
+export interface AutomationEngineDeps {
 	readonly logger: Logger;
 	readonly bridge: HostBridge;
-	/** Extension version, reported by gg.ping. */
+	/** Extension version, reported for diagnostics. */
 	readonly version: string;
 }
 
@@ -62,14 +57,14 @@ interface ActiveRun {
 	/** TRUE once the page-side steps have completed (UI mode only). */
 	shimComplete: boolean;
 	shimResult: ShimResult | null;
-	/** For gg.invoke / gg.query: the command whose payload is captured, and the payload. */
+	/** For invoke / query: the command whose payload is captured, and the payload. */
 	invokeCommand: string | null;
 	payload: unknown;
 	waiter: (() => void) | null;
 	timer: ReturnType<typeof setTimeout> | null;
 }
 
-interface RunOutcome {
+export interface RunOutcome {
 	readonly ok: boolean;
 	readonly skipped?: boolean;
 	readonly reason?: string;
@@ -78,34 +73,22 @@ interface RunOutcome {
 	readonly error?: string;
 }
 
-/** Error carrying a JSON-RPC error code, thrown by the helpers above. */
-export class CodedError extends Error {
-	public readonly code: number;
-	constructor(code: number, message: string) {
-		super(message);
-		this.code = code;
-	}
-}
-
 export class AutomationServer {
 	private readonly logger: Logger;
 	private readonly bridge: HostBridge;
-	private readonly version: string;
-	private server: net.Server | null = null;
-	private client: net.Socket | null = null;
-	private clientName = '';
-	private lineBuffer = '';
-	private runIdSeq = 1;
+	readonly version: string;
 	private readonly samples = new Map<string, number[]>();
 	private readonly failureCounts = new Map<string, number>();
 	private readonly lastErrors = new Map<string, string>();
 	private activeRun: ActiveRun | null = null;
+	private runIdSeq = 1;
 	/** Serialises the timing-sensitive methods so their windows never overlap. */
 	private chain: Promise<unknown> = Promise.resolve();
+	private started = false;
 	private offHostMessage: (() => void) | null = null;
 	private offShimResult: (() => void) | null = null;
 
-	constructor(deps: AutomationServerDeps) {
+	constructor(deps: AutomationEngineDeps) {
 		this.logger = deps.logger;
 		this.bridge = deps.bridge;
 		this.version = deps.version;
@@ -114,140 +97,89 @@ export class AutomationServer {
 		if (problems.length > 0) throw new Error('Invalid automation catalog (' + problems.length + ' problems)');
 	}
 
-	public get port(): number {
-		if (this.server === null) return -1;
-		const address = this.server.address();
-		return typeof address === 'object' && address !== null ? address.port : -1;
-	}
-
-	public start(port: number): Promise<void> {
-		if (this.server !== null) return Promise.resolve();
-		return new Promise((resolve, reject) => {
-			const server = net.createServer((socket) => this.onConnection(socket));
-			server.once('error', reject);
-			server.listen(port, '127.0.0.1', () => {
-				server.removeListener('error', reject);
-				this.server = server;
-				this.offHostMessage = this.bridge.onHostMessage((msg) => this.onHostMessage(msg));
-				this.offShimResult = this.bridge.onShimResult((result) => this.onShimResult(result));
-				resolve();
-			});
-		});
+	/** Register the view traffic taps. Idempotent; call stop() to unregister. */
+	public start(): void {
+		if (this.started) return;
+		this.started = true;
+		this.offHostMessage = this.bridge.onHostMessage((msg) => this.onHostMessage(msg));
+		this.offShimResult = this.bridge.onShimResult((result) => this.onShimResult(result));
 	}
 
 	public stop(): void {
-		if (this.server === null) return;
-		this.server.close();
-		this.server = null;
-		if (this.client !== null) {
-			this.client.destroy();
-			this.client = null;
-		}
-		if (this.activeRun !== null) this.finishRun(new Error('Automation server stopped'));
+		if (!this.started) return;
+		this.started = false;
+		if (this.activeRun !== null) this.finishRun(new Error('Automation engine stopped'));
 		if (this.offHostMessage !== null) { this.offHostMessage(); this.offHostMessage = null; }
 		if (this.offShimResult !== null) { this.offShimResult(); this.offShimResult = null; }
 	}
 
-	/* ---------------- Socket handling ---------------- */
+	/* ---------------- Public API (the suite runner's surface) ---------------- */
 
-	private onConnection(socket: net.Socket): void {
-		if (this.client !== null) {
-			this.write(socket, {
-				jsonrpc: '2.0', id: null,
-				error: { code: ERR_CLIENT_REJECTED, message: 'An automation driver is already connected (' + this.clientName + ')' }
+	/** Snapshot of the view and repository state. */
+	public status(): { viewLoaded: boolean; currentRepo: string | null; repos: string[] } {
+		return this.bridge.viewState();
+	}
+
+	/** Open (or reveal) the Git Graph view on the given repository and wait for its first page. */
+	public async openView(params: { repo: string }): Promise<{ opened: boolean; repo: string }> {
+		if (typeof params.repo !== 'string' || params.repo === '') throw new Error('openView requires {repo: string}');
+		await this.bridge.openView(params.repo);
+		// Wait until the view has loaded a repository's first page of commits. The registered
+		// root may be normalised (symlinks, case), so any loaded currentRepo satisfies us.
+		const deadline = Date.now() + 60000;
+		while (Date.now() < deadline) {
+			const state = this.bridge.viewState();
+			if (state.viewLoaded && state.currentRepo !== null) {
+				return { opened: true, repo: state.currentRepo };
+			}
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		throw new Error('Timed out waiting for the Git Graph view to load ' + params.repo);
+	}
+
+	/** Run a catalogued action (`gg.run`'s engine): {@see runCatalogAction} on the serialising chain. */
+	public run(params: Record<string, unknown>): Promise<RunOutcome> {
+		return this.enqueue(() => this.runCatalogAction(params));
+	}
+
+	/** Inject one raw request and capture its response (`gg.invoke`'s engine). */
+	public invoke(params: Record<string, unknown>): Promise<RunOutcome> {
+		return this.enqueue(() => this.invokeRaw(params));
+	}
+
+	/** Evaluate an expression in the page (`gg.eval`'s engine). */
+	public eval(params: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+		return this.enqueue(() => this.evalInPage(params));
+	}
+
+	/** Read state through the real pipeline (`gg.query`'s engine). */
+	public async query(params: Record<string, unknown>): Promise<unknown> {
+		const kind = params.kind;
+		if (kind === 'repos') return this.bridge.viewState().repos;
+		this.requireView();
+		const repo = typeof params.repo === 'string' ? params.repo : this.bridge.viewState().currentRepo;
+		if (typeof repo !== 'string' || repo === '') throw new Error('query requires an active repository');
+		if (kind === 'repoInfo') return this.queryRepoInfo(repo);
+		if (kind === 'commits') return this.queryCommits(repo, typeof params.maxCommits === 'number' ? params.maxCommits : 100);
+		throw new Error('Unknown query kind "' + String(kind) + '" (use repos | repoInfo | commits)');
+	}
+
+	/** Aggregated per-action timings and failure counts across this engine's runs. */
+	public stats(): ActionStats[] {
+		const stats: ActionStats[] = [];
+		for (const [key, samples] of this.samples) {
+			const sorted = [...samples].sort((a, b) => a - b);
+			const percentile = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+			const [id, mode] = key.split('|') as [string, AutomationMode];
+			stats.push({
+				id, mode,
+				runs: sorted.length,
+				failures: this.failureCounts.get(key) ?? 0,
+				minMs: sorted[0], p50Ms: percentile(0.5), p90Ms: percentile(0.9), maxMs: sorted[sorted.length - 1],
+				lastError: this.lastErrors.get(key) ?? null
 			});
-			socket.destroy();
-			this.logger.log('Rejected a second automation driver connection');
-			return;
 		}
-		this.client = socket;
-		this.clientName = socket.remoteAddress + ':' + String(socket.remotePort);
-		this.lineBuffer = '';
-		socket.setEncoding('utf8');
-		socket.on('data', (chunk) => this.onData(String(chunk)));
-		socket.on('close', () => {
-			if (this.client === socket) {
-				this.client = null;
-				this.clientName = '';
-				this.logger.log('Automation driver disconnected');
-			}
-		});
-		socket.on('error', () => { /* close follows */ });
-		this.logger.log('Automation driver connected from ' + this.clientName);
-	}
-
-	private onData(chunk: string): void {
-		if (this.client === null) return;
-		const decoded = decodeWireMessages(this.lineBuffer + chunk);
-		this.lineBuffer = decoded.rest;
-		for (const parseError of decoded.errors) {
-			this.logger.logError('Automation driver sent an unparseable line: ' + parseError.error);
-			this.write(this.client, { jsonrpc: '2.0', id: null, error: { code: JSONRPC_PARSE_ERROR, message: parseError.error } });
-		}
-		for (const message of decoded.messages) {
-			if (isRequest(message)) {
-				this.handleRequest(message).catch((error) => {
-					const code = error instanceof CodedError ? error.code : JSONRPC_INTERNAL_ERROR;
-					this.respond(message.id, undefined, { code, message: error instanceof Error ? error.message : String(error) });
-				});
-			}
-			// Responses and notifications from the driver are not part of the contract: ignore.
-		}
-	}
-
-	private write(socket: net.Socket, message: AutomationWireMessage): void {
-		try { socket.write(encodeWireMessage(message)); } catch (_) { /* the socket is gone */ }
-	}
-
-	private respond(id: number | string | null, result?: unknown, error?: { code: number; message: string; data?: unknown }): void {
-		if (this.client === null) return;
-		const response: AutomationResponse = error !== undefined
-			? { jsonrpc: '2.0', id: id ?? null, error }
-			: { jsonrpc: '2.0', id: id ?? null, result };
-		this.write(this.client, response);
-	}
-
-	private notify(method: string, params: unknown): void {
-		if (this.client === null) return;
-		const notification: AutomationNotification = { jsonrpc: '2.0', method, params };
-		this.write(this.client, notification);
-	}
-
-	/* ---------------- Request dispatch ---------------- */
-
-	private async handleRequest(request: AutomationRequest): Promise<void> {
-		switch (request.method) {
-			case 'gg.ping':
-				this.respond(request.id, { pong: true, extension: 'git-graph-rs', protocol: PROTOCOL_VERSION, version: this.version });
-				return;
-			case 'gg.status':
-				this.respond(request.id, this.bridge.viewState());
-				return;
-			case 'gg.catalog':
-				this.respond(request.id, { protocol: PROTOCOL_VERSION, actions: CATALOG });
-				return;
-			case 'gg.stats':
-				this.respond(request.id, this.computeStats());
-				return;
-			case 'gg.resetStats':
-				this.samples.clear();
-				this.failureCounts.clear();
-				this.lastErrors.clear();
-				this.respond(request.id, { reset: true });
-				return;
-			case 'gg.openView':
-				this.respond(request.id, await this.openView(request.params));
-				return;
-			// Timing-sensitive methods run on the serialising chain.
-			case 'gg.run':
-			case 'gg.invoke':
-			case 'gg.eval':
-			case 'gg.query':
-				this.respond(request.id, await this.enqueue(() => this.handleTimedMethod(request.method, request.params)));
-				return;
-			default:
-				this.respond(request.id, undefined, { code: JSONRPC_METHOD_NOT_FOUND, message: 'Unknown method "' + request.method + '"' });
-		}
+		return stats.sort((a, b) => a.id.localeCompare(b.id));
 	}
 
 	private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -256,32 +188,17 @@ export class AutomationServer {
 		return result;
 	}
 
-	private handleTimedMethod(method: string, params: unknown): Promise<unknown> {
-		switch (method) {
-			case 'gg.run': return this.runCatalogAction(params);
-			case 'gg.invoke': return this.invokeRaw(params);
-			case 'gg.eval': return this.evalInPage(params);
-			case 'gg.query': return this.queryState(params);
-			default: return Promise.reject(new CodedError(JSONRPC_METHOD_NOT_FOUND, 'Unknown method "' + method + '"'));
-		}
-	}
-
 	/* ---------------- Traffic observation (the single view tap) ---------------- */
 
 	private onHostMessage(msg: ResponseMessage): void {
 		const run = this.activeRun;
-		this.notify('gg.traffic', {
-			command: msg.command,
-			runId: run === null ? null : run.runId,
-			atMs: run === null ? null : this.relative(run.t0)
-		});
 
 		if (run !== null && msg.command === run.invokeCommand) {
 			run.payload = msg;
 		}
 
 		// Request-mode loss-warning flow: the webview would show a dialog and re-send with
-		// `confirmed`; the driver is not interactive, so confirm on its behalf.
+		// `confirmed`; the runner is not interactive, so confirm on its behalf.
 		if (msg.command === 'lossWarning' && run !== null && run.mode === 'request') {
 			const retry = (msg as unknown as { retry?: RequestMessage }).retry;
 			if (retry !== undefined) {
@@ -301,7 +218,11 @@ export class AutomationServer {
 		if (run === null || run.runId !== result.runId) return;
 		run.shimComplete = true;
 		run.shimResult = result;
-		if (run.pending.size === 0) this.completeRun();
+		// A failed step batch is final: the responses it never triggered cannot arrive anymore,
+		// so end the run immediately with the step error instead of burning the whole timeout.
+		// A skipped batch is final too: the control this action drives is not offered in this
+		// view state, so its expected responses will not arrive either.
+		if (!result.ok || result.skipped === true || run.pending.size === 0) this.completeRun();
 	}
 
 	private relative(t0: number): number {
@@ -318,7 +239,7 @@ export class AutomationServer {
 		}
 	}
 
-	/** Force-fail the active run (server stop). */
+	/** Force-fail the active run (engine stop). */
 	private finishRun(error: Error): void {
 		const run = this.activeRun;
 		if (run === null) return;
@@ -348,94 +269,44 @@ export class AutomationServer {
 	/* ---------------- Run execution ---------------- */
 
 	private requireView(): void {
-		if (!this.bridge.hasView()) throw new CodedError(ERR_NO_VIEW, 'No Git Graph view is open (call gg.openView first)');
+		if (!this.bridge.hasView()) throw new Error('No Git Graph view is open');
 	}
 
-	private parseParams(params: unknown): Record<string, unknown> {
-		if (params === undefined || params === null) return {};
-		if (typeof params !== 'object' || Array.isArray(params)) throw new CodedError(JSONRPC_INVALID_PARAMS, 'Params must be an object');
-		return params as Record<string, unknown>;
-	}
-
-	private async openView(params: unknown): Promise<unknown> {
-		const repo = this.parseParams(params).repo;
-		if (typeof repo !== 'string' || repo === '') throw new CodedError(JSONRPC_INVALID_PARAMS, 'gg.openView requires {repo: string}');
-		await this.bridge.openView(repo);
-		// Wait until the view has loaded a repository's first page of commits. The registered
-		// root may be normalised (symlinks, case), so any loaded currentRepo satisfies us.
-		const deadline = Date.now() + 60000;
-		while (Date.now() < deadline) {
-			const state = this.bridge.viewState();
-			if (state.viewLoaded && state.currentRepo !== null) {
-				return { opened: true, repo: state.currentRepo };
-			}
-			await new Promise((resolve) => setTimeout(resolve, 100));
-		}
-		throw new Error('Timed out waiting for the Git Graph view to load ' + repo);
-	}
-
-	/** Does any path of the action reference the placeholder? */
-	private references(action: AutomationAction, name: string): boolean {
-		const needle = '{{' + name + '}}';
-		return JSON.stringify(action.ui ?? []).indexOf(needle) !== -1
-			|| JSON.stringify(action.request ?? []).indexOf(needle) !== -1;
-	}
-
-	/** Build the placeholder context for an action from live repository state. */
-	private async buildContext(action: AutomationAction, params: Record<string, unknown>): Promise<Record<string, string>> {
-		const state = this.bridge.viewState();
-		const repo = typeof params.repo === 'string' ? params.repo : state.currentRepo;
-		if (typeof repo !== 'string' || repo === '') throw new Error('No repository is active in the Git Graph view');
-		const context: Record<string, string> = { repo, ...stringifyParams(params) };
-
-		const repoInfo = await this.queryRepoInfo(repo);
-		context.head = repoInfo.head ?? '';
-		const branches: string[] = repoInfo.branches ?? [];
-		const localBranches: string[] = branches.filter((b) => b.indexOf('remotes/') !== 0);
-		context.branch = localBranches.find((b) => b !== repoInfo.head) ?? localBranches[0] ?? '';
-		context.branchHead = repoInfo.head ?? '';
-		// ResponseLoadRepoInfo carries remote NAMES only; remote-tracking branches appear in
-		// `branches` as `remotes/<remote>/<branch>`.
-		const remotes: string[] = repoInfo.remotes ?? [];
-		context.remote = remotes[0] ?? '';
-		const remotePrefix = context.remote === '' ? '' : 'remotes/' + context.remote + '/';
-		const remoteBranchFull = remotePrefix === '' ? '' : branches.find((b) => b.indexOf(remotePrefix) === 0) ?? '';
-		context.remoteBranch = remoteBranchFull === '' ? '' : remoteBranchFull.slice(remotePrefix.length);
-		if (this.references(action, 'stash')) context.stash = (repoInfo.stashes ?? [])[0]?.selector ?? '';
-
-		if (this.references(action, 'commit') || this.references(action, 'commitParent') || this.references(action, 'file') || this.references(action, 'author')) {
-			const commits = await this.queryCommits(repo, 100);
-			const pick = commits.find((c) => c.hash !== repoInfo.head) ?? commits[0];
-			context.commit = pick?.hash ?? '';
-			context.commitParent = pick?.parents?.[0] ?? '';
-			if (this.references(action, 'author')) context.author = pick?.author ?? '';
-			if (this.references(action, 'file')) {
-				const details = await this.queryCommitDetails(repo, context.commit);
-				context.file = details?.fileChanges?.[0]?.newFilePath ?? '';
-			}
-		}
-		return context;
-	}
-
-	private async runCatalogAction(params: unknown): Promise<RunOutcome> {
-		const p = this.parseParams(params);
-		const id = p.id, mode = (p.mode ?? 'ui') as AutomationMode;
-		if (typeof id !== 'string') throw new CodedError(JSONRPC_INVALID_PARAMS, 'gg.run requires {id: string}');
-		if (mode !== 'ui' && mode !== 'request') throw new CodedError(JSONRPC_INVALID_PARAMS, 'mode must be "ui" or "request"');
+	private async runCatalogAction(params: Record<string, unknown>): Promise<RunOutcome> {
+		const id = params.id, mode = (params.mode ?? 'ui') as AutomationMode;
+		if (typeof id !== 'string') throw new Error('run requires {id: string}');
+		if (mode !== 'ui' && mode !== 'request') throw new Error('mode must be "ui" or "request"');
 		const action = CATALOG.find((a) => a.id === id);
-		if (action === undefined) throw new CodedError(JSONRPC_INVALID_PARAMS, 'Unknown action "' + id + '"');
+		if (action === undefined) throw new Error('Unknown action "' + id + '"');
 		const path = mode === 'ui' ? action.ui : action.request;
 		if (path === undefined) return { ok: false, skipped: true, reason: 'Action "' + id + '" has no ' + mode + ' path' };
 		this.requireView();
 
-		const timeoutMs = typeof p.timeoutMs === 'number' ? p.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
-		const context = await this.buildContext(action, p);
+		const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
+		const context = await this.buildContext(action, params, mode);
 
 		if (action.requires !== undefined && action.requires.includes('remote') && context.remote === '') {
 			return { ok: false, skipped: true, reason: 'requires a configured remote' };
 		}
 		if (action.requires !== undefined && action.requires.includes('stash') && context.stash === '') {
-			return { ok: false, skipped: true, reason: 'requires at least one stash' };
+			// In UI mode the placeholder resolves from the loaded graph (see buildContext), so an
+			// empty value also covers the stash that sits outside the loaded page.
+			return { ok: false, skipped: true, reason: mode === 'ui' ? 'requires a stash in the loaded graph' : 'requires at least one stash' };
+		}
+		if (action.requires !== undefined && action.requires.includes('tag') && context.tag === '') {
+			return { ok: false, skipped: true, reason: 'requires at least one tag' };
+		}
+		if (action.requires !== undefined && action.requires.includes('annotatedTag') && context.annotatedTag === '') {
+			return { ok: false, skipped: true, reason: 'requires an annotated tag in the loaded graph' };
+		}
+		if (action.requires !== undefined && action.requires.includes('file') && context.file === '') {
+			return { ok: false, skipped: true, reason: 'requires a commit with file changes in the loaded page' };
+		}
+		if (action.requires !== undefined && action.requires.includes('anotherBranch') && Number(context.branchCount ?? '0') < 2) {
+			return { ok: false, skipped: true, reason: 'requires at least two branches' };
+		}
+		if (action.requires !== undefined && action.requires.includes('anotherRepo') && Number(context.reposCount ?? '0') < 2) {
+			return { ok: false, skipped: true, reason: 'requires at least two known repositories' };
 		}
 
 		const run: ActiveRun = {
@@ -464,7 +335,7 @@ export class AutomationServer {
 				return this.record(action, mode, {
 					ok: false,
 					error: 'Timed out after ' + timeoutMs + ' ms waiting for ' + [...run.pending].join(', ')
-					+ (mode === 'ui' && run.shimResult === null ? ' (page steps never completed)' : '')
+						+ (mode === 'ui' && run.shimResult === null ? ' (page steps never completed)' : '')
 				});
 			}
 			const shim = run.shimResult;
@@ -472,6 +343,12 @@ export class AutomationServer {
 				return this.record(action, mode, {
 					ok: false,
 					error: 'Page step ' + (shim.failedStep ?? '?') + ' failed: ' + (shim.error ?? 'unknown')
+				});
+			}
+			if (shim !== null && shim.skipped === true) {
+				return this.record(action, mode, {
+					ok: false, skipped: true,
+					reason: shim.skipReason ?? 'a precondition of the action is absent in the view'
 				});
 			}
 
@@ -486,6 +363,120 @@ export class AutomationServer {
 		} finally {
 			this.activeRun = null;
 		}
+	}
+
+	/** Does any path of the action reference the placeholder? */
+	private references(action: AutomationAction, name: string): boolean {
+		const needle = '{{' + name + '}}';
+		return JSON.stringify(action.ui ?? []).indexOf(needle) !== -1
+			|| JSON.stringify(action.request ?? []).indexOf(needle) !== -1;
+	}
+
+	/** Build the placeholder context for an action from live repository state. */
+	private async buildContext(action: AutomationAction, params: Record<string, unknown>, mode: AutomationMode): Promise<Record<string, string>> {
+		const state = this.bridge.viewState();
+		const repo = typeof params.repo === 'string' ? params.repo : state.currentRepo;
+		if (typeof repo !== 'string' || repo === '') throw new Error('No repository is active in the Git Graph view');
+		const context: Record<string, string> = { repo, ...stringifyParams(params) };
+		context.reposCount = String(state.repos.length);
+
+		const repoInfo = await this.queryRepoInfo(repo);
+		context.head = repoInfo.head ?? '';
+		const branches: string[] = repoInfo.branches ?? [];
+		const localBranches: string[] = branches.filter((b) => b.indexOf('remotes/') !== 0);
+		context.branch = localBranches.find((b) => b !== repoInfo.head) ?? localBranches[0] ?? '';
+		// On a detached HEAD there is no checked-out branch name; any local branch still labels
+		// a row the flows can reveal, so fall back to the first one.
+		context.branchHead = repoInfo.head ?? localBranches[0] ?? '';
+		context.branchCount = String(branches.length);
+		// ResponseLoadRepoInfo carries remote NAMES only; remote-tracking branches appear in
+		// `branches` as `remotes/<remote>/<branch>`.
+		const remotes: string[] = repoInfo.remotes ?? [];
+		context.remote = remotes[0] ?? '';
+		const remotePrefix = context.remote === '' ? '' : 'remotes/' + context.remote + '/';
+		const remoteBranchFull = remotePrefix === '' ? '' : branches.find((b) => b.indexOf(remotePrefix) === 0) ?? '';
+		context.remoteBranch = remoteBranchFull === '' ? '' : remoteBranchFull.slice(remotePrefix.length);
+		if (this.references(action, 'stash')) {
+			// UI mode right-clicks the rendered stash label, which only exists for a stash inside
+			// the loaded graph — the reflog can hold stashes far older than the loaded page (real
+			// repositories), so resolve the placeholder from the same probed page the view renders
+			// and let requires:['stash'] skip cleanly. Request mode addresses the host directly,
+			// where every recorded stash is reachable regardless of what the view loaded.
+			if (mode === 'request') {
+				context.stash = (repoInfo.stashes ?? [])[0]?.selector ?? '';
+			} else {
+				const probed = await this.queryCommits(repo, 300);
+				context.stash = probed.find((commit) => commit.stash !== null)?.stash?.selector ?? '';
+			}
+		}
+
+		if (this.references(action, 'commit') || this.references(action, 'commitParent') || this.references(action, 'file')
+			|| this.references(action, 'author') || this.references(action, 'findQuery')
+			|| this.references(action, 'tag') || this.references(action, 'annotatedTag')) {
+			// A deeper page when tags are in play: they often sit further down the history than
+			// the commits the other placeholders need (the fixture's first tag is ~100 deep).
+			const wantsTags = this.references(action, 'tag') || this.references(action, 'annotatedTag');
+			const commits = await this.queryCommits(repo, wantsTags ? 300 : 100);
+			const pick = commits.find((c) => c.hash !== repoInfo.head) ?? commits[0];
+			context.commit = pick?.hash ?? '';
+			context.commitParent = pick?.parents?.[0] ?? '';
+			if (this.references(action, 'author')) context.author = pick?.author ?? '';
+
+			// A find query guaranteed to match: the first branch label of the loaded page (the
+			// newest commits render first); fall back to the checked-out branch, any branch, and
+			// finally the context commit's abbreviated hash.
+			let findQuery = '';
+			for (const commit of commits) {
+				if ((commit.heads ?? []).length > 0) { findQuery = commit.heads[0]; break; }
+			}
+			if (findQuery === '') findQuery = context.branchHead;
+			if (findQuery === '') findQuery = context.branch;
+			if (findQuery === '') findQuery = (context.commit ?? '').slice(0, 8);
+			context.findQuery = findQuery;
+
+			// Tags of the loaded graph, newest first; annotated ones are marked (GitCommitTag).
+			context.tag = '';
+			context.annotatedTag = '';
+			for (const commit of commits) {
+				for (const tag of commit.tags ?? []) {
+					if (context.tag === '') context.tag = tag.name;
+					if (context.annotatedTag === '' && tag.annotated === true) context.annotatedTag = tag.name;
+				}
+			}
+
+			if (this.references(action, 'file') && context.commit !== '') {
+				// Prefer a commit whose file change satisfies every Commit Details menu condition
+				// (a Modified, non-binary file: deletions hide "Open File", binaries hide the
+				// working-file diff); probe past empty commits before settling for any file.
+				const usable = (file: { type: string; additions: number | null; deletions: number | null; newFilePath: string }) =>
+					file.type === 'M' && (file.additions !== null || file.deletions !== null);
+				const candidates = commits.filter((c) => c.hash !== repoInfo.head).slice(0, 5);
+				if (candidates.length === 0 && commits.length > 0) candidates.push(commits[0]);
+				let fallback: { hash: string; parent: string; file: string } | null = null;
+				for (const candidate of candidates) {
+					const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
+					if (changes.length === 0) continue;
+					const good = changes.find(usable);
+					if (good !== undefined) {
+						context.commit = candidate.hash;
+						context.commitParent = candidate.parents?.[0] ?? '';
+						context.file = good.newFilePath;
+						break;
+					}
+					if (fallback === null) {
+						const anyExisting = changes.find((file: { type: string; newFilePath: string }) => file.type !== 'D') ?? changes[0];
+						fallback = { hash: candidate.hash, parent: candidate.parents?.[0] ?? '', file: anyExisting.newFilePath };
+					}
+				}
+				if (context.file === undefined && fallback !== null) {
+					context.commit = fallback.hash;
+					context.commitParent = fallback.parent;
+					context.file = fallback.file;
+				}
+				context.file = context.file ?? '';
+			}
+		}
+		return context;
 	}
 
 	/** Check the post-run repository state against the action's verify declaration. */
@@ -507,14 +498,13 @@ export class AutomationServer {
 		}
 	}
 
-	private async invokeRaw(params: unknown): Promise<RunOutcome> {
-		const p = this.parseParams(params);
-		const message = p.message as Record<string, unknown>;
+	private async invokeRaw(params: Record<string, unknown>): Promise<RunOutcome> {
+		const message = params.message as Record<string, unknown>;
 		if (typeof message !== 'object' || message === null || typeof message.command !== 'string') {
-			throw new CodedError(JSONRPC_INVALID_PARAMS, 'gg.invoke requires {message: RequestMessage}');
+			throw new Error('invoke requires {message: RequestMessage}');
 		}
 		this.requireView();
-		const timeoutMs = typeof p.timeoutMs === 'number' ? p.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
+		const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
 		const command = message.command;
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode: 'request', t0: performance.now(),
@@ -537,9 +527,8 @@ export class AutomationServer {
 		}
 	}
 
-	private async evalInPage(params: unknown): Promise<unknown> {
-		const p = this.parseParams(params);
-		if (typeof p.expr !== 'string' || p.expr === '') throw new CodedError(JSONRPC_INVALID_PARAMS, 'gg.eval requires {expr: string}');
+	private async evalInPage(params: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+		if (typeof params.expr !== 'string' || params.expr === '') throw new Error('eval requires {expr: string}');
 		this.requireView();
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode: 'ui', t0: performance.now(),
@@ -549,26 +538,14 @@ export class AutomationServer {
 		};
 		this.activeRun = run;
 		try {
-			this.bridge.postToWebview({ __automation: { runId: run.runId, steps: [{ op: 'eval', expr: p.expr }] } });
-			const outcome = await this.waitForRun(run, typeof p.timeoutMs === 'number' ? p.timeoutMs : DEFAULT_RUN_TIMEOUT_MS);
+			this.bridge.postToWebview({ __automation: { runId: run.runId, steps: [{ op: 'eval', expr: params.expr }] } });
+			const outcome = await this.waitForRun(run, typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS);
 			if (outcome === 'timeout' || run.shimResult === null) return { ok: false, error: 'eval timed out' };
 			if (!run.shimResult.ok) return { ok: false, error: run.shimResult.error ?? 'eval failed' };
 			return { ok: true, value: run.shimResult.results[0] };
 		} finally {
 			this.activeRun = null;
 		}
-	}
-
-	private async queryState(params: unknown): Promise<unknown> {
-		const p = this.parseParams(params);
-		const kind = p.kind;
-		if (kind === 'repos') return this.bridge.viewState().repos;
-		this.requireView();
-		const repo = typeof p.repo === 'string' ? p.repo : this.bridge.viewState().currentRepo;
-		if (typeof repo !== 'string' || repo === '') throw new CodedError(JSONRPC_INVALID_PARAMS, 'gg.query requires an active repository');
-		if (kind === 'repoInfo') return this.queryRepoInfo(repo);
-		if (kind === 'commits') return this.queryCommits(repo, typeof p.maxCommits === 'number' ? p.maxCommits : 100);
-		throw new CodedError(JSONRPC_INVALID_PARAMS, 'Unknown query kind "' + String(kind) + '" (use repos | repoInfo | commits)');
 	}
 
 	/* ---------------- State queries (host reads through the real pipeline) ---------------- */
@@ -585,7 +562,11 @@ export class AutomationServer {
 	private async queryCommits(repo: string, maxCommits: number): Promise<any[]> {
 		const result = await this.invokeRaw({
 			message: {
-				command: 'loadCommits', repo, refreshId: 0, hard: false,
+				// `hard: true` bypasses the view's commit cache: the probe must observe live
+				// repository state, not a page cached before the repository changed (a stash
+				// created after the view loaded would otherwise stay invisible forever — the
+				// cache key has no notion of repository mutations).
+				command: 'loadCommits', repo, refreshId: 0, hard: true,
 				branches: null, authors: null, maxCommits, showTags: true, showRemoteBranches: true,
 				includeCommitsMentionedByReflogs: false, onlyFollowFirstParent: false, commitOrdering: 'date',
 				remotes: [], hideRemotes: [], stashes: [], gerritFetchRefs: false, gerritFetchLimit: null,
@@ -626,23 +607,6 @@ export class AutomationServer {
 			+ (outcome.reason !== undefined ? ': ' + outcome.reason : '')
 			+ (outcome.error !== undefined ? ': ' + outcome.error : ''));
 		return outcome;
-	}
-
-	private computeStats(): ActionStats[] {
-		const stats: ActionStats[] = [];
-		for (const [key, samples] of this.samples) {
-			const sorted = [...samples].sort((a, b) => a - b);
-			const percentile = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-			const [id, mode] = key.split('|') as [string, AutomationMode];
-			stats.push({
-				id, mode,
-				runs: sorted.length,
-				failures: this.failureCounts.get(key) ?? 0,
-				minMs: sorted[0], p50Ms: percentile(0.5), p90Ms: percentile(0.9), maxMs: sorted[sorted.length - 1],
-				lastError: this.lastErrors.get(key) ?? null
-			});
-		}
-		return stats.sort((a, b) => a.id.localeCompare(b.id));
 	}
 }
 

@@ -13,6 +13,15 @@ declare global {
 		setState: (state: WebViewState) => void
 	};
 
+	/**
+	 * The webview's single acquireVsCodeApi() instance, shared with the automation shim
+	 * (resources/automation/shim.js): VS Code throws on a second acquisition, so whichever of
+	 * the shim and the bundle acquires first publishes it here for the other. See web/utils.ts.
+	 */
+	interface Window {
+		__ggVscodeApi?: ReturnType<typeof acquireVsCodeApi>;
+	}
+
 
 	/* State Types */
 

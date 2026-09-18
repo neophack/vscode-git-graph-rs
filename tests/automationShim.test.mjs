@@ -21,7 +21,15 @@ function makeWindow(html) {
 		pretendToBeVisual: true,
 		url: 'https://example.invalid/',
 		beforeParse: (w) => {
-			w.acquireVsCodeApi = () => ({ getState: () => null, setState: () => { }, postMessage: (m) => posted.push(m) });
+			// Real webviews allow one acquireVsCodeApi() call per page and throw on the second —
+			// model that guard, or a shim that acquires its own instance passes these tests and
+			// then stays silent forever inside VS Code.
+			let acquired = false;
+			w.acquireVsCodeApi = () => {
+				if (acquired) throw new Error('An instance of the VS Code API has already been acquired');
+				acquired = true;
+				return { getState: () => null, setState: () => { }, postMessage: (m) => posted.push(m) };
+			};
 		}
 	});
 	dom.window.eval(shimSource);
@@ -119,6 +127,77 @@ test('an unknown menu item fails the step', async () => {
 	assert.ok(result.error.indexOf('Do It') !== -1);
 });
 
+test('contextmenu accepts one candidate per interface language', async () => {
+	const { window, posted } = makeWindow('<body><div id="row">row</div><div id="label">第 1 个，共 5 个</div></body>');
+	const document = window.document;
+	let clicked = null;
+	document.getElementById('row').addEventListener('contextmenu', () => {
+		const menu = document.createElement('ul');
+		menu.className = 'contextMenu';
+		for (const text of ['检出分支', 'Something Else']) {
+			const item = document.createElement('li');
+			item.className = 'contextMenuItem';
+			item.textContent = text;
+			item.addEventListener('click', () => { clicked = text; });
+			menu.appendChild(item);
+		}
+		document.body.appendChild(menu);
+	});
+
+	// The zh-CN item is the one rendered; the English candidate must not shadow it.
+	const result = await runSteps(window, posted, [
+		{ op: 'contextmenu', selector: '#row', item: ['Checkout Branch', '检出分支'] },
+		{ op: 'expectText', selector: '#label', contains: [' of ', '，共'] }
+	]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.equal(clicked, '检出分支');
+	assert.equal(result.results[1], '第 1 个，共 5 个');
+});
+
+test('expectText with candidates fails only when none of them is present', async () => {
+	const okWindow = makeWindow('<body><div id="label">1 of 5</div></body>');
+	const ok = await runSteps(okWindow.window, okWindow.posted, [{ op: 'expectText', selector: '#label', contains: [' of ', '，共'] }]);
+	assert.equal(ok.ok, true);
+	// A separate window: runSteps polls for runId 7, so a second batch in the same page would
+	// observe the first batch's stale result.
+	const badWindow = makeWindow('<body><div id="label">1 of 5</div></body>');
+	const bad = await runSteps(badWindow.window, badWindow.posted, [{ op: 'expectText', selector: '#label', contains: ['zzz', '，共'] }]);
+	assert.equal(bad.ok, false);
+	assert.ok(bad.error.indexOf('zzz') !== -1);
+});
+
+test('skipIfAbsent ends the batch as skipped when the element never appears', async () => {
+	const { window, posted } = makeWindow('<body><button id="btn"></button></body>');
+	const document = window.document;
+	let clicks = 0;
+	document.getElementById('btn').addEventListener('click', () => { clicks++; });
+
+	const result = await runSteps(window, posted, [
+		{ op: 'click', selector: '#btn' },
+		{ op: 'skipIfAbsent', selector: '#missing', timeoutMs: 150 },
+		{ op: 'click', selector: '#btn' } // must not run after the skip
+	]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.equal(result.skipped, true);
+	assert.ok((result.skipReason ?? '').includes('#missing'), JSON.stringify(result));
+	assert.equal(clicks, 1, 'the steps after a skip must not run');
+});
+
+test('skipIfAbsent continues the batch when the element appears', async () => {
+	const { window, posted } = makeWindow('<body><button id="btn"></button><div id="target"></div></body>');
+	const document = window.document;
+	let clicks = 0;
+	document.getElementById('btn').addEventListener('click', () => { clicks++; });
+
+	const result = await runSteps(window, posted, [
+		{ op: 'skipIfAbsent', selector: '#target', timeoutMs: 2000 },
+		{ op: 'click', selector: '#btn' }
+	]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.equal(result.skipped, undefined);
+	assert.equal(clicks, 1);
+});
+
 test('the shim installs its marker and ignores non-automation messages', async () => {
 	const { window, posted } = makeWindow('<body></body>');
 	assert.equal(window.__ggAutomation.ready, true);
@@ -126,4 +205,31 @@ test('the shim installs its marker and ignores non-automation messages', async (
 	window.dispatchEvent(new window.MessageEvent('message', { data: null }));
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	assert.equal(posted.length, 0);
+});
+
+test('posts through the bundle\'s shared API instance instead of acquiring a second one', async () => {
+	const { window, posted } = makeWindow('<body><button id="btn"></button></body>');
+	// Model the booted bundle (web/utils.ts): it consumed the only acquireVsCodeApi() call and
+	// published the instance — the exact state of a real webview when a step batch arrives. A
+	// shim that tries to acquire its own instance here throws inside its result callback, the
+	// host never hears from it again, and every UI-mode run times out.
+	const bundleApi = window.acquireVsCodeApi();
+	window.__ggVscodeApi = bundleApi;
+	assert.throws(() => window.acquireVsCodeApi(), /already been acquired/);
+
+	const result = await runSteps(window, posted, [{ op: 'click', selector: '#btn' }]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.equal(result.results.length, 1);
+});
+
+test('publishes its own instance under the shared handle when it acquires first', async () => {
+	const { window, posted } = makeWindow('<body></body>');
+	// No bundle has run yet: the shim's first post acquires the API and publishes it, so a
+	// bundle booted afterwards can reuse the handle instead of hitting the once-only guard.
+	const result = await runSteps(window, posted, [{ op: 'eval', expr: '1 + 1' }]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.ok(window.__ggVscodeApi !== undefined);
+	assert.throws(() => window.acquireVsCodeApi(), /already been acquired/); // it really acquired
+	window.__ggVscodeApi.postMessage({ probe: true });
+	assert.deepEqual(posted[posted.length - 1], { probe: true }); // ...and the handle is live
 });

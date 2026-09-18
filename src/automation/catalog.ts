@@ -16,11 +16,12 @@ export type AutomationMode = 'ui' | 'request';
 /** One step of a UI-mode run, executed sequentially by the in-page shim (resources/automation/shim.js). */
 export type UiStep =
 	| { readonly op: 'click' | 'dblclick'; readonly selector: string }
-	| { readonly op: 'contextmenu'; readonly selector: string; readonly item: string } // right-click the element, then click the menu item with this exact text
+	| { readonly op: 'contextmenu'; readonly selector: string; readonly item: string | readonly string[] } // right-click the element, then click the menu item whose visible text matches exactly (several texts => any of them, one per interface language)
 	| { readonly op: 'key'; readonly key: string; readonly ctrlOrCmd?: boolean; readonly shift?: boolean } // keydown on the document (what the view's keybinding observer listens to)
 	| { readonly op: 'waitFor' | 'waitForGone'; readonly selector: string; readonly timeoutMs?: number }
+	| { readonly op: 'skipIfAbsent'; readonly selector: string; readonly timeoutMs?: number } // wait for the element; when it never appears the whole action is SKIPPED (the repository/view does not offer this control) instead of failed
 	| { readonly op: 'set'; readonly selector: string; readonly value: string; readonly event: 'change' | 'input' }
-	| { readonly op: 'expectText'; readonly selector: string; readonly contains: string }
+	| { readonly op: 'expectText'; readonly selector: string; readonly contains: string | readonly string[] }
 	| { readonly op: 'eval'; readonly expr: string }; // a JS expression evaluated in the page (gg.eval / debugging); result must be JSON-cloneable
 
 /** A catalog entry: one user-facing control. */
@@ -33,8 +34,8 @@ export interface AutomationAction {
 	readonly group: string;
 	/** TRUE => the action mutates the repository (belongs to the `write` suite; the driver re-creates the fixture clone around it). */
 	readonly mutable: boolean;
-	/** Environment the action needs; the server skips the action when unavailable (`remote` => a configured remote; `stash` => at least one stash). */
-	readonly requires?: readonly ('remote' | 'stash')[];
+	/** Environment the action needs; the server skips the action when unavailable (`remote` => a configured remote; `stash` => at least one stash; `tag`/`annotatedTag` => tags in the loaded graph; `file` => a commit with file changes; `anotherBranch` => at least two branches; `anotherRepo` => at least two known repositories). */
+	readonly requires?: readonly ('remote' | 'stash' | 'tag' | 'annotatedTag' | 'file' | 'anotherBranch' | 'anotherRepo')[];
 	/**
 	 * TRUE declares the action awaits no host response (a pure view-state change, or traffic the
 	 * host answers silently such as `setRepoState` / `openCompareTab`). Such actions MUST declare
@@ -83,7 +84,7 @@ export function expandTemplate<T>(template: T, context: Record<string, string>):
 export function validateCatalog(catalog: readonly AutomationAction[]): string[] {
 	const problems: string[] = [];
 	const ids = new Set<string>();
-	const uiOps = new Set(['click', 'dblclick', 'contextmenu', 'key', 'waitFor', 'waitForGone', 'set', 'expectText', 'eval']);
+		const uiOps = new Set(['click', 'dblclick', 'contextmenu', 'key', 'waitFor', 'waitForGone', 'skipIfAbsent', 'set', 'expectText', 'eval']);
 	for (const action of catalog) {
 		const where = 'action "' + action.id + '"';
 		if (ids.has(action.id)) problems.push(where + ': duplicate id');
@@ -97,7 +98,10 @@ export function validateCatalog(catalog: readonly AutomationAction[]): string[] 
 				if ('selector' in step && typeof step.selector === 'string' && step.selector.trim() === '') {
 					problems.push(where + ': empty selector (step ' + i + ')');
 				}
-				if (step.op === 'contextmenu' && step.item.trim() === '') problems.push(where + ': empty menu item (step ' + i + ')');
+				if (step.op === 'contextmenu') {
+					const items = Array.isArray(step.item) ? step.item : [step.item];
+					if (items.some((text) => text.trim() === '')) problems.push(where + ': empty menu item (step ' + i + ')');
+				}
 				if (step.op === 'eval' && step.expr.trim() === '') problems.push(where + ': empty eval expression (step ' + i + ')');
 			}
 		}
@@ -128,27 +132,80 @@ export function validateCatalog(catalog: readonly AutomationAction[]): string[] 
  * referenced through `{{placeholder}}` context.
  */
 
+/**
+ * Exact-text candidates across the interface languages the extension ships (web/strings.ts):
+ * the shim clicks/looks for whichever the rendered UI shows, so a catalog entry matches menu
+ * items, dropdown options and labels under both the English and the zh-CN interface.
+ */
+const bi = (en: string, zh: string): readonly string[] => [en, zh];
+
+/** The Branches Dropdown's "Show All" option in both shipped interface languages. */
+const SHOW_ALL_TEXTS: readonly string[] = bi('Show All', '显示全部');
+
+/**
+ * A UI step that resolves once the Repository Dropdown's displayed value equals the page-global
+ * `window[name]` (a value an earlier eval stored): the value element is re-rendered by the view
+ * when the switch's reload lands, so this is the barrier that tells a real repository switch
+ * from the previous repository's still-rendered table.
+ */
+const dropdownValueIs = (name: string): UiStep => ({
+	op: 'eval',
+	expr: '(function(){var want=window[' + JSON.stringify(name) + '];return new Promise(function(resolve,reject){var n=0;var t=function(){var v=document.querySelector("#repoDropdown .dropdownCurrentValue");if(v!==null&&v.textContent.trim()===want)return resolve(want);if(++n>100)return reject(new Error("repository dropdown never switched to "+want));setTimeout(t,100);};t();});})()'
+});
+
+/** The pinned-controls chip of `branch` (a `{{…}}` placeholder): rendered above the windowed commit table, so it exists at any scroll depth. */
+const pinnedChipSelector = (branch: string): string => '.pinnedChip[data-type="branch"][data-value="' + branch + '"]';
+
+/**
+ * A UI step that snapshots whether the `{{branch}}` pinned-controls chip exists (the branch's
+ * current pin state) into `window.__ggPinWasPinned` — pin state is repository data a catalog
+ * entry cannot know, and the barriers below must observe the pin/unpin round-trip from whatever
+ * state the run starts in.
+ */
+const PIN_SNAPSHOT_STEP: UiStep = {
+	op: 'eval',
+	expr: '(function(){window.__ggPinWasPinned=document.querySelector(' + JSON.stringify(pinnedChipSelector('{{branch}}')) + ')!==null;return window.__ggPinWasPinned;})()'
+};
+
+/**
+ * A UI step that resolves once the `{{branch}}` pinned-controls chip presence has flipped from
+ * (`flipped`) or returned to (`restored`) the `window.__ggPinWasPinned` snapshot captured by
+ * PIN_SNAPSHOT_STEP. The chip row sits above the windowed commit table, so the barrier holds at
+ * any scroll depth — a first-table-row wait never settles on a view left scrolled deep in
+ * history (a real repository's branch label can sit far down the loaded page).
+ */
+const pinChipStateStep = (phase: 'flipped' | 'restored'): UiStep => ({
+	op: 'eval',
+	expr: '(function(){var sel=' + JSON.stringify(pinnedChipSelector('{{branch}}')) + ';var want=' + (phase === 'flipped' ? '!' : '') + 'window.__ggPinWasPinned;'
+		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){var has=document.querySelector(sel)!==null;'
+		+ 'if(has===want)return resolve(want?"pinned":"unpinned");'
+		+ 'if(++n>200)return reject(new Error("pin state never changed"));setTimeout(t,25);};t();});})()'
+});
+
 /** The in-page eval that selects exactly `branch` (and nothing else) in the Branches Dropdown. */
 const filterBranchDropdownExpr = (branch: string): string =>
 	'(function(){var opts=function(){return Array.from(document.querySelectorAll("#branchDropdown .dropdownOption"));};' +
 	'var sel=function(o){return o.className.split(/\\s+/).indexOf("selected")!==-1;};' +
 	'var name=function(o){return o.textContent.trim();};' +
+	'var showAllTexts=' + JSON.stringify(SHOW_ALL_TEXTS) + ';' +
+	'var isShowAll=function(o){return showAllTexts.indexOf(name(o))!==-1;};' +
 	'var find=function(){return opts().find(function(o){return name(o)===' + JSON.stringify(branch) + ';});};' +
 	// Defensive reset: whatever a previous entry left selected, start the filter from "Show All"
 	// so the target option is visible and the end state is independent of the incoming state.
-	'var showAll=opts().find(function(o){return name(o)==="Show All";});if(showAll!==undefined&&!sel(showAll))showAll.click();' +
+	'var showAll=opts().find(function(o){return isShowAll(o);});if(showAll!==undefined&&!sel(showAll))showAll.click();' +
 	'var target=find();if(target===undefined)throw new Error(' + JSON.stringify(branch) + '+" option missing");' +
 	'if(!sel(target))target.click();' +
-	'for(var again=true;again;){again=false;var other=opts().find(function(o){var n=name(o);return n!==' + JSON.stringify(branch) + '&&n!=="Show All"&&sel(o);});if(other!==undefined){other.click();again=true;}}' +
+	'for(var again=true;again;){again=false;var other=opts().find(function(o){var n=name(o);return n!==' + JSON.stringify(branch) + '&&!isShowAll(o)&&sel(o);});if(other!==undefined){other.click();again=true;}}' +
 	'if(!sel(find()))find().click();' +
 	'return "filtered";})()';
 
 /**
- * UI steps that filter the Branches Dropdown to exactly `branch`. The remote branch label only
- * renders when its tip is in the loaded graph; on the fixture every origin/feature-NNN tip is
- * deep history, so the dropdown filter (which a user would use to find such a branch) is what
- * brings the tip into view. Re-render-safe: the options are re-queried after every click, since
- * each selection re-renders the list.
+ * UI steps that filter the Branches Dropdown to exactly `branch` (a `{{…}}` placeholder —
+ * the remote branch is repository data). The remote branch label only renders when its tip is
+ * in the loaded graph; on repositories whose remote tips sit deep in history (the fixture's
+ * origin/feature-NNN among them), the dropdown filter (which a user would use to find such a
+ * branch) is what brings the tip into view. Re-render-safe: the options are re-queried after
+ * every click, since each selection re-renders the list.
  */
 const remoteBranchFilterSteps = (branch: string): readonly UiStep[] => [
 	{ op: 'click', selector: '#branchDropdown .dropdownCurrentValue' },
@@ -158,14 +215,14 @@ const remoteBranchFilterSteps = (branch: string): readonly UiStep[] => [
 	{ op: 'waitFor', selector: 'span.gitRef.remote[data-name="' + branch + '"]' }
 ];
 
-/** UI steps that filter the Branches Dropdown to the context remote branch (origin/feature-000). */
-const REMOTE_BRANCH_FILTER_STEPS: readonly UiStep[] = remoteBranchFilterSteps('origin/feature-000');
+/** UI steps that filter the Branches Dropdown to the context remote branch ({{remote}}/{{remoteBranch}}). */
+const REMOTE_BRANCH_FILTER_STEPS: readonly UiStep[] = remoteBranchFilterSteps('{{remote}}/{{remoteBranch}}');
 
 /** UI steps that reset the Branches Dropdown to "Show All" and wait for the reload to render. */
 const SHOW_ALL_RESTORE_STEPS: readonly UiStep[] = [
 	{ op: 'click', selector: '#branchDropdown .dropdownCurrentValue' },
 	{ op: 'waitFor', selector: '#branchDropdown .dropdownOption' },
-	{ op: 'eval', expr: '[...document.querySelectorAll("#branchDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'Show All\').click()' },
+	{ op: 'eval', expr: '(function(){var w=' + JSON.stringify(SHOW_ALL_TEXTS) + ';var o=[...document.querySelectorAll("#branchDropdown .dropdownOption")].find(function(o){return w.indexOf(o.textContent.trim())!==-1;});if(o===undefined)throw new Error("Show All option missing");o.click();return "clicked";})()' },
 	{ op: 'key', key: 'Escape' },
 	{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the restore reload has rendered
 ];
@@ -173,12 +230,13 @@ const SHOW_ALL_RESTORE_STEPS: readonly UiStep[] = [
 /**
  * A UI step that scrolls the commit table down until the row carrying `selector` renders
  * (windowed rendering keeps only the viewport rows in the DOM), then resolves. Starts from the
- * top — a preceding checkout may have scrolled the view deep — and is robust to the index shifts
- * earlier write-suite mutations cause; gives up after ~800 rows.
+ * top — a preceding checkout or reveal may have scrolled the view deep — and scales its stride
+ * to the table's full scroll height, so any depth within the loaded page is covered in the same
+ * bounded number of attempts; gives up after ~50 attempts.
  */
 const scrollUntilVisibleStep = (selector: string): UiStep => ({
 	op: 'eval',
-	expr: '(function(){return new Promise(function(resolve,reject){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));var attempt=0;var step=function(){if(document.querySelector(' + JSON.stringify(selector) + '))return resolve("found");if(attempt++>40)return reject(new Error("row never rendered: ' + selector.replace(/"/g, '') + '"));v.scrollTop=attempt*20*24;v.dispatchEvent(new Event("scroll"));setTimeout(step,120);};setTimeout(step,150);});})()'
+	expr: '(function(){return new Promise(function(resolve,reject){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));var attempt=0;var step=function(){if(document.querySelector(' + JSON.stringify(selector) + '))return resolve("found");var max=v.scrollHeight-v.clientHeight;var stride=Math.max(20*24,Math.ceil(max/40));if(attempt++>50)return reject(new Error("row never rendered: ' + selector.replace(/"/g, '') + '"));if(max>0){v.scrollTop=Math.min(max,stride*attempt);v.dispatchEvent(new Event("scroll"));}setTimeout(step,120);};setTimeout(step,150);});})()'
 });
 
 /**
@@ -187,12 +245,13 @@ const scrollUntilVisibleStep = (selector: string): UiStep => ({
  * non-bubbling: the ContextMenu singleton closes itself on any document-level click, which would
  * otherwise remove the menu opened by this very event.
  */
-const reflogRowMenuStep = (rowSelector: string, item: string): UiStep => ({
+const reflogRowMenuStep = (rowSelector: string, item: string | readonly string[]): UiStep => ({
 	op: 'eval',
 	expr: '(function(){var row=document.querySelector(' + JSON.stringify(rowSelector) + ');if(row===null)throw new Error("reflog row not found: ' + rowSelector.replace(/"/g, '') + '");' +
 		'row.dispatchEvent(new MouseEvent("click",{bubbles:false,cancelable:true}));' +
+		'var wanted=' + JSON.stringify(Array.isArray(item) ? item : [item]) + ';' +
 		'var items=document.querySelectorAll("ul.contextMenu li.contextMenuItem");' +
-		'for(var i=0;i<items.length;i++){if(items[i].textContent.trim()===' + JSON.stringify(item) + '){items[i].click();return "clicked";}}' +
+		'for(var i=0;i<items.length;i++){if(wanted.indexOf(items[i].textContent.trim())!==-1){items[i].click();return "clicked";}}' +
 		'throw new Error("reflog menu item not found: ' + item + ' (saw " + Array.from(items).map(function(x){return x.textContent.trim();}).join("|") + ")");})()'
 });
 
@@ -231,20 +290,31 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Authors Dropdown',
 		group: 'control-bar',
 		mutable: false,
-		// The dropdown lists the authors recorded in the repository config (the fixture's 40
-		// "Fixture Author NN" identities), not the author of any single commit — the {{author}}
-		// context value ("Fixture", the seed identity) is never an option, so the flow selects
-		// the deterministic "Fixture Author 00" (author of every 40th fixture commit) and then
-		// restores "All". A selection change reloads the commits only (the dropdown's change
-		// callback skips the repo-info request), so no loadRepoInfo is expected.
+		// The dropdown lists the authors recorded in the repository config — repository data a
+		// catalog entry cannot know, so the flow is generic: it captures the current selection,
+		// picks any OTHER option (the selection change reloads the commits; the dropdown's change
+		// callback skips the repo-info request, so no loadRepoInfo is expected) and restores the
+		// captured selection afterwards, leaving later runs the initial state.
 		ui: [
 			{ op: 'click', selector: '#authorDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#authorDropdown .dropdownOption' },
-			{ op: 'eval', expr: '[...document.querySelectorAll("#authorDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'Fixture Author 00\').click()' },
+			{
+				op: 'eval',
+				expr: '(function(){var opts=[...document.querySelectorAll("#authorDropdown .dropdownOption")];' +
+					'var cur=document.querySelector("#authorDropdown .dropdownCurrentValue").textContent.trim();' +
+					'var target=opts.find(function(o){return o.textContent.trim()!==cur;});' +
+					'if(target===undefined)throw new Error("no author option other than the current selection ("+cur+")");' +
+					'window.__ggAuthorRestore=cur;target.click();return target.textContent.trim();})()'
+			},
 			{ op: 'key', key: 'Escape' }, // the multi-select dropdown stays open after a selection
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the filtered reload has rendered
 			{ op: 'click', selector: '#authorDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#authorDropdown .dropdownOption' },
-			{ op: 'eval', expr: '[...document.querySelectorAll("#authorDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'All\').click()' },
+			{
+				op: 'eval',
+				expr: '(function(){var want=window.__ggAuthorRestore;var target=[...document.querySelectorAll("#authorDropdown .dropdownOption")].find(function(o){return o.textContent.trim()===want;});' +
+					'if(target===undefined)throw new Error("restore option missing: "+want);target.click();return want;})()'
+			},
 			{ op: 'key', key: 'Escape' },
 			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the restore reload has rendered
 		],
@@ -257,16 +327,57 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		// Selecting one branch (from the initial "Show All") reloads the commits only (the
 		// dropdown's change callback skips the repo-info request), so no loadRepoInfo is expected.
+		// The dropdown is reset to "Show All" afterwards: leaving the graph filtered to a single
+		// branch would strand every later entry's targets (rows, ref labels) outside the filtered
+		// graph — the branch tip may be old history.
 		ui: [
 			{ op: 'click', selector: '#branchDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#branchDropdown .dropdownOption' },
 			{ op: 'eval', expr: '[...document.querySelectorAll("#branchDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'{{branch}}\').click()' },
 			{ op: 'key', key: 'Escape' },
-			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the reload has rendered
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the filtered reload has rendered
+			...SHOW_ALL_RESTORE_STEPS
 		],
 		// No request path: the reload derives from view state (currentBranches) only the live
 		// view can assemble.
 		expect: { responses: ['loadCommits'] }
+	},
+	{
+		id: 'control-bar/repo-dropdown',
+		title: 'Repository Dropdown',
+		group: 'control-bar',
+		mutable: false,
+		requires: ['anotherRepo'],
+		// Switching repositories loads the other repository's info and commits (the dropdown's
+		// change callback), then switches back to the original — the repository names are
+		// repository data the catalog cannot know, so the flow is generic: it captures the
+		// current selection, picks any OTHER option and restores the captured one afterwards.
+		// The barriers poll the dropdown's own value: the table's row 0 still shows the previous
+		// repository until its reload lands, so it cannot signal the switch. No request path:
+		// the reload derives from view state only the live view can assemble.
+		ui: [
+			{ op: 'click', selector: '#repoDropdown .dropdownCurrentValue' },
+			{ op: 'waitFor', selector: '#repoDropdown .dropdownOption' },
+			{
+				op: 'eval',
+				expr: '(function(){var cur=document.querySelector("#repoDropdown .dropdownCurrentValue").textContent.trim();' +
+					'var target=[...document.querySelectorAll("#repoDropdown .dropdownOption")].find(function(o){return o.textContent.trim()!==cur;});' +
+					'if(target===undefined)throw new Error("no repository other than the current selection ("+cur+")");' +
+					'window.__ggRepoRestore=cur;window.__ggRepoSwitched=target.textContent.trim();target.click();return window.__ggRepoSwitched;})()'
+			},
+			dropdownValueIs('__ggRepoSwitched'),
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the other repository has rendered
+			{ op: 'click', selector: '#repoDropdown .dropdownCurrentValue' },
+			{ op: 'waitFor', selector: '#repoDropdown .dropdownOption' },
+			{
+				op: 'eval',
+				expr: '(function(){var want=window.__ggRepoRestore;var target=[...document.querySelectorAll("#repoDropdown .dropdownOption")].find(function(o){return o.textContent.trim()===want;});' +
+					'if(target===undefined)throw new Error("restore option missing: "+want);target.click();return want;})()'
+			},
+			dropdownValueIs('__ggRepoRestore'),
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the original repository has rendered
+		],
+		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
 	},
 	{
 		id: 'control-bar/current-btn',
@@ -298,13 +409,14 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Filter Commits by Path',
 		group: 'control-bar',
 		mutable: false,
-		// Applying (or clearing) a path filter reloads the commits only; the module file the
-		// fixture guarantees (src/module-NNN/file-NN.ts) always yields a non-empty result. The
-		// flow re-opens the dialog and clears the filter so later runs see the unfiltered graph.
+		requires: ['file'],
+		// Applying (or clearing) a path filter reloads the commits only; the context file exists
+		// by construction, so the filtered result is non-empty. The flow re-opens the dialog and
+		// clears the filter so later runs see the unfiltered graph.
 		ui: [
 			{ op: 'click', selector: '#filterBtn' },
 			{ op: 'waitFor', selector: '.dialog' },
-			{ op: 'set', selector: '#dialogInput0', value: 'src/module-000/file-00.ts', event: 'input' },
+			{ op: 'set', selector: '#dialogInput0', value: '{{file}}', event: 'input' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitForGone', selector: '.dialog' },
 			{ op: 'click', selector: '#filterBtn' },
@@ -317,7 +429,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			branches: null, authors: null, maxCommits: 10000, showTags: true, showRemoteBranches: true,
 			includeCommitsMentionedByReflogs: false, onlyFollowFirstParent: false, commitOrdering: 'date',
 			remotes: [], hideRemotes: [], stashes: [], gerritFetchRefs: false, gerritFetchLimit: null,
-			gerritStatusFilter: { new: false, merged: false, abandoned: false, wip: false }, filterPath: 'src/module-000/file-00.ts'
+			gerritStatusFilter: { new: false, merged: false, abandoned: false, wip: false }, filterPath: '{{file}}'
 		}],
 		expect: { responses: ['loadCommits'] }
 	},
@@ -338,10 +450,13 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Load More Commits',
 		group: 'control-bar',
 		mutable: false,
-		// The footer button exists only while moreCommitsAvailable (the fixture repository has
-		// more commits than the initial page). Clicking it pages the commit list; completion is
-		// gated by the loadCommits response.
-		ui: [{ op: 'click', selector: '#loadMoreCommitsBtn' }],
+		// The footer button exists only while moreCommitsAvailable: on a repository whose history
+		// fits the initial page there is nothing to load, and the action skips. Clicking the
+		// button pages the commit list; completion is gated by the loadCommits response.
+		ui: [
+			{ op: 'skipIfAbsent', selector: '#loadMoreCommitsBtn' },
+			{ op: 'click', selector: '#loadMoreCommitsBtn' }
+		],
 		request: [{
 			command: 'loadCommits', repo: '{{repo}}', refreshId: 0, hard: false,
 			branches: null, authors: null, maxCommits: 10000, showTags: true, showRemoteBranches: true,
@@ -447,7 +562,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// is assembled by the live view. The trailing dismiss guards the run against a leftover
 		// error dialog (the action answers through the refresh path).
 		ui: [
-			{ op: 'contextmenu', selector: '#tableColHeaders', item: 'Author Timestamp Order' },
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Author Timestamp Order', '按作者时间排序') },
 			DISMISS_ERROR_DIALOG_STEP
 		],
 		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
@@ -461,7 +576,44 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'row',
 		mutable: false,
 		// Column visibility toggles persist columnWidths via a silent setRepoState and re-render.
-		ui: [{ op: 'contextmenu', selector: '#tableColHeaders', item: 'Date' }],
+		// The flow toggles the column OFF and back ON: leaving it hidden would change the layout
+		// every later run (and the user's view) starts from.
+		ui: [
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Date', '日期') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the re-render has landed
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Date', '日期') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'row/column-toggle-author',
+		title: 'Author',
+		group: 'row',
+		mutable: false,
+		// Same round-trip as the Date toggle, for the Author column.
+		ui: [
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Author', '作者') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' },
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Author', '作者') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'row/column-toggle-commit',
+		title: 'Commit',
+		group: 'row',
+		mutable: false,
+		// Same round-trip as the Date toggle, for the Commit Hash column.
+		ui: [
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Commit', '提交') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' },
+			{ op: 'contextmenu', selector: '#tableColHeaders', item: bi('Commit', '提交') },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }
+		],
 		noHostTraffic: true,
 		expect: { responses: [] }
 	},
@@ -488,6 +640,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// Double-clicking a local branch label checks the branch out directly — no dialog (the
 		// data-loss guard does not cover checkoutBranch), only the action-running overlay.
 		ui: [
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
 			{ op: 'dblclick', selector: 'span.gitRef.head[data-name="{{branch}}"]' },
 			DISMISS_ERROR_DIALOG_STEP
 		],
@@ -502,7 +655,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		// The per-row button opens the commit's changes (against its first parent) in a Commit
 		// Comparison tab; the host answers openCompareTab with no response.
-		ui: [{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn' }],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn' }
+		],
 		request: [{ command: 'openCompareTab', repo: '{{repo}}', fromHash: '{{commitParent}}', toHash: '{{commit}}', singleCommit: true }],
 		noHostTraffic: true,
 		expect: { responses: [] }
@@ -513,6 +669,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'row',
 		mutable: false,
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'click', selector: '#cdvClose' },
@@ -533,7 +690,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// unchecked here so the tag stays local. TextRef inputs validate on keyup, so the name
 		// is typed through an eval (a plain `set` would leave the dialog's no-input state).
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Add Tag…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Add Tag…', '添加标签…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-tag";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogInput3' },
@@ -552,7 +710,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// "Always accept" stays unchecked so the confirmation dialog is part of the flow;
 		// confirming detaches HEAD at the commit.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Checkout…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Checkout…', '检出…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -569,7 +728,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// A non-merge commit gets no parent selector; both checkboxes keep their defaults.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Cherry Pick…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Cherry Pick…', '拣选(Cherry Pick)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -594,7 +754,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Copy Commit Hash to Clipboard',
 		group: 'menu-commit',
 		mutable: false,
-		ui: [{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Copy Commit Hash to Clipboard' }],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Copy Commit Hash to Clipboard', '复制提交哈希到剪贴板') }
+		],
 		request: [{ command: 'copyToClipboard', type: 'Commit Hash', data: '{{commit}}' }],
 		expect: { responses: ['copyToClipboard'] }
 	},
@@ -605,7 +768,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		// The copied subject is a runtime value the catalog cannot template (no subject
 		// placeholder exists), so only the UI path is modelled.
-		ui: [{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Copy Commit Subject to Clipboard' }],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Copy Commit Subject to Clipboard', '复制提交主题到剪贴板') }
+		],
 		expect: { responses: ['copyToClipboard'] }
 	},
 	{
@@ -615,7 +781,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// The checkout checkbox keeps its default (off), so HEAD stays put.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Create Branch…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Create Branch…', '创建分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-branch";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -645,7 +812,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// (risk acknowledgement) dialog must be confirmed. The item is only offered when the
 		// graph can drop the commit (not the checked-out tip).
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Drop…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Drop…', '丢弃(Drop)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -663,7 +831,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// Only offered for commits that are not merges and not on a remote (the host
 		// re-validates before rewriting), so the fixture's `commit` must satisfy that.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Edit Message…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Edit Message…', '编辑提交信息…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'set', selector: '#dialogInput0', value: 'Reworded via automation', event: 'input' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -678,7 +847,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-commit',
 		mutable: true,
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Create Fixup Commit' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Create Fixup Commit', '创建修正（fixup）提交') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -694,7 +864,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// The dialog fires a predictConflicts probe first (unawaited traffic); with the default
 		// "create a commit" (no fast-forward) checkbox set, the merge commits.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Merge into current branch…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Merge into current branch…', '合并到当前分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -709,7 +880,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// Checkbox defaults: interactive off, ignore-date on, autosquash off.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Rebase current branch on this Commit…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Rebase current branch on this Commit…', '将当前分支变基到该提交…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -725,7 +897,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// Offered only on the checked-out commit's row, which carries the commitHeadDot marker —
 		// unlike the .current class, that excludes the uncommitted-changes row.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit:has(.commitHeadDot)', item: 'Reset Last Commit (Soft)…' },
+			{ op: 'contextmenu', selector: 'tr.commit:has(.commitHeadDot)', item: bi('Reset Last Commit (Soft)…', '重置上一次提交(软重置)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -740,7 +912,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// The mode selector is a CustomSelect left at its default (Mixed — no data-loss warning).
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Reset current branch to this Commit…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Reset current branch to this Commit…', '将当前分支重置到该提交…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -755,7 +928,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// Non-merge commits get a plain confirmation with parentIndex 0.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Revert…' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Revert…', '还原(Revert)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -769,7 +943,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-commit',
 		mutable: false,
 		// Pure view state — no message leaves the webview.
-		ui: [{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Select for Compare' }],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Select for Compare', '选择以比较') }
+		],
 		noHostTraffic: true,
 		expect: { responses: [] }
 	},
@@ -779,7 +956,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-commit',
 		mutable: true,
 		ui: [
-			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: 'Create Squash Commit' },
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
+			{ op: 'contextmenu', selector: 'tr.commit[data-hash="{{commit}}"]', item: bi('Create Squash Commit', '创建压缩（squash）提交') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -801,7 +979,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// The directories checkbox keeps its default (on); cleaning always carries a data-loss
 		// risk, so a second (risk acknowledgement) dialog follows the confirmation.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: 'Clean untracked files…' },
+			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Clean untracked files…', '清理未跟踪文件…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -816,7 +994,12 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Open Source Control View',
 		group: 'menu-uncommitted',
 		mutable: false,
-		ui: [{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: 'Open Source Control View' }],
+		// The row only renders while the working tree has uncommitted changes: on a clean tree
+		// there is nothing to right-click, and the action skips.
+		ui: [
+			{ op: 'skipIfAbsent', selector: 'tr#uncommittedChanges' },
+			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Open Source Control View', '打开源代码管理视图') }
+		],
 		request: [{ command: 'viewScm' }],
 		expect: { responses: ['viewScm'] }
 	},
@@ -828,7 +1011,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// The mode selector is a CustomSelect left at its default (Mixed — no data-loss
 		// warning). Resets 'HEAD', moving neither HEAD nor the branch name.
 		ui: [
-			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: 'Reset uncommitted changes…' },
+			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Reset uncommitted changes…', '重置未提交的更改…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -843,7 +1026,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// Message + include-untracked checkbox (default on, matching the request template).
 		ui: [
-			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: 'Stash uncommitted changes…' },
+			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Stash uncommitted changes…', '贮藏未提交的更改…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'set', selector: '#dialogInput0', value: 'Automation stash', event: 'input' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -861,7 +1044,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// A local checkout runs immediately — no confirmation (only the action-running overlay,
 		// closed by the post-checkout refresh).
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Checkout Branch' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Checkout Branch', '检出分支') },
 			DISMISS_ERROR_DIALOG_STEP
 		],
 		request: [{ command: 'checkoutBranch', repo: '{{repo}}', branchName: '{{branch}}', remoteBranch: null, pullAfterwards: null }],
@@ -873,10 +1057,13 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Compare with...',
 		group: 'menu-branch',
 		mutable: false,
+		requires: ['anotherBranch'],
 		// A branch-picker dialog whose Compare action opens a Commit Comparison tab (no host
-		// response); the target defaults to the first other branch.
+		// response); the target defaults to the first other branch — which needs a second branch
+		// to exist (the action skips on single-branch repositories).
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Compare with...' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Compare with...', '比较...') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitForGone', selector: '.dialog' }
@@ -889,7 +1076,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Copy Branch Name to Clipboard',
 		group: 'menu-branch',
 		mutable: false,
-		ui: [{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Copy Branch Name to Clipboard' }],
+		ui: [
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Copy Branch Name to Clipboard', '复制分支名称到剪贴板') }
+		],
 		request: [{ command: 'copyToClipboard', type: 'Branch Name', data: '{{branch}}' }],
 		expect: { responses: ['copyToClipboard'] }
 	},
@@ -900,7 +1090,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// Writes the archive into the working tree — the driver re-creates the fixture around it.
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Create Archive' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Create Archive', '创建归档') },
 			DISMISS_ERROR_DIALOG_STEP
 		],
 		request: [{ command: 'createArchive', repo: '{{repo}}', ref: '{{branch}}' }],
@@ -913,7 +1104,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		// Creates at the label's commit; `commit` approximates that hash in request mode.
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Create Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Create Branch…', '创建分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-branch-2";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -932,7 +1124,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// acknowledgement) dialog after the confirmation. The remote-deletion checkbox (present
 		// only for branches that exist on a remote) stays unchecked.
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Delete Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Delete Branch…', '删除分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogInput0' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -950,7 +1143,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-branch',
 		mutable: true,
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Merge into current branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Merge into current branch…', '合并到当前分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -967,7 +1161,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// The dialog offers a force-update checkbox (default off — no data-loss warning); the
 		// request fetches the branch from the first remote into the same-named local branch.
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Pull Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Pull Branch…', '拉取分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -984,7 +1179,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// With a single remote the dialog is a set-upstream checkbox (default on) and a push-mode
 		// radio left at Normal (a force mode would trigger the data-loss warning).
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Push Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Push Branch…', '推送分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -999,7 +1195,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-branch',
 		mutable: true,
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Rebase current branch on Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Rebase current branch on Branch…', '将当前分支变基到该分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -1013,7 +1210,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-branch',
 		mutable: true,
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: 'Rename Branch…' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Rename Branch…', '重命名分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="{{branch}}-renamed";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -1022,6 +1220,34 @@ export const CATALOG: readonly AutomationAction[] = [
 		request: [{ command: 'renameBranch', repo: '{{repo}}', oldName: '{{branch}}', newName: '{{branch}}-renamed' }],
 		expect: { responses: ['renameBranch'] },
 		verify: { kind: 'branchAbsent', placeholder: '{{branch}}' }
+	},
+	{
+		id: 'menu-branch/pin',
+		title: 'Pin Branch',
+		group: 'menu-branch',
+		mutable: false,
+		// Pinning persists via a silent setRepoState and re-renders; the item's title depends on
+		// the pin state ("Pin Branch" / "Unpin Branch"), so the eval clicks whichever the current
+		// state offers — twice, which returns the branch to its original pin state. The barriers
+		// observe the pinned-controls chip (present at any scroll depth) flipping and restoring:
+		// the flow scrolls the branch label into view first, which on a real repository can leave
+		// the view deep in history where the first table row never renders.
+		ui: [
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
+			PIN_SNAPSHOT_STEP,
+			{
+				op: 'eval',
+				expr: '(function(){var l=document.querySelector(\'span.gitRef.head[data-name="{{branch}}"]\');if(l===null)throw new Error(\'branch label not rendered: {{branch}}\');l.dispatchEvent(new MouseEvent(\'contextmenu\',{bubbles:true,cancelable:true,button:2}));var wanted=' + JSON.stringify([...bi('Pin Branch', '固定分支'), ...bi('Unpin Branch', '取消固定分支')]) + ';var items=document.querySelectorAll(\'ul.contextMenu li.contextMenuItem\');for(var i=0;i<items.length;i++){var t=items[i].textContent.trim();if(wanted.indexOf(t)!==-1){items[i].click();return t;}}throw new Error(\'pin/unpin item not found: \'+Array.from(items).map(function(x){return x.textContent.trim();}).join(\'|\'));})()'
+			},
+			pinChipStateStep('flipped'), // the toggle's re-render has landed
+			{
+				op: 'eval',
+				expr: '(function(){var l=document.querySelector(\'span.gitRef.head[data-name="{{branch}}"]\');if(l===null)throw new Error(\'branch label not rendered: {{branch}}\');l.dispatchEvent(new MouseEvent(\'contextmenu\',{bubbles:true,cancelable:true,button:2}));var wanted=' + JSON.stringify([...bi('Pin Branch', '固定分支'), ...bi('Unpin Branch', '取消固定分支')]) + ';var items=document.querySelectorAll(\'ul.contextMenu li.contextMenuItem\');for(var i=0;i<items.length;i++){var t=items[i].textContent.trim();if(wanted.indexOf(t)!==-1){items[i].click();return t;}}throw new Error(\'pin/unpin item not found: \'+Array.from(items).map(function(x){return x.textContent.trim();}).join(\'|\'));})()'
+			},
+			pinChipStateStep('restored') // the branch is back to its original pin state
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
 	},
 	{
 		id: 'menu-branch/select-in-dropdown',
@@ -1033,18 +1259,17 @@ export const CATALOG: readonly AutomationAction[] = [
 		// Branches Dropdown" — Dropdown.isSelected() treats Show All as everything selected. The
 		// eval clicks whichever the current state offers (both drive the same control), then the
 		// dropdown is reset to "Show All" so later runs start from the known initial state.
+		// {{branchHead}} instead of a hardcoded branch name: the checked-out branch is repository
+		// data, and its label may sit deep in the graph (windowed rendering keeps it out of the
+		// DOM) — the scroll step reveals it.
 		ui: [
-			{ op: 'waitFor', selector: 'span.gitRef.head[data-name="main"]' },
+			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branchHead}}"]'),
 			{
 				op: 'eval',
-				expr: '(function(){var l=document.querySelector(\'span.gitRef.head[data-name="main"]\');if(l===null)throw new Error(\'main label not rendered\');l.dispatchEvent(new MouseEvent(\'contextmenu\',{bubbles:true,cancelable:true,button:2}));var items=document.querySelectorAll(\'ul.contextMenu li.contextMenuItem\');for(var i=0;i<items.length;i++){var t=items[i].textContent.trim();if(t===\'Select in Branches Dropdown\'||t===\'Unselect in Branches Dropdown\'){items[i].click();return t;}}throw new Error(\'select/unselect item not found: \'+Array.from(items).map(function(x){return x.textContent.trim();}).join(\'|\'));})()'
+				expr: '(function(){var s=\'span.gitRef.head[data-name="{{branchHead}}"]\';var l=document.querySelector(s);if(l===null)throw new Error(\'branch label not rendered: {{branchHead}}\');l.dispatchEvent(new MouseEvent(\'contextmenu\',{bubbles:true,cancelable:true,button:2}));var wanted=' + JSON.stringify([...bi('Select in Branches Dropdown', '在分支下拉列表中选中'), ...bi('Unselect in Branches Dropdown', '在分支下拉列表中取消选中')]) + ';var items=document.querySelectorAll(\'ul.contextMenu li.contextMenuItem\');for(var i=0;i<items.length;i++){var t=items[i].textContent.trim();if(wanted.indexOf(t)!==-1){items[i].click();return t;}}throw new Error(\'select/unselect item not found: \'+Array.from(items).map(function(x){return x.textContent.trim();}).join(\'|\'));})()'
 			},
-			{ op: 'waitFor', selector: 'span.gitRef.head[data-name="main"]' }, // the reload has rendered
-			{ op: 'click', selector: '#branchDropdown .dropdownCurrentValue' },
-			{ op: 'waitFor', selector: '#branchDropdown .dropdownOption' },
-			{ op: 'eval', expr: '[...document.querySelectorAll("#branchDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'Show All\').click()' },
-			{ op: 'key', key: 'Escape' },
-			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the restore reload has rendered
+			{ op: 'waitFor', selector: 'span.gitRef.head[data-name="{{branchHead}}"]' }, // the reload has rendered
+			...SHOW_ALL_RESTORE_STEPS
 		],
 		expect: { responses: ['loadCommits'] }
 	},
@@ -1064,7 +1289,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// data-name is the remote-prefixed ref.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-000"]', item: 'Checkout Branch…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Checkout Branch…', '检出分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-remote-checkout";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -1084,7 +1309,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// REMOTE_BRANCH_FILTER_STEPS); the copied name is the remote-prefixed ref.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-000"]', item: 'Copy Branch Name to Clipboard' },
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Copy Branch Name to Clipboard', '复制分支名称到剪贴板') },
 			...SHOW_ALL_RESTORE_STEPS
 		],
 		request: [{ command: 'copyToClipboard', type: 'Branch Name', data: '{{remote}}/{{remoteBranch}}' }],
@@ -1101,7 +1326,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// the flow settles and dismisses.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-000"]', item: 'Create Archive' },
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Create Archive', '创建归档') },
 			{ op: 'waitFor', selector: '.dialog' },
 			DISMISS_ERROR_DIALOG_STEP,
 			...SHOW_ALL_RESTORE_STEPS
@@ -1119,7 +1344,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// branch's commit and checked out. `commit` approximates that commit in request mode.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-000"]', item: 'Create Branch…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Create Branch…', '创建分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-remote-branch";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -1136,12 +1361,12 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		requires: ['remote'],
 		// Deleting a remote branch always carries a data-loss risk: after the confirmation
-		// dialog, a second (risk acknowledgement) dialog must be confirmed. origin/feature-007 is
-		// used (not the shared {{remoteBranch}}) so the branch survives for the later
-		// remote-branch entries in the same write pass.
+		// dialog, a second (risk acknowledgement) dialog must be confirmed. The shared
+		// {{remoteBranch}} is used: every action re-resolves its context, so the later
+		// remote-branch entries of the same write pass simply move to the next branch.
 		ui: [
-			...remoteBranchFilterSteps('origin/feature-007'),
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-007"]', item: 'Delete Remote Branch…' },
+			...remoteBranchFilterSteps('{{remote}}/{{remoteBranch}}'),
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Delete Remote Branch…', '删除远程分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -1149,7 +1374,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			DISMISS_ERROR_DIALOG_STEP,
 			...SHOW_ALL_RESTORE_STEPS
 		],
-		request: [{ command: 'deleteRemoteBranch', repo: '{{repo}}', branchName: 'feature-007', remote: '{{remote}}' }],
+		request: [{ command: 'deleteRemoteBranch', repo: '{{repo}}', branchName: '{{remoteBranch}}', remote: '{{remote}}' }],
 		expect: { responses: ['deleteRemoteBranch'] }
 	},
 	{
@@ -1203,7 +1428,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// option being off — the dropdown falls back to "Show All", restoring the initial state.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
-			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="origin/feature-000"]', item: 'Unselect in Branches Dropdown' },
+			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Unselect in Branches Dropdown', '在分支下拉列表中取消选中') },
 			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the fallback reload has rendered
 		],
 		expect: { responses: ['loadCommits'] }
@@ -1218,7 +1443,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		requires: ['stash'],
 		// The reinstate-index checkbox keeps its default (off).
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Apply Stash…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Apply Stash…', '应用贮藏(Apply Stash)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -1233,7 +1458,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		requires: ['stash'],
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Create Branch from Stash…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Create Branch from Stash…', '从贮藏创建分支…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-stash-branch";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'click', selector: '#dialogAction' },
@@ -1249,7 +1474,13 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		requires: ['stash'],
 		// The stash commit hash is a runtime value with no placeholder, so only the UI path.
-		ui: [{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Copy Stash Hash to Clipboard' }],
+		// A stash row can sit deep in the loaded page (windowed rendering keeps only viewport
+		// rows in the DOM) — the flow scrolls to the label first; a stash outside the loaded
+		// page never resolves {{stash}} (the server probes the loaded graph), so the action skips.
+		ui: [
+			scrollUntilVisibleStep('span.gitRef.stash[data-name="{{stash}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Copy Stash Hash to Clipboard', '复制贮藏哈希到剪贴板') }
+		],
 		expect: { responses: ['copyToClipboard'] }
 	},
 	{
@@ -1258,7 +1489,11 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-stash',
 		mutable: false,
 		requires: ['stash'],
-		ui: [{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Copy Stash Name to Clipboard' }],
+		// Same scroll-to-the-label preamble as copy-hash: the stash row may render far below the viewport.
+		ui: [
+			scrollUntilVisibleStep('span.gitRef.stash[data-name="{{stash}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Copy Stash Name to Clipboard', '复制贮藏名称到剪贴板') }
+		],
 		request: [{ command: 'copyToClipboard', type: 'Stash Name', data: '{{stash}}' }],
 		expect: { responses: ['copyToClipboard'] }
 	},
@@ -1271,7 +1506,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// Dropping a stash always carries a data-loss risk: after the confirmation dialog, a
 		// second (risk acknowledgement) dialog must be confirmed.
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Drop Stash…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Drop Stash…', '丢弃贮藏(Drop Stash)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -1288,7 +1523,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: true,
 		requires: ['stash'],
 		ui: [
-			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: 'Pop Stash…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.stash[data-name="{{stash}}"]', item: bi('Pop Stash…', '弹出贮藏(Pop Stash)…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -1303,14 +1538,14 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Copy Tag Name to Clipboard',
 		group: 'menu-tag',
 		mutable: false,
-		// The first page of the fixture graph renders no tag rows (they start ~100 commits deep),
-		// and windowed rendering keeps only the viewport rows in the DOM — so the flow scrolls
-		// until the deterministic v1.29.0 label (first tagged commit in the loaded page) renders,
-		// then restores the scroll position. The request path uses v1.0.0, which always exists in
-		// the repository.
+		requires: ['tag'],
+		// Tag rows sit deep in the graph and windowed rendering keeps only the viewport rows in
+		// the DOM — the flow scrolls until the {{tag}} label (the first tag of the loaded page,
+		// a repository value the server resolves) renders, then restores the scroll position.
+		// The request path uses v1.0.0, the fixture's always-existing tag.
 		ui: [
-			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: 'Copy Tag Name to Clipboard' },
+			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{tag}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{tag}}"]', item: bi('Copy Tag Name to Clipboard', '复制标签名称到剪贴板') },
 			...SCROLL_TOP_STEPS
 		],
 		request: [{ command: 'copyToClipboard', type: 'Tag Name', data: 'v1.0.0' }],
@@ -1325,7 +1560,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// which the flow settles and dismisses.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: 'Create Archive' },
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Create Archive', '创建归档') },
 			{ op: 'waitFor', selector: '.dialog' },
 			DISMISS_ERROR_DIALOG_STEP,
 			...SCROLL_TOP_STEPS
@@ -1343,7 +1578,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// local tag survives until this entry runs; menu-tag/push uses a different tag again.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: 'Delete Tag…' },
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Delete Tag…', '删除标签…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP,
@@ -1364,8 +1599,8 @@ export const CATALOG: readonly AutomationAction[] = [
 		// the action-running overlay), which the flow settles and dismisses. `commit`
 		// approximates the tagged commit (the live flow passes the tag's own commit hash).
 		ui: [
-			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.28.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.28.0"]', item: 'Push Tag…' },
+			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{annotatedTag}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{annotatedTag}}"]', item: bi('Push Tag…', '推送标签…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -1380,15 +1615,17 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'View Details',
 		group: 'menu-tag',
 		mutable: false,
-		// Only offered for annotated tags; v1.28.0 is the first annotated tag of the loaded page
-		// (~200 commits deep — the flow scrolls to it and back). The details arrive in a dialog
-		// (`.messageContent` distinguishes it from the action-running overlay, which also offers a
-		// "Dismiss" secondary — dismissing the overlay before the response would let the details
-		// dialog open behind it); it is closed with its Close action. `commit` approximates the
-		// tagged commit; the response arrives regardless.
+		requires: ['annotatedTag'],
+		// Only offered for annotated tags; {{annotatedTag}} is the first annotated tag of the
+		// loaded graph (the server picks it from the per-commit tag metadata), so the menu always
+		// offers the item and repositories without annotated tags skip cleanly. The details
+		// arrive in a dialog (`.messageContent` distinguishes it from the action-running overlay,
+		// which also offers a "Dismiss" secondary — dismissing the overlay before the response
+		// would let the details dialog open behind it); it is closed with its Close action.
+		// `commit` approximates the tagged commit; the response arrives regardless.
 		ui: [
-			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.28.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.28.0"]', item: 'View Details' },
+			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{annotatedTag}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{annotatedTag}}"]', item: bi('View Details', '查看详情') },
 			{ op: 'waitFor', selector: '.dialog .messageContent' },
 			{ op: 'click', selector: '#dialogSecondaryAction' },
 			{ op: 'waitForGone', selector: '.dialog', timeoutMs: 10000 },
@@ -1409,6 +1646,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// later runs see a clean state. The trailing dismiss guards the run against a leftover
 		// error dialog (a startCodeReview failure would otherwise swallow the next run's steps).
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvCodeReview' },
@@ -1429,6 +1667,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		// Folder open/closed state is webview state only — no host traffic.
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvCollapse' },
@@ -1445,6 +1684,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'cdv',
 		mutable: false,
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvExpand' },
@@ -1474,10 +1714,12 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Copy Absolute File Path to Clipboard',
 		group: 'cdv',
 		mutable: false,
+		requires: ['file'],
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'Copy Absolute File Path to Clipboard' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('Copy Absolute File Path to Clipboard', '复制绝对文件路径到剪贴板') },
 			{ op: 'click', selector: '#cdvClose' },
 			{ op: 'waitForGone', selector: '#cdv' }
 		],
@@ -1489,16 +1731,18 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Mark as Reviewed',
 		group: 'cdv',
 		mutable: true,
+		requires: ['file'],
 		// Only offered while a code review is in progress and the file is still unreviewed, so
 		// the flow starts a review first and ends it again afterwards. `file` (the first file of
 		// the commit's details) is data-index 0 in the freshly opened view.
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvCodeReview' },
 			{ op: 'click', selector: '#cdvCodeReview' },
 			{ op: 'waitFor', selector: '#cdvCodeReview.active' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'Mark as Reviewed' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('Mark as Reviewed', '标记为已评审') },
 			{ op: 'click', selector: '#cdvCodeReview' },
 			{ op: 'waitForGone', selector: '#cdvCodeReview.active' },
 			{ op: 'click', selector: '#cdvClose' },
@@ -1512,14 +1756,16 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Open File',
 		group: 'cdv',
 		mutable: false,
+		requires: ['file'],
 		// `file` belongs to the context commit, which the fixture checks out only on local-ahead —
 		// at HEAD=main the working tree does not contain it, so the host answers with an error
 		// dialog that the flow dismisses (a leaked modal would swallow the keyboard shortcuts of
 		// the later runs).
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'Open File' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('Open File', '打开文件') },
 			{ op: 'click', selector: '#cdvClose' },
 			{ op: 'waitForGone', selector: '#cdv' },
 			DISMISS_ERROR_DIALOG_STEP
@@ -1532,13 +1778,15 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'View Diff',
 		group: 'cdv',
 		mutable: false,
+		requires: ['file'],
 		// A single commit diffs against its first parent. The fixture history only ever contains
 		// Modified changes (no adds/deletes/renames), so type 'M' with oldFilePath ===
 		// newFilePath is exact for it; other repositories would need the runtime values.
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'View Diff' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('View Diff', '查看差异') },
 			{ op: 'click', selector: '#cdvClose' },
 			{ op: 'waitForGone', selector: '#cdv' }
 		],
@@ -1550,11 +1798,13 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'View Diff with Working File',
 		group: 'cdv',
 		mutable: false,
+		requires: ['file'],
 		// Only offered when the file still exists at this revision and is not binary.
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'View Diff with Working File' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('View Diff with Working File', '与工作区文件比较差异') },
 			{ op: 'click', selector: '#cdvClose' },
 			{ op: 'waitForGone', selector: '#cdv' }
 		],
@@ -1566,10 +1816,12 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'View File at this Revision',
 		group: 'cdv',
 		mutable: false,
+		requires: ['file'],
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
-			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: 'View File at this Revision' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('View File at this Revision', '查看该版本的文件') },
 			{ op: 'click', selector: '#cdvClose' },
 			{ op: 'waitForGone', selector: '#cdv' }
 		],
@@ -1583,6 +1835,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		// The view-type change persists via a setRepoState the host answers silently.
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvFileViewTypeList' },
@@ -1599,6 +1852,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'cdv',
 		mutable: false,
 		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
 			{ op: 'waitFor', selector: '#cdv' },
 			{ op: 'waitFor', selector: '#cdvFileViewTypeTree' },
@@ -1841,7 +2095,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		ui: [
 			{ op: 'click', selector: '#findBtn' },
 			{ op: 'waitFor', selector: '.findWidget.active' },
-			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{branch}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
+			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{findQuery}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'waitFor', selector: '.findMatch' },
 			{ op: 'click', selector: '#findNext' },
 			{ op: 'click', selector: '#findClose' },
@@ -1858,7 +2112,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		ui: [
 			{ op: 'click', selector: '#findBtn' },
 			{ op: 'waitFor', selector: '.findWidget.active' },
-			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{branch}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
+			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{findQuery}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'waitFor', selector: '.findMatch' },
 			{ op: 'click', selector: '#findPrev' },
 			{ op: 'click', selector: '#findClose' },
@@ -1882,7 +2136,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#findBtn' },
 			{ op: 'waitFor', selector: '.findWidget.active' },
 			{ op: 'eval', expr: '(function(){var c=document.getElementById("cdvClose");if(c!==null)c.click();return c!==null;})()' },
-			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{branch}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
+			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{findQuery}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'waitFor', selector: '.findMatch' },
 			{ op: 'eval', expr: '(function(){var b=document.getElementById("findOpenCdv");if(b.className.split(/\\s+/).indexOf("active")===-1){b.click();return "enabled";}return "already active";})()' },
 			{ op: 'waitFor', selector: '#cdv' },
@@ -1904,9 +2158,9 @@ export const CATALOG: readonly AutomationAction[] = [
 		ui: [
 			{ op: 'click', selector: '#findBtn' },
 			{ op: 'waitFor', selector: '.findWidget.active' },
-			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{branch}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
+			{ op: 'eval', expr: '(function(){var i=document.getElementById("findInput");i.value="{{findQuery}}";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
 			{ op: 'waitFor', selector: '.findMatch' },
-			{ op: 'expectText', selector: '#findPosition', contains: ' of ' },
+			{ op: 'expectText', selector: '#findPosition', contains: bi(' of ', '，共') },
 			{ op: 'click', selector: '#findClose' },
 			{ op: 'waitForGone', selector: '.findWidget.active' }
 		],
@@ -1968,7 +2222,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#openReflogView' },
 			{ op: 'waitFor', selector: '.reflogRow' },
-			reflogRowMenuStep('.reflogRow[data-index="1"]', 'Checkout…'),
+			reflogRowMenuStep('.reflogRow[data-index="1"]', bi('Checkout…', '检出…')),
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP,
@@ -1990,7 +2244,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#openReflogView' },
 			{ op: 'waitFor', selector: '.reflogRow' },
-			reflogRowMenuStep('.reflogRow', 'Copy Commit Hash to Clipboard'),
+			reflogRowMenuStep('.reflogRow', bi('Copy Commit Hash to Clipboard', '复制提交哈希到剪贴板')),
 			{ op: 'click', selector: '#reflogClose' },
 			{ op: 'waitForGone', selector: '#reflogWidget.active' }
 		],
@@ -2043,7 +2297,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#openReflogView' },
 			{ op: 'waitFor', selector: '.reflogRow' },
-			reflogRowMenuStep('.reflogRow[data-index="1"]', 'Reset current branch to here…'),
+			reflogRowMenuStep('.reflogRow[data-index="1"]', bi('Reset current branch to here…', '将当前分支重置到此处…')),
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP,
@@ -2189,14 +2443,14 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Open Log File',
 		group: 'host',
 		mutable: false,
-		// The Settings Widget's "Open Log File" tool. Session logging is disabled on the fixture,
-		// so the host answers with an error dialog that the flow dismisses (a leaked modal would
-		// swallow the keyboard shortcuts of the later runs).
+		// The Settings Widget's "Open Log File" tool. With session logging disabled (the fixture)
+		// the host answers with an error dialog; with it enabled (a developer machine) the log
+		// simply opens and no dialog appears — so the settle step tolerates both instead of a
+		// hard .dialog wait, and a leaked modal can never swallow the later runs' shortcuts.
 		ui: [
 			{ op: 'click', selector: '#settingsBtn' },
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#openLogFile' },
-			{ op: 'waitFor', selector: '.dialog' },
 			DISMISS_ERROR_DIALOG_STEP,
 			{ op: 'click', selector: '#settingsClose' },
 			{ op: 'waitForGone', selector: '#settingsWidget.active' }

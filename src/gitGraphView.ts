@@ -1540,6 +1540,10 @@ export class GitGraphView extends Disposable {
 	 */
 	private getHtmlForWebview() {
 		const config = getConfig(), nonce = getNonce();
+		// The automation shim's `eval` steps compile expressions at runtime, which the default
+		// CSP forbids — so the automation packaging variant (the only build whose webview carries
+		// the shim) also opts that page into 'unsafe-eval'. The default build stays strict.
+		const automationShimJs = this.getAutomationShimScript();
 		const initialState: GitGraphViewInitialState = {
 			config: this.getWebviewConfig(config),
 			lastActiveRepo: this.extensionState.getLastActiveRepo(),
@@ -1599,7 +1603,7 @@ export class GitGraphView extends Disposable {
 				<div id="footer"></div>
 			</div>
 			<script nonce="${nonce}">var initialState = ${encodeJsonForInlineScript(JSON.stringify(initialState))}, globalState = ${encodeJsonForInlineScript(JSON.stringify(globalState))}, workspaceState = ${encodeJsonForInlineScript(JSON.stringify(workspaceState))};</script>
-			<script nonce="${nonce}">${this.getAutomationShimScript()}</script>
+			<script nonce="${nonce}">${automationShimJs}</script>
 			<script nonce="${nonce}" src="${this.getMediaUri('vendor/markdown-it.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			<script nonce="${nonce}" src="${this.getMediaUri('out.min.js')}?v=${getMediaCacheVersion(this.extensionPath)}"></script>
 			</body>`;
@@ -1625,7 +1629,7 @@ export class GitGraphView extends Disposable {
 		<html lang="en">
 			<head>
 				<meta charset="UTF-8">
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(this.panel.webview.cspSource)} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data: https:;">
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(this.panel.webview.cspSource)} 'unsafe-inline'; script-src 'nonce-${nonce}'${automationShimJs !== '' ? " 'unsafe-eval'" : ''}; img-src data: https:;">
 				<meta name="viewport" content="width=device-width, initial-scale=1.0">
 				<link rel="stylesheet" type="text/css" href="${this.getMediaUri('out.min.css')}?v=${getMediaCacheVersion(this.extensionPath)}">
 				<title>Git Graph</title>

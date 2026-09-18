@@ -44,7 +44,8 @@ test('withAutomationContributions injects the contributions for the task and res
 		const pkg = JSON.parse(fs.readFileSync(path.join(sandboxRoot, 'package.json'), 'utf8'));
 		assert.ok(pkg.contributes.commands.some((c) => c.command === 'git-graph-rs.runAutomationTest'));
 		assert.equal(pkg.contributes.menus['editor/title'].length, 1);
-		assert.ok('git-graph-rs.automationPort' in pkg.contributes.configuration.properties);
+		// The external debug port is gone for good: no build carries the setting.
+		assert.ok(!('git-graph-rs.automationPort' in pkg.contributes.configuration.properties));
 		const nls = JSON.parse(fs.readFileSync(path.join(sandboxRoot, 'package.nls.json'), 'utf8'));
 		assert.equal(nls['command.git-graph-rs.runAutomationTest.title'], 'Run Automation Test');
 		return 'task-result';
