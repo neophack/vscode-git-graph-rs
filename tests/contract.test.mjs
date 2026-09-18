@@ -61,6 +61,12 @@ describe('the webview message protocol', () => {
 
 /* ---------- The contributed commands ---------- */
 
+// Commands the AUTOMATION build registers: the default package.json deliberately does not
+// contribute them — scripts/package-with-automation.mjs injects the contribution (button,
+// palette entry, setting) only when packaging that variant, and tests/automationPackaging.test.mjs
+// asserts both package shapes.
+const AUTOMATION_BUILD_COMMANDS = new Set(['git-graph-rs.runAutomationTest']);
+
 describe('the contributed commands', () => {
 	function registeredCommands() {
 		const registered = [
@@ -87,7 +93,7 @@ describe('the contributed commands', () => {
 	it('contributes every command it registers', () => {
 		const contributed = contributedCommands();
 		assert.deepEqual(
-			[...registeredCommands()].filter((command) => !contributed.has(command)).sort(),
+			[...registeredCommands()].filter((command) => !contributed.has(command) && !AUTOMATION_BUILD_COMMANDS.has(command)).sort(),
 			[],
 			'these commands are implemented but cannot be invoked from the UI'
 		);
