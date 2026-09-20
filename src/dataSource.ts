@@ -1897,11 +1897,6 @@ export class DataSource extends Disposable {
 			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${Date.now()}.js`);
 			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${Date.now()}.js`);
 			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${Date.now()}.txt`);
-			fs.writeFileSync(seqEditorFile, author === null
-				? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
-				: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$GG_AMEND_AUTHOR\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
-			fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
-			fs.writeFileSync(messageFile, message);
 			const node = `"${process.execPath}"`;
 			const extraEnv: { [key: string]: string } = {
 				GIT_SEQUENCE_EDITOR: `${node} "${seqEditorFile}" ${commitHash}`,
@@ -1916,6 +1911,14 @@ export class DataSource extends Disposable {
 			}
 
 			try {
+				// The editor scripts and the message file are written here, inside the try whose
+				// finally unlinks them: a failed write (disk full, EPERM) must not leave the files
+				// already written behind in the temp directory.
+				fs.writeFileSync(seqEditorFile, author === null
+					? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
+					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$GG_AMEND_AUTHOR\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
+				fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
+				fs.writeFileSync(messageFile, message);
 				return await this._spawnGit(rebaseArgs, repo, () => null, false, extraEnv);
 			} catch (errorMessage) {
 				// Restore the repository to the pre-rebase state (and the autostashed working tree)

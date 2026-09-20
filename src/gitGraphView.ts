@@ -845,7 +845,7 @@ export class GitGraphView extends Disposable {
 				} catch (error) {
 					this.logger.logError('Failed to load commit bodies: ' + error);
 				}
-				this.sendMessage({ command: 'commitBodies', bodies: bodies });
+				this.sendMessage({ command: 'commitBodies', bodies: bodies, requestId: msg.requestId });
 				break;
 			}
 			case 'commitFileCounts': {

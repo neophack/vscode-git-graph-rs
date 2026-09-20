@@ -426,9 +426,10 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 
 					message: newMessage,
 
-					authorName: newAuthorName,
-
-					authorEmail: newAuthorEmail
+					// An unchanged author must be omitted from the request entirely: sending the
+					// prefilled values would make the host take the `exec git commit --amend`
+					// path (running pre-commit hooks) for what is really a plain reword.
+					...(newAuthorName === commit.author && newAuthorEmail === commit.email ? {} : { authorName: newAuthorName, authorEmail: newAuthorEmail })
 
 				}, strings.editingCommitMessage);
 
@@ -450,6 +451,8 @@ function editCommitMessageAction(view: GitGraphView, target: DialogTarget & Comm
 		const commit = view.commits[view.commitLookup[hash]];
 
 		if (commit === undefined) return; // The commit is no longer loaded (e.g. after a refresh)
+
+		if (dialog.isOpen()) return; // A dialog opened in the meantime (for another commit): a late body must not replace it
 
 		showEditDialog(body !== null ? body : commit.message);
 

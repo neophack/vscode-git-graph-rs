@@ -65,6 +65,9 @@ class GitGraphView {
 	private readonly commitBodiesRequested = new Set<string>(); // hashes already requested (avoids re-requesting)
 	/** Callbacks waiting for a commit's body to arrive, keyed by commit hash (see getCommitBody). */
 	private commitBodyWaiters: { [hash: string]: ((body: string | null) => void)[] } = {};
+	/** The hashes each outstanding commitBodies request asked for, keyed by the request id the view assigned it. */
+	private commitBodiesRequests: { [id: number]: string[] } = {};
+	private nextCommitBodiesRequestId = 1;
 	private static readonly COMMIT_BODIES_BATCH_LIMIT = 200;
 
 	/**
@@ -779,6 +782,8 @@ class GitGraphView {
 		this.gerritStatesDirty = false;
 		this.commitBodies = {};
 		this.commitBodiesRequested.clear();
+		this.commitBodyWaiters = {};
+		this.commitBodiesRequests = {};
 		this.renderedRange = null;
 		closeCommitDetails(this, false);
 		this.saveState();
@@ -2048,6 +2053,17 @@ class GitGraphView {
 	}
 
 	/**
+	 * Send a commitBodies request, remembering which hashes it asked for so its response resolves
+	 * only the waiters of those hashes (the channel is single-ordered, so responses arrive in
+	 * request order and the echoed request id always identifies the request they answer).
+	 */
+	private requestCommitBodies(commitHashes: string[]) {
+		const requestId = this.nextCommitBodiesRequestId++;
+		this.commitBodiesRequests[requestId] = commitHashes;
+		sendMessage({ command: 'commitBodies', repo: this.currentRepo, commitHashes: commitHashes, requestId: requestId });
+	}
+
+	/**
 	 * Request the full message bodies of the commits in the given (rendered) row range, on demand:
 	 * the commit list only carries subjects, and bodies are only displayed when "Show Commit Body
 	 * Inline" is enabled (no-op otherwise).
@@ -2063,7 +2079,7 @@ class GitGraphView {
 				missing.push(commit.hash);
 			}
 		}
-		if (missing.length > 0) sendMessage({ command: 'commitBodies', repo: this.currentRepo, commitHashes: missing });
+		if (missing.length > 0) this.requestCommitBodies(missing);
 	}
 
 	/**
@@ -2083,7 +2099,7 @@ class GitGraphView {
 		(this.commitBodyWaiters[hash] || (this.commitBodyWaiters[hash] = [])).push(received);
 		if (!this.commitBodiesRequested.has(hash)) {
 			this.commitBodiesRequested.add(hash);
-			sendMessage({ command: 'commitBodies', repo: this.currentRepo, commitHashes: [hash] });
+			this.requestCommitBodies([hash]);
 		}
 	}
 
@@ -2097,7 +2113,19 @@ class GitGraphView {
 			this.commitBodies[hash] = msg.bodies[hash];
 			received = true;
 		}
-		this.resolveCommitBodyWaiters(received ? Object.keys(msg.bodies) : null);
+		// The response answers exactly one request: only the waiters of the hashes that request
+		// asked for are settled, so a failed batch (the native backend fails the whole call when
+		// one hash is unresolvable) cannot null-resolve a dialog's in-flight waiter for a
+		// different hash. A response with an unknown request id (a late answer to a request a
+		// hard refresh discarded) only ever resolves the waiters of the hashes it actually
+		// carries. Requested hashes a successful response does not carry failed individually:
+		// their waiters fall back to the subject instead of waiting forever.
+		const requested = this.commitBodiesRequests[msg.requestId];
+		if (requested !== undefined) delete this.commitBodiesRequests[msg.requestId];
+		const settled = received
+			? requested !== undefined ? requested : Object.keys(msg.bodies)
+			: requested !== undefined ? requested : [];
+		this.resolveCommitBodyWaiters(settled);
 		if (!received) return;
 		this.renderTable();
 		this.renderGraph();
@@ -2105,21 +2133,19 @@ class GitGraphView {
 
 	/**
 	 * Resolve the callbacks waiting for commit bodies: every waiter registered for one of the given
-	 * hashes is invoked with its body and removed. NULL (the fetch failed, so the response carried
-	 * no bodies at all) resolves every pending waiter with null, so a dialog waiting on a body
-	 * (e.g. Edit Commit Message) still opens with the subject as a fallback instead of never opening.
+	 * hashes is invoked with its body and removed. A hash whose body could not be fetched resolves
+	 * its waiters with null (the caller falls back to the subject) and is dropped from the
+	 * requested set, so a later getCommitBody for the same commit sends a fresh request instead of
+	 * waiting on a response that already failed.
 	 */
-	private resolveCommitBodyWaiters(hashes: string[] | null) {
+	private resolveCommitBodyWaiters(hashes: string[]) {
 		const resolved: Array<[string, string | null]> = [];
-		if (hashes === null) {
-			for (const hash in this.commitBodyWaiters) resolved.push([hash, null]);
-		} else {
-			for (const hash of hashes) {
-				const body = this.commitBodies[hash];
-				if (typeof body === 'string') resolved.push([hash, body]);
-			}
+		for (const hash of hashes) {
+			const body = this.commitBodies[hash];
+			resolved.push([hash, typeof body === 'string' ? body : null]);
 		}
 		for (const [hash, body] of resolved) {
+			if (body === null) this.commitBodiesRequested.delete(hash);
 			const waiters = this.commitBodyWaiters[hash];
 			if (waiters === undefined) continue;
 			delete this.commitBodyWaiters[hash];

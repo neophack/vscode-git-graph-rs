@@ -198,10 +198,14 @@ export interface ResponseCommitFileCounts extends ResponseWithErrorInfo {
 export interface RequestCommitBodies extends RepoRequest {
 	readonly command: 'commitBodies';
 	readonly commitHashes: ReadonlyArray<string>;
+	/** Client-generated id echoed verbatim in the response, pairing the response with its request. */
+	readonly requestId: number;
 }
 export interface ResponseCommitBodies {
 	readonly command: 'commitBodies';
 	readonly bodies: { [hash: string]: string };
+	/** The requestId of the request this response answers. */
+	readonly requestId: number;
 }
 
 export interface RequestCompareCommits extends RepoRequest {
