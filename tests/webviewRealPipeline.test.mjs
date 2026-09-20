@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, after } from 'node:test';
 import { VIEWPORT_HEIGHT, measureRowCoordinates } from './webviewHarness.mjs';
-import { createRepo, bootRealView, setAfterDeliver, sleep } from './webviewRealPipelineHarness.mjs';
+import { createRepo, bootRealView, setAfterDeliver, setOnExtensionMessage, fireRepoFileEvent, setGraphPanelVisible, sleep } from './webviewRealPipelineHarness.mjs';
 
 const repoDir = path.join(os.tmpdir(), 'git-graph-rs-jump-repro');
 const git = (...args) => execFileSync('git', args, { cwd: repoDir });
@@ -88,6 +88,82 @@ describe('the real extension pipeline keeps the viewport still in a long reposit
 		/* Disposing the panel does not wait for the extension's in-flight git spawns, which can
 		 * still hold the repository's pack files open: on Windows that makes rmSync fail with
 		 * EPERM. Retry for a while until every git child has exited and the files are unlocked. */
+		let lastError = null;
+		for (let i = 0; i < 40; i++) {
+			try {
+				fs.rmSync(repoDir, { recursive: true, force: true });
+				lastError = null;
+				break;
+			} catch (error) {
+				lastError = error;
+				await sleep(250);
+			}
+		}
+		if (lastError !== null) throw lastError;
+	});
+});
+
+describe('a commit made while the view is a background tab still refreshes the view', () => {
+	let context = null;
+	const repoDir = path.join(os.tmpdir(), 'git-graph-rs-hidden-commit');
+	const git = (...args) => execFileSync('git', args, { cwd: repoDir });
+
+	it('the hidden view invalidates its commit cache and serves the commit on show', async () => {
+		// The viewport test above leaves its message hook installed for the rest of the process;
+		// clear it so its assertions cannot fire against this test's repository.
+		setAfterDeliver(null);
+		setOnExtensionMessage(null);
+		createRepo(repoDir);
+		const h = await bootRealView(repoDir);
+		context = h;
+		for (let i = 0; i < 200 && h.rows().length === 0; i++) await sleep(100);
+		assert.ok(h.rows().length > 0, 'commits were rendered');
+
+		// The repository key the extension actually watches (the resolved, forward-slash path).
+		const repoKey = h.GitGraphView.currentPanel.automationState().currentRepo;
+		assert.ok(repoKey !== null, 'the view has a current repository');
+
+		// Everything the extension pushes to the page while the tab is hidden.
+		const commandsWhileHidden = [];
+		let hidden = false;
+		setOnExtensionMessage((message) => { if (hidden) commandsWhileHidden.push(message.command); });
+
+		// The tab loses the foreground - a background tab in its group, or an inactive editor
+		// group the graph is still on screen in: panel.visible goes FALSE.
+		hidden = true;
+		setGraphPanelVisible(false);
+
+		// A commit lands from outside this view (another tab's Source Control, a terminal),
+		// producing exactly the .git events the watcher classifies as commit-affecting.
+		git('commit', '-q', '--allow-empty', '-m', 'committed while hidden');
+		fireRepoFileEvent('change', repoKey + '/.git/refs/heads/main');
+		fireRepoFileEvent('change', repoKey + '/.git/index');
+
+		// The watcher's 750 ms debounce must fire while STILL hidden: the refresh goes out and
+		// the commit cache is invalidated. (The regression: both used to stop at the visibility
+		// gate - the watcher was disposed on hide, the poll returned early - so the commit only
+		// ever appeared after a manual refresh.)
+		await sleep(2500);
+		assert.ok(commandsWhileHidden.includes('refresh'), 'the file watcher delivered a refresh while the view was hidden, got: ' + JSON.stringify(commandsWhileHidden));
+
+		// Back on the tab: the soft refresh serves the invalidated cache - the new commit is
+		// rendered immediately, not after the background poll's next tick.
+		hidden = false;
+		setGraphPanelVisible(true);
+		let appeared = false;
+		for (let i = 0; i < 100 && !appeared; i++) {
+			appeared = h.rows().some((row) => row.textContent.includes('committed while hidden'));
+			if (!appeared) await sleep(100);
+		}
+		assert.ok(appeared, 'the commit made while hidden is rendered after the view is shown');
+	}, 120000);
+
+	after(async () => {
+		setOnExtensionMessage(null);
+		if (context !== null) {
+			context.dispose();
+			context.window.close();
+		}
 		let lastError = null;
 		for (let i = 0; i < 40; i++) {
 			try {

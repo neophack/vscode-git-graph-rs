@@ -82,6 +82,7 @@ class FakeConfiguration {
  * own onDidReceiveMessage) would let the later view's handler overwrite the graph view's and
  * silently swallow page->host traffic — so each createWebviewPanel call gets a fresh panel. */
 function makePanel() {
+	const viewStateHandlers = [];
 	const panel = {
 		title: '', iconPath: null, visible: true, active: true,
 		webview: {
@@ -97,18 +98,58 @@ function makePanel() {
 			__onDidReceive: null
 		},
 		onDidDispose: () => disposable(),
-		onDidChangeViewState: () => disposable(),
-		reveal: () => {}, dispose: () => {}
+		onDidChangeViewState: (handler) => { viewStateHandlers.push(handler); return disposable(); },
+		reveal: () => {}, dispose: () => {},
+		__fireViewState: () => { for (const handler of viewStateHandlers) handler(panel); }
 	};
 	return panel;
 }
 let graphPanel = null;
 
+/* Every FileSystemWatcher the extension created, alive or disposed. Tests fire the events a real
+ * repository change produces; disposed watchers stay silent, exactly like disposed VS Code watchers
+ * (the extension's RepoFileWatcher.stop disposes them when a tab is hidden - the old behaviour the
+ * hidden-commit regression test pins down). */
+const fileWatchers = [];
+function makeFileWatcher() {
+	const watcher = { __handlers: { change: [], create: [], delete: [] }, __disposed: false };
+	watcher.onDidChange = (handler) => { watcher.__handlers.change.push(handler); return disposable(); };
+	watcher.onDidCreate = (handler) => { watcher.__handlers.create.push(handler); return disposable(); };
+	watcher.onDidDelete = (handler) => { watcher.__handlers.delete.push(handler); return disposable(); };
+	watcher.dispose = () => { watcher.__disposed = true; };
+	fileWatchers.push(watcher);
+	return watcher;
+}
+
+/** Fire one filesystem event into every watcher the extension still has registered. */
+export function fireRepoFileEvent(kind, absolutePath) {
+	const uri = { fsPath: absolutePath };
+	for (const watcher of fileWatchers) {
+		if (watcher.__disposed) continue;
+		for (const handler of watcher.__handlers[kind]) handler(uri);
+	}
+}
+
+/** Flip the graph panel's visibility the way switching editor tabs does, notifying the extension. */
+export function setGraphPanelVisible(visible) {
+	if (graphPanel === null) return;
+	graphPanel.visible = visible;
+	graphPanel.active = visible;
+	graphPanel.__fireViewState();
+}
+
 /* ---------- boot the real extension + the real webview, wired together ---------- */
+
+/* One `vscode` stub for the whole process. The extension modules are require-cached after the
+ * first boot and hold the exact stub object they were loaded with, so a fresh stub per boot
+ * would be invisible to them: RepoManager would go on scanning the FIRST boot's workspace
+ * folder (deleted by that test's cleanup) and never discover the second repository. Each boot
+ * re-points the folder in place on the same object instead. */
+let vscodeStub = null;
 
 export async function bootRealView(repo) {
 	graphPanel = null; // one live graph view per process: a fresh boot takes over the routing
-	const vscodeStub = {
+	if (vscodeStub === null) vscodeStub = {
 		Uri: {
 			file: (p) => ({ scheme: 'file', fsPath: path.normalize(p), path: String(p).replace(/\\/g, '/'), with: () => vscodeStub.Uri.file(p) }),
 			joinPath: (uri, ...segments) => vscodeStub.Uri.file(path.join(uri.fsPath, ...segments))
@@ -118,7 +159,7 @@ export async function bootRealView(repo) {
 			getConfiguration: () => new FakeConfiguration(),
 			onDidChangeConfiguration: () => disposable(),
 			onDidChangeWorkspaceFolders: () => disposable(),
-			createFileSystemWatcher: () => ({ onDidChange: () => disposable(), onDidCreate: () => disposable(), onDidDelete: () => disposable(), dispose: () => {} }),
+			createFileSystemWatcher: () => makeFileWatcher(),
 			openTextDocument: async () => ({ uri: vscodeStub.Uri.file('stub'), lineCount: 0 }),
 			fs: { stat: async () => { throw new Error('not available'); }, readFile: async () => { throw new Error('not available'); } }
 		},
@@ -148,7 +189,7 @@ export async function bootRealView(repo) {
 		ViewColumn: { Active: -1, Beside: -2, One: 1 },
 		ConfigurationTarget: { Global: 1, Workspace: 2 }
 	};
-	vscodeStub.workspace.workspaceFolders[0].uri = vscodeStub.Uri.file(repo);
+	vscodeStub.workspace.workspaceFolders[0] = { uri: vscodeStub.Uri.file(repo), name: path.basename(repo), index: 0 };
 
 	const originalLoad = Module._load;
 	let vscodeStubActive = false;

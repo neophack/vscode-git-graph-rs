@@ -438,9 +438,10 @@ export class GitGraphView extends Disposable {
 							// The webview is already rendered: refresh its data in place instead of
 							// regenerating the HTML, which would reload the page and re-render the
 							// entire graph from scratch (a blank flash on every tab switch). The
-							// webview's soft refresh keeps the rendered commits, the loadRepoInfo
-							// request it sends restores this.currentRepo and the repo file watcher,
-							// and the extension's commit cache serves the commits without rescanning.
+							// webview's soft refresh keeps the rendered commits: the extension's
+							// commit cache serves them without rescanning when nothing changed while
+							// the view was hidden, and freshly - the watcher or the background poll
+							// below invalidated the cache - when something did.
 							this.sendMessage({ command: 'refresh' });
 						} else {
 							// The page isn't rendered yet, or a "load view to" request (e.g. Show
@@ -450,10 +451,12 @@ export class GitGraphView extends Disposable {
 							// it), silently dropping the requested repository and path filter.
 							this.update();
 						}
-					} else {
-						this.currentRepo = null;
-						this.repoFileWatcher.stop();
 					}
+					// Losing visibility tears nothing down. A hidden tab - or one in an inactive
+					// editor group, still on screen - is exactly when commits are made from another
+					// tab's Source Control or a terminal: the file watcher and the background poll
+					// stay armed so those changes still invalidate the commit cache, and the soft
+					// refresh above serves the invalidated cache fresh on the next show.
 					this.isPanelVisible = this.panel.visible;
 				}
 			}),
@@ -523,18 +526,22 @@ export class GitGraphView extends Disposable {
 
 		// Instantiate a RepoFileWatcher that watches for file changes in the repository currently open in the Git Graph View
 		this.repoFileWatcher = new RepoFileWatcher(logger, (commitsAffected) => {
-			if (this.panel.visible) {
-				if (commitsAffected) {
-					// A ref, HEAD or the Git config changed on disk: any cached commit data is now stale
-					this.commitCache.clear();
-					// The change is being handled here, so the background poll must re-record its
-					// baseline instead of detecting the same change again on its next tick
-					this.lastRepoSignature = null;
-				}
-				// A working-tree-only change leaves the commit cache valid: the refresh is served
-				// from it in one response, and only the "Uncommitted Changes" count is recomputed
-				this.sendMessage({ command: 'refresh' });
+			if (commitsAffected) {
+				// A ref, HEAD or the Git config changed on disk: any cached commit data is now stale.
+				// The invalidation must not depend on visibility: a commit made while the view is a
+				// hidden or inactive tab still clears the cache, so the soft refresh of the next
+				// show serves fresh data instead of the pre-commit snapshot.
+				this.commitCache.clear();
+				// The change is being handled here, so the background poll must re-record its
+				// baseline instead of detecting the same change again on its next tick
+				this.lastRepoSignature = null;
 			}
+			// A working-tree-only change leaves the commit cache valid: the refresh is served
+			// from it in one response, and only the "Uncommitted Changes" count is recomputed.
+			// Sent whatever the visibility: a hidden-but-retained page (retainContextWhenHidden,
+			// the default) processes it and stays current, while a destroyed page drops it and
+			// the next show's soft refresh serves the already-invalidated cache fresh.
+			this.sendMessage({ command: 'refresh' });
 		}, () => {
 			// The repository's Git config changed: drop the cached config data so the next load is fresh
 			this.dataSource.invalidateConfigCache(this.repoFileWatcher.getRepo());
@@ -1463,7 +1470,9 @@ export class GitGraphView extends Disposable {
 	/**
 	 * One tick of the background change poll: read the repository's signature (the resolved hash
 	 * of HEAD, and the names and hashes of every branch, tag, remote-tracking ref and stash) and
-	 * compare it with the previous tick. A difference means the repository changed without the
+	 * compare it with the previous tick. The tick runs whether the view is visible or not - an
+	 * inactive tab must not blind the poll, the change still has to invalidate the cache. A
+	 * difference means the repository changed without the
 	 * file watcher reporting it (dropped events, unusual filesystems), so the cached commit data
 	 * is dropped and the view is asked to refresh — exactly what the watcher callback does. A NULL
 	 * baseline (start, repository switch, or a watcher-handled change) is recorded without
@@ -1472,7 +1481,11 @@ export class GitGraphView extends Disposable {
 	 */
 	private async checkForBackgroundChanges() {
 		const repo = this.currentRepo;
-		if (repo === null || !this.panel.visible || this.isDisposed()) return;
+		// Runs hidden or visible: detection must never stop at a visibility gate, because the
+		// change a commit makes while the view is a hidden tab still has to invalidate the commit
+		// cache before the next show's soft refresh serves from it (a message sent to a destroyed
+		// page is simply dropped - the invalidation, not the delivery, is what matters here).
+		if (repo === null || this.isDisposed()) return;
 		try {
 			const signature = await this.dataSource.getRepoChangeSignature(repo);
 			if (this.isDisposed() || repo !== this.currentRepo) return; // the view moved on while reading
