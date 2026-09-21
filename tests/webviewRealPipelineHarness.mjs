@@ -238,10 +238,24 @@ export async function bootRealView(repo) {
 	const gitExecutableEmitter = new EventEmitter();
 	const configurationEmitter = new EventEmitter();
 
+	// A real in-memory memento: the extension persists per-repo state (code reviews, repository
+	// preferences, ...) through workspaceState, and stateless stubs made every read forget every
+	// write — an action that starts a code review and then updates it answered "not found" in the
+	// harness while working in the real editor. Reads see writes, like the editor's memento.
+	const makeMemento = () => {
+		const values = new Map();
+		return {
+			get: (key, fallback) => (values.has(key) ? values.get(key) : fallback),
+			set: async (key, value) => { values.set(key, value); },
+			update: async (key, value) => { values.set(key, value); },
+			keys: () => [...values.keys()]
+		};
+	};
+
 	const context = {
 		subscriptions: [], extensionPath: rootDir, extensionUri: vscodeStub.Uri.file(rootDir),
-		globalState: { get: (_k, d) => d, set: async () => {}, update: async () => {}, keys: () => [] },
-		workspaceState: { get: (_k, d) => d, set: async () => {}, update: async () => {}, keys: () => [] },
+		globalState: makeMemento(),
+		workspaceState: makeMemento(),
 		globalStoragePath: path.join(rootDir, 'target', 'harness-global-storage'),
 		storagePath: path.join(rootDir, 'target', 'harness-storage'),
 		asAbsolutePath: (p) => path.join(rootDir, p)

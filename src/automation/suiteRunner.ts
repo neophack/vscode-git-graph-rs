@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON } from './catalog';
-import { countRepoCommits, EMPTY_REPO_FIXTURE_OPTIONS, FixtureOptions, seedEmptyRepo, seedRepo } from './fixture';
+import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
 
@@ -47,6 +47,8 @@ export interface ActionRunRecord {
 	readonly error: string | null;
 	readonly totalMs: number | null;
 	readonly responses: readonly { readonly command: string; readonly atMs: number }[];
+	/** Native notifications the command raised (command mode), captured by the dialog auto-answer (e.g. a designed Gerrit refusal). */
+	readonly notifications: readonly string[];
 }
 
 export interface SuiteReport {
@@ -74,6 +76,13 @@ export interface SuiteRunOptions {
 	readonly filter?: (action: AutomationAction) => boolean;
 	/** Force the write suite off (used by tests; the runner also skips it for non-fixture repos). */
 	readonly skipWriteSuite?: boolean;
+	/**
+	 * Make a repository KNOWN to the editor's repo registry (the extension host's RepoManager) —
+	 * the runner asks this of the fixture's submodule after seeding it, because a repository
+	 * materialised mid-session is not discovered until the next activation. Only the real editor
+	 * passes it; the node harness's registry already scans `.gitmodules` at boot.
+	 */
+	readonly registerRepo?: (repo: string) => Promise<void>;
 	/** Fixture generation parameters for the empty-repository path (defaults: 2000 commits, 50 branches, 40 tags, 20 authors). */
 	readonly fixtureOptions?: Partial<FixtureOptions>;
 }
@@ -177,7 +186,10 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	// The engine keeps one warm repository handle per path for the whole editor session, and its
 	// pack reads are memory-mapped: an active mapping keeps the mapped files undeletable and can
 	// serve the pre-reset state. Drop the handle first — the engine re-opens it on the next load.
+	// The fixture submodule's handle too: on histories that predate the submodule its `sub/` tree
+	// is untracked, so the clean below would otherwise try to delete a memory-mapped repository.
 	new HostBridge().closeRepository(repo);
+	new HostBridge().closeRepository(path.join(repo, FIXTURE_SUBMODULE_PATH));
 
 	// Remotes first (fetch needs origin): write actions add/edit/remove remotes, so the set is
 	// rebuilt as exactly origin -> the marker's bare remote.
@@ -197,10 +209,28 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 		try {
 			await git(['-C', repo, 'worktree', 'remove', '--force', worktreePath]);
 		} catch (_) {
-			// its directory is already gone; the prune below clears the registration
+			// its directory is already gone; the registrations are dropped below
 		}
 	}
 	await git(['-C', repo, 'worktree', 'prune']);
+	// A registration whose DIRECTORY still exists (a Windows-held file survived `remove
+	// --force`) is not pruned — and the branch it holds checked out then fails the branch
+	// deletion below. Every registration under .git/worktrees belongs to a worktree this run
+	// (or a previous one) created, and the reset is force-everything anyway: drop them directly.
+	const worktreesAdmin = path.join(repo, '.git', 'worktrees');
+	if (fs.existsSync(worktreesAdmin)) {
+		await rmTreeAwaitingLocks(worktreesAdmin);
+		await git(['-C', repo, 'worktree', 'prune']);
+	}
+
+	// In-progress operation state (a conflicted rebase/merge/cherry-pick a write action left
+	// behind): reset --hard does not clear it, and it holds the branch it ran on — git then
+	// refuses the branch deletion below with "cannot delete branch used by worktree". The reset
+	// is force-everything anyway; drop the state files/directories directly.
+	for (const opState of ['rebase-merge', 'rebase-apply', 'sequencer', 'MERGE_HEAD', 'CHERRY_PICK_HEAD']) {
+		const opPath = path.join(repo, '.git', opState);
+		if (fs.existsSync(opPath)) await rmTreeAwaitingLocks(opPath);
+	}
 
 	await git(['-C', repo, 'stash', 'clear']);
 	await git(['-C', repo, 'fetch', '--prune', '--tags', 'origin']);
@@ -237,6 +267,7 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	// handle a racing refresh opened is dropped here, and the next host request re-opens the
 	// repository in its final seeded state.
 	new HostBridge().closeRepository(repo);
+	new HostBridge().closeRepository(path.join(repo, FIXTURE_SUBMODULE_PATH));
 }
 
 /* ---------------- Per-action cleanup (pages and terminals an action opens) ---------------- */
@@ -424,6 +455,76 @@ async function ensureSuiteViewOptions(server: AutomationServer, logger: { logErr
 
 /* ---------------- The suite run ---------------- */
 
+/**
+ * Write actions whose real-world precondition is STAGED CHANGES — a state the editor's SCM UI
+ * owns, not the Git Graph page. The runner establishes it directly before the action runs, the
+ * same class of setup as the reseed's stashes: without it the actions' own commit is git's
+ * "nothing to commit" refusal, and the catalog's real-outcome verify could never hold.
+ */
+const STAGED_PRECONDITION_ACTIONS: ReadonlySet<string> = new Set(['menu-commit/fixup', 'menu-commit/squash']);
+
+/**
+ * Git commands the runner runs AFTER a specific action to clear state its DESIGNED refusal
+ * leaves behind: the remote-branch merge/pull entries conflict by construction (two diverged
+ * feature branches), and an unmerged index would fail every later write action with "you need
+ * to resolve your current index first". The commands are best-effort (logged, never thrown).
+ */
+const POST_ACTION_CLEANUP: ReadonlyMap<string, readonly string[][]> = new Map([
+	// rebase --quit first: a pull configured for rebase leaves .git/rebase-merge behind on a
+	// conflict, and neither merge --abort nor reset --hard clears it — the stale state then
+	// fails every later checkout ("resolve your current index") and even the final reseed's
+	// branch deletion ("cannot delete branch used by worktree").
+	['menu-remote-branch/merge', [['rebase', '--quit'], ['merge', '--abort'], ['reset', '--hard']]],
+	['menu-remote-branch/pull-into', [['rebase', '--quit'], ['merge', '--abort'], ['reset', '--hard']]]
+]);
+
+/**
+ * Git commands the runner runs BEFORE a specific action to restore a precondition the earlier
+ * write actions of the same pass consumed: the stash group's flows apply/pop seed stashes that
+ * were recorded on MAIN, but by then the suite has checked out a feature branch (the
+ * remote-branch group's create-branch) — applying a main-based stash onto a diverged branch
+ * conflicts by construction. Checking main out first makes the actions' own semantics the
+ * thing under test again ('main' is a fixture-stable fact, like the catalog's tag literals).
+ */
+const PRE_ACTION_SETUP: ReadonlyMap<string, readonly string[][]> = new Map([
+	['menu-stash/apply', [['checkout', '-f', 'main']]],
+	['menu-stash/pop', [['checkout', '-f', 'main']]],
+	['menu-stash/branch-from-stash', [['checkout', '-f', 'main']]]
+]);
+
+/**
+ * Stage one fresh modification of the first tracked file (each call its own line, so two
+ * staged-precondition actions in one pass both find an index to commit). Never throws at the
+ * caller: a failure here surfaces as the action's own failure moments later (nothing staged =>
+ * the commit is refused => the error-payload gate fails the action with git's message).
+ */
+async function stageFreshChange(repo: string, logger: { log(message: string): void; logError(message: string): void }): Promise<void> {
+	try {
+		const git = (args: string[]) => execFileAsync('git', [
+			'-c', 'core.autocrlf=false',
+			'-c', 'user.name=Fixture',
+			'-c', 'user.email=fixture@fixture.dev',
+			...args
+		], { timeout: 120000, windowsHide: true });
+		const listed = await git(['-C', repo, 'ls-files']);
+		const files = listed.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '' && s.indexOf('.') !== 0);
+		// Never a dotfile: `.gitmodules` (the fixture submodule) is a git CONFIG file — appending
+		// a line to it corrupts every later config read (one bad staged change once poisoned the
+		// whole write pass and the final reseed with it). And never one of the seed's stash-pick
+		// files (fixture.ts picks non-dot indices 0, n/3 and 2n/3 to stash): committing a staged
+		// change on a file a stash also touches makes the later Apply Stash auto-merge conflict.
+		// The same indices over the SAME non-dot listing the seed picks from.
+		const picks = new Set([0, Math.floor(files.length / 3), Math.floor((2 * files.length) / 3)]);
+		const target = files.find((_file, index) => !picks.has(index)) ?? files[0];
+		if (target === undefined) throw new Error('no tracked file to stage a change on');
+		fs.appendFileSync(path.join(repo, target), '\n// automation staged change ' + Date.now() + '\n');
+		await git(['-C', repo, 'add', '--', target]);
+		logger.log('[fixture] staged a modification of ' + target + ' for the staged-change precondition');
+	} catch (error) {
+		logger.logError('staging the precondition change failed: ' + (error instanceof Error ? error.message : String(error)));
+	}
+}
+
 export async function runAutomationSuite(options: SuiteRunOptions): Promise<SuiteReport> {
 	const startedMs = Date.now();
 	const bridge = new HostBridge();
@@ -475,6 +576,24 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 			// the generated history instead of racing the 5 s background change poll.
 			await reloadViewAfterGeneration(server);
 		}
+		// The fixture's submodule is the catalog's second known repository (`anotherRepo`, the
+		// Repos dropdown). Seeding (or the previous run's final reseed) materialised it; a repo
+		// created mid-session is invisible to the editor's registry until registered explicitly —
+		// never discovered automatically here (both the workspace scan and the submodule scan skip
+		// paths inside a known repository). A real repository (no fixture) is never touched.
+		const submoduleDir = path.join(repo, FIXTURE_SUBMODULE_PATH);
+		const registerSubmodule = async () => {
+			if (options.registerRepo === undefined) return;
+			try {
+				await options.registerRepo(submoduleDir);
+			} catch (error) {
+				options.logger.logError('Registering the fixture submodule failed: ' + (error instanceof Error ? error.message : String(error)));
+			}
+		};
+		if (fixture || fixtureGenerated) {
+			await ensureSubmodule(repo);
+			await registerSubmodule();
+		}
 		const filter = options.filter ?? (() => true);
 		const readActions = CATALOG.filter((a) => !a.mutable && filter(a));
 		const writeActions = includeWrite ? CATALOG.filter((a) => a.mutable && filter(a)) : [];
@@ -495,7 +614,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 					runs.push({
 						id: action.id, title: action.title, group: action.group, mode,
 						ok: false, skipped: true, reason: NATIVE_SAVE_DIALOG_SKIP_REASON,
-						error: null, totalMs: null, responses: []
+						error: null, totalMs: null, responses: [], notifications: []
 					});
 					options.onProgress?.({ phase, index: i + 1, total: actions.length, actionId: action.id, mode });
 					continue;
@@ -512,29 +631,77 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				}
 				const beforeTabs = new Set(openTabs().map(tabKey));
 				const beforeTerminals = new Set(Array.isArray(vscode.window.terminals) ? vscode.window.terminals : []);
+				if (mode === 'ui' && STAGED_PRECONDITION_ACTIONS.has(action.id)) {
+					// Establish the action's real-world precondition out-of-band (see
+					// stageFreshChange): a fixup/squash commit commits the STAGED changes, which
+					// the editor's SCM UI — not the Git Graph page — stages. The verification
+					// contract (the catalog's headSubjectStartsWith verify) only holds with
+					// something staged, exactly like the stash actions only hold with the seed's
+					// stashes.
+					await stageFreshChange(repo, options.logger);
+				}
+				const setupCommands = PRE_ACTION_SETUP.get(action.id);
+				if (setupCommands !== undefined) {
+					for (const args of setupCommands) {
+						try {
+							await execFileAsync('git', ['-c', 'core.autocrlf=false', '-C', repo, ...args], { timeout: 120000, windowsHide: true });
+						} catch (error) {
+							options.logger.logError('[automation] pre-action setup ' + JSON.stringify(args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
+						}
+					}
+				}
 				let record: ActionRunRecord;
-				try {
-					const outcome = await server.run({ id: action.id, mode, timeoutMs }) as {
-						ok: boolean; skipped?: boolean; reason?: string; error?: string;
-						timings?: { totalMs: number; responses: { command: string; atMs: number }[] };
-					};
-					record = {
-						id: action.id, title: action.title, group: action.group, mode,
-						ok: outcome.ok, skipped: outcome.skipped === true,
-						reason: outcome.reason ?? null, error: outcome.error ?? null,
-						totalMs: outcome.timings?.totalMs ?? null,
-						responses: outcome.timings?.responses ?? []
-					};
-				} catch (error) {
-					record = {
-						id: action.id, title: action.title, group: action.group, mode,
-						ok: false, skipped: false, reason: null,
-						error: error instanceof Error ? error.message : String(error),
-						totalMs: null, responses: []
-					};
+				const runOnce = async (): Promise<ActionRunRecord> => {
+					try {
+						const outcome = await server.run({ id: action.id, mode, timeoutMs }) as {
+							ok: boolean; skipped?: boolean; reason?: string; error?: string;
+							timings?: { totalMs: number; responses: { command: string; atMs: number }[] };
+							notifications?: string[];
+						};
+						return {
+							id: action.id, title: action.title, group: action.group, mode,
+							ok: outcome.ok, skipped: outcome.skipped === true,
+							reason: outcome.reason ?? null, error: outcome.error ?? null,
+							totalMs: outcome.timings?.totalMs ?? null,
+							responses: outcome.timings?.responses ?? [],
+							notifications: outcome.notifications ?? []
+						};
+					} catch (error) {
+						return {
+							id: action.id, title: action.title, group: action.group, mode,
+							ok: false, skipped: false, reason: null,
+							error: error instanceof Error ? error.message : String(error),
+							totalMs: null, responses: [], notifications: []
+						};
+					}
+				};
+				record = await runOnce();
+				// Windows transient-index retry: the view's own background status probes race a
+				// write action's `git` child for .git/index.lock, and git does not wait — a stash
+				// apply can fail "could not write index" against a lock held for milliseconds by
+				// a reader. Exactly one retry after the lock is gone (the user's "try again"),
+				// only for that signature: every other failure stands as recorded.
+				if (!record.ok && !record.skipped && record.error !== null
+					&& /could not write index|index\.lock|Another git process/.test(record.error)) {
+					options.logger.log('[automation] transient index contention on ' + action.id + ' - retrying once');
+					await new Promise((resolve) => setTimeout(resolve, 2000));
+					record = await runOnce();
 				}
 				await closeLeakedWidgets(server);
 				await cleanupActionSurfaces(beforeTabs, beforeTerminals);
+				const cleanupCommands = POST_ACTION_CLEANUP.get(action.id);
+				if (cleanupCommands !== undefined) {
+					// State a DESIGNED-refusal action leaves behind (a conflicted merge): without
+					// this, the unmerged index fails every later write action ("you need to
+					// resolve your current index first"). Bounded, failures logged not thrown.
+					for (const args of cleanupCommands) {
+						try {
+							await execFileAsync('git', ['-c', 'core.autocrlf=false', '-C', repo, ...args], { timeout: 120000, windowsHide: true });
+						} catch (error) {
+							options.logger.logError('[automation] post-action cleanup ' + JSON.stringify(args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
+						}
+					}
+				}
 				runs.push(record);
 				options.onProgress?.({ phase, index: i + 1, total: actions.length, actionId: action.id, mode });
 				void offset; // phases report their own index; grand total is derivable from the report
@@ -563,7 +730,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				writeRuns = [{
 					id: 'write-suite/reseed', title: 'Reset the fixture repository to its seeded state', group: 'write',
 					mode: 'request', ok: false, skipped: false, reason: null,
-					error: message, totalMs: null, responses: []
+					error: message, totalMs: null, responses: [], notifications: []
 				}];
 			}
 			if (writeRuns.length === 0) {
@@ -571,6 +738,11 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				// options the read phase was ensured against (a poisoned override fails the whole
 				// menu-tag / menu-stash / menu-remote-branch groups "row never rendered").
 				await ensureSuiteViewOptions(server, options.logger);
+				// The read phase's Repos dropdown action may have loaded the submodule through the
+				// engine (a fresh warm handle); on histories that predate the submodule its `sub/`
+				// tree is untracked, and a memory-mapped handle would make the write phase's clean
+				// fail to delete it on Windows. Drop the handle before any write action runs.
+				bridge.closeRepository(submoduleDir);
 				writeRuns = await runPhase('write', writeActions, readActions.length);
 				// The write phase leaves its own mutations in the repository — created branches and
 				// tags, made commits, rewritten history. One final in-place reseed ends the run on
@@ -592,13 +764,16 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 					// Nor with a load option the write suite's toggles left off: the post-run
 					// state is what the user (and the next run) inherits.
 					await ensureSuiteViewOptions(server, options.logger);
+					// The final reseed restored the submodule (a write action may have cleaned it
+					// away, unregistering it) — leave the editor knowing both repositories again.
+					await registerSubmodule();
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					options.logger.logError('write-suite cleanup failed: ' + message);
 					writeRuns.push({
 						id: 'write-suite/cleanup', title: 'Restore the fixture repository after the write suite', group: 'write',
 						mode: 'request', ok: false, skipped: false, reason: null,
-						error: message, totalMs: null, responses: []
+						error: message, totalMs: null, responses: [], notifications: []
 					});
 				}
 			}

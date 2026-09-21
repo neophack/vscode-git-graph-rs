@@ -110,6 +110,37 @@ test('command mode executes the diff editor title Open File command', async () =
 	assert.equal(outcome.ok, true, outcome.error ?? outcome.reason);
 });
 
+test('command mode captures the notification a refusal-only command raises (and asserts it)', async () => {
+	// The harness repository has no remotes, so the hook fetch takes its deterministic "no Gerrit
+	// server" refusal — an error notification is the command's whole observable outcome. The run
+	// must span the handler (the notification arrives after the command's git probes), capture and
+	// suppress the toast, and pass the catalog's expectNotifications assertion on its text.
+	const outcome = await engine.run({ id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook', mode: 'command' });
+	assert.equal(outcome.ok, true, outcome.error);
+	assert.ok(outcome.notifications.length > 0, 'the refusal notification must be captured');
+	assert.ok(outcome.notifications.some((message) => message.includes('commit-msg')), JSON.stringify(outcome.notifications));
+});
+
+test('an error-bearing expected response FAILS the run (the payload gate)', async () => {
+	// host/open-file requests the hardcoded fixture path 'src/module-000/file-00.ts', which this
+	// harness repository does not contain: the host still answers with the SAME response command
+	// carrying the git error in its payload. "A response arrived" must NOT count as success —
+	// the run has to fail with the host's own error text.
+	const outcome = await engine.run({ id: 'host/open-file', mode: 'request' });
+	assert.equal(outcome.ok, false);
+	assert.ok((outcome.error ?? '').includes('the host reported an error for "openFile"'), outcome.error);
+	assert.ok((outcome.error ?? '').length > 'the host reported an error for "openFile": '.length, 'the failure must carry the host\'s error text');
+});
+
+test('allowErrorOn accepts the designed refusal without weakening anything else', async () => {
+	// host/open-log-file answers with an error whenever session logging is disabled (the
+	// documented, designed outcome): the entry lists openLogFile in allowErrorOn, so the error
+	// payload is accepted and the action passes (with logging enabled the same run simply
+	// succeeds — both outcomes are the designed pair).
+	const outcome = await engine.run({ id: 'host/open-log-file', mode: 'ui', timeoutMs: 30000 });
+	assert.equal(outcome.ok, true, outcome.error);
+});
+
 test('eval executes in the page and returns the value', async () => {
 	const outcome = await engine.eval({ expr: '({ rows: document.querySelectorAll("#commitTable tr.commit").length })' });
 	assert.equal(outcome.ok, true, outcome.error);

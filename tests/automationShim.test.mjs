@@ -269,3 +269,85 @@ test('publishes its own instance under the shared handle when it acquires first'
 	window.__ggVscodeApi.postMessage({ probe: true });
 	assert.deepEqual(posted[posted.length - 1], { probe: true }); // ...and the handle is live
 });
+
+/* ---------- the assertion ops (expectSize / expectCount / expectChecked) ---------- */
+
+/** A window whose getBoundingClientRect reports a laid-out box for the elements that matter. */
+function makeLayoutWindow(html, boxes) {
+	const made = makeWindow(html);
+	const original = made.window.Element.prototype.getBoundingClientRect;
+	made.window.document.body.getBoundingClientRect = () => ({ width: 1200, height: 800 }); // the layout-engine probe
+	made.window.Element.prototype.getBoundingClientRect = function () {
+		const id = this.id !== '' ? this.id : null;
+		if (id !== null && Object.prototype.hasOwnProperty.call(boxes, id)) return boxes[id];
+		return original.call(this);
+	};
+	return made;
+}
+
+test('expectSize asserts the rendered box within its bounds and reports the measurement', async () => {
+	const { window, posted } = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 24, height: 24 } });
+	const ok = await runSteps(window, posted, [{ op: 'expectSize', selector: '#ctl', minW: 20, maxW: 30, minH: 20, maxH: 30 }]);
+	assert.equal(ok.ok, true, JSON.stringify(ok));
+	assert.equal(ok.results[0], '24.0x24.0');
+
+	const small = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 3, height: 24 } });
+	const failW = await runSteps(small.window, small.posted, [{ op: 'expectSize', selector: '#ctl', minW: 20 }]);
+	assert.equal(failW.ok, false);
+	assert.ok(failW.error.indexOf('3.0px wide') !== -1 && failW.error.indexOf('>= 20px') !== -1, failW.error);
+
+	const huge = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 24, height: 900 } });
+	const failH = await runSteps(huge.window, huge.posted, [{ op: 'expectSize', selector: '#ctl', maxH: 40 }]);
+	assert.equal(failH.ok, false);
+	assert.ok(failH.error.indexOf('900.0px tall') !== -1, failH.error);
+});
+
+test('expectSize resolves as unassertable where no layout engine exists (jsdom)', async () => {
+	// The Node harness renders the real DOM with no layout: every box is 0x0. Size assertions
+	// must SKIP (not fail) there — the real editor has a layout engine and asserts for real.
+	const { window, posted } = makeWindow('<body><button id="ctl"></button></body>');
+	const result = await runSteps(window, posted, [{ op: 'expectSize', selector: '#ctl', minW: 20, maxW: 30 }]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.equal(result.results[0], 'sizes unassertable (no layout engine)');
+});
+
+test('expectSize fails a genuinely unrendered element where a layout engine exists', async () => {
+	const { window, posted } = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 0, height: 0 } });
+	const result = await runSteps(window, posted, [{ op: 'expectSize', selector: '#ctl', minW: 20 }]);
+	assert.equal(result.ok, false);
+	assert.ok(result.error.indexOf('0x0') !== -1, result.error);
+});
+
+test('expectCount asserts how many elements the selector matches', async () => {
+	const make = () => makeWindow('<body><div class="row"></div><div class="row"></div><div class="row"></div></body>');
+	const okBounds = await runSteps2(make(), [{ op: 'expectCount', selector: '.row', min: 2, max: 4 }]);
+	assert.equal(okBounds.ok, true, JSON.stringify(okBounds));
+	assert.equal(okBounds.results[0], 3);
+
+	const tooFew = await runSteps2(make(), [{ op: 'expectCount', selector: '.row', min: 5 }]);
+	assert.equal(tooFew.ok, false);
+	assert.ok(tooFew.error.indexOf('expected at least 5') !== -1, tooFew.error);
+
+	const tooMany = await runSteps2(make(), [{ op: 'expectCount', selector: '.row', max: 2 }]);
+	assert.equal(tooMany.ok, false);
+	assert.ok(tooMany.error.indexOf('expected 1-2') !== -1, tooMany.error); // the default min is 1
+
+	const zeroAllowed = await runSteps2(make(), [{ op: 'expectCount', selector: '.absent', min: 0, max: 0 }]);
+	assert.equal(zeroAllowed.ok, true, JSON.stringify(zeroAllowed));
+});
+
+/** runSteps for a freshly made window (unpacking the {window, posted} pair). */
+async function runSteps2(made, steps) {
+	return runSteps(made.window, made.posted, steps);
+}
+
+test('expectChecked asserts a checkbox\'s rendered state', async () => {
+	const make = () => makeWindow('<body><input type="checkbox" id="cb" checked></body>');
+	const on = await runSteps2(make(), [{ op: 'expectChecked', selector: '#cb', checked: true }]);
+	assert.equal(on.ok, true, JSON.stringify(on));
+	const wrongOn = await runSteps2(make(), [{ op: 'expectChecked', selector: '#cb', checked: false }]);
+	assert.equal(wrongOn.ok, false);
+	assert.ok(wrongOn.error.indexOf('checked') !== -1, wrongOn.error);
+	const off = await runSteps2(makeWindow('<body><input type="checkbox" id="cb"></body>'), [{ op: 'expectChecked', selector: '#cb', checked: false }]);
+	assert.equal(off.ok, true, JSON.stringify(off));
+});

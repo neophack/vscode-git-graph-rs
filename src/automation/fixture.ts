@@ -31,6 +31,103 @@ import * as zlib from 'zlib';
  * branch one commit ahead of origin. Idempotent.
  */
 
+/**
+ * Where the fixture's submodule lives inside the repository: a tiny nested repository (see
+ * `buildSubmoduleStream`) recorded as a gitlink on `main`'s last commit, so the repository offers
+ * a SECOND known repository (the catalog's `anotherRepo` requirement — the Repos dropdown) without
+ * any state outside the repository itself. The nested repository is rebuilt deterministically by
+ * `ensureSubmodule` whenever it is missing, so a write action that cleans it away is undone by the
+ * next reseed.
+ */
+export const FIXTURE_SUBMODULE_PATH = 'sub/fixture-sub';
+
+/** The `.gitmodules` content recording the fixture's submodule (the URL is nominal — nothing ever
+ * fetches it; the nested repository is materialised locally instead). */
+const SUBMODULE_GITMODULES = '[submodule "fixture-sub"]\n\tpath = ' + FIXTURE_SUBMODULE_PATH + '\n\turl = ../fixture-sub.git\n';
+
+/**
+ * The fast-import stream of the fixture submodule: a handful of commits with fixed timestamps and
+ * identities, so importing it anywhere yields byte-identical objects — the gitlink recorded in the
+ * main history and the locally rebuilt nested repository always agree on the submodule's HEAD.
+ */
+function buildSubmoduleStream(): Buffer {
+	const chunks: string[] = [];
+	const identity = 'Fixture Sub <sub@fixture.dev>';
+	let mark = 0;
+	const data = (content: string) => 'data ' + Buffer.byteLength(content) + '\n' + content + '\n';
+	const files = [
+		['src/util.ts', '// fixture submodule util\nexport const answer = 42;\n'],
+		['src/store.ts', '// fixture submodule store\nexport const store = [];\n'],
+		['README.md', '# fixture-sub\n\nThe automation fixture\'s nested submodule repository.\n'],
+		['src/util.ts', '// fixture submodule util\nexport const answer = 43; // bumped\n'],
+		['src/report.ts', '// fixture submodule report\nexport const report = true;\n']
+	];
+	// The first commit adds src/util.ts and src/store.ts; each later commit its single entry.
+	const filesOf = (i: number) => i === 0 ? [files[0], files[1]] : [files[i]];
+	for (let i = 0; i < files.length; i++) {
+		const blobs = filesOf(i).map(([filePath, content]) => {
+			chunks.push('blob\nmark :' + (++mark) + '\n' + data(content));
+			return { m: mark, filePath };
+		});
+		const t = 1609459200 + i * 600; // fixed: the same stream bytes every import
+		chunks.push('commit refs/heads/main\nmark :' + (++mark) + '\n'
+			+ 'author ' + identity + ' ' + t + ' +0000\n'
+			+ 'committer ' + identity + ' ' + t + ' +0000\n'
+			+ data('submodule commit ' + (i + 1) + ' of ' + files.length));
+		if (i > 0) chunks.push('from :' + (mark - filesOf(i).length - 1) + '\n'); // the previous commit's mark
+		for (const b of blobs) chunks.push('M 100644 :' + b.m + ' ' + b.filePath + '\n');
+	}
+	return Buffer.from(chunks.join(''), 'utf8');
+}
+
+/**
+ * Materialise the fixture submodule as a working nested repository at `dir` (init + fast-import +
+ * hard reset to check the files out). Returns the submodule HEAD hash — identical on every import,
+ * so it is also the gitlink the main history records.
+ */
+async function importSubmodule(dir: string): Promise<string> {
+	mkdirAll(dir);
+	await git(['init', dir]);
+	await fastImport(dir, buildSubmoduleStream());
+	await git(['-C', dir, 'reset', '--hard']);
+	const head = await git(['-C', dir, 'rev-parse', 'HEAD']);
+	return head.stdout.trim();
+}
+
+/**
+ * Make sure the fixture's submodule exists in a repository: the nested repository is rebuilt
+ * deterministically when missing (a write action's clean may have removed it), and `.gitmodules`
+ * is written when the history predates the submodule (an old fixture clone: the file stays
+ * untracked there — `main` must keep matching `origin/main` exactly). Idempotent.
+ */
+export async function ensureSubmodule(repoDir: string): Promise<void> {
+	const subDir = path.join(repoDir, FIXTURE_SUBMODULE_PATH);
+	let present = false;
+	try {
+		present = fs.existsSync(path.join(subDir, '.git'));
+	} catch (_) {
+		// fall through to a rebuild attempt
+	}
+	if (!present) {
+		// Partial leftovers of a failed clean — best effort: a Windows-held file must not abort
+		// the rebuild, and importSubmodule fails loudly if the leftovers truly block it.
+		try {
+			await rmTree(subDir, 15000);
+		} catch (_) {
+			// undeletable leftovers; the import below decides whether they matter
+		}
+		await importSubmodule(subDir);
+	}
+	const modules = path.join(repoDir, '.gitmodules');
+	let hasModules = false;
+	try {
+		hasModules = fs.existsSync(modules);
+	} catch (_) {
+		// fall through to a rewrite
+	}
+	if (!hasModules) fs.writeFileSync(modules, SUBMODULE_GITMODULES);
+}
+
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 120000;
 /* One identity/config for every git call: deterministic content, no global-config dependence. */
@@ -73,8 +170,40 @@ const pad = (n: number, width: number): string => {
 	return s.length >= width ? s : '0'.repeat(width - s.length) + s;
 };
 
+/**
+ * Clear the read-only attribute git puts on its object and pack files before a removal: on Windows
+ * that attribute makes unlink/rmdir fail with EPERM (Node's rm does not clear it), so a plain
+ * recursive delete of any freshly imported repository can abort the run. Files only — git never
+ * marks directories read-only, and chmod'ing a directory to 0o666 would strip its x bit on POSIX.
+ */
+function clearReadOnlyFiles(target: string): void {
+	if (process.platform !== 'win32') return;
+	let stat: fs.Stats;
+	try {
+		stat = fs.lstatSync(target);
+	} catch (_) {
+		return; // nothing there to clear
+	}
+	if (stat.isDirectory()) {
+		let names: string[] = [];
+		try {
+			names = fs.readdirSync(target);
+		} catch (_) {
+			return; // the removal below will surface any real problem
+		}
+		for (const name of names) clearReadOnlyFiles(path.join(target, name));
+	} else {
+		try {
+			fs.chmodSync(target, 0o666);
+		} catch (_) {
+			// not fatal — deletion reports the real obstacle
+		}
+	}
+}
+
 /** Remove a directory tree across the Node versions this extension builds against (same feature-detect as suiteRunner's). */
 function rmRecursive(target: string): void {
+	clearReadOnlyFiles(target);
 	const f = fs as unknown as {
 		rmSync?: (p: string, o: { recursive: boolean; force: boolean }) => void;
 		rmdirSync: (p: string, o?: { recursive?: boolean }) => void;
@@ -83,6 +212,49 @@ function rmRecursive(target: string): void {
 		f.rmSync(target, { recursive: true, force: true });
 	} else {
 		f.rmdirSync(target, { recursive: true });
+	}
+}
+
+/** Pause between removal attempts, sized to outlast a short-lived scanner or git child's handle. */
+const RM_ATTEMPT_INTERVAL_MS = 200;
+/** Total budget for one directory-tree removal across every attempt (mirrors suiteRunner's). */
+const RM_TREE_DEADLINE_MS = 120000;
+
+/**
+ * Remove a directory tree, waiting out transient Windows file locks within a bounded budget — the
+ * same loop as suiteRunner's rmTreeAwaitingLocks, whose comment records why awaited fs.promises.rm
+ * is avoided instead: on Node 20 its Windows retry path can stall far beyond the nominal budget
+ * and, when it races a held file, never settle at all. Freshly imported trees hit exactly these
+ * locks (an antivirus scanning the just-written pack files holds them for a moment), and a single
+ * unmuted attempt turned into "Unable to run the automation test suite: EPERM" on the
+ * `%TEMP%\gg-automation-sub-*` scratch. Each attempt is a complete synchronous removal; past the
+ * deadline the last error propagates, so a stubborn lock fails loudly instead of hanging the run.
+ */
+async function rmTree(target: string, budgetMs: number): Promise<void> {
+	const deadline = Date.now() + budgetMs;
+	for (;;) {
+		try {
+			rmRecursive(target);
+			return;
+		} catch (error) {
+			if ((error as { code?: string }).code === 'ENOENT') return; // the legacy rmdirSync path has no force
+			if (Date.now() >= deadline) throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, RM_ATTEMPT_INTERVAL_MS));
+	}
+}
+
+/**
+ * Best-effort removal for throwaway scratch trees (the temp-dir submodule scratch, a failed
+ * generate's work dir): a leftover must never fail — or, on a failure path, mask the original
+ * error of — the run that created it. mkdtemp scratch names are unique, so a survivor cannot
+ * disturb the next run; the OS owns temp-dir hygiene.
+ */
+async function rmScratch(target: string): Promise<void> {
+	try {
+		await rmTree(target, 15000);
+	} catch (_) {
+		// left behind — harmless
 	}
 }
 
@@ -192,6 +364,8 @@ function makeBinaryBlob(rng: () => number, size: number): Buffer {
 interface FileEntry {
 	readonly filePath: string;
 	readonly content: string | Buffer;
+	/** A gitlink (submodule) entry: the nested commit's hash, recorded with mode 160000 instead of a blob. */
+	readonly gitlink?: string;
 }
 
 interface CommitRef {
@@ -204,9 +378,10 @@ interface CommitRef {
  * Build the fast-import stream for the whole fixture. Mark numbering is sequential from 1;
  * blob/commit/tag records carry explicit marks; commits use `author`/`committer` lines with
  * timestamps starting 2020-01-01 and advancing 60-120 s per commit; file changes are inline
- * `M 100644 <path>` blocks fed from marked blobs.
+ * `M 100644 <path>` blocks fed from marked blobs. The final main-line commit records the fixture
+ * submodule (see {@see FIXTURE_SUBMODULE_PATH}) as `.gitmodules` + a gitlink to `submoduleSha`.
  */
-function buildFastImportStream(opts: FixtureOptions): Buffer {
+function buildFastImportStream(opts: FixtureOptions, submoduleSha: string): Buffer {
 	const { commits, branches, tags, mergeRate, authors, seed } = opts;
 	const rng = createRng(seed);
 	const chunks: (string | Buffer)[] = [];
@@ -256,7 +431,7 @@ function buildFastImportStream(opts: FixtureOptions): Buffer {
 
 	const emitCommit = (ref: string, message: string, parents: number[], filesOverride?: FileEntry[]): CommitRef => {
 		const files = filesOverride ?? pickFiles();
-		const blobMarks = files.map((f) => emitBlob(f.content));
+		const blobMarks = files.filter((f) => f.gitlink === undefined).map((f) => emitBlob(f.content));
 		const m = ++mark;
 		const authorIndex = seq % authors;
 		seq++;
@@ -265,16 +440,27 @@ function buildFastImportStream(opts: FixtureOptions): Buffer {
 			+ 'author ' + identity(authorIndex) + ' ' + t + ' +0000\n'
 			+ 'committer ' + identity(authorIndex) + ' ' + t + ' +0000\n'
 			+ data(message);
+		// The FIRST parent must be a `from` line: fast-import treats a commit without one as a
+		// ROOT when it opens a new ref, which silently detached every feature branch from main —
+		// the branches then shared no history with it at all, and git correctly refused the
+		// catalog's cross-branch operations ("refusing to merge unrelated histories"). With
+		// `from` the branch really branches off; main's linear continuation is unchanged.
+		if (parents.length > 0) rec += 'from :' + parents[0] + '\n';
 		for (const p of parents.slice(1)) rec += 'merge :' + p + '\n';
-		files.forEach((f, i) => {
-			rec += 'M 100644 :' + blobMarks[i] + ' ' + f.filePath + '\n';
-		});
+		let blobIndex = 0;
+		for (const f of files) {
+			// A gitlink records the nested repository's commit hash directly (mode 160000): the
+			// object need not exist in this repository — fast-import accepts a fully spelled hash.
+			rec += f.gitlink !== undefined
+				? 'M 160000 ' + f.gitlink + ' ' + f.filePath + '\n'
+				: 'M 100644 :' + blobMarks[blobIndex++] + ' ' + f.filePath + '\n';
+		}
 		chunks.push(rec);
 		return { mark: m, ts: t, authorIndex };
 	};
 
 	const emitTag = (name: string, target: CommitRef) => {
-		if (rng() < 0.3) { // ~30% annotated
+		if (rng() < 0.3 || tagIndex === tags - 1) { // ~30% annotated; the NEWEST tag always is, so the loaded first page always offers one near HEAD (menu-tag's View Details / Delete)
 			chunks.push('tag ' + name + '\nfrom :' + target.mark + '\n'
 				+ 'tagger ' + identity(target.authorIndex) + ' ' + target.ts + ' +0000\n'
 				+ data('tag ' + name));
@@ -345,7 +531,14 @@ function buildFastImportStream(opts: FixtureOptions): Buffer {
 		const message = pendingMergeMark !== 0
 			? 'Merge branch \'feature-' + pad(pendingBranchNum, 3) + '\''
 			: specialMessage ?? ('commit ' + (i + 1) + ' on main');
-		const head = emitCommit('refs/heads/main', message, parents, filesOverride);
+		// The FINAL main-line commit records the fixture's submodule: `.gitmodules` as a regular
+		// file and the nested repository's HEAD as a gitlink (mode 160000), so every checkout of
+		// the history carries the submodule registration. Ordinary files ride along too, keeping
+		// the stashes seedRepo creates well away from `.gitmodules`.
+		const submoduleFiles: FileEntry[] = i === commits - 1
+			? [{ filePath: '.gitmodules', content: SUBMODULE_GITMODULES }, { filePath: FIXTURE_SUBMODULE_PATH, content: '', gitlink: submoduleSha }]
+			: [];
+		const head = emitCommit('refs/heads/main', message, parents, filesOverride !== undefined ? filesOverride.concat(submoduleFiles) : pickFiles().concat(submoduleFiles));
 		mainMark = head.mark;
 		pendingMergeMark = 0;
 
@@ -407,16 +600,23 @@ export async function generate(options: { outDir: string } & Partial<FixtureOpti
 	mkdirAll(outDir);
 	const workDir = fs.mkdtempSync(path.join(outDir, '.work-'));
 	try {
+		// The submodule's history first: its (deterministic) HEAD hash is the gitlink the main
+		// stream records on the final main-line commit. The scratch copy lives inside workDir and
+		// disappears with it — the working clone materialises its own copy (ensureSubmodule below).
+		const submoduleSha = await importSubmodule(path.join(workDir, 'submodule-scratch'));
 		await git(['init', workDir]);
-		await fastImport(workDir, buildFastImportStream(opts));
+		await fastImport(workDir, buildFastImportStream(opts, submoduleSha));
 
-		rmRecursive(remoteDir);
-		rmRecursive(fixtureDir);
+		// These may be held at re-generate time (the engine's warm handles memory-map the pack
+		// files of a fixture a just-closed editor had open) — the same budget suiteRunner allows.
+		await rmTree(remoteDir, RM_TREE_DEADLINE_MS);
+		await rmTree(fixtureDir, RM_TREE_DEADLINE_MS);
 		await git(['clone', '--bare', workDir, remoteDir]);
-		rmRecursive(workDir);
+		await rmTree(workDir, RM_TREE_DEADLINE_MS);
 		await git(['clone', remoteDir, fixtureDir]);
+		await ensureSubmodule(fixtureDir);
 	} catch (err) {
-		rmRecursive(workDir);
+		await rmScratch(workDir);
 		throw err;
 	}
 
@@ -453,13 +653,26 @@ export async function seedEmptyRepo(repo: string, options: Partial<FixtureOption
 	}
 	const opts = validatedOptions(options);
 
+	// The submodule's deterministic HEAD is the gitlink the generated history records; the scratch
+	// import lives only long enough to compute it (the repository gets its own working copy below).
+	const subScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-automation-sub-'));
+	let submoduleSha: string;
+	try {
+		submoduleSha = await importSubmodule(subScratch);
+	} finally {
+		// Best effort on purpose: a transient lock on the fresh pack file here used to abort the
+		// whole run (and, had importSubmodule failed, mask its real error with the cleanup's EPERM).
+		await rmScratch(subScratch);
+	}
+
 	const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-automation-remote-'));
 	await git(['init', '--bare', remoteDir]);
-	await fastImport(remoteDir, buildFastImportStream(opts));
+	await fastImport(remoteDir, buildFastImportStream(opts, submoduleSha));
 
 	// Wire the repository to the fresh remote (keeping the `origin` name the catalog expects) and
 	// materialise the history: fetch creates origin/feature-NNN and the tags, the forced checkout
-	// of origin/main gives the working tree and the local main branch.
+	// of origin/main gives the working tree and the local main branch. The submodule follows the
+	// checkout as `.gitmodules` + gitlink — its nested repository is materialised in place.
 	let originUrl: string;
 	try {
 		originUrl = (await git(['-C', repo, 'remote', 'get-url', 'origin'])).stdout.trim();
@@ -470,6 +683,7 @@ export async function seedEmptyRepo(repo: string, options: Partial<FixtureOption
 	else await git(['-C', repo, 'remote', 'set-url', 'origin', remoteDir]);
 	await git(['-C', repo, 'fetch', 'origin', '--prune', '--tags']);
 	await git(['-C', repo, 'checkout', '-f', '-B', 'main', 'origin/main']);
+	await ensureSubmodule(repo);
 
 	writeFixtureMarker(repo, remoteDir, opts);
 	await seedRepo(repo);
@@ -496,7 +710,13 @@ export async function seedRepo(repoDir: string): Promise<void> {
 	const listed = await git(['-C', repoDir, 'ls-files']);
 	const files = listed.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '');
 	if (files.length === 0) throw new Error(repoDir + ' has no tracked files to stash');
-	const picks = [files[0], files[Math.floor(files.length / 3)], files[Math.floor((2 * files.length) / 3)]];
+	// Never a dotfile: the stash seed APPENDS content to the files it picks, and a pick of
+	// `.gitmodules` (tracked and first in ls-files since the submodule landed) writes stash
+	// markers INTO a git config file — one failed stash push later, every git invocation in the
+	// suite dies on "bad config line". Plain source files are the stash substrate.
+	const stashable = files.filter((f) => f.indexOf('.') !== 0);
+	if (stashable.length < 3) throw new Error(repoDir + ' has too few non-dot tracked files to stash (needs 3, has ' + stashable.length + ')');
+	const picks = [stashable[0], stashable[Math.floor(stashable.length / 3)], stashable[Math.floor((2 * stashable.length) / 3)]];
 
 	for (let i = 0; i < 3; i++) {
 		const file = picks[i];
@@ -514,4 +734,9 @@ export async function seedRepo(repoDir: string): Promise<void> {
 	await git(['-C', repoDir, 'add', 'local-ahead-note.txt']);
 	await git(['-C', repoDir, 'commit', '-m', 'local-ahead fixture commit']);
 	await git(['-C', repoDir, 'checkout', 'main']);
+
+	// The submodule survives every reseed: rebuilt deterministically when a write action's clean
+	// removed it, and `.gitmodules` restored for histories that predate it (untracked there, so
+	// `main` keeps matching `origin/main` exactly).
+	await ensureSubmodule(repoDir);
 }

@@ -19,6 +19,16 @@ function statusBadge(run: SuiteReport['suites'][0]['runs'][0]): string {
 	return '<span class="badge fail">FAIL</span>';
 }
 
+function detailCell(run: SuiteReport['suites'][0]['runs'][0]): string {
+	// A passing command-mode action shows what the command answered through native notifications
+	// (the auto-answer suppressed the toasts; e.g. a designed Gerrit refusal) — the run's evidence.
+	const detail = run.reason ?? run.error ?? '';
+	const notes = run.ok && (run.notifications ?? []).length > 0
+		? '<div class="notes">' + run.notifications.map((message) => esc(message.length > 160 ? message.slice(0, 160) + '…' : message)).join('<br>') + '</div>'
+		: '';
+	return esc(detail) + notes;
+}
+
 function suiteTable(suite: SuiteReport['suites'][0]): string {
 	const rows = suite.runs.map((run) => `
 		<tr data-search="${esc((run.id + ' ' + run.title + ' ' + run.group).toLowerCase())}">
@@ -26,7 +36,7 @@ function suiteTable(suite: SuiteReport['suites'][0]): string {
 			<td>${esc(run.title)}</td>
 			<td class="num">${run.totalMs === null ? '—' : run.totalMs.toFixed(1)}</td>
 			<td>${statusBadge(run)}</td>
-			<td class="detail">${esc(run.reason ?? run.error ?? '')}</td>
+			<td class="detail">${detailCell(run)}</td>
 		</tr>`).join('');
 	return `
 		<section>
@@ -78,6 +88,7 @@ export function renderReportHtml(report: SuiteReport): string {
 	td.id { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; white-space: nowrap; }
 	td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 	td.detail { color: var(--vscode-descriptionForeground, #999); }
+	td.detail .notes { font-size: 12px; margin-top: 2px; opacity: .85; }
 	.badge { border-radius: 4px; padding: 1px 7px; font-size: 11px; }
 	.badge.pass { background: rgba(78, 201, 176, .15); color: #4ec9b0; }
 	.badge.fail { background: rgba(244, 135, 113, .15); color: #f48771; }

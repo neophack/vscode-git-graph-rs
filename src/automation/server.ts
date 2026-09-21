@@ -46,6 +46,23 @@ export interface ActionStats {
 const DEFAULT_RUN_TIMEOUT_MS = 30000;
 const DEFAULT_QUERY_TIMEOUT_MS = 30000;
 
+/**
+ * The error payload a response carries (NULL when the operation succeeded). The host answers a
+ * failed operation with the SAME response command — the git error sits in `error` (single) or
+ * `errors` (multi, e.g. addTag's tag-then-push pair) — so "a response arrived" alone says nothing
+ * about whether the operation worked. This is what separates a passing run from a recorded one.
+ */
+function errorPayloadOf(msg: ResponseMessage): string | null {
+	const single = (msg as { error?: unknown }).error;
+	if (typeof single === 'string' && single !== '') return single;
+	const multi = (msg as { errors?: unknown }).errors;
+	if (Array.isArray(multi)) {
+		const texts = multi.filter((e): e is string => typeof e === 'string' && e !== '');
+		if (texts.length > 0) return texts.join('; ');
+	}
+	return null;
+}
+
 interface ActiveRun {
 	readonly runId: number;
 	readonly mode: AutomationMode;
@@ -56,8 +73,8 @@ interface ActiveRun {
 	readonly baseline: ReadonlyMap<string, number>;
 	/** Refresh ids this run injected itself (request mode and invoke echo them back unchanged). */
 	readonly injectedRefreshIds: Map<string, number>;
-	/** Responses observed so far, with their arrival time relative to t0. */
-	readonly seen: { command: string; atMs: number }[];
+	/** Responses observed so far, with their arrival time relative to t0 and error payload (NULL when the operation succeeded). */
+	readonly seen: { command: string; atMs: number; error: string | null }[];
 	/** TRUE once the page-side steps have completed (UI mode only). */
 	shimComplete: boolean;
 	shimResult: ShimResult | null;
@@ -75,6 +92,8 @@ export interface RunOutcome {
 	readonly timings?: ActionSample;
 	readonly response?: unknown;
 	readonly error?: string;
+	/** Native notifications the command raised (command mode only), captured by the dialog auto-answer. */
+	readonly notifications?: readonly string[];
 }
 
 export class AutomationServer {
@@ -238,7 +257,7 @@ export class AutomationServer {
 			&& refreshId <= (run.baseline.get(msg.command) ?? -1)
 			&& run.injectedRefreshIds.get(msg.command) !== refreshId) return;
 		run.pending.delete(msg.command);
-		run.seen.push({ command: msg.command, atMs: this.relative(run.t0) });
+		run.seen.push({ command: msg.command, atMs: this.relative(run.t0), error: errorPayloadOf(msg) });
 		if (run.pending.size === 0 && run.shimComplete) this.completeRun();
 	}
 
@@ -368,9 +387,9 @@ export class AutomationServer {
 		this.activeRun = run;
 		this.logger.log('Automation run ' + run.runId + ': ' + id + ' (' + mode + ')');
 
-		// Command mode: native dialogs the command raises are answered with their primary action
-		// for the whole run window (the command's continuation outlives executeCommand, which
-		// resolves on dispatch — commands.ts's wrapper does not forward the handler's promise).
+		// Command mode: native dialogs and notifications the command raises are intercepted
+		// (dialogs answered with their primary action, error toasts captured and suppressed)
+		// for the whole run window below — through the handler itself and the post-run steps.
 		let dialogs: ReturnType<HostBridge['installDialogAutoAnswer']> | null = null;
 		let tabsBefore: string[] | null = null;
 		try {
@@ -380,7 +399,20 @@ export class AutomationServer {
 			} else if (mode === 'command') {
 				dialogs = this.bridge.installDialogAutoAnswer();
 				tabsBefore = action.expectTabs === true ? this.bridge.tabKeys() : null;
-				await this.bridge.executeVscodeCommand(action.vscodeCommand!, context);
+				// The handler's promise is forwarded (commands.ts's registerCommand returns it,
+				// already caught), so this await spans the WHOLE command: the auto-answer installed
+				// above stays in force through every notification and modal the command raises —
+				// restoring it at the old dispatch-moment let a late modal confirmation surface as
+				// a real, run-blocking dialog. A command that never completes must not stall the
+				// serialized chain either, so race the run timeout and fail the action instead.
+				const command = this.bridge.executeVscodeCommand(action.vscodeCommand!, context);
+				const incomplete = await Promise.race([
+					command.then(() => false),
+					new Promise<boolean>((resolve) => { setTimeout(() => resolve(true), timeoutMs); })
+				]);
+				if (incomplete) {
+					return this.record(action, mode, { ok: false, error: 'The command did not complete within ' + timeoutMs + ' ms' });
+				}
 			} else {
 				for (const template of action.request ?? []) {
 					const message = expandTemplate(template, context) as unknown as RequestMessage;
@@ -432,10 +464,9 @@ export class AutomationServer {
 					}
 				}
 				if (tabsBefore !== null) {
-					// The command's tab registers asynchronously: commands.ts's registerCommand
-					// wrapper does not forward the handler's promise, so executeCommand resolves
-					// on dispatch — often before the editor `vscode.open` is creating has entered
-					// tabGroups.all. A single snapshot here races that registration and fails a
+					// executeCommand resolved once the handler completed (its promise is forwarded),
+					// but the editor's tab registration in tabGroups.all can still lag the handler's
+					// showTextDocument. A single snapshot here races that registration and fails a
 					// command that did open its tab; poll for the new key instead, and only a tab
 					// that never appears fails the action.
 					const before = tabsBefore;
@@ -450,13 +481,56 @@ export class AutomationServer {
 					}
 				}
 			}
+			// The error-payload gate: an expected response that arrived carrying an error means the
+			// operation FAILED even though every step and barrier completed (the webview shows the
+			// error dialog the flows dismiss). Checked after the post steps so a failed command's
+			// state restoration (e.g. clearing a file filter) still runs before the failure lands,
+			// and before the state verify so the root cause — not its downstream symptom — reports.
+			// allowErrorOn is the designed-refusal escape (documented per action): everything else
+			// must have actually worked for the action to pass.
+			const allowed = action.allowErrorOn ?? [];
+			const failedResponse = run.seen.find((s) => s.error !== null && !allowed.includes(s.command));
+			if (failedResponse !== undefined) {
+				return this.record(action, mode, {
+					ok: false, timings,
+					error: 'the host reported an error for "' + failedResponse.command + '": ' + failedResponse.error
+				});
+			}
 			if (action.verify !== undefined) {
 				const verifyError = await this.verifyAction(action, context);
 				if (verifyError !== null) {
 					return this.record(action, mode, { ok: false, timings, error: verifyError });
 				}
 			}
-			return this.record(action, mode, { ok: true, timings });
+			if (action.expectNotifications !== undefined && dialogs !== null) {
+				// The await above spanned the whole handler, so every notification the command raised
+				// is captured by now; a command whose outcome IS a notification is otherwise
+				// unverifiable (an empty expected-responses list passes even if it did nothing).
+				const captured = dialogs.messages;
+				for (const needle of action.expectNotifications) {
+					if (!captured.some((message) => message.indexOf(needle) !== -1)) {
+						return this.record(action, mode, {
+							ok: false, timings,
+							error: 'expected a native notification containing "' + needle + '"; the command raised: '
+								+ (captured.length === 0 ? '(no notification)' : '"' + captured.join('" | "') + '"')
+						});
+					}
+				}
+			}
+			if (action.expectAnyNotification === true && dialogs !== null && dialogs.messages.length === 0) {
+				// The command's whole observable outcome is a (fully localized) notification: pin its
+				// presence when no language-invariant fragment exists to pin its text.
+				return this.record(action, mode, { ok: false, timings, error: 'the command raised no native notification' });
+			}
+			if (action.expectModal === true && dialogs !== null && dialogs.autoAnswered.length === 0) {
+				// The command must have reached its confirmation point: a native modal the
+				// auto-answer answered (a silent no-op never got that far).
+				return this.record(action, mode, { ok: false, timings, error: 'the command raised no confirmation modal' });
+			}
+			return this.record(action, mode, {
+				ok: true, timings,
+				notifications: dialogs !== null && dialogs.messages.length > 0 ? dialogs.messages : undefined
+			});
 		} finally {
 			this.activeRun = null;
 			if (dialogs !== null) {
@@ -522,6 +596,7 @@ export class AutomationServer {
 		}
 
 		if (this.references(action, 'commit') || this.references(action, 'commitParent') || this.references(action, 'file')
+			|| this.references(action, 'commitSubject')
 			|| this.references(action, 'author') || this.references(action, 'findQuery')
 			|| this.references(action, 'tag') || this.references(action, 'annotatedTag')
 			|| this.references(action, 'binaryFile') || this.references(action, 'binaryCommit') || this.references(action, 'binaryCommitParent')
@@ -533,6 +608,9 @@ export class AutomationServer {
 			const pick = commits.find((c) => c.hash !== repoInfo.head) ?? commits[0];
 			context.commit = pick?.hash ?? '';
 			context.commitParent = pick?.parents?.[0] ?? '';
+			// The subject (first line of the message) — the text the rendered row's description cell
+			// must show, so a text assertion can hold the view against the repository's own data.
+			context.commitSubject = (pick?.message ?? '').split('\n')[0].trim();
 			if (this.references(action, 'author')) context.author = pick?.author ?? '';
 
 			// A find query guaranteed to match: the first branch label of the loaded page (the
@@ -573,6 +651,7 @@ export class AutomationServer {
 					if (good !== undefined) {
 						context.commit = candidate.hash;
 						context.commitParent = candidate.parents?.[0] ?? '';
+						context.commitSubject = candidate.message.split('\n')[0].trim();
 						context.file = good.newFilePath;
 						break;
 					}
@@ -584,6 +663,7 @@ export class AutomationServer {
 				if (context.file === undefined && fallback !== null) {
 					context.commit = fallback.hash;
 					context.commitParent = fallback.parent;
+					context.commitSubject = (commits.find((c) => c.hash === fallback.hash)?.message ?? '').split('\n')[0].trim();
 					context.file = fallback.file;
 				}
 				context.file = context.file ?? '';
@@ -647,20 +727,57 @@ export class AutomationServer {
 	/** Check the post-run repository state against the action's verify declaration. */
 	private async verifyAction(action: AutomationAction, context: Record<string, string>): Promise<string | null> {
 		const verify = action.verify!;
-		const name = verify.placeholder.slice(2, -2);
-		if (!(name in context)) return 'verify placeholder "' + name + '" was not resolved';
-		const expected = context[name];
+		// A `{{name}}` reference resolves from the run context; anything else is the plain literal
+		// the action itself names (the exact branch/tag/remote a catalogued write creates).
+		let expected: string | undefined;
+		if (verify.placeholder.startsWith('{{') && verify.placeholder.endsWith('}}')) {
+			const name = verify.placeholder.slice(2, -2);
+			if (!(name in context)) return 'verify placeholder "' + name + '" was not resolved';
+			expected = context[name];
+		} else {
+			expected = verify.placeholder;
+		}
+		if (expected === undefined || expected === '') return 'verify target "' + verify.placeholder + '" did not resolve to a name';
 		const repoInfo = await this.queryRepoInfo(context.repo);
 		switch (verify.kind) {
 			case 'headIs':
 				return repoInfo.head === expected ? null : 'expected HEAD to be "' + expected + '", got "' + repoInfo.head + '"';
 			case 'headIsNot':
 				return repoInfo.head !== expected ? null : 'expected HEAD to differ from "' + expected + '"';
+			case 'headSubjectStartsWith': {
+				// The newest commit of the live graph — what a just-created commit (fixup!, squash!)
+				// must be. A literal prefix, never a placeholder: the catalog names it.
+				const newest = (await this.queryCommits(context.repo, 1))[0];
+				const subject = newest === undefined ? '' : newest.message.split('\n')[0];
+				return subject.indexOf(expected) === 0 ? null : 'expected the newest commit\'s subject to start with "' + expected + '", got "' + subject + '"';
+			}
 			case 'branchPresent':
 				return (repoInfo.branches ?? []).includes(expected) ? null : 'expected branch "' + expected + '" to exist';
 			case 'branchAbsent':
 				return !(repoInfo.branches ?? []).includes(expected) ? null : 'expected branch "' + expected + '" to be gone';
+			case 'tagPresent':
+				return (await this.liveTagNames(context.repo)).includes(expected) ? null : 'expected tag "' + expected + '" to exist';
+			case 'tagAbsent':
+				return !(await this.liveTagNames(context.repo)).includes(expected) ? null : 'expected tag "' + expected + '" to be gone';
+			case 'remotePresent':
+				return (repoInfo.remotes ?? []).includes(expected) ? null : 'expected remote "' + expected + '" to exist';
+			case 'remoteAbsent':
+				return !(repoInfo.remotes ?? []).includes(expected) ? null : 'expected remote "' + expected + '" to be gone';
 		}
+	}
+
+	/**
+	 * The tag names of the live graph (loadRepoInfo carries none). Hard-probed like every context
+	 * read — a tag a write action just created must be seen regardless of what the rendered page
+	 * has cached. Page-deep: every catalogued tag target sits inside the first 300 commits.
+	 */
+	private async liveTagNames(repo: string): Promise<string[]> {
+		const commits = await this.queryCommits(repo, 300);
+		const names: string[] = [];
+		for (const commit of commits) {
+			for (const tag of commit.tags ?? []) names.push(tag.name);
+		}
+		return names;
 	}
 
 	private async invokeRaw(params: Record<string, unknown>): Promise<RunOutcome> {

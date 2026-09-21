@@ -125,12 +125,17 @@ export class CommandManager extends Disposable {
 				this.logger.log('Command Invoked: ' + command);
 				try {
 					const result = callback(...args);
-					// Prevent unhandled promise rejections if the command handler is asynchronous
+					// Forward the handler's result so a caller awaiting executeCommand observes the
+					// handler's COMPLETION, not its dispatch (the automation server relies on this
+					// to hold its dialog auto-answer over every notification and modal the command
+					// raises). The catch keeps the forwarded promise resolving — never rejecting —
+					// so no caller inherits an unhandled rejection.
 					if (result !== undefined && result !== null && typeof (<Promise<void>>result).catch === 'function') {
-						(<Promise<void>>result).catch((error) => {
+						return (<Promise<void>>result).catch((error) => {
 							this.logger.logError('Command "' + command + '" failed: ' + error);
 						});
 					}
+					return result;
 				} catch (error) {
 					this.logger.logError('Command "' + command + '" failed: ' + error);
 				}
@@ -345,7 +350,11 @@ export class CommandManager extends Disposable {
 			if (existing !== null) return { error: null, changeId: existing, amended: false }; // nothing to amend
 
 			const remotes = await this.dataSource.gitOutput(['branch', '-r', '--no-color', '--contains=HEAD'], repo, (stdout) =>
-				stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
+				stdout.split(/\r?\n/).map((line) => line.trim())
+					// A symbolic line ("origin/HEAD -> origin/main") names the same remote branch as
+					// its target, which the listing carries as its own line: resolve it and deduplicate.
+					.map((line) => (line.indexOf(' -> ') !== -1 ? line.split(' -> ').pop()! : line))
+					.filter((line, index, lines) => line !== '' && lines.indexOf(line) === index)
 			);
 			if (remotes.length > 0) return { error: t('gerritChangeIdPushedError', remotes[0]), changeId: null, amended: false };
 
@@ -419,7 +428,13 @@ export class CommandManager extends Disposable {
 				cancellable: false
 			}, (progress) => modules.runAutomationSuite({
 				logger: this.logger,
-				onProgress: (p) => progress.report({ message: p.phase + ' ' + p.index + '/' + p.total + ' — ' + p.actionId })
+				onProgress: (p) => progress.report({ message: p.phase + ' ' + p.index + '/' + p.total + ' — ' + p.actionId }),
+				// The fixture's submodule becomes a known repository the moment it is seeded: a
+				// repository materialised mid-session is never discovered on its own (both the
+				// workspace scan and the submodule scan skip paths inside a known repository).
+				registerRepo: async (repo) => {
+					if (!this.repoManager.isKnownRepo(repo)) await this.repoManager.registerRepo(repo, false);
+				}
 			}));
 			modules.showAutomationReport(report);
 		} catch (error) {

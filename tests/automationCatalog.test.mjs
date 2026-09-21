@@ -54,7 +54,7 @@ function extractDomIds() {
 /** Placeholders the server's buildContext resolves (plus run params like `name`, `value`). */
 const KNOWN_PLACEHOLDERS = new Set([
 	'repo', 'head', 'branch', 'branchHead', 'remote', 'remoteBranch', 'stash', 'tag',
-	'annotatedTag', 'findQuery', 'author', 'commit', 'commitParent', 'file',
+	'annotatedTag', 'findQuery', 'author', 'commit', 'commitParent', 'commitSubject', 'file',
 	'binaryFile', 'binaryCommit', 'binaryCommitParent', 'imageFile', 'imageCommit', 'imageCommitParent',
 	// run params commonly used by dialog flows
 	'name', 'value', 'message', 'path', 'to', 'mode', 'hash'
@@ -106,8 +106,14 @@ test('every placeholder resolves (no typos against the server context)', () => {
 		check(action, JSON.stringify(action.uiAfter ?? []));
 		check(action, JSON.stringify(action.vscodeCommand ?? null));
 		if (action.verify !== undefined) {
-			const name = action.verify.placeholder.replace(/\{\{|\}\}/g, '');
-			assert.ok(KNOWN_PLACEHOLDERS.has(name), action.id + ': unknown verify placeholder "' + name + '"');
+			// A verify target is either a {{name}} context reference or the plain literal the
+			// action itself names (e.g. 'automation-branch'); only the references are checked here.
+			if (action.verify.placeholder.indexOf('{{') !== -1) {
+				const name = action.verify.placeholder.replace(/\{\{|\}\}/g, '');
+				assert.ok(KNOWN_PLACEHOLDERS.has(name), action.id + ': unknown verify placeholder "' + name + '"');
+			} else {
+				assert.ok(action.verify.placeholder.trim() !== '', action.id + ': empty verify literal');
+			}
 		}
 	}
 });
@@ -139,10 +145,29 @@ test('write actions declare how they are verified or are pure host commands', ()
 	for (const action of CATALOG) {
 		if (!action.mutable) continue;
 		// `host` and `menu-vscode` write entries are pure VS Code commands answered through
-		// editor notifications, not the view pipeline — there is no response or repo state to check.
+		// editor notifications, not the view pipeline — the deterministic ones assert their
+		// captured notification (see the test below); amend/reset answers depend on the
+		// machine's Git identity and upstream, so only their capture is reported, not asserted.
 		if (action.group === 'host' || action.group === 'menu-vscode') continue;
 		assert.ok(action.verify !== undefined || action.expect.responses.length > 0,
 			action.id + ': a write action needs a verify state check or an expected ack');
+	}
+});
+
+test('deterministic refusal commands assert their captured notifications', () => {
+	const i18n = fs.readFileSync(path.join(rootDir, 'src', 'i18n.ts'), 'utf8');
+	const deterministic = CATALOG.filter((a) => a.group === 'menu-vscode' && a.mutable && a.expectNotifications !== undefined);
+	// The two designed refusals of the fixture: the local-path remote offers no Gerrit server to
+	// fetch the commit-msg hook from, and main == origin/main after the reseed pushes the
+	// "already pushed, no Change-Id" refusal.
+	assert.deepEqual(deterministic.map((a) => a.id), ['menu-vscode/scm-gerrit-fetch-commit-msg-hook', 'menu-vscode/scm-gerrit-push-ref']);
+	for (const action of deterministic) {
+		assert.ok(action.expectNotifications.length > 0, action.id + ': expectNotifications must not be empty');
+		// The captured text is the localized message: every needle must occur in the i18n sources
+		// (both interface languages) or it can never match.
+		for (const needle of action.expectNotifications) {
+			assert.ok(i18n.includes(needle), action.id + ': expectNotifications needle "' + needle + '" appears nowhere in src/i18n.ts');
+		}
 	}
 });
 
@@ -178,6 +203,9 @@ test('exact-text steps stay in sync with the shipped interface languages', () =>
 
 	for (const [id, ...texts] of candidates) {
 		for (const text of texts) {
+			// A candidate that is exactly one {{placeholder}} expands from live repository data
+			// at run time (e.g. contains: '{{branch}}') — nothing to pin in the shipped strings.
+			if (/^\{\{[a-zA-Z][a-zA-Z0-9]*\}\}$/.test(text)) continue;
 			const bare = text.replace(/…$/, '').replace(/\.\.\.$/, '');
 			const present = [text, bare].some((form) => enBlock.includes(form) || zhBlock.includes(form));
 			assert.ok(present, id + ': exact-text candidate ' + JSON.stringify(text) + ' matches nothing in web/strings.ts');

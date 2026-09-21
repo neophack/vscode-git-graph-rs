@@ -202,12 +202,12 @@ test('renderReportHtml produces the standalone report with the save affordances'
 	const report = {
 		startedAt: '2026-09-17T00:00:00.000Z', finishedAt: '2026-09-17T00:01:00.000Z', durationMs: 60000,
 		repo: 'R', fixture: false, fixtureGenerated: false, writeSuiteIncluded: false,
-		suites: [{
-			name: 'read', runs: [{
-				id: 'control-bar/refresh', title: 'Refresh', group: 'control-bar', mode: 'ui',
-				ok: true, skipped: false, reason: null, error: null, totalMs: 12.5, responses: [{ command: 'loadRepoInfo', atMs: 3 }]
-			}]
-		}, { name: 'write', runs: [] }],
+			suites: [{
+				name: 'read', runs: [{
+					id: 'control-bar/refresh', title: 'Refresh', group: 'control-bar', mode: 'ui',
+					ok: true, skipped: false, reason: null, error: null, totalMs: 12.5, responses: [{ command: 'loadRepoInfo', atMs: 3 }], notifications: []
+				}]
+			}, { name: 'write', runs: [] }],
 		totals: { actions: 1, passed: 1, failed: 0, skipped: 0 }
 	};
 	const html = renderReportHtml(report);
@@ -236,12 +236,14 @@ test('runAutomationSuite generates the fixture into a repository with no commits
 	// One read action through the real pipeline; the write phase is entered (the repository became
 	// a fixture clone) but the filter selects no write actions - the reseed still happens, which is
 	// what proves the generated marker/remote pair drives the between-phases rebuild too.
+	const registered = [];
 	const report = await boot.automation.suiteRunner.runAutomationSuite({
 		logger: silentLogger,
 		repo: emptyRepoDir,
 		filter: (action) => action.id === 'control-bar/refresh',
 		actionTimeoutMs: 60000,
-		fixtureOptions: { commits: 120, branches: 4, tags: 6, authors: 5 }
+		fixtureOptions: { commits: 120, branches: 4, tags: 6, authors: 5 },
+		registerRepo: async (repo) => { registered.push(repo); }
 	});
 
 	const git = (args) => execFileSync('git', args, { cwd: emptyRepoDir, encoding: 'utf8' }).trim();
@@ -254,6 +256,19 @@ test('runAutomationSuite generates the fixture into a repository with no commits
 		'the pre-write reseed restored the seeded state from the generated remote');
 	assert.ok(git(['branch', '--list', 'local-ahead']).includes('local-ahead'), 'the seeded local-ahead branch is back after the reseed');
 	assert.ok(fs.existsSync(path.join(emptyRepoDir, '.gg-fixture')), 'the marker records the generated fixture');
+
+	// The fixture's submodule: a nested repository materialised at sub/fixture-sub, recorded as a
+	// gitlink (mode 160000) whose hash matches the nested repository's HEAD, `.gitmodules` checked
+	// out on main, and both still in place after the final reseed — plus the runner asking the
+	// host to register the submodule as the second known repository (the Repos dropdown's need).
+	const subDir = path.join(emptyRepoDir, 'sub', 'fixture-sub');
+	assert.ok(fs.existsSync(path.join(subDir, '.git')), 'the fixture submodule is materialised');
+	assert.ok(fs.existsSync(path.join(emptyRepoDir, '.gitmodules')), '.gitmodules is checked out on main');
+	const gitlinkParts = git(['ls-files', '-s', '--', 'sub/fixture-sub']).split(/\s+/);
+	assert.equal(gitlinkParts[0], '160000', 'the submodule is recorded as a gitlink');
+	const subHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: subDir, encoding: 'utf8' }).trim();
+	assert.equal(gitlinkParts[1], subHead, 'the gitlink matches the nested repository HEAD');
+	assert.ok(registered.some((repo) => repo === subDir), 'the runner registers the fixture submodule with the host');
 });
 
 test('runAutomationSuite skips the write suite on a repository that already has commits', async () => {
@@ -279,4 +294,6 @@ test('runAutomationSuite skips the write suite on a repository that already has 
 	assert.equal(report.totals.actions, 0);
 	assert.equal(git(['rev-list', '--count', 'HEAD']), '1', 'the repository was left untouched');
 	assert.equal(fs.existsSync(path.join(realRepoDir, '.gg-fixture')), false, 'no marker was written into a real repository');
+	assert.equal(fs.existsSync(path.join(realRepoDir, 'sub')), false, 'no submodule is seeded into a real repository');
+	assert.equal(fs.existsSync(path.join(realRepoDir, '.gitmodules')), false, 'no .gitmodules is written into a real repository');
 });

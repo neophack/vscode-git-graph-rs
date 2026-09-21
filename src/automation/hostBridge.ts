@@ -62,10 +62,12 @@ export function automationOpenTabs(): any[] {
 	return tabs;
 }
 
-/** What {@see installDialogAutoAnswer} answered while it was installed. */
+/** What {@see installDialogAutoAnswer} captured while it was installed. */
 export interface DialogAutoAnswer {
-	/** One human-readable line per answered dialog, in answer order. */
+	/** One human-readable line per intercepted native dialog, in intercept order. */
 	readonly autoAnswered: readonly string[];
+	/** The full text of every intercepted notification (information / warning / error), in intercept order. */
+	readonly messages: readonly string[];
 	/** Restore the original window methods (idempotent). */
 	readonly restore: () => void;
 }
@@ -141,9 +143,9 @@ export class HostBridge {
 	/**
 	 * Execute the VS Code command a contributed menu item runs, building the argument that menu
 	 * passes from the run's placeholder context (see CommandArgSpec for the shapes). The command
-	 * wrapper in commands.ts swallows its own errors (registerCommand), so this resolves once
-	 * the command was dispatched; the run's outcome is observed through the host-message tap and
-	 * the post-run page steps like any other action.
+	 * wrapper in commands.ts FORWARDS its handler's promise (already caught, so it never rejects),
+	 * so this resolves once the handler has completed — a caller holding the dialog auto-answer
+	 * over the await covers every notification and modal the command raises.
 	 */
 	public async executeVscodeCommand(step: CommandStep, context: Record<string, string>): Promise<void> {
 		const arg = step.arg;
@@ -173,11 +175,14 @@ export class HostBridge {
 	}
 
 	/**
-	 * While a command-mode action runs, answer the native dialogs the command may raise (a modal
-	 * confirmation, an amend prompt, a quick pick) with its primary action — the counterpart of
-	 * the runner auto-confirming the webview's data-loss warning: the run is not interactive, so
-	 * an unanswered modal would stall the command forever. Everything answered is recorded; the
-	 * original window methods are restored by the returned handle.
+	 * While a command-mode action runs, intercept the native dialogs and notifications the command
+	 * may raise: a modal confirmation, an amend prompt or a quick pick is answered with its primary
+	 * action — the counterpart of the runner auto-confirming the webview's data-loss warning: the
+	 * run is not interactive, so an unanswered modal would stall the command forever. An error
+	 * notification offers nothing to answer: it is captured (the run record shows what the command
+	 * answered — e.g. a designed Gerrit refusal) and suppressed, so a non-interactive run does not
+	 * spray deterministic error toasts at the user. Everything intercepted is recorded; the original
+	 * window methods are restored by the returned handle.
 	 */
 	public installDialogAutoAnswer(): DialogAutoAnswer {
 		const w = vscode.window as unknown as Record<string, any>;
@@ -192,22 +197,26 @@ export class HostBridge {
 		};
 		const label = (args: any[]) => typeof args[0] === 'string' ? '"' + args[0].slice(0, 60) + '"' : '';
 		const autoAnswered: string[] = [];
+		const messages: string[] = [];
 		const originals: Record<string, any> = {};
-		const wrap = (name: string, answer: (args: any[]) => unknown) => {
+		const wrap = (name: string, unanswered: string, answer: (args: any[]) => unknown) => {
 			originals[name] = w[name];
 			w[name] = (...args: any[]) => {
+				if (typeof args[0] === 'string') messages.push(args[0]);
 				const chosen = answer(args) as string | { title: string } | undefined;
-				const chosenLabel = chosen === undefined ? '(no button offered)'
+				const chosenLabel = chosen === undefined ? unanswered
 					: typeof chosen === 'string' ? chosen : chosen.title;
 				autoAnswered.push(name + '(' + label(args) + ') -> ' + chosenLabel);
 				return Promise.resolve(chosen);
 			};
 		};
-		wrap('showWarningMessage', firstButtonItem);
-		wrap('showInformationMessage', firstButtonItem);
-		wrap('showQuickPick', (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][0] : undefined);
+		wrap('showWarningMessage', '(no button offered)', firstButtonItem);
+		wrap('showInformationMessage', '(no button offered)', firstButtonItem);
+		wrap('showErrorMessage', '(suppressed)', () => undefined);
+		wrap('showQuickPick', '(no items)', (args) => Array.isArray(args[0]) && args[0].length > 0 ? args[0][0] : undefined);
 		return {
 			autoAnswered,
+			messages,
 			restore: () => {
 				for (const name of Object.keys(originals)) w[name] = originals[name];
 			}

@@ -638,6 +638,13 @@ describe('git-graph-rs.gerritPushRef', () => {
 		await flush();
 		assert.equal(lastError(), t('gerritChangeIdPushedError', 'origin/feature'));
 
+		// The symbolic "origin/HEAD -> origin/main" line names the same branch as its target: the
+		// refusal must name the branch, not paste the arrow listing at the user.
+		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '  origin/HEAD -> origin/main\n  origin/main\n');
+		vscode.runCommand('git-graph-rs.gerritPushRef');
+		await flush();
+		assert.equal(lastError(), t('gerritChangeIdPushedError', 'origin/main'));
+
 		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '');
 		vscode.responses.showInformationMessage = [t('gerritCancel')];
 		vscode.runCommand('git-graph-rs.gerritPushRef');

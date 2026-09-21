@@ -90,6 +90,21 @@ function postToHost(message) {
 		}
 	}
 
+	/* Does this page have a layout engine? jsdom (the Node test harness) renders the real DOM with
+	 * NO layout: every getBoundingClientRect is 0x0. Size assertions resolve as unassertable there
+	 * instead of failing — while a genuinely collapsed element in the real editor (a layout engine
+	 * present, the element 0x0) still fails. Probed once: body carries children, so a laid-out
+	 * page always has a non-zero body box. */
+	var layoutEngine = null;
+	function hasLayoutEngine() {
+		if (layoutEngine === null) {
+			var body = document.body;
+			var box = body !== null ? body.getBoundingClientRect() : { width: 0, height: 0 };
+			layoutEngine = box.width > 0 || box.height > 0;
+		}
+		return layoutEngine;
+	}
+
 	var AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
 	function runStep(step) {
@@ -169,6 +184,39 @@ function postToHost(message) {
 					if (text.indexOf(wanted[i]) !== -1) return Promise.resolve(text.trim().slice(0, 200));
 				}
 				throw new Error('"' + step.selector + '" does not contain "' + wanted.join('" or "') + '" (got: ' + text.trim().slice(0, 120) + ')');
+			}
+			case 'expectSize': {
+				// The rendered box in CSS pixels (getBoundingClientRect — constant under editor
+				// zoom, which scales the physical pixel, not the layout). Bounds left out are not
+				// checked; the failure reports the measured box so a style regression is diagnosable
+				// from the run record alone.
+				if (!hasLayoutEngine()) return Promise.resolve('sizes unassertable (no layout engine)');
+				var box = find(step.selector).getBoundingClientRect();
+				var width = box.width, height = box.height;
+				if (width === 0 && height === 0) throw new Error('"' + step.selector + '" is not rendered (0x0 box)');
+				if (step.minW !== undefined && width < step.minW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected >= ' + step.minW + 'px');
+				if (step.maxW !== undefined && width > step.maxW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected <= ' + step.maxW + 'px');
+				if (step.minH !== undefined && height < step.minH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected >= ' + step.minH + 'px');
+				if (step.maxH !== undefined && height > step.maxH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected <= ' + step.maxH + 'px');
+				return Promise.resolve(width.toFixed(1) + 'x' + height.toFixed(1));
+			}
+			case 'expectCount': {
+				var count = document.querySelectorAll(step.selector).length;
+				var min = step.min === undefined ? 1 : step.min;
+				if (step.max === undefined) {
+					if (count < min) throw new Error('expected at least ' + min + ' matches of "' + step.selector + '", saw ' + count);
+				} else if (count < min || count > step.max) {
+					throw new Error('expected ' + min + '-' + step.max + ' matches of "' + step.selector + '", saw ' + count);
+				}
+				return Promise.resolve(count);
+			}
+			case 'expectChecked': {
+				var boxEl = find(step.selector);
+				var checked = boxEl.checked === true || boxEl.getAttribute('aria-checked') === 'true' || boxEl.className.split(/\s+/).indexOf('checked') !== -1;
+				if (checked !== step.checked) {
+					throw new Error('"' + step.selector + '" is ' + (checked ? 'checked' : 'unchecked') + ', expected ' + (step.checked ? 'checked' : 'unchecked'));
+				}
+				return Promise.resolve(checked);
 			}
 			case 'eval':
 				return new AsyncFunction('"use strict"; return (' + step.expr + ');')().then(sanitize);
