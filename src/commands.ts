@@ -403,11 +403,12 @@ export class CommandManager extends Disposable {
 	 * only the first entry is used (multi-file filtering is a Git Graph Studio extension).
 	 * @param arg The argument passed to the command (file URIs, or objects containing file URIs).
 	 */
-	/**
-	 * Run the automation test suite against the Git Graph view (in-process; no external driver)
-	 * and open the report page when it finishes. The write suite only runs when the active
-	 * repository is a fixture clone — it is rebuilt from its bare remote first.
-	 */
+/**
+ * Run the automation test suite against the Git Graph view (in-process; no external driver)
+ * and open the report page when it finishes. The write suite runs when the active repository is
+ * safe to mutate — a fixture clone (rebuilt from its bare remote first) or a repository with no
+ * commits at all (the fixture history is generated into it first).
+ */
 	private async runAutomationTest(): Promise<void> {
 		const modules = automation;
 		if (modules === null) return;

@@ -52,6 +52,7 @@
 		"bench": "node scripts/bench.mjs",
 		"bench:all": "node scripts/bench.mjs --all",
 		"analyze-log": "node scripts/analyze-log.mjs",
+		"test:automation:full": "node scripts/automation/full-test.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
 	},
 	"c8": {

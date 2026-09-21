@@ -178,3 +178,74 @@ describe('a commit made while the view is a background tab still refreshes the v
 		if (lastError !== null) throw lastError;
 	});
 });
+
+describe('a change the file watcher never reports is still caught by the background poll while hidden', () => {
+	let context = null;
+	const repoDir = path.join(os.tmpdir(), 'git-graph-rs-poll-hidden-commit');
+	const git = (...args) => execFileSync('git', args, { cwd: repoDir });
+
+	it('the poll invalidates the cache and refreshes the view while hidden, from a change no watcher event ever fired for', async () => {
+		// The regression this pins is distinct from the file-watcher one above: before the fix,
+		// checkForBackgroundChanges() itself returned early on `!panel.visible`, so even a repo
+		// change the poll's own signature comparison would otherwise have caught stayed invisible
+		// until a manual refresh, on top of the watcher being torn down on hide.
+		setAfterDeliver(null);
+		setOnExtensionMessage(null);
+		createRepo(repoDir);
+		const h = await bootRealView(repoDir);
+		context = h;
+		for (let i = 0; i < 200 && h.rows().length === 0; i++) await sleep(100);
+		assert.ok(h.rows().length > 0, 'commits were rendered');
+
+		// checkForBackgroundChanges is TypeScript-`private` only (no runtime enforcement): called
+		// directly so the test does not have to wait out the real 5s poll interval. Its first call
+		// records the baseline signature only - a NULL baseline never triggers a refresh.
+		const view = h.GitGraphView.currentPanel;
+		await view.checkForBackgroundChanges();
+
+		const commandsWhileHidden = [];
+		let hidden = false;
+		setOnExtensionMessage((message) => { if (hidden) commandsWhileHidden.push(message.command); });
+
+		hidden = true;
+		setGraphPanelVisible(false);
+
+		// A commit from outside this view, with no filesystem event fired for it at all: nothing
+		// but the poll's own signature comparison can notice this change.
+		git('commit', '-q', '--allow-empty', '-m', 'committed while hidden, no watcher event');
+
+		await view.checkForBackgroundChanges();
+		assert.ok(commandsWhileHidden.includes('refresh'), 'the background poll delivered a refresh while the view was hidden, got: ' + JSON.stringify(commandsWhileHidden));
+
+		// Back on the tab: the soft refresh serves the poll's invalidated cache - the new commit
+		// is rendered immediately, not after another poll tick.
+		hidden = false;
+		setGraphPanelVisible(true);
+		let appeared = false;
+		for (let i = 0; i < 100 && !appeared; i++) {
+			appeared = h.rows().some((row) => row.textContent.includes('committed while hidden, no watcher event'));
+			if (!appeared) await sleep(100);
+		}
+		assert.ok(appeared, 'the commit the poll caught while hidden is rendered after the view is shown');
+	}, 60000);
+
+	after(async () => {
+		setOnExtensionMessage(null);
+		if (context !== null) {
+			context.dispose();
+			context.window.close();
+		}
+		let lastError = null;
+		for (let i = 0; i < 40; i++) {
+			try {
+				fs.rmSync(repoDir, { recursive: true, force: true });
+				lastError = null;
+				break;
+			} catch (error) {
+				lastError = error;
+				await sleep(250);
+			}
+		}
+		if (lastError !== null) throw lastError;
+	});
+});

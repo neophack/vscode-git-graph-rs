@@ -55,6 +55,7 @@ function extractDomIds() {
 const KNOWN_PLACEHOLDERS = new Set([
 	'repo', 'head', 'branch', 'branchHead', 'remote', 'remoteBranch', 'stash', 'tag',
 	'annotatedTag', 'findQuery', 'author', 'commit', 'commitParent', 'file',
+	'binaryFile', 'binaryCommit', 'binaryCommitParent', 'imageFile', 'imageCommit', 'imageCommitParent',
 	// run params commonly used by dialog flows
 	'name', 'value', 'message', 'path', 'to', 'mode', 'hash'
 ]);
@@ -62,7 +63,7 @@ const KNOWN_PLACEHOLDERS = new Set([
 const KNOWN_GROUPS = new Set([
 	'control-bar', 'row', 'menu-commit', 'menu-branch', 'menu-remote-branch', 'menu-stash',
 	'menu-tag', 'menu-uncommitted', 'cdv', 'settings', 'find', 'keyboard', 'reflog',
-	'worktree', 'statistics', 'host'
+	'worktree', 'statistics', 'host', 'menu-vscode'
 ]);
 
 /* ---------- tests ---------- */
@@ -102,6 +103,8 @@ test('every placeholder resolves (no typos against the server context)', () => {
 	for (const action of CATALOG) {
 		check(action, JSON.stringify(action.request ?? []));
 		check(action, JSON.stringify(action.ui ?? []));
+		check(action, JSON.stringify(action.uiAfter ?? []));
+		check(action, JSON.stringify(action.vscodeCommand ?? null));
 		if (action.verify !== undefined) {
 			const name = action.verify.placeholder.replace(/\{\{|\}\}/g, '');
 			assert.ok(KNOWN_PLACEHOLDERS.has(name), action.id + ': unknown verify placeholder "' + name + '"');
@@ -120,7 +123,7 @@ test('hash-prefixed UI selectors reference ids that exist in the webview DOM', (
 	// Ids assigned with dynamic suffixes (dialogForm inputs) — match by prefix.
 	const dynamicPrefixes = ['dialogInput'];
 	for (const action of CATALOG) {
-		for (const step of action.ui ?? []) {
+		for (const step of [...(action.ui ?? []), ...(action.uiAfter ?? [])]) {
 			if (!('selector' in step) || typeof step.selector !== 'string') continue;
 			const match = /^#([A-Za-z][A-Za-z0-9_-]*)$/.exec(step.selector);
 			if (match === null) continue; // attribute/compound selectors: checked by hand
@@ -135,9 +138,22 @@ test('hash-prefixed UI selectors reference ids that exist in the webview DOM', (
 test('write actions declare how they are verified or are pure host commands', () => {
 	for (const action of CATALOG) {
 		if (!action.mutable) continue;
-		if (action.group === 'host') continue;
+		// `host` and `menu-vscode` write entries are pure VS Code commands answered through
+		// editor notifications, not the view pipeline — there is no response or repo state to check.
+		if (action.group === 'host' || action.group === 'menu-vscode') continue;
 		assert.ok(action.verify !== undefined || action.expect.responses.length > 0,
 			action.id + ': a write action needs a verify state check or an expected ack');
+	}
+});
+
+test('command-mode entries execute commands the extension actually contributes', () => {
+	const commandsSource = fs.readFileSync(path.join(rootDir, 'src', 'commands.ts'), 'utf8');
+	const registered = new Set([...commandsSource.matchAll(/registerCommand\('([^']+)'/g)].map((m) => m[1]));
+	for (const action of CATALOG) {
+		if (action.vscodeCommand === undefined) continue;
+		assert.ok(registered.has(action.vscodeCommand.command), action.id + ': VS Code command "' + action.vscodeCommand.command + '" is not registered in src/commands.ts');
+		assert.ok(['uri', 'rootUri', 'resourceStates', 'diffUri'].includes(action.vscodeCommand.arg?.kind ?? '') || action.vscodeCommand.arg === undefined,
+			action.id + ': unknown command argument kind');
 	}
 });
 
@@ -153,7 +169,7 @@ test('exact-text steps stay in sync with the shipped interface languages', () =>
 
 	const candidates = [];
 	for (const action of CATALOG) {
-		for (const step of action.ui ?? []) {
+		for (const step of [...(action.ui ?? []), ...(action.uiAfter ?? [])]) {
 			if (step.op === 'contextmenu') candidates.push([action.id, ...(Array.isArray(step.item) ? step.item : [step.item])]);
 			if (step.op === 'expectText') candidates.push([action.id, ...(Array.isArray(step.contains) ? step.contains : [step.contains])]);
 		}

@@ -273,16 +273,21 @@ toggled back on, a pinned branch unpinned, the repository dropdown switched away
 whatever an action opens — editor tabs (diff views, compare pages, opened files, the settings
 page) and terminals — is closed again after the action, so the workspace is left as it was.
 The runner re-opens the view if an action displaced the webview panel. The **write suite**
-(real checkouts, merges, tags, stashes, …) runs only when the active repository is a fixture
-clone carrying the `.gg-fixture` marker — the clone is rebuilt from its bare remote first, so
-the button can be pressed forever without touching a real repository. Build one with:
+(real checkouts, merges, tags, stashes, …) runs when the target is safe to mutate — either a
+fixture clone carrying the `.gg-fixture` marker (reset in place to its bare remote's state
+first; the repository directory is never deleted), or a repository with **no commits at all**:
+a fresh `git init` cannot hold real work, so the runner writes the full fixture history into it
+in place (2000+ commits across 50 branches by default, a throwaway bare remote under the OS
+temp dir recorded in the marker) and then treats it like any fixture clone. A repository that
+already has commits and no marker is a real repository — only the read suite runs, nothing is
+written to it. Build a fixture clone the scripted way with:
 
 ```sh
 node scripts/automation/fixture.mjs --out /tmp/gg-fixture --commits 20000
 # open /tmp/gg-fixture/fixture in VS Code, then press the button
 ```
 
-Each catalogued action runs one of two ways:
+Each catalogued action runs one of three ways:
 
 - **UI mode** — the real DOM path: the in-page shim (injected with the page, `out.min.js`
   untouched) clicks the actual button / right-clicks the actual row / fills and confirms the
@@ -293,6 +298,20 @@ Each catalogued action runs one of two ways:
   default build stays strict).
 - **request mode** — the same action's request message(s) injected straight into the extension
   host's message pipeline: same backend path a click takes, without rendering in the loop.
+- **command mode** — the VS Code command a contributed menu item runs (the `menu-vscode`
+  group), executed through `vscode.commands.executeCommand` with the argument shape that menu
+  passes: *Show File History in Git Graph RS* from all four surfaces that offer it (the
+  Explorer / Editor / Editor tab context menus pass a file URI, the Source Control resource
+  context menu passes a `resourceUri` state), the Source Control view's title and Pull/Push
+  menu commands (which get the repository root), and the diff editor title's *Open File*
+  button (a git-graph-rs diff-document URI). Native dialogs a command raises — the reset
+  command's modal confirmation, the Gerrit amend prompt — are answered with their primary
+  action, the same not-interactive policy as the data-loss warning; a file filter a command
+  sets is cleared again by post-run page steps, and the tab a command opens is closed by the
+  per-action cleanup. `tests/contributedMenus.test.mjs` statically cross-checks the other half
+  of the contract: every menu item points at a registered command, the language variants stay
+  symmetric, `when` clauses only use context keys the extension actually sets, and every menu
+  command has one of these entries.
 
 A run is *verified*: the expected host responses must all arrive (the runner auto-confirms the
 data-loss warning dialog exactly like a user would), and write actions additionally check the
@@ -300,14 +319,35 @@ resulting repository state (HEAD moved, branch gone, ...).
 
 Safety rails, because the suite can drive real writes:
 
-- The write suite only runs against a clone carrying the `.gg-fixture` marker, and the runner
-  re-clones from the bare remote before every iteration, so write actions can run forever
-  without destroying anything.
+- The write suite only runs against a repository it may mutate: a `.gg-fixture` marker clone
+  (reset in place to its bare remote's state before every iteration, so write actions can run
+  forever without accumulating damage — the directory itself is never deleted) or a repository
+  with no commits (the fixture is generated into it first). Any other repository — one that
+  already has commits — never sees a write action.
+- The in-place generation refuses a repository with even one commit anywhere, so a real project
+  can never be imported over.
 - The read suite never mutates the repository; its only lasting effects (webview state like the
   last scroll position) are the same a user's visit leaves behind.
 
 `tests/automationServer.test.mjs` and `tests/automationRunner.test.mjs` drive the whole thing
 in-process against the real compiled extension and webview in CI.
+
+### The complete test, on demand
+
+`npm run test:automation:full -- --dir <path>` runs the **whole catalog** — every read action,
+then the write suite — against a real, freshly built git repository, outside CI: build (or
+reuse) a fixture with 2000+ commits across 50 branches by default, boot the real compiled
+extension and webview, drive every action, print a pass/fail/skip table, and write an HTML
+report next to the fixture. Requires `npm run compile` first (it drives `out/`, not the
+TypeScript sources).
+
+`--dir` must be an **empty or missing** folder: the script builds the disposable fixture there
+(a real `git init` + `git clone`, via `fixture.mjs`, not a mock) and must never modify an
+existing project — especially not one that already has commits. A non-empty `--dir` prints a
+reminder and exits instead of touching it. Re-running against the same `--dir` reuses the
+fixture it already built there; `--force` builds inside a non-empty directory anyway, and should
+only be used once you've checked what's actually there. See `--help` for the size knobs
+(`--commits`, `--branches`, `--tags`, `--authors`, `--seed`) and `--timeout`.
 
 ## Building
 

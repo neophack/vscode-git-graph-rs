@@ -86,6 +86,30 @@ test('run rejects unknown actions and modes', async () => {
 	await assert.rejects(() => engine.run({ id: 'control-bar/refresh', mode: 'nope' }), /mode must be/);
 });
 
+test('command mode executes the VS Code command behind a menu item (Source Control view title)', async () => {
+	const outcome = await engine.run({ id: 'menu-vscode/scm-view-button', mode: 'command' });
+	assert.equal(outcome.ok, true, outcome.error);
+});
+
+test('command mode drives Show File History through the real command and restores the filter', async () => {
+	// The harness repository's bulk is empty commits: give the context probe one commit with a
+	// file change near HEAD, exactly what a real repository offers the Explorer menu.
+	fs.appendFileSync(path.join(repo, 'tracked.txt'), '\nfile-history change\n');
+	execFileSync('git', ['commit', '-am', 'change tracked for file history'], { cwd: repo });
+	const outcome = await engine.run({ id: 'menu-vscode/filter-by-file-explorer', mode: 'command', timeoutMs: 30000 });
+	assert.equal(outcome.ok, true, outcome.error);
+	assert.deepEqual(outcome.timings.responses.map((r) => r.command), ['loadCommits']);
+	// The post steps cleared the file filter again: the unfiltered graph is rendered.
+	const rows = await engine.eval({ expr: 'document.querySelectorAll("#commitTable tr.commit").length' });
+	assert.equal(rows.ok, true, rows.error);
+	assert.ok(rows.value > 1, 'the filter must be cleared after the run (saw ' + rows.value + ' rows)');
+});
+
+test('command mode executes the diff editor title Open File command', async () => {
+	const outcome = await engine.run({ id: 'menu-vscode/diff-open-file-button', mode: 'command' });
+	assert.equal(outcome.ok, true, outcome.error ?? outcome.reason);
+});
+
 test('eval executes in the page and returns the value', async () => {
 	const outcome = await engine.eval({ expr: '({ rows: document.querySelectorAll("#commitTable tr.commit").length })' });
 	assert.equal(outcome.ok, true, outcome.error);

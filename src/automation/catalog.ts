@@ -10,8 +10,13 @@
  * and live repository state (repo, head, branch, commit, ...) before execution.
  */
 
-/** How a run is driven. `ui` clicks the real controls through the in-page shim; `request` injects the equivalent request(s) into the extension host. */
-export type AutomationMode = 'ui' | 'request';
+/**
+ * How a run is driven. `ui` clicks the real controls through the in-page shim; `request` injects
+ * the equivalent request(s) into the extension host; `command` executes the VS Code command a
+ * contributed menu item runs (package.json `contributes.menus`), with the argument shape that
+ * menu passes.
+ */
+export type AutomationMode = 'ui' | 'request' | 'command';
 
 /** One step of a UI-mode run, executed sequentially by the in-page shim (resources/automation/shim.js). */
 export type UiStep =
@@ -24,18 +29,50 @@ export type UiStep =
 	| { readonly op: 'expectText'; readonly selector: string; readonly contains: string | readonly string[] }
 	| { readonly op: 'eval'; readonly expr: string }; // a JS expression evaluated in the page (gg.eval / debugging); result must be JSON-cloneable
 
+/**
+ * The argument one menu contribution passes to its command when its item is clicked — the shapes
+ * `getUrisFromCommandArg` / `getRepoFromCommandArg` accept (src/commands.ts), so a command-mode
+ * run exercises exactly the path the editor's menu takes:
+ *   - `uri` — a bare `file` URI of the context file (or the repository root, `of: 'repo'`): what
+ *     the Explorer, Editor and Editor Tab context menus pass;
+ *   - `rootUri` — `{ rootUri }` of the context repository: what the Source Control view's title
+ *     and Pull/Push menus pass;
+ *   - `resourceStates` — `[{ resourceUri }]`: what the Source Control resource context menu
+ *     passes;
+ *   - `diffUri` — a git-graph-rs diff-document URI of the context commit/file: what the diff
+ *     editor title's Open File button passes.
+ */
+export type CommandArgSpec =
+	| { readonly kind: 'uri'; readonly of: 'file' | 'repo' }
+	| { readonly kind: 'rootUri' }
+	| { readonly kind: 'resourceStates' }
+	| { readonly kind: 'diffUri' };
+
+/** One VS Code command execution (command mode): what clicking a contributed menu item runs. */
+export interface CommandStep {
+	readonly command: string;
+	readonly arg?: CommandArgSpec;
+}
+
 /** A catalog entry: one user-facing control. */
 export interface AutomationAction {
 	/** Dotted id: `<group>/<name>`, e.g. `control-bar/refresh`, `menu-commit/checkout`. */
 	readonly id: string;
 	/** Human-readable control label (the button tooltip or menu item title). */
 	readonly title: string;
-	/** Grouping for suite selection, e.g. `control-bar`, `row`, `menu-commit`, `menu-branch`, `cdv`, `settings`, `find`, `reflog`, `worktree`, `statistics`, `host`. */
+	/** Grouping for suite selection, e.g. `control-bar`, `row`, `menu-commit`, `menu-branch`, `cdv`, `settings`, `find`, `reflog`, `worktree`, `statistics`, `host`, `menu-vscode` (the extension's contributed VS Code menus). */
 	readonly group: string;
 	/** TRUE => the action mutates the repository (belongs to the `write` suite; the driver re-creates the fixture clone around it). */
 	readonly mutable: boolean;
-	/** Environment the action needs; the server skips the action when unavailable (`remote` => a configured remote; `stash` => at least one stash; `tag`/`annotatedTag` => tags in the loaded graph; `file` => a commit with file changes; `anotherBranch` => at least two branches; `anotherRepo` => at least two known repositories). */
-	readonly requires?: readonly ('remote' | 'stash' | 'tag' | 'annotatedTag' | 'file' | 'anotherBranch' | 'anotherRepo')[];
+	/** Environment the action needs; the server skips the action when unavailable (`remote` => a configured remote; `stash` => at least one stash; `tag`/`annotatedTag` => tags in the loaded graph; `file` => a commit with (non-binary) file changes; `binaryFile`/`imageFile` => a commit that only changes a binary/image file (the fixture's dedicated `assets/` commits); `anotherBranch` => at least two branches; `anotherRepo` => at least two known repositories). */
+	readonly requires?: readonly ('remote' | 'stash' | 'tag' | 'annotatedTag' | 'file' | 'binaryFile' | 'imageFile' | 'anotherBranch' | 'anotherRepo')[];
+	/**
+	 * TRUE => confirming the action opens the editor's NATIVE save dialog (utils.archive's
+	 * showSaveDialog). A modal an automated run can neither drive nor dismiss — in the real
+	 * editor it stalls the whole suite until someone clicks it away — so the suite runner
+	 * reports the action as SKIPPED in every mode instead of running it.
+	 */
+	readonly nativeSaveDialog?: boolean;
 	/**
 	 * TRUE declares the action awaits no host response (a pure view-state change, or traffic the
 	 * host answers silently such as `setRepoState` / `openCompareTab`). Such actions MUST declare
@@ -44,6 +81,15 @@ export interface AutomationAction {
 	 */
 	readonly noHostTraffic?: boolean;
 	readonly ui?: readonly UiStep[];
+	/** The VS Code command a contributed menu item runs (command mode), with the argument shape that menu passes. */
+	readonly vscodeCommand?: CommandStep;
+	/**
+	 * Page steps run AFTER the command completed (command mode only): verification barriers and
+	 * state restoration (e.g. clearing the file filter a `filterByFile` command set).
+	 */
+	readonly uiAfter?: readonly UiStep[];
+	/** TRUE (command mode only) => the run asserts at least one new editor tab appeared while the command ran. */
+	readonly expectTabs?: boolean;
 	/** RequestMessage template(s) for request mode, in send order. */
 	readonly request?: readonly Record<string, unknown>[];
 	/** Responses (by `command`) that must arrive from the extension host while the action runs. */
@@ -84,27 +130,38 @@ export function expandTemplate<T>(template: T, context: Record<string, string>):
 export function validateCatalog(catalog: readonly AutomationAction[]): string[] {
 	const problems: string[] = [];
 	const ids = new Set<string>();
-		const uiOps = new Set(['click', 'dblclick', 'contextmenu', 'key', 'waitFor', 'waitForGone', 'skipIfAbsent', 'set', 'expectText', 'eval']);
+	const uiOps = new Set(['click', 'dblclick', 'contextmenu', 'key', 'waitFor', 'waitForGone', 'skipIfAbsent', 'set', 'expectText', 'eval']);
+	const validateSteps = (where: string, steps: readonly UiStep[]) => {
+		for (const [i, step] of steps.entries()) {
+			if (!uiOps.has(step.op)) problems.push(where + ': unknown ui op "' + step.op + '" (step ' + i + ')');
+			if ('selector' in step && typeof step.selector === 'string' && step.selector.trim() === '') {
+				problems.push(where + ': empty selector (step ' + i + ')');
+			}
+			if (step.op === 'contextmenu') {
+				const items = Array.isArray(step.item) ? step.item : [step.item];
+				if (items.some((text) => text.trim() === '')) problems.push(where + ': empty menu item (step ' + i + ')');
+			}
+			if (step.op === 'eval' && step.expr.trim() === '') problems.push(where + ': empty eval expression (step ' + i + ')');
+		}
+	};
 	for (const action of catalog) {
 		const where = 'action "' + action.id + '"';
 		if (ids.has(action.id)) problems.push(where + ': duplicate id');
 		ids.add(action.id);
 		if (action.title.trim() === '') problems.push(where + ': empty title');
 		if (action.group.trim() === '') problems.push(where + ': empty group');
-		if (!action.ui && !action.request) problems.push(where + ': declares neither ui nor request path');
-		if (action.ui) {
-			for (const [i, step] of action.ui.entries()) {
-				if (!uiOps.has(step.op)) problems.push(where + ': unknown ui op "' + step.op + '" (step ' + i + ')');
-				if ('selector' in step && typeof step.selector === 'string' && step.selector.trim() === '') {
-					problems.push(where + ': empty selector (step ' + i + ')');
-				}
-				if (step.op === 'contextmenu') {
-					const items = Array.isArray(step.item) ? step.item : [step.item];
-					if (items.some((text) => text.trim() === '')) problems.push(where + ': empty menu item (step ' + i + ')');
-				}
-				if (step.op === 'eval' && step.expr.trim() === '') problems.push(where + ': empty eval expression (step ' + i + ')');
-			}
+		if (!action.ui && !action.request && !action.vscodeCommand) problems.push(where + ': declares neither ui, request nor vscodeCommand path');
+		if (action.ui) validateSteps(where, action.ui);
+		if (action.uiAfter !== undefined) {
+			if (action.vscodeCommand === undefined) problems.push(where + ': uiAfter steps are only meaningful for vscodeCommand actions');
+			else validateSteps(where, action.uiAfter);
 		}
+		if (action.vscodeCommand !== undefined) {
+			if (action.vscodeCommand.command.trim() === '') problems.push(where + ': empty vscode command');
+			if (action.ui !== undefined) problems.push(where + ': declares both ui and vscodeCommand paths');
+			if (action.request !== undefined) problems.push(where + ': declares both request and vscodeCommand paths');
+		}
+		if (action.expectTabs === true && action.vscodeCommand === undefined) problems.push(where + ': expectTabs is only meaningful for vscodeCommand actions');
 		if (action.request) {
 			for (const [i, msg] of action.request.entries()) {
 				if (typeof msg.command !== 'string' || msg.command === '') problems.push(where + ': request step ' + i + ' has no command');
@@ -128,8 +185,9 @@ export function validateCatalog(catalog: readonly AutomationAction[]): string[] 
  * test driver can select. Fixture-stable facts (scripts/automation/fixture.mjs): the remote is
  * `origin`, local branches are `main` / `local-ahead` (feature-NNN exist only as
  * origin/feature-NNN), tags are `v1.x.x` (spread over the whole history), three stashes are
- * seeded, and an untracked file keeps the Uncommitted Changes row alive — everything else is
- * referenced through `{{placeholder}}` context.
+ * seeded, an untracked file keeps the Uncommitted Changes row alive, and (near HEAD, needing at
+ * least 25 commits) a real binary file and a real decodable image are each added then modified —
+ * everything else is referenced through `{{placeholder}}` context.
  */
 
 /**
@@ -281,6 +339,20 @@ const DISMISS_ERROR_DIALOG_STEP: UiStep = {
 const SCROLL_TOP_STEPS: readonly UiStep[] = [
 	{ op: 'eval', expr: '(function(){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));return 0;})()' },
 	{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }
+];
+
+/**
+ * UI steps that clear the file path filter a `git-graph-rs.filterByFile` command set: the Filter
+ * dialog's secondary action reloads the unfiltered graph. Without this every later entry would
+ * run against a graph filtered to a single file (no branch labels, tags or stashes render), so
+ * every filterByFile command entry runs these steps after its expected response arrived.
+ */
+const CLEAR_FILTER_STEPS: readonly UiStep[] = [
+	{ op: 'click', selector: '#filterBtn' },
+	{ op: 'waitFor', selector: '.dialog' },
+	{ op: 'click', selector: '#dialogSecondaryAction' },
+	{ op: 'waitForGone', selector: '.dialog' },
+	{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' } // the unfiltered reload has rendered
 ];
 
 export const CATALOG: readonly AutomationAction[] = [
@@ -549,6 +621,140 @@ export const CATALOG: readonly AutomationAction[] = [
 		// `name` is display-only; the live view passes the repository's display name.
 		request: [{ command: 'openTerminal', repo: '{{repo}}', name: '{{repo}}' }],
 		expect: { responses: ['openTerminal'] }
+	},
+
+	/* ---------- VS Code menu commands (package.json contributes.menus) ---------- */
+	// Command mode: each entry executes the VS Code command one contributed menu item runs, with
+	// the argument shape that menu passes (see CommandArgSpec). The four filterByFile surfaces
+	// (Explorer / Editor / Editor Tab context menus pass a bare file URI; the Source Control
+	// resource context menu passes a SourceControlResourceState) all end in the view reloading
+	// the graph filtered to that file — the post steps then clear the filter again, or every
+	// later entry would run against a single file's history. The mutable entries (the Source
+	// Control title / Pull-Push menus) are pure editor commands answered through VS Code
+	// notifications, not the view pipeline: they declare no expected response, and they run in
+	// the write suite's order FIRST (this group precedes menu-commit), right after the reseed —
+	// the fixture then has HEAD = main = origin/main, so gerritPushRef takes its deterministic
+	// "already pushed" refusal and resetCurrentBranchToRemote finds main's upstream.
+	{
+		id: 'menu-vscode/filter-by-file-explorer',
+		title: 'Show File History in Git Graph RS (Explorer context menu)',
+		group: 'menu-vscode',
+		mutable: false,
+		requires: ['file'],
+		vscodeCommand: { command: 'git-graph-rs.filterByFile', arg: { kind: 'uri', of: 'file' } },
+		uiAfter: CLEAR_FILTER_STEPS,
+		expect: { responses: ['loadCommits'] }
+	},
+	{
+		id: 'menu-vscode/filter-by-file-editor',
+		title: 'Show File History in Git Graph RS (Editor context menu)',
+		group: 'menu-vscode',
+		mutable: false,
+		requires: ['file'],
+		// Same command and argument shape as the Explorer entry — the Editor context menu passes
+		// the active document's URI — kept as its own entry so every menu location maps to one.
+		vscodeCommand: { command: 'git-graph-rs.filterByFile', arg: { kind: 'uri', of: 'file' } },
+		uiAfter: CLEAR_FILTER_STEPS,
+		expect: { responses: ['loadCommits'] }
+	},
+	{
+		id: 'menu-vscode/filter-by-file-editor-tab',
+		title: 'Show File History in Git Graph RS (Editor tab context menu)',
+		group: 'menu-vscode',
+		mutable: false,
+		requires: ['file'],
+		// The editor/title/context menu passes the tab's resource URI.
+		vscodeCommand: { command: 'git-graph-rs.filterByFile', arg: { kind: 'uri', of: 'file' } },
+		uiAfter: CLEAR_FILTER_STEPS,
+		expect: { responses: ['loadCommits'] }
+	},
+	{
+		id: 'menu-vscode/filter-by-file-scm',
+		title: 'Show File History in Git Graph RS (Source Control resource context menu)',
+		group: 'menu-vscode',
+		mutable: false,
+		requires: ['file'],
+		// The Source Control view passes SourceControlResourceStates — the resourceUri branch of
+		// getUrisFromCommandArg, which the bare-URI entries never exercise.
+		vscodeCommand: { command: 'git-graph-rs.filterByFile', arg: { kind: 'resourceStates' } },
+		uiAfter: CLEAR_FILTER_STEPS,
+		expect: { responses: ['loadCommits'] }
+	},
+	{
+		id: 'menu-vscode/scm-view-button',
+		title: 'Git Graph RS (Source Control view title menu)',
+		group: 'menu-vscode',
+		mutable: false,
+		// The scm/title navigation button: with the view already showing the repository the
+		// command only reveals the panel (no host traffic); when it was closed it loads it — the
+		// post-step barrier (first commit row rendered) passes in both cases.
+		vscodeCommand: { command: 'git-graph-rs.view', arg: { kind: 'rootUri' } },
+		uiAfter: [{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/diff-open-file-button',
+		title: 'Open File (diff editor title)',
+		group: 'menu-vscode',
+		mutable: false,
+		requires: ['file'],
+		// The editor/title button shown inside a git-graph-rs diff editor: the command receives
+		// the diff document's URI and opens the working-tree file. The runner skips the action
+		// where the context file no longer exists at HEAD (the command opens the working file,
+		// and on such repositories there is nothing to open); the tab it opens is closed by the
+		// runner's per-action cleanup.
+		vscodeCommand: { command: 'git-graph-rs.openFile', arg: { kind: 'diffUri' } },
+		expectTabs: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook',
+		title: 'Fetch commit-msg Hook (Gerrit) (Source Control view title menu)',
+		group: 'menu-vscode',
+		mutable: true,
+		// On the fixture's local bare remote the hook download cannot resolve a Gerrit server and
+		// the command answers with an error notification — the run exercises the menu-to-command
+		// path end to end without touching the repository.
+		vscodeCommand: { command: 'git-graph-rs.gerritFetchCommitMsgHook', arg: { kind: 'rootUri' } },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-gerrit-push-ref',
+		title: 'Push to Gerrit Ref for Current Branch (Source Control Pull/Push menu)',
+		group: 'menu-vscode',
+		mutable: true,
+		// Runs right after the reseed, where main == origin/main: HEAD is contained by a remote
+		// branch, so the command takes its "already pushed" refusal — no amend prompt, no push.
+		vscodeCommand: { command: 'git-graph-rs.gerritPushRef', arg: { kind: 'rootUri' } },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-amend-last-commit',
+		title: 'Amend Last Commit (Source Control view title menu)',
+		group: 'menu-vscode',
+		mutable: true,
+		// `git commit --amend --no-edit`: no dialog on the command path. Whether the amend
+		// succeeds depends on the machine's Git identity (the fixture clone seeds none), and the
+		// command answers through a notification either way — no view traffic, no state check.
+		vscodeCommand: { command: 'git-graph-rs.amendLastCommit', arg: { kind: 'rootUri' } },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-reset-current-branch-to-remote',
+		title: 'Reset Current Branch to Remote (Soft) (Source Control view title menu)',
+		group: 'menu-vscode',
+		mutable: true,
+		// The modal confirmation is answered with its primary button (the runner is not
+		// interactive — the same policy as the webview's data-loss warning). The soft reset to
+		// main's upstream keeps the tree identical, so the fixture stays in its seeded shape.
+		vscodeCommand: { command: 'git-graph-rs.resetCurrentBranchToRemote', arg: { kind: 'rootUri' } },
+		noHostTraffic: true,
+		expect: { responses: [] }
 	},
 
 	/* ---------- Row interactions & column header menu ---------- */
@@ -1108,7 +1314,9 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Create Archive',
 		group: 'menu-branch',
 		mutable: true,
-		// Writes the archive into the working tree — the driver re-creates the fixture around it.
+		nativeSaveDialog: true,
+		// Confirming opens the editor's native save dialog (utils.archive's showSaveDialog) —
+		// the suite runner reports this action as skipped rather than stall the run on the modal.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Create Archive', '创建归档') },
@@ -1340,10 +1548,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Create Archive',
 		group: 'menu-remote-branch',
 		mutable: true,
+		nativeSaveDialog: true,
 		requires: ['remote'],
-		// Writes the archive into the working tree — the driver re-creates the fixture around it.
-		// The fixture host answers with an error dialog (after the action-running overlay), which
-		// the flow settles and dismisses.
+		// Confirming opens the editor's native save dialog (utils.archive's showSaveDialog) —
+		// the suite runner reports this action as skipped rather than stall the run on the modal.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
 			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Create Archive', '创建归档') },
@@ -1576,8 +1784,9 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Create Archive',
 		group: 'menu-tag',
 		mutable: true,
-		// The fixture host answers with an error dialog (after the action-running overlay),
-		// which the flow settles and dismisses.
+		nativeSaveDialog: true,
+		// Confirming opens the editor's native save dialog (utils.archive's showSaveDialog) —
+		// the suite runner reports this action as skipped rather than stall the run on the modal.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Create Archive', '创建归档') },
@@ -1847,6 +2056,47 @@ export const CATALOG: readonly AutomationAction[] = [
 		],
 		request: [{ command: 'viewFileAtRevision', repo: '{{repo}}', hash: '{{commit}}', filePath: '{{file}}' }],
 		expect: { responses: ['viewFileAtRevision'] }
+	},
+	{
+		// The fixture (fixture.mjs) seeds a dedicated commit whose ONLY change is a plain binary
+		// file (assets/archive.bin) — data-index="0" is always that file, so this reliably drives
+		// the binary compare view (binaryCompareView.ts) instead of the text diff `cdv/file-view-diff`
+		// always exercises (its `file` context explicitly excludes binaries).
+		id: 'cdv/file-view-diff-binary',
+		title: 'View Diff (binary file)',
+		group: 'cdv',
+		mutable: false,
+		requires: ['binaryFile'],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{binaryCommit}}"]'),
+			{ op: 'click', selector: 'tr.commit[data-hash="{{binaryCommit}}"]' },
+			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('View Diff', '查看差异') },
+			{ op: 'click', selector: '#cdvClose' },
+			{ op: 'waitForGone', selector: '#cdv' }
+		],
+		request: [{ command: 'viewDiff', repo: '{{repo}}', fromHash: '{{binaryCommit}}', toHash: '{{binaryCommit}}', oldFilePath: '{{binaryFile}}', newFilePath: '{{binaryFile}}', type: 'M' }],
+		expect: { responses: ['viewDiff'] }
+	},
+	{
+		// Same as above, but the dedicated commit's only change is a real, decodable image
+		// (assets/logo.png) — drives the picture side of the binary compare view specifically
+		// (isImageChange/imageMimeOf in binaryCompare.ts), not just "any binary file".
+		id: 'cdv/file-view-diff-image',
+		title: 'View Diff (image file)',
+		group: 'cdv',
+		mutable: false,
+		requires: ['imageFile'],
+		ui: [
+			scrollUntilVisibleStep('tr.commit[data-hash="{{imageCommit}}"]'),
+			{ op: 'click', selector: 'tr.commit[data-hash="{{imageCommit}}"]' },
+			{ op: 'waitFor', selector: '#cdvFiles .fileTreeFileRecord' },
+			{ op: 'contextmenu', selector: '#cdvFiles .fileTreeFileRecord[data-index="0"]', item: bi('View Diff', '查看差异') },
+			{ op: 'click', selector: '#cdvClose' },
+			{ op: 'waitForGone', selector: '#cdv' }
+		],
+		request: [{ command: 'viewDiff', repo: '{{repo}}', fromHash: '{{imageCommit}}', toHash: '{{imageCommit}}', oldFilePath: '{{imageFile}}', newFilePath: '{{imageFile}}', type: 'M' }],
+		expect: { responses: ['viewDiff'] }
 	},
 	{
 		id: 'cdv/file-view-list',

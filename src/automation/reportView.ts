@@ -43,7 +43,10 @@ export function renderReportHtml(report: SuiteReport): string {
 	const t = report.totals;
 	const skippedNote = report.writeSuiteIncluded
 		? ''
-		: '<p class="note">The write suite was not run: it only runs against a fixture clone (a repository carrying the <code>.gg-fixture</code> marker), never against a real repository. Build one with <code>scripts/automation/fixture.mjs</code>.</p>';
+		: '<p class="note">The write suite was not run: this repository already has commits and is not a fixture clone, so the runner left it untouched. Point the view at an empty repository (a fresh <code>git init</code> with no commits) to have the runner generate the fixture history into it and exercise the write suite, or open a clone built by <code>scripts/automation/fixture.mjs</code>.</p>';
+	const generatedNote = report.fixtureGenerated
+		? '<p class="note">The repository had no commits, so the fixture history (2000+ commits) was generated into it before the run.</p>'
+		: '';
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -108,7 +111,7 @@ export function renderReportHtml(report: SuiteReport): string {
 		<button class="secondary" id="saveHtml">Save as HTML…</button>
 		<button class="secondary" id="saveJson">Save as JSON…</button>
 	</div>
-	${skippedNote}
+	${generatedNote}${skippedNote}
 	${report.suites.map(suiteTable).join('')}
 	${t.actions === 0 ? '<p class="empty">No actions ran (the catalog filter matched nothing).</p>' : ''}
 	<script nonce="report">

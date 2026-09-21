@@ -304,10 +304,10 @@ export class AutomationServer {
 	private async runCatalogAction(params: Record<string, unknown>): Promise<RunOutcome> {
 		const id = params.id, mode = (params.mode ?? 'ui') as AutomationMode;
 		if (typeof id !== 'string') throw new Error('run requires {id: string}');
-		if (mode !== 'ui' && mode !== 'request') throw new Error('mode must be "ui" or "request"');
+		if (mode !== 'ui' && mode !== 'request' && mode !== 'command') throw new Error('mode must be "ui", "request" or "command"');
 		const action = CATALOG.find((a) => a.id === id);
 		if (action === undefined) throw new Error('Unknown action "' + id + '"');
-		const path = mode === 'ui' ? action.ui : action.request;
+		const path = mode === 'ui' ? action.ui : mode === 'request' ? action.request : action.vscodeCommand;
 		if (path === undefined) return { ok: false, skipped: true, reason: 'Action "' + id + '" has no ' + mode + ' path' };
 		this.requireView();
 
@@ -331,11 +331,23 @@ export class AutomationServer {
 		if (action.requires !== undefined && action.requires.includes('file') && context.file === '') {
 			return { ok: false, skipped: true, reason: 'requires a commit with file changes in the loaded page' };
 		}
+		if (action.requires !== undefined && action.requires.includes('binaryFile') && context.binaryFile === '') {
+			return { ok: false, skipped: true, reason: 'requires a commit that changes a binary file' };
+		}
+		if (action.requires !== undefined && action.requires.includes('imageFile') && context.imageFile === '') {
+			return { ok: false, skipped: true, reason: 'requires a commit that changes an image file' };
+		}
 		if (action.requires !== undefined && action.requires.includes('anotherBranch') && Number(context.branchCount ?? '0') < 2) {
 			return { ok: false, skipped: true, reason: 'requires at least two branches' };
 		}
 		if (action.requires !== undefined && action.requires.includes('anotherRepo') && Number(context.reposCount ?? '0') < 2) {
 			return { ok: false, skipped: true, reason: 'requires at least two known repositories' };
+		}
+		if (action.vscodeCommand !== undefined && action.vscodeCommand.arg?.kind === 'diffUri' && !this.bridge.workingTreeFileExists(context)) {
+			// The `openFile` command opens the working-tree file; on repositories whose context
+			// file no longer exists at HEAD there is nothing to open — skip instead of failing on
+			// repository data the catalog cannot promise.
+			return { ok: false, skipped: true, reason: 'requires the context file to exist in the working tree' };
 		}
 
 		const run: ActiveRun = {
@@ -349,10 +361,19 @@ export class AutomationServer {
 		this.activeRun = run;
 		this.logger.log('Automation run ' + run.runId + ': ' + id + ' (' + mode + ')');
 
+		// Command mode: native dialogs the command raises are answered with their primary action
+		// for the whole run window (the command's continuation outlives executeCommand, which
+		// resolves on dispatch — commands.ts's wrapper does not forward the handler's promise).
+		let dialogs: ReturnType<HostBridge['installDialogAutoAnswer']> | null = null;
+		let tabsBefore: string[] | null = null;
 		try {
 			if (mode === 'ui') {
 				const steps = expandTemplate(action.ui as readonly UiStep[], context);
 				this.bridge.postToWebview({ __automation: { runId: run.runId, steps } });
+			} else if (mode === 'command') {
+				dialogs = this.bridge.installDialogAutoAnswer();
+				tabsBefore = action.expectTabs === true ? this.bridge.tabKeys() : null;
+				await this.bridge.executeVscodeCommand(action.vscodeCommand!, context);
 			} else {
 				for (const template of action.request ?? []) {
 					const message = expandTemplate(template, context) as unknown as RequestMessage;
@@ -389,6 +410,27 @@ export class AutomationServer {
 			}
 
 			const timings: ActionSample = { totalMs: this.relative(run.t0), responses: run.seen };
+			if (mode === 'command') {
+				// Page steps the command's completion gates on (verification barriers like the
+				// first rendered row, and state restoration like clearing the file filter a
+				// filterByFile command set). The batch gets its own run id, so a failure reports
+				// its own step index.
+				if (action.uiAfter !== undefined) {
+					const after = await this.runShimBatch(expandTemplate(action.uiAfter, context), timeoutMs);
+					if (!after.ok) {
+						return this.record(action, mode, { ok: false, timings, error: 'Post step ' + (after.failedStep ?? '?') + ' failed: ' + (after.error ?? 'unknown') });
+					}
+					if (after.skipped === true) {
+						return this.record(action, mode, { ok: false, skipped: true, reason: after.skipReason ?? 'a post-run precondition of the action is absent in the view' });
+					}
+				}
+				if (tabsBefore !== null) {
+					const after = this.bridge.tabKeys();
+					if (after !== null && !after.some((key) => tabsBefore!.indexOf(key) === -1)) {
+						return this.record(action, mode, { ok: false, timings, error: 'expected the command to open a new editor tab' });
+					}
+				}
+			}
 			if (action.verify !== undefined) {
 				const verifyError = await this.verifyAction(action, context);
 				if (verifyError !== null) {
@@ -398,14 +440,28 @@ export class AutomationServer {
 			return this.record(action, mode, { ok: true, timings });
 		} finally {
 			this.activeRun = null;
+			if (dialogs !== null) {
+				for (const line of dialogs.autoAnswered) this.logger.log('Automation auto-answered a native dialog: ' + line);
+				dialogs.restore();
+			}
 		}
 	}
 
 	/** Does any path of the action reference the placeholder? */
 	private references(action: AutomationAction, name: string): boolean {
 		const needle = '{{' + name + '}}';
-		return JSON.stringify(action.ui ?? []).indexOf(needle) !== -1
-			|| JSON.stringify(action.request ?? []).indexOf(needle) !== -1;
+		if (JSON.stringify(action.ui ?? []).indexOf(needle) !== -1
+			|| JSON.stringify(action.uiAfter ?? []).indexOf(needle) !== -1
+			|| JSON.stringify(action.request ?? []).indexOf(needle) !== -1) return true;
+		// Command-mode argument shapes build their values from the context without a template:
+		// every shape but the repository-root one carries a file, and the diff-document URI also
+		// carries a commit.
+		if (action.vscodeCommand !== undefined) {
+			const arg = action.vscodeCommand.arg;
+			if (name === 'file' && arg !== undefined && arg.kind !== 'rootUri') return true;
+			if (name === 'commit' && arg !== undefined && arg.kind === 'diffUri') return true;
+		}
+		return false;
 	}
 
 	/** Build the placeholder context for an action from live repository state. */
@@ -448,7 +504,9 @@ export class AutomationServer {
 
 		if (this.references(action, 'commit') || this.references(action, 'commitParent') || this.references(action, 'file')
 			|| this.references(action, 'author') || this.references(action, 'findQuery')
-			|| this.references(action, 'tag') || this.references(action, 'annotatedTag')) {
+			|| this.references(action, 'tag') || this.references(action, 'annotatedTag')
+			|| this.references(action, 'binaryFile') || this.references(action, 'binaryCommit') || this.references(action, 'binaryCommitParent')
+			|| this.references(action, 'imageFile') || this.references(action, 'imageCommit') || this.references(action, 'imageCommitParent')) {
 			// A deeper page when tags are in play: they often sit further down the history than
 			// the commits the other placeholders need (the fixture's first tag is ~100 deep).
 			const wantsTags = this.references(action, 'tag') || this.references(action, 'annotatedTag');
@@ -511,6 +569,58 @@ export class AutomationServer {
 				}
 				context.file = context.file ?? '';
 			}
+
+			if (action.vscodeCommand !== undefined && action.vscodeCommand.arg?.kind === 'diffUri') {
+				// The `openFile` command opens the WORKING-TREE file, but the generic picker above
+				// prefers a commit ≠ HEAD whose file need not exist at HEAD (the fixture resolves
+				// to local-ahead's added-only note). Re-target to a Modified file of the loaded
+				// page that exists on disk, so the command has something real to open.
+				const candidates10 = commits.slice(0, 10);
+				if (!this.bridge.workingTreeFileExists(context)) {
+					for (const candidate of candidates10) {
+						const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
+						const existing = changes.find((file: { type: string; newFilePath: string }) =>
+							file.type === 'M' && this.bridge.workingTreeFileExists({ repo, file: file.newFilePath }));
+						if (existing === undefined) continue;
+						context.commit = candidate.hash;
+						context.commitParent = candidate.parents?.[0] ?? '';
+						context.file = existing.newFilePath;
+						break;
+					}
+				}
+			}
+
+			if (this.references(action, 'binaryFile') || this.references(action, 'binaryCommit') || this.references(action, 'binaryCommitParent')
+				|| this.references(action, 'imageFile') || this.references(action, 'imageCommit') || this.references(action, 'imageCommitParent')) {
+				// Two independent binary scenarios the fixture seeds near HEAD (fixture.mjs's
+				// specialAt commits): a plain binary file and a real decodable image, each added
+				// then modified. Separate from `file`/`commit` above (which always prefers a
+				// non-binary change) so an action can ask for either kind explicitly, to drive the
+				// binary/image compare view (binaryCompareView.ts / comparisonView.ts) instead of
+				// the text diff.
+				const isImagePath = (filePath: string) => /\.(png|jpe?g|gif|bmp|webp|ico|avif|svg)$/i.test(filePath);
+				context.binaryFile = ''; context.binaryCommit = ''; context.binaryCommitParent = '';
+				context.imageFile = ''; context.imageCommit = ''; context.imageCommitParent = '';
+				for (const candidate of commits) {
+					if (candidate.hash === repoInfo.head) continue;
+					if (context.binaryFile !== '' && context.imageFile !== '') break;
+					const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
+					const binary = changes.find((file: { type: string; additions: number | null; deletions: number | null; newFilePath: string }) =>
+						file.type === 'M' && file.additions === null && file.deletions === null);
+					if (binary === undefined) continue;
+					if (isImagePath(binary.newFilePath)) {
+						if (context.imageFile === '') {
+							context.imageFile = binary.newFilePath;
+							context.imageCommit = candidate.hash;
+							context.imageCommitParent = candidate.parents?.[0] ?? '';
+						}
+					} else if (context.binaryFile === '') {
+						context.binaryFile = binary.newFilePath;
+						context.binaryCommit = candidate.hash;
+						context.binaryCommitParent = candidate.parents?.[0] ?? '';
+					}
+				}
+			}
 		}
 		return context;
 	}
@@ -568,9 +678,13 @@ export class AutomationServer {
 		}
 	}
 
-	private async evalInPage(params: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown; error?: string }> {
-		if (typeof params.expr !== 'string' || params.expr === '') throw new Error('eval requires {expr: string}');
-		this.requireView();
+	/**
+	 * Post one step batch to the page shim and await its result — the engine behind `gg.eval` and
+	 * the command-mode post steps. The batch gets its own run id and its own ActiveRun slot (the
+	 * owning catalog run has settled by the time post steps run), so failures report their own
+	 * step index.
+	 */
+	private runShimBatch(steps: readonly UiStep[], timeoutMs: number): Promise<ShimResult> {
 		const run: ActiveRun = {
 			runId: this.runIdSeq++, mode: 'ui', t0: performance.now(),
 			pending: new Set(), baseline: new Map(), injectedRefreshIds: new Map(),
@@ -579,14 +693,35 @@ export class AutomationServer {
 			invokeCommand: null, payload: null, waiter: null, timer: null
 		};
 		this.activeRun = run;
+		const settle = () => {
+			if (run.timer !== null) { clearTimeout(run.timer); run.timer = null; }
+			if (this.activeRun === run) this.activeRun = null;
+		};
+		return new Promise<ShimResult>((resolve, reject) => {
+			run.waiter = () => {
+				settle();
+				if (run.shimResult === null) reject(new Error('page steps timed out'));
+				else resolve(run.shimResult);
+			};
+			run.timer = setTimeout(() => {
+				run.waiter = null;
+				settle();
+				reject(new Error('page steps timed out'));
+			}, timeoutMs);
+			this.bridge.postToWebview({ __automation: { runId: run.runId, steps } });
+		});
+	}
+
+	private async evalInPage(params: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+		if (typeof params.expr !== 'string' || params.expr === '') throw new Error('eval requires {expr: string}');
+		this.requireView();
+		const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
 		try {
-			this.bridge.postToWebview({ __automation: { runId: run.runId, steps: [{ op: 'eval', expr: params.expr }] } });
-			const outcome = await this.waitForRun(run, typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS);
-			if (outcome === 'timeout' || run.shimResult === null) return { ok: false, error: 'eval timed out' };
-			if (!run.shimResult.ok) return { ok: false, error: run.shimResult.error ?? 'eval failed' };
-			return { ok: true, value: run.shimResult.results[0] };
-		} finally {
-			this.activeRun = null;
+			const result = await this.runShimBatch([{ op: 'eval', expr: params.expr }], timeoutMs);
+			if (!result.ok) return { ok: false, error: result.error ?? 'eval failed' };
+			return { ok: true, value: result.results[0] };
+		} catch (error) {
+			return { ok: false, error: error instanceof Error ? error.message : 'eval timed out' };
 		}
 	}
 
@@ -601,7 +736,13 @@ export class AutomationServer {
 		return result.response;
 	}
 
-	private async queryCommits(repo: string, maxCommits: number): Promise<any[]> {
+	/**
+	 * The engine's live commit page for `repo`, bypassing the view's cache. Public for the suite
+	 * runner, which re-syncs the rendered page with the repository after a reseed: the seeded
+	 * volatile state (stashes, the local-ahead commit) gets fresh hashes on every reseed, so the
+	 * page's pre-reseed list and the engine's live state disagree until a refresh lands.
+	 */
+	public async queryCommits(repo: string, maxCommits: number): Promise<any[]> {
 		const result = await this.invokeRaw({
 			message: {
 				// `hard: true` bypasses the view's commit cache: the probe must observe live
@@ -626,7 +767,9 @@ export class AutomationServer {
 			timeoutMs: DEFAULT_QUERY_TIMEOUT_MS
 		});
 		if (!result.ok) throw new Error('commitDetails failed: ' + (result.error ?? 'unknown'));
-		return result.response;
+		// The commitDetails response nests the payload (fileChanges included) one level down;
+		// callers want that payload directly, not the response envelope.
+		return (result.response as any)?.commitDetails ?? null;
 	}
 
 	/* ---------------- Statistics ---------------- */

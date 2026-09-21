@@ -146,6 +146,10 @@ export function setGraphPanelVisible(visible) {
  * folder (deleted by that test's cleanup) and never discover the second repository. Each boot
  * re-points the folder in place on the same object instead. */
 let vscodeStub = null;
+/* Commands the harness actually implements (currently only git-graph-rs.view, mirroring
+ * commands.ts's view() so the automation host bridge's openView can switch repositories in
+ * tests); anything else resolves to undefined like the previous no-op stub. */
+let commandHandlers = {};
 
 export async function bootRealView(repo) {
 	graphPanel = null; // one live graph view per process: a fresh boot takes over the routing
@@ -179,13 +183,23 @@ export async function bootRealView(repo) {
 			activeTextEditor: undefined
 		},
 		commands: {
-			registerCommand: () => disposable(), registerTextEditorCommand: () => disposable(),
+			// registerCommand RECORDS the handler (the real CommandManager registers through this
+			// stub), so executeCommand dispatches to the extension's own command implementations —
+			// command-mode automation actions (the contributed VS Code menus' commands) run the
+			// real handlers exactly like the editor does.
+			registerCommand: (name, handler) => { commandHandlers[name] = handler; return disposable(); },
+			registerTextEditorCommand: () => disposable(),
 			// The automation host commands (openExtensionSettings, viewScm, vscode.diff, ...) resolve
-			// through executeCommand; a no-op keeps those request paths answerable in tests.
-			executeCommand: async () => undefined
+			// through executeCommand; unimplemented commands stay no-ops so those request paths are
+			// answerable in tests, while the registered ones (see commandHandlers) run for real.
+			executeCommand: async (name, arg) => {
+				const handler = commandHandlers[name];
+				return handler === undefined ? undefined : handler(arg);
+			}
 		},
 		RelativePattern: class RelativePattern { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
 		env: { appName: 'VS Code', clipboard: { writeText: async () => {} }, openExternal: async () => false, language: 'en' },
+		version: '1.90.0',
 		ViewColumn: { Active: -1, Beside: -2, One: 1 },
 		ConfigurationTarget: { Global: 1, Workspace: 2 }
 	};
@@ -215,11 +229,15 @@ export async function bootRealView(repo) {
 	// The in-process suite runner + report page (the "Run Automation Test" button's engine).
 	const suiteRunner = require(path.join(rootDir, 'out', 'automation', 'suiteRunner.js'));
 	const reportView = require(path.join(rootDir, 'out', 'automation', 'reportView.js'));
+	// The real command registry: loaded inside the stub window so commands.ts's conditional
+	// automation requires resolve against the same stub.
+	const { CommandManager } = require(path.join(rootDir, 'out', 'commands.js'));
 	vscodeStubActive = false;
 
 	const logger = new Logger();
 	const gitExecutableEmitter = new EventEmitter();
 	const configurationEmitter = new EventEmitter();
+
 	const context = {
 		subscriptions: [], extensionPath: rootDir, extensionUri: vscodeStub.Uri.file(rootDir),
 		globalState: { get: (_k, d) => d, set: async () => {}, update: async () => {}, keys: () => [] },
@@ -236,6 +254,13 @@ export async function bootRealView(repo) {
 	for (let i = 0; i < 100 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
 	assert.ok(Object.keys(repoManager.getRepos()).length > 0, 'the repository was discovered');
 
+	// The REAL command registry: every `git-graph-rs.*` command registers through the stub's
+	// recording registerCommand (see above), so executeCommand dispatches to the compiled
+	// CommandManager's handlers — command-mode automation actions (the contributed VS Code menus'
+	// commands, e.g. filterByFile, view, amendLastCommit) run the same code the editor's menus
+	// run, and the host bridge's openView keeps switching repositories as before.
+	const commandManager = new CommandManager(context, avatarManager, dataSource, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger);
+
 	GitGraphView.createOrShow(rootDir, dataSource, extensionState, avatarManager, repoManager, new Logger(), null);
 	assert.ok(graphPanel.webview.html.length > 0, 'the webview html was generated');
 
@@ -243,6 +268,8 @@ export async function bootRealView(repo) {
 	// fails below must still tear it down, or the open servers keep the test process alive and
 	// `node --test` never exits (CI then hangs on an already-failed test file).
 	const dispose = () => {
+		commandHandlers = {};
+		commandManager.dispose();
 		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
 		// Release the engine's repository handle (the inverse of what suite 29 asserts must stay
 		// open across requests): the harness owns this RepoManager, nobody else will close it.
