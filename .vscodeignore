@@ -19,6 +19,8 @@ Cargo.toml
 Cargo.lock
 *.vsix
 *.log
+*.automation-bak
+**/*.held-*
 tsconfig.json
 jest.config.js
 GAPS.md

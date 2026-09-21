@@ -280,12 +280,64 @@ function hostSysroot() {
 	return output.stdout.trim();
 }
 
+/** Busy-wait-free synchronous sleep (no timers exist in a sync script). */
+function sleepSync(ms) {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Copy the built artifact over `destination`, tolerating Windows holding the previous binary
+ * open: a loaded DLL (a VS Code extension host, a test worker, a benchmark run) cannot be
+ * written, but it CAN be renamed — the installer's classic in-use replacement. The held file is
+ * moved aside under a `.held-<timestamp>` name (cleaned up by a later build once released);
+ * if even renaming is refused, a few retries ride out transient holders before giving up.
+ */
+function copyReplacingHeldFile(artifact, destination) {
+	const lockCodes = new Set(['EBUSY', 'EPERM', 'EACCES']);
+	let lastError;
+	for (let attempt = 0; attempt < 4; attempt++) {
+		try {
+			fs.copyFileSync(artifact, destination);
+			return;
+		} catch (error) {
+			if (!lockCodes.has(error?.code)) throw error;
+			lastError = error;
+			if (attempt === 0) {
+				try {
+					fs.renameSync(destination, `${destination}.held-${Date.now()}`);
+				} catch {
+					// The holder does not share delete either; fall through to the retries.
+				}
+			} else {
+				sleepSync(1000);
+			}
+		}
+	}
+	console.error(
+		`! Could not replace ${destination}: ${lastError.message}\n` +
+			'  Another process still has the previous binary open (a VS Code window running the\n' +
+			'  extension, a test worker, or a benchmark/build from a sibling project). Close it\n' +
+			'  and build again.'
+	);
+	process.exit(1);
+}
+
 /** Move one built artifact into the extension's native/ layout. */
 function place(artifact, target, directory, options) {
 	const destinationDirectory = path.join(root, 'native', directory);
 	fs.mkdirSync(destinationDirectory, { recursive: true });
 	const destination = path.join(destinationDirectory, 'git-graph.node');
-	fs.copyFileSync(artifact, destination);
+	// Best-effort cleanup of files a previous build moved aside once their holder let go.
+	for (const stale of fs.readdirSync(destinationDirectory)) {
+		if (stale.startsWith('git-graph.node.held-')) {
+			try {
+				fs.rmSync(path.join(destinationDirectory, stale), { force: true });
+			} catch {
+				// Still held; a later build will clean it up.
+			}
+		}
+	}
+	copyReplacingHeldFile(artifact, destination);
 	const size = (fs.statSync(destination).size / (1024 * 1024)).toFixed(1);
 	console.log(`Built ${target} (${options.release ? 'release' : 'debug'}) -> native/${directory}/git-graph.node (${size} MB)`);
 }
