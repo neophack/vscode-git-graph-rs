@@ -107,27 +107,38 @@ function postToHost(message) {
 				return Promise.resolve(null);
 			}
 			case 'contextmenu': {
-				var target = find(step.selector);
-				var bounds = target.getBoundingClientRect();
-				target.dispatchEvent(new MouseEvent('contextmenu', {
-					bubbles: true, cancelable: true, button: 2,
-					clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2
-				}));
-				// The menu renders synchronously on the contextmenu event; give the event
-				// loop a beat, then click the item whose visible text matches exactly. `item`
-				// may carry one text per interface language (the catalog ships en + zh-CN);
+				// `item` may carry one text per interface language (the catalog ships en + zh-CN);
 				// whichever the rendered UI shows is the one clicked.
-				return sleep(50).then(function () {
-					var items = document.querySelectorAll('ul.contextMenu li.contextMenuItem');
-					var wanted = Array.isArray(step.item) ? step.item : [step.item];
-					for (var i = 0; i < items.length; i++) {
-						if (wanted.indexOf(items[i].textContent.trim()) !== -1) {
-							items[i].click();
-							return null;
+				var wanted = Array.isArray(step.item) ? step.item : [step.item];
+				// The menu renders synchronously on the contextmenu event, but a concurrent
+				// re-render — the background refresh a prior action's repository mutation
+				// triggers — can close it again, or drop the right-clicked row's commit from the
+				// view so the handler returns before showing anything (a zero-item menu). Re-find
+				// the target and dispatch again, exactly what a user right-clicking into a
+				// refreshing view does; only an attempt that showed items but no match (or the
+				// last attempt) fails.
+				var attempt = function (remaining) {
+					var target = find(step.selector);
+					var bounds = target.getBoundingClientRect();
+					target.dispatchEvent(new MouseEvent('contextmenu', {
+						bubbles: true, cancelable: true, button: 2,
+						clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2
+					}));
+					return sleep(50).then(function () {
+						var items = document.querySelectorAll('ul.contextMenu li.contextMenuItem');
+						if (items.length === 0 && remaining > 0) {
+							return sleep(200).then(function () { return attempt(remaining - 1); });
 						}
-					}
-					throw new Error('context menu item "' + wanted.join('" or "') + '" not found (' + items.length + ' items shown)');
-				});
+						for (var i = 0; i < items.length; i++) {
+							if (wanted.indexOf(items[i].textContent.trim()) !== -1) {
+								items[i].click();
+								return null;
+							}
+						}
+						throw new Error('context menu item "' + wanted.join('" or "') + '" not found (' + items.length + ' items shown)');
+					});
+				};
+				return attempt(4);
 			}
 			case 'key':
 				document.dispatchEvent(new KeyboardEvent('keydown', {

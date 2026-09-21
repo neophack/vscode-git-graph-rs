@@ -138,6 +138,21 @@ test('actions whose view precondition is absent are skipped, not failed', async 
 	assert.ok((outcome.reason ?? '').includes('uncommittedChanges'), outcome.reason);
 });
 
+test('actions that open the native save dialog are refused by the engine itself', async () => {
+	// Create Archive confirms into vscode.window.showSaveDialog — a modal no automated run can
+	// drive or dismiss (in the real editor it stalls the whole run until clicked away). The suite
+	// runner filters these before dispatching; a DIRECT engine.run caller must hit the same wall,
+	// or the run would pop the OS save dialog instead of reporting a skip.
+	for (const id of ['menu-branch/create-archive', 'menu-remote-branch/create-archive', 'menu-tag/create-archive']) {
+		for (const mode of ['ui', 'request']) {
+			const outcome = await engine.run({ id, mode });
+			assert.equal(outcome.skipped, true, id + ' (' + mode + '): ' + JSON.stringify(outcome));
+			assert.equal(outcome.ok, false);
+			assert.match(outcome.reason ?? '', /native save dialog/, id + ' (' + mode + ')');
+		}
+	}
+});
+
 test('stats aggregates the runs', async () => {
 	const stats = engine.stats();
 	const refreshUi = stats.find((s) => s.id === 'control-bar/refresh' && s.mode === 'ui');

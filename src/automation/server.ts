@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks';
 import { Logger } from '../logger';
 import { RequestMessage, ResponseMessage } from '../types';
-import { AutomationAction, AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
+import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON, UiStep, expandTemplate, validateCatalog } from './catalog';
 import { HostBridge, ShimResult } from './hostBridge';
 
 /**
@@ -307,6 +307,13 @@ export class AutomationServer {
 		if (mode !== 'ui' && mode !== 'request' && mode !== 'command') throw new Error('mode must be "ui", "request" or "command"');
 		const action = CATALOG.find((a) => a.id === id);
 		if (action === undefined) throw new Error('Unknown action "' + id + '"');
+		if (action.nativeSaveDialog === true) {
+			// The engine-side backstop for the suite runner's skip: confirming this action opens
+			// the editor's native save dialog (utils.archive's showSaveDialog), a modal no
+			// automated run can drive or dismiss — in the real editor it stalls the whole run
+			// until someone clicks it away. No caller, in any mode, may ever execute it.
+			return { ok: false, skipped: true, reason: NATIVE_SAVE_DIALOG_SKIP_REASON };
+		}
 		const path = mode === 'ui' ? action.ui : mode === 'request' ? action.request : action.vscodeCommand;
 		if (path === undefined) return { ok: false, skipped: true, reason: 'Action "' + id + '" has no ' + mode + ' path' };
 		this.requireView();
@@ -425,9 +432,21 @@ export class AutomationServer {
 					}
 				}
 				if (tabsBefore !== null) {
-					const after = this.bridge.tabKeys();
-					if (after !== null && !after.some((key) => tabsBefore!.indexOf(key) === -1)) {
-						return this.record(action, mode, { ok: false, timings, error: 'expected the command to open a new editor tab' });
+					// The command's tab registers asynchronously: commands.ts's registerCommand
+					// wrapper does not forward the handler's promise, so executeCommand resolves
+					// on dispatch — often before the editor `vscode.open` is creating has entered
+					// tabGroups.all. A single snapshot here races that registration and fails a
+					// command that did open its tab; poll for the new key instead, and only a tab
+					// that never appears fails the action.
+					const before = tabsBefore;
+					const deadline = performance.now() + 5000;
+					for (;;) {
+						const after = this.bridge.tabKeys();
+						if (after !== null && after.some((key) => before.indexOf(key) === -1)) break;
+						if (performance.now() > deadline) {
+							return this.record(action, mode, { ok: false, timings, error: 'expected the command to open a new editor tab' });
+						}
+						await new Promise((resolve) => setTimeout(resolve, 50));
 					}
 				}
 			}

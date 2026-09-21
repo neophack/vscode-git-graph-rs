@@ -222,16 +222,7 @@ describe('the Worktrees overlay tooltips', () => {
 		}
 	});
 
-	it('pops the shared tooltip over the prunable badge', async () => {
-		const h = await bootWithWorktrees();
-		const badge = h.document.querySelector('.worktreeBadgePrunable');
-		badge.dispatchEvent(new h.window.MouseEvent('mouseover', { bubbles: true }));
-
-		const popup = h.document.getElementById('ggHelpTooltip');
-		assert.ok(popup !== null, 'the tooltip popup rendered');
-		assert.equal(popup.textContent, badge.getAttribute('data-tooltip'));
-
-		badge.dispatchEvent(new h.window.MouseEvent('mouseout', { bubbles: true }));
-		assert.equal(h.document.getElementById('ggHelpTooltip'), null, 'the tooltip popup closed');
-	});
+	// The popup itself is document-level delegation and is pinned generically by the Statistics
+	// test above ("pops the shared tooltip when the mouse enters a cell"); here only the badge
+	// wiring needs proving, which the test above does.
 });

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { promisify } from 'util';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
-import { AutomationAction, AutomationMode, CATALOG } from './catalog';
+import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON } from './catalog';
 import { countRepoCommits, EMPTY_REPO_FIXTURE_OPTIONS, FixtureOptions, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
@@ -225,6 +225,18 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	await git(['-C', repo, 'clean', '-fd']);
 	fs.writeFileSync(path.join(repo, '.gg-fixture'), JSON.stringify(marker, null, 2) + '\n');
 	await seedRepo(repo);
+
+	// Drop the engine's handle one final time. The close at the top only clears the way for the
+	// mutations; the view's own change-driven refreshes keep running throughout (the watcher
+	// fires the moment the first `git remote remove` lands), and a repository the engine
+	// (re-)opens mid-reseed freezes the transient state into a fresh warm handle — an open
+	// landing in the zero-remote window between the remove and the re-add serves remote_names()
+	// as empty for the rest of the session, failing every remote-dependent action after the
+	// reseed (the Add Tag dialog loses its push checkbox; the Settings widget shows no remotes).
+	// Refs and commits are re-read live, so this single trailing close is enough: whatever
+	// handle a racing refresh opened is dropped here, and the next host request re-opens the
+	// repository in its final seeded state.
+	new HostBridge().closeRepository(repo);
 }
 
 /* ---------------- Per-action cleanup (pages and terminals an action opens) ---------------- */
@@ -359,6 +371,57 @@ async function syncViewAfterReseed(server: AutomationServer, repo: string): Prom
 	if (!outcome.ok) throw new Error('post-reseed view reload failed: ' + (outcome.error ?? 'eval failed'));
 }
 
+/**
+ * Turn the suite-canonical load options (Show Tags, Show Stashes, Show Remote Branches) back on
+ * when a previous run left one off. The catalog's toggle actions flip per-repo overrides through
+ * the real controls, and a run that ends mid-flip — or a one-way toggle from an older catalog —
+ * leaves the override stored OFF in the workspace state, where it silently outlives the run: the
+ * next run's engine probes still see tags and stashes (queryCommits forces the options on) while
+ * the rendered page omits them, and every tag/stash-row action fails "row never rendered" on a
+ * name the probe resolved. The ensure drives the same controls a user would and is a no-op when
+ * everything is already on; it never fails the suite — a problem here surfaces as (at most)
+ * failed actions the report shows anyway.
+ */
+async function ensureSuiteViewOptions(server: AutomationServer, logger: { logError(message: string): void }): Promise<void> {
+	// The Show Remote Branches checkbox lives in the control bar (always in the DOM); the Show
+	// Tags / Show Stashes checkboxes are built with the Settings widget, which must be opened.
+	const remoteExpr = '(function(){'
+		+ 'var c=document.getElementById("showRemoteBranchesCheckbox");'
+		+ 'if(c===null)throw new Error("show remote branches checkbox missing");'
+		+ 'var flip=!c.checked;if(flip)c.click();'
+		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		+ 'if(document.querySelector(\'tr.commit[data-id="0"]\')!==null)return resolve(flip?"turned on":"already on");'
+		+ 'if(++n>250)return reject(new Error("the view never re-rendered"));setTimeout(t,100);};t();});})()';
+	const settingsExpr = '(function(){'
+		+ 'var w=document.getElementById("settingsWidget");'
+		+ 'var active=w!==null&&w.className.split(/\\s+/).indexOf("active")!==-1;'
+		+ 'if(!active){var sb=document.getElementById("settingsBtn");'
+		+ 'if(sb===null)throw new Error("settings button missing");sb.click();}'
+		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		+ 'var w2=document.getElementById("settingsWidget");'
+		+ 'var a=w2!==null&&w2.className.split(/\\s+/).indexOf("active")!==-1;'
+		+ 'if(!a){if(++n>100)return reject(new Error("the settings widget never opened"));return setTimeout(t,100);}'
+		+ 'var flipped=[];'
+		+ '["settingsShowTagsCheckbox","settingsShowStashesCheckbox"].forEach(function(id){'
+		+ 'var c=document.getElementById(id);'
+		+ 'if(c===null)throw new Error(id+" missing");'
+		+ 'if(!c.checked){c.click();flipped.push(id);}});'
+		+ 'setTimeout(function(){var m=0;var u=function(){'
+		+ 'if(document.querySelector(\'tr.commit[data-id="0"]\')!==null){'
+		+ 'var cb=document.getElementById("settingsClose");if(cb!==null)cb.click();'
+		+ 'return resolve(flipped.length>0?"turned on: "+flipped.join(", "):"already on");}'
+		+ 'if(++m>250)return reject(new Error("the view never re-rendered"));setTimeout(u,100);};u();'
+		+ '},flipped.length>0?300:0);};t();});})()';
+	try {
+		for (const [what, expr] of [['show remote branches', remoteExpr], ['show tags / show stashes', settingsExpr]] as const) {
+			const outcome = await server.eval({ expr });
+			if (!outcome.ok) throw new Error('ensuring ' + what + ' failed: ' + (outcome.error ?? 'eval failed'));
+		}
+	} catch (error) {
+		logger.logError('view-option ensure failed: ' + (error instanceof Error ? error.message : String(error)));
+	}
+}
+
 /* ---------------- The suite run ---------------- */
 
 export async function runAutomationSuite(options: SuiteRunOptions): Promise<SuiteReport> {
@@ -428,9 +491,10 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 					// Confirming this action opens the editor's native save dialog — a modal the
 					// run can neither drive nor dismiss (in the real editor it stalls the whole
 					// suite until clicked away). Report it as skipped in every mode; never run it.
+					// The engine refuses the same actions again (runCatalogAction's backstop).
 					runs.push({
 						id: action.id, title: action.title, group: action.group, mode,
-						ok: false, skipped: true, reason: 'opens the editor\'s native save dialog — not run by the automation suite',
+						ok: false, skipped: true, reason: NATIVE_SAVE_DIALOG_SKIP_REASON,
 						error: null, totalMs: null, responses: []
 					});
 					options.onProgress?.({ phase, index: i + 1, total: actions.length, actionId: action.id, mode });
@@ -478,6 +542,10 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 			return runs;
 		};
 
+		// A fixture repository's view options belong to the run (an older run's toggle may have
+		// left tags or stashes hidden); a real repository's preferences are the user's and stay
+		// untouched — a hidden-tags read suite there simply shows the tag actions failing.
+		if (fixture || fixtureGenerated) await ensureSuiteViewOptions(server, options.logger);
 		const readRuns = await runPhase('read', readActions, 0);
 		let writeRuns: ActionRunRecord[] = [];
 		if (includeWrite) {
@@ -499,6 +567,10 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				}];
 			}
 			if (writeRuns.length === 0) {
+				// The write actions' tag/stash/remote-branch targets depend on the same canonical
+				// options the read phase was ensured against (a poisoned override fails the whole
+				// menu-tag / menu-stash / menu-remote-branch groups "row never rendered").
+				await ensureSuiteViewOptions(server, options.logger);
 				writeRuns = await runPhase('write', writeActions, readActions.length);
 				// The write phase leaves its own mutations in the repository — created branches and
 				// tags, made commits, rewritten history. One final in-place reseed ends the run on
@@ -517,6 +589,9 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 					// The run must not end with the page disagreeing with the repository either —
 					// a stale page is exactly what poisons whatever runs against the view next.
 					await syncViewAfterReseed(server, repo);
+					// Nor with a load option the write suite's toggles left off: the post-run
+					// state is what the user (and the next run) inherits.
+					await ensureSuiteViewOptions(server, options.logger);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					options.logger.logError('write-suite cleanup failed: ' + message);

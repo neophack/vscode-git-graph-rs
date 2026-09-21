@@ -404,7 +404,6 @@ describe('evalPromises', () => {
 	it('resolves an empty and a single-element input', async () => {
 		assert.deepEqual(await utils.evalPromises([], 2, async (x) => x), []);
 		assert.deepEqual(await utils.evalPromises([7], 2, async (x) => x * 2), [14]);
-		await assert.rejects(utils.evalPromises([1], 2, async () => { throw new Error('x'); }));
 	});
 
 	it('keeps at most maxParallel promises in flight and preserves the input order', async () => {

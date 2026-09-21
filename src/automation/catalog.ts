@@ -101,6 +101,14 @@ export interface AutomationAction {
 const PLACEHOLDER_REGEXP = /\{\{([a-zA-Z][a-zA-Z0-9]*)\}\}/g;
 
 /**
+ * The skip reason every layer reports for {@link AutomationAction.nativeSaveDialog} actions: the
+ * modal they open (utils.archive's showSaveDialog) cannot be driven or dismissed by a run, so no
+ * layer may ever execute them — the suite runner filters them before dispatching, and the engine
+ * refuses them again as the backstop for a direct run() caller.
+ */
+export const NATIVE_SAVE_DIALOG_SKIP_REASON = 'opens the editor\'s native save dialog — not run by the automation suite';
+
+/**
  * Expand every `{{name}}` placeholder in a template value from the context. Walks plain objects
  * and arrays; any other value passes through untouched. Throws on an unknown placeholder so a
  * bad catalog entry or missing run parameter fails loudly instead of reaching the host.
@@ -340,6 +348,20 @@ const SCROLL_TOP_STEPS: readonly UiStep[] = [
 	{ op: 'eval', expr: '(function(){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));return 0;})()' },
 	{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }
 ];
+
+/**
+ * A UI step that restores a Settings-widget load-option checkbox the preceding step toggled off.
+ * It polls for the checkbox (the toggle's reload may be re-rendering the widget), clicks it only
+ * while it is unchecked — going through the same save-and-reload pipeline as the tested
+ * direction — and then closes the widget. Without the restore the per-repo override stays OFF in
+ * the workspace state and silently outlives the run: the NEXT run's engine probes still resolve
+ * the tag/stash placeholders (queryCommits forces the options on) while the rendered page omits
+ * them, and every tag-row action fails "row never rendered" on a name the probe picked.
+ */
+const restoreSettingsCheckboxStep = (id: string): UiStep => ({
+	op: 'eval',
+	expr: '(function(){return new Promise(function(resolve,reject){var n=0;var t=function(){var c=document.getElementById(' + JSON.stringify(id) + ');if(c!==null){var flipped=false;if(!c.checked){c.click();flipped=true;}var cb=document.getElementById("settingsClose");if(cb!==null)cb.click();return resolve(flipped?"restored":"already on");}if(++n>100)return reject(new Error("the settings checkbox never appeared: ' + id + '"));setTimeout(t,100);};t();});})()'
+});
 
 /**
  * UI steps that clear the file path filter a `git-graph-rs.filterByFile` command set: the Filter
@@ -1802,12 +1824,18 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Delete Tag…',
 		group: 'menu-tag',
 		mutable: true,
+		requires: ['annotatedTag'],
+		// The annotated placeholder is the tag `menu-commit/add-tag` created near HEAD (the
+		// fixture's own in-window tags are lightweight, so in the write pass the annotated one is
+		// that fresh tag) — well inside the loaded page, unlike the v1.29.0 this entry once
+		// hardcoded: that tag sits ~700 commits deep while the initial load is 300, and the
+		// scroll step cannot trigger a load-more, so the row was unreachable by construction.
 		// With a single remote the dialog is an "also delete on remote" checkbox (default off,
-		// so the remote copy survives). v1.29.0 is used (not the request path's v1.0.0) so the
-		// local tag survives until this entry runs; menu-tag/push uses a different tag again.
+		// so a remote copy survives). `menu-tag/push` runs after this and resolves {{tag}} —
+		// with the annotated tag gone it targets the newest fixture tag instead.
 		ui: [
-			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Delete Tag…', '删除标签…') },
+			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{annotatedTag}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{annotatedTag}}"]', item: bi('Delete Tag…', '删除标签…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP,
@@ -1822,14 +1850,16 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'menu-tag',
 		mutable: true,
 		requires: ['remote'],
-		// With a single remote the dialog is a plain confirmation. v1.28.0 (annotated) is used
-		// because menu-tag/delete has already removed v1.29.0 in the same write pass. The tag
-		// already exists on the fixture remote, so the host answers with an error dialog (after
-		// the action-running overlay), which the flow settles and dismisses. `commit`
-		// approximates the tagged commit (the live flow passes the tag's own commit hash).
+		// {{tag}} — the first tag of the loaded page. In the write pass `menu-tag/delete` has
+		// already removed the annotated add-tag tag, so this resolves to the newest fixture tag,
+		// which exists on the fixture remote: the host answers with an error dialog (after the
+		// action-running overlay), which the flow settles and dismisses — the designed path.
+		// When delete skipped (no annotated tag), {{tag}} is whatever leads the page and the
+		// flow tolerates a successful push through the same overlay. `commit` approximates the
+		// tagged commit (the live flow passes the tag's own commit hash).
 		ui: [
-			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{annotatedTag}}"]'),
-			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{annotatedTag}}"]', item: bi('Push Tag…', '推送标签…') },
+			scrollUntilVisibleStep('span.gitRef.tag[data-name="{{tag}}"]'),
+			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="{{tag}}"]', item: bi('Push Tag…', '推送标签…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			{ op: 'click', selector: '#dialogAction' },
 			{ op: 'waitFor', selector: '.dialog' },
@@ -2317,11 +2347,16 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Show Stashes',
 		group: 'settings',
 		mutable: true,
+		// The toggle flips the per-repo override OFF and reloads; the restore step flips it back
+		// through the same control, so the run cannot leave the repository with stashes hidden
+		// (see restoreSettingsCheckboxStep for the cross-run poisoning that a one-way toggle
+		// caused). The suite runner additionally re-ensures the option at each phase start.
 		ui: [
 			{ op: 'click', selector: '#settingsBtn' },
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#settingsShowStashes' },
-			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the OFF reload has rendered
+			restoreSettingsCheckboxStep('settingsShowStashesCheckbox'),
 			{ op: 'waitForGone', selector: '#settingsWidget.active' }
 		],
 		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
@@ -2331,11 +2366,15 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Show Tags',
 		group: 'settings',
 		mutable: true,
+		// Same toggle-and-restore shape as show-stashes: with the toggle left off the host omits
+		// every tag from the loaded graph while the automation probes still see them, and the
+		// whole menu-tag group fails on the next run against this repository.
 		ui: [
 			{ op: 'click', selector: '#settingsBtn' },
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'click', selector: '#settingsShowTags' },
-			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the OFF reload has rendered
+			restoreSettingsCheckboxStep('settingsShowTagsCheckbox'),
 			{ op: 'waitForGone', selector: '#settingsWidget.active' }
 		],
 		expect: { responses: ['loadRepoInfo', 'loadCommits'] }

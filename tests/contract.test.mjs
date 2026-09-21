@@ -81,15 +81,9 @@ describe('the contributed commands', () => {
 		return new Set(pkg.contributes.commands.map((command) => command.command));
 	}
 
-	it('registers every command it contributes', () => {
-		const registered = registeredCommands();
-		assert.deepEqual(
-			[...contributedCommands()].filter((command) => !registered.has(command)).sort(),
-			[],
-			'these commands appear in the Command Palette but nothing implements them'
-		);
-	});
-
+	// "registers every command it contributes" and "points every menu entry at an existing
+	// command" used to live here; contributedMenus.test.mjs asserts both with the same (or a
+	// stronger) source set, so they were duplicates.
 	it('contributes every command it registers', () => {
 		const contributed = contributedCommands();
 		assert.deepEqual(
@@ -125,21 +119,6 @@ describe('the contributed commands', () => {
 		);
 	});
 
-	it('points every menu entry at an existing command', () => {
-		const pkg = JSON.parse(read('package.json'));
-		const contributed = contributedCommands();
-		const referenced = new Set();
-		for (const location of Object.values(pkg.contributes.menus ?? {})) {
-			for (const entry of location) {
-				if (typeof entry.command === 'string') referenced.add(entry.command);
-			}
-		}
-		assert.deepEqual(
-			[...referenced].filter((command) => !contributed.has(command)).sort(),
-			[],
-			'these menu entries reference commands that are not contributed'
-		);
-	});
 });
 
 /* ---------- The icon set ---------- */

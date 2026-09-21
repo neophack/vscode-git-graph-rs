@@ -56,7 +56,9 @@ export function checkTargetDir(dir, { force = false } = {}) {
 	if (force) return;
 	if (!fs.existsSync(dir)) return;
 	const entries = fs.readdirSync(dir);
-	const known = new Set(['fixture', 'fixture-remote.git']);
+	// 'report.html' is this script's own output (written into --dir at the end of a run), so a
+	// directory holding it is still a reusable fixture directory, not a foreign project.
+	const known = new Set(['fixture', 'fixture-remote.git', 'report.html']);
 	const unexpected = entries.filter((entry) => !known.has(entry));
 	if (unexpected.length > 0) {
 		throw new Error(

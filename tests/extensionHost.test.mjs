@@ -39,6 +39,10 @@ const { EventEmitter } = await import('../out/utils/event.js');
 const { t } = await import('../out/i18n.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Waits until the condition holds, instead of a fixed sleep racing an fs callback
+const waitFor = async (condition) => {
+	for (let i = 0; i < 200 && !condition(); i++) await sleep(25);
+};
 const BooleanOverride = { Default: 0, Enabled: 1, Disabled: 2 };
 
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -68,7 +72,7 @@ describe('ExtensionState', () => {
 		gitExecutableEmitter = new EventEmitter();
 		storage = path.join(tmp, 'storage-' + Math.random().toString(36).slice(2));
 		state = new ExtensionState({ globalState, workspaceState, globalStoragePath: storage }, gitExecutableEmitter.subscribe);
-		await sleep(50); // the avatar storage folder is created asynchronously
+		await waitFor(() => state.isAvatarStorageAvailable()); // the avatar storage folder is created asynchronously
 	});
 
 	it('creates the avatar storage folder (and detects it when it already exists)', async () => {
@@ -77,7 +81,7 @@ describe('ExtensionState', () => {
 		assert.ok(fs.existsSync(path.join(storage, 'avatars')));
 
 		const again = new ExtensionState({ globalState, workspaceState, globalStoragePath: storage }, gitExecutableEmitter.subscribe);
-		await sleep(50);
+		await waitFor(() => again.isAvatarStorageAvailable());
 		assert.equal(again.isAvatarStorageAvailable(), true);
 		again.dispose();
 	});
@@ -152,7 +156,7 @@ describe('ExtensionState', () => {
 		fs.writeFileSync(path.join(storage, 'avatars', 'x.png'), 'img');
 		assert.equal(await state.clearAvatarCache(), null);
 		assert.deepEqual(state.getAvatarCache(), {});
-		await sleep(50);
+		await waitFor(() => fs.readdirSync(path.join(storage, 'avatars')).length === 0);
 		assert.deepEqual(fs.readdirSync(path.join(storage, 'avatars')), []);
 
 		globalState.failNext = true;

@@ -127,6 +127,42 @@ test('an unknown menu item fails the step', async () => {
 	assert.ok(result.error.indexOf('Do It') !== -1);
 });
 
+test('a context menu lost to a concurrent re-render is retried', async () => {
+	const { window, posted } = makeWindow('<body><div id="row">row</div></body>');
+	const document = window.document;
+	// The first right-click lands while the view is mid-refresh: the handler shows nothing (a
+	// zero-item menu). The refresh settles, the next dispatch opens the menu and the item is
+	// clicked — the report's menu-stash/branch-from-stash failure mode.
+	let dispatches = 0, itemClicked = false;
+	document.getElementById('row').addEventListener('contextmenu', () => {
+		dispatches++;
+		if (dispatches === 1) return;
+		const menu = document.createElement('ul');
+		menu.className = 'contextMenu';
+		const item = document.createElement('li');
+		item.className = 'contextMenuItem';
+		item.textContent = 'Do It';
+		item.addEventListener('click', () => { itemClicked = true; });
+		menu.appendChild(item);
+		document.body.appendChild(menu);
+	});
+	const result = await runSteps(window, posted, [{ op: 'contextmenu', selector: '#row', item: 'Do It' }]);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	assert.ok(dispatches >= 2);
+	assert.ok(itemClicked);
+});
+
+test('a context menu that never opens fails after the retries', async () => {
+	const { window, posted } = makeWindow('<body><div id="row">row</div></body>');
+	const document = window.document;
+	let dispatches = 0;
+	document.getElementById('row').addEventListener('contextmenu', () => { dispatches++; });
+	const result = await runSteps(window, posted, [{ op: 'contextmenu', selector: '#row', item: 'Do It' }]);
+	assert.equal(result.ok, false);
+	assert.ok(result.error.indexOf('0 items shown') !== -1);
+	assert.equal(dispatches, 5); // the initial attempt plus four retries
+});
+
 test('contextmenu accepts one candidate per interface language', async () => {
 	const { window, posted } = makeWindow('<body><div id="row">row</div><div id="label">第 1 个，共 5 个</div></body>');
 	const document = window.document;

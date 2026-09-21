@@ -1057,6 +1057,11 @@ export class DataSource extends Disposable {
 			if (status !== null) return status;
 		}
 
+		// The remote set lives in the repository's config, which the engine's warm handle reads
+		// once at open time — without this drop the next loadRepoInfo/loadConfig keeps serving
+		// the pre-add remote list (the Settings widget would not show the new remote).
+		this.closeRepository(repo);
+
 		return fetch ? this.fetch(repo, name, false, false) : null;
 	}
 
@@ -1066,11 +1071,16 @@ export class DataSource extends Disposable {
 	 * @param name The name of the remote.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public deleteRemote(repo: string, name: string) {
+	public async deleteRemote(repo: string, name: string) {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['name', name, 'ref']);
-		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
+		if (unsafeArgs !== null) return unsafeArgs;
 
-		return this.runGitCommand(['remote', 'remove', name], repo);
+		const status = await this.runGitCommand(['remote', 'remove', name], repo);
+		if (status !== null) return status;
+
+		// See addRemote: the engine's config snapshot must not outlive the deletion.
+		this.closeRepository(repo);
+		return null;
 	}
 
 	/**
@@ -1117,6 +1127,9 @@ export class DataSource extends Disposable {
 			if (status !== null) return status;
 		}
 
+		// See addRemote: a rename or URL rewrite changes the config the engine's warm handle
+		// froze at open time.
+		this.closeRepository(repo);
 		return null;
 	}
 

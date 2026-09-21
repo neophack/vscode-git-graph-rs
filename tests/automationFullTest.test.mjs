@@ -37,6 +37,12 @@ test('a directory holding only a prior fixture is accepted (re-running reuses it
 	assert.doesNotThrow(() => checkTargetDir(scratch));
 });
 
+test("a directory also holding the prior run's report.html is accepted (it is this script's own output)", () => {
+	fs.mkdirSync(path.join(scratch, 'fixture'), { recursive: true });
+	fs.writeFileSync(path.join(scratch, 'report.html'), '<html></html>');
+	assert.doesNotThrow(() => checkTargetDir(scratch));
+});
+
 test('a directory holding unrelated content is refused with a reminder', () => {
 	fs.mkdirSync(scratch, { recursive: true });
 	fs.writeFileSync(path.join(scratch, 'notes.txt'), 'do not touch me');

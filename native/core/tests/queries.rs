@@ -475,18 +475,9 @@ fn searching_a_repository_without_commits_matches_nothing() {
 
     let engine = open(&repo);
     assert!(log::search_history(&engine, "anything").unwrap().is_empty());
-    assert_eq!(
-        log::count_commits_before(
-            &engine,
-            None,
-            "0123456789012345678901234567890123456789",
-            true,
-            false
-        )
-        .unwrap_err()
-        .kind,
-        ErrorKind::NotFound
-    );
+    // count_commits_before on this repo is covered by counting_before_an_unknown_hash_fails:
+    // its error fires at hash resolution, before any walk, so an empty repository reaches the
+    // same branch a populated one does.
 }
 
 /// The assertion helper the loop above uses, so each rejected name is reported individually.

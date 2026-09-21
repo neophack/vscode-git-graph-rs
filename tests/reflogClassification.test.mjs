@@ -43,11 +43,8 @@ describe('classifyReflogAction', () => {
 		assert.equal(classifyReflogAction('reset: moving to HEAD~1'), 'reflogAbort');
 	});
 
-	it('classifies an ordinary rebase step as reflogFlow', () => {
+	it('classifies rebase steps and starts as reflogFlow', () => {
 		assert.equal(classifyReflogAction('rebase (pick): some commit message'), 'reflogFlow');
-	});
-
-	it('classifies a rebase start as reflogFlow', () => {
 		assert.equal(classifyReflogAction('rebase (start): checkout onto'), 'reflogFlow');
 	});
 
