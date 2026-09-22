@@ -285,9 +285,13 @@ export async function bootRealView(repo) {
 		commandHandlers = {};
 		commandManager.dispose();
 		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
-		// Release the engine's repository handle (the inverse of what suite 29 asserts must stay
-		// open across requests): the harness owns this RepoManager, nobody else will close it.
-		repoManager.removeRepo(repo);
+		// Release the engine's repository handles (the inverse of what suite 29 asserts must stay
+		// open across requests): the harness owns this RepoManager, nobody else will close it —
+		// EVERY known repository, not just the boot one, because a runAutomationSuite({ repo })
+		// call registers and engine-opens further repositories whose memory-mapped pack files
+		// would otherwise hold the after-hook's cleanup hostage on Windows (EPERM past the whole
+		// bounded-removal budget).
+		for (const known of Object.keys(repoManager.getRepos())) repoManager.removeRepo(known);
 		for (const server of createdServers.splice(0)) server.close();
 	};
 

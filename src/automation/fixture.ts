@@ -698,6 +698,14 @@ export async function seedEmptyRepo(repo: string, options: Partial<FixtureOption
 export async function seedRepo(repoDir: string): Promise<void> {
 	const rng = createRng(987654321);
 
+	// The clone must be writable with NO global git identity: the extension's own write actions
+	// (the Add Tag dialog's `git tag -a`, commits, ...) run plain git commands inside this
+	// repository, and a machine without user.name/user.email configured (a CI runner) refuses
+	// them with "Committer identity unknown". Local config is idempotent and survives every
+	// reseed — nothing in the reset touches .git/config.
+	await git(['-C', repoDir, 'config', 'user.name', 'Fixture']);
+	await git(['-C', repoDir, 'config', 'user.email', 'fixture@fixture.dev']);
+
 	await git(['-C', repoDir, 'stash', 'clear']);
 	await git(['-C', repoDir, 'checkout', '-f', 'main']);
 	await git(['-C', repoDir, 'reset', '--hard', 'origin/main']);
