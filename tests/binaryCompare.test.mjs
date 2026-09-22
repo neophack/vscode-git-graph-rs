@@ -265,101 +265,204 @@ describe('the host-side hex responders', () => {
 	}));
 });
 
-/* ---------- The offset gutter's width ---------- */
+/* ---------- The webview script's hex layout ---------- */
 
-describe('the hex offset gutter sizes itself by the largest offset', () => {
-	/**
-	 * The real webview script in a stub DOM that lays text out at 7px per character: the probes
-	 * the script measures with measure in the same terms the assertions reason in, and every
-	 * style.setProperty call is recorded so the CSS variable the gutter's width reads is asserted
-	 * exactly as the page sets it.
-	 */
-	function makeHexHarness(webviewWidth) {
-		const posted = [], cssVars = [];
-		const elements = new Map();
-		const makeElement = (tag) => {
-			const element = {
-				tagName: String(tag).toUpperCase(),
-				style: { setProperty: (name, value) => cssVars.push([name, String(value)]) },
-				addEventListener() { },
-				appendChild() { },
-				removeChild() { },
-				clientWidth: webviewWidth,
-				clientHeight: 400,
-				scrollTop: 0,
-				disabled: false,
-				className: '',
-				title: '',
-				textContent: ''
-			};
-			let html = '';
-			Object.defineProperty(element, 'innerHTML', { get: () => html, set: (value) => { html = String(value); } });
-			element.getBoundingClientRect = () => ({ width: element.textContent.length * 7, height: 14 });
-			return element;
+/**
+ * The real webview script in a stub DOM that lays text out at 7px per character: the probe the
+ * script measures with measures in the same terms the assertions reason in, and every
+ * style.setProperty call is recorded so the grid template the rows read is asserted exactly as
+ * the page sets it.
+ */
+function makeHexHarness(webviewWidth) {
+	const posted = [], cssVars = [];
+	const elements = new Map();
+	const makeElement = (tag) => {
+		const element = {
+			tagName: String(tag).toUpperCase(),
+			style: { setProperty: (name, value) => cssVars.push([name, String(value)]) },
+			addEventListener() { },
+			appendChild() { },
+			removeChild() { },
+			clientWidth: webviewWidth,
+			clientHeight: 400,
+			scrollTop: 0,
+			disabled: false,
+			className: '',
+			title: '',
+			textContent: ''
 		};
-		const document = {
-			body: makeElement('body'),
-			getElementById(id) { if (!elements.has(id)) elements.set(id, makeElement('div')); return elements.get(id); },
-			createElement: makeElement
-		};
-		const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame', 'cssVars',
-			binaryCompareScript() + `;return {
-				enterHexView: enterHexView,
-				message: handleBinaryCompareMessage,
-				test: {
-					offsetText: hexOffsetText,
-					digits: () => hexOffDigits,
-					gutterCh: () => hexOffCh(),
-					vars: () => cssVars.slice()
-				}
-			};`);
-		const api = factory(
-			{ postMessage: (message) => { posted.push(message); } },
-			makeElement('div'),
-			document,
-			{ addEventListener() { } },
-			function StubImage() { },
-			(fn) => fn(),
-			cssVars
-		);
-		return { api, posted };
-	}
+		let html = '';
+		Object.defineProperty(element, 'innerHTML', { get: () => html, set: (value) => { html = String(value); } });
+		element.getBoundingClientRect = () => ({ width: element.textContent.length * 7, height: 14 });
+		return element;
+	};
+	const document = {
+		body: makeElement('body'),
+		getElementById(id) { if (!elements.has(id)) elements.set(id, makeElement('div')); return elements.get(id); },
+		createElement: makeElement
+	};
+	const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame', 'cssVars',
+		binaryCompareScript() + `;return {
+			enterHexView: enterHexView,
+			message: handleBinaryCompareMessage,
+			test: {
+				offsetText: hexOffsetText,
+				digits: () => hexOffDigits,
+				offsetCh: () => hexOffCh(),
+				bytesPerRow: () => hexBytesPerRow,
+				cols: hexColsTemplate,
+				rowHtml: hexRowHtml,
+				rulerHtml: hexRulerHtml,
+				asciiChar: hexAsciiChar,
+				element: (id) => document.getElementById(id),
+				vars: () => cssVars.slice()
+			}
+		};`);
+	const api = factory(
+		{ postMessage: (message) => { posted.push(message); } },
+		makeElement('div'),
+		document,
+		{ addEventListener() { } },
+		function StubImage() { },
+		(fn) => fn(),
+		cssVars
+	);
+	return { api, posted };
+}
 
-	it('narrows to the widest thing it must show — the padded max offset or the header label — never the old fixed 10ch', () => {
-		const labelCh = t('compareHexColOffset').length; // the header's own label, in character cells
+describe('the hex rows draw the hex viewer\'s grid', () => {
+	const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+	const count = (html, needle) => html.split(needle).length - 1;
+
+	it('shares one grid template between the ruler and every row: offset | 3ch per byte with a dedicated 1ch gap track opening each group | gutter | 1ch per character', () => {
 		const h = makeHexHarness(1400);
 		h.api.enterHexView(0);
-		// Before any size is known the 8-digit default applies: same width the fixed 10ch drew.
-		assert.equal(h.api.test.digits(), 8);
-		assert.equal(h.api.test.gutterCh(), Math.max(8 + 2, labelCh));
-		assert.equal(h.api.test.offsetText(16), '00000010');
-
-		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 300, totalRows: 19, sections: null, layoutVersion: 1, bytesPerRow: 16, rowHeight: 19 });
-		// 299 = 0x12b is a 3-digit offset: the gutter drops to max(3 digits + 2ch gap, the label).
-		assert.equal(h.api.test.digits(), 3);
-		assert.equal(h.api.test.gutterCh(), Math.max(3 + 2, labelCh));
-		assert.equal(h.api.test.offsetText(16), '010');
-		const hoff = h.api.test.vars().filter(([name]) => name === '--hoff').pop();
-		assert.ok(hoff !== undefined && hoff[1] === String(Math.max(3 + 2, labelCh)), JSON.stringify(hoff));
-
-		// A file past 64 KiB needs 5 digits: the gutter grows WITH the number, past the label.
-		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 70000, newSize: 70000, totalRows: 4375, sections: null, layoutVersion: 2, bytesPerRow: 16, rowHeight: 19 });
-		assert.equal(h.api.test.digits(), 5);
-		assert.equal(h.api.test.gutterCh(), 7);
-		assert.equal(h.api.test.offsetText(16), '00010');
+		assert.equal(h.api.test.bytesPerRow(), 16);
+		// 8 offset digits + 2ch, sixteen 3ch byte cells with a 1ch gap track of its own before
+		// the second eight, the 3ch gutter, sixteen 1ch character cells. The gap is a track
+		// between the groups, not extra width folded into the group's first byte cell - that
+		// would center the byte in the middle of the widened column and split the gap into two
+		// smaller, unevenly-sized ones straddling the byte instead of one gap between them.
+		const byteSection = new Array(16).fill('3ch');
+		byteSection.splice(8, 0, '1ch');
+		const expected = ['10ch'].concat(byteSection, ['3ch'], new Array(16).fill('1ch')).join(' ');
+		assert.equal(h.api.test.cols(16), expected);
+		const hcols = h.api.test.vars().filter(([name]) => name === '--hcols').pop();
+		assert.ok(hcols !== undefined && hcols[1] === expected, JSON.stringify(hcols));
+		// Twelve per row groups in fours: a dedicated gap track at each of the two group
+		// openings, on top of the offset, twelve bytes, the gutter and twelve ASCII cells.
+		assert.equal(h.api.test.cols(12).split(' ').length, 1 + 12 + 2 + 1 + 12);
 	});
 
-	it('re-picks the row width when a narrower gutter buys room for a wider one', () => {
-		// At 7px per character, a 1400px webview fits 16 bytes/row with either gutter, but 1100px
-		// fits 16 only once a small file's gutter has narrowed (at the 10ch default: 12 bytes/row).
-		const h = makeHexHarness(1100);
+	it('draws the ruler as a blank offset cell, a hex digit over every byte column and again over the ASCII pane, on both sides', () => {
+		const h = makeHexHarness(1400);
 		h.api.enterHexView(0);
-		assert.equal(h.posted[0].command, 'getHexInfo');
-		assert.equal(h.posted[0].bytesPerRow, 12);
+		const ruler = h.api.test.rulerHtml();
+		assert.equal(count(ruler, '<div class="hside">'), 2);
+		assert.equal(count(ruler, '<span class="hoff"></span>'), 2);
+		assert.equal(count(ruler, '<span class="hb">'), 32);
+		assert.equal(count(ruler, '<span class="ha">'), 32);
+		assert.equal(count(ruler, '<span class="hg"></span>'), 2);
+		// Uppercase digits 0..F, like the offsets and the bytes.
+		assert.ok(ruler.includes('<span class="hb">A</span>') && ruler.includes('<span class="ha">F</span>'), ruler);
+		assert.ok(!ruler.includes('Offset') && !ruler.includes('ASCII'), 'the ruler carries digits, not column labels');
+	});
 
-		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 300, totalRows: 19, sections: null, layoutVersion: 1, bytesPerRow: 12, rowHeight: 19 });
-		// The gutter narrowed, 16 bytes/row now fits, and the view re-requested the layout with it.
-		assert.ok(h.posted.some((message) => message.command === 'getHexInfo' && message.bytesPerRow === 16), JSON.stringify(h.posted));
+	it('renders a row as one cell per byte and per character, uppercase, tinting a changed byte on its own side', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		const row = {
+			o: 16, ob: b64([0x48, 0x69, 0x00, 0x0a, 0xff, 0x3c]), om: '000010',
+			n: 16, nb: b64([0x48, 0x69, 0x00, 0x0a, 0xab, 0x3c]), nm: '000010'
+		};
+		const html = h.api.test.rowHtml(row, true);
+		assert.ok(html.startsWith('<div class="hrow hxOdd">'), html);
+		assert.equal(count(html, '<div class="hside">'), 2);
+		assert.equal(count(html, '<span class="hoff">00000010</span>'), 2, 'both offsets, eight uppercase digits');
+		// Every side keeps its sixteen byte tracks: six bytes drawn, ten blank cells behind them,
+		// plus the one dedicated gap track before the second eight (not a widened byte cell).
+		assert.equal(count(html, 'class="hbg"'), 2);
+		assert.equal(count(html, 'class="hb'), 32 + 2); // 32 byte cells + the two gap spacers
+		assert.equal(count(html, 'class="ha'), 32);
+		assert.equal(count(html, '<span class="hb"></span>'), 20);
+		assert.ok(html.includes('<span class="hb">48</span><span class="hb">69</span>'), html);
+		// The changed byte is tinted red on the old side and green on the new, hex and ASCII alike.
+		assert.ok(html.includes('<span class="hb hxo">FF</span>') && html.includes('<span class="ha hxo">'), html);
+		assert.ok(html.includes('<span class="hb hxn">AB</span>') && html.includes('<span class="ha hxn">'), html);
+		assert.ok(!html.includes('<b '), 'bytes are grid cells, not inline bold runs');
+		// A 0x00 reads as a blank, a control byte as a dot, and markup characters are escaped.
+		assert.equal(h.api.test.asciiChar(0), ' ');
+		assert.equal(h.api.test.asciiChar(0x0a), '·');
+		assert.equal(h.api.test.asciiChar(0x3c), '&lt;');
+		assert.equal(h.api.test.asciiChar(0x41), 'A');
+		assert.equal(h.api.test.asciiChar(0xe9), 'é');
+	});
+
+	it('keeps the tracks of a side the other file runs past, with its offset blank', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		const html = h.api.test.rowHtml({ o: -1, ob: '', om: '', n: 32, nb: b64([1, 2]), nm: '00' }, false);
+		assert.ok(html.startsWith('<div class="hrow">'), html);
+		assert.ok(html.startsWith('<div class="hrow"><div class="hside"><span class="hoff"></span><span class="hb"></span>'), html);
+		assert.ok(html.includes('<span class="hoff">00000020</span><span class="hb">01</span><span class="hb">02</span>'), html);
+	});
+
+	it('names each pane and its byte count in the sticky head once the sizes arrive', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 1200, totalRows: 75, sections: null, layoutVersion: 1, bytesPerRow: 16, rowHeight: 19 });
+		assert.equal(h.api.test.element('hexOldSize').textContent, (300).toLocaleString() + ' B');
+		assert.equal(h.api.test.element('hexNewSize').textContent, (1200).toLocaleString() + ' B');
+	});
+});
+
+/* ---------- The offset column's width ---------- */
+
+describe('the hex offset column holds eight digits and grows only past 4 GiB', () => {
+	const harness = makeHexHarness;
+
+	it('pads every offset to eight uppercase digits however small the file, so the column never shifts', () => {
+		const h = harness(1400);
+		h.api.enterHexView(0);
+		assert.equal(h.api.test.digits(), 8);
+		assert.equal(h.api.test.offsetCh(), 10);
+		assert.equal(h.api.test.offsetText(16), '00000010');
+		assert.equal(h.api.test.offsetText(0xabc), '00000ABC');
+
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 300, totalRows: 19, sections: null, layoutVersion: 1, bytesPerRow: 16, rowHeight: 19 });
+		// 299 = 0x12B is a 3-digit offset: the column stays at the eight-digit floor regardless.
+		assert.equal(h.api.test.digits(), 8);
+		assert.equal(h.api.test.offsetText(16), '00000010');
+		assert.equal(h.api.test.vars().filter(([name]) => name === '--hcols').pop()[1].split(' ')[0], '10ch');
+
+		// A file past 4 GiB needs 9 digits: the column grows WITH the number.
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 0x100000001, newSize: 300, totalRows: 268435457, sections: null, layoutVersion: 2, bytesPerRow: 16, rowHeight: 19 });
+		assert.equal(h.api.test.digits(), 9);
+		assert.equal(h.api.test.offsetCh(), 11);
+		assert.equal(h.api.test.offsetText(16), '000000010');
+		assert.equal(h.api.test.vars().filter(([name]) => name === '--hcols').pop()[1].split(' ')[0], '11ch');
+	});
+
+	it('steps the row width down when the window cannot hold both 16-byte sides, and re-picks when the column widens', () => {
+		// At 7px per character a 16-byte side is 78ch: both sides need 1092px plus the 48px of
+		// side padding and the 20px kept for the scrollbar - 1160px. A 1400px webview holds it;
+		// 1100px steps down to 12 bytes per row (63ch a side, 930px all in).
+		const wide = harness(1400);
+		wide.api.enterHexView(0);
+		assert.equal(wide.posted[0].command, 'getHexInfo');
+		assert.equal(wide.posted[0].bytesPerRow, 16);
+
+		const narrow = harness(1100);
+		narrow.api.enterHexView(0);
+		assert.equal(narrow.posted[0].bytesPerRow, 12);
+
+		// 1165px holds 16 a side with the eight-digit column but not the nine-digit one a file
+		// past 4 GiB needs: the view re-requests the layout at 12 bytes per row.
+		const edge = harness(1165);
+		edge.api.enterHexView(0);
+		assert.equal(edge.posted[0].bytesPerRow, 16);
+		edge.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 0x100000001, newSize: 300, totalRows: 268435457, sections: null, layoutVersion: 1, bytesPerRow: 16, rowHeight: 19 });
+		assert.ok(edge.posted.some((message) => message.command === 'getHexInfo' && message.bytesPerRow === 12), JSON.stringify(edge.posted));
 	});
 });
 
@@ -372,17 +475,15 @@ describe('the webview script\'s baked-in templates', () => {
 		// placeholders — an argument that lost its closing brace once baked a literal '{1' into
 		// the hex diff counter and '{5' into the picture statistics.
 		const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame',
-			binaryCompareScript() + ';return [HEXDIFF_TPL, HEXSIZES_TPL, IMGSTATS_TPL];');
+			binaryCompareScript() + ';return [HEXDIFF_TPL, IMGSTATS_TPL];');
 		const nothing = () => { };
-		const [hexDiffTpl, hexSizesTpl, imgStatsTpl] = factory(
+		const [hexDiffTpl, imgStatsTpl] = factory(
 			{ postMessage: nothing }, nothing, nothing, { addEventListener: nothing }, function () { }, nothing
 		);
 		assert.equal(hexDiffTpl, t('compareHexDiffStatus', '{0}', '{1}'));
-		assert.equal(hexSizesTpl, t('compareHexSizes', '{0}', '{1}'));
 		assert.equal(imgStatsTpl, t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5}'));
 		const placeholdersOf = (template) => [...template.matchAll(/\{\d+\}/g)].map((match) => match[0]);
 		assert.deepEqual(placeholdersOf(hexDiffTpl), ['{0}', '{1}']);
-		assert.deepEqual(placeholdersOf(hexSizesTpl), ['{0}', '{1}']);
 		assert.deepEqual(placeholdersOf(imgStatsTpl), ['{0}', '{1}', '{2}', '{3}', '{4}', '{5}']);
 	});
 });

@@ -116,29 +116,54 @@ export function isImageChange(file: GitFileChange): boolean {
 /** The styles of the embedded hex / image comparison area. Pages wrap this in their own <style>. */
 export function binaryCompareCss(): string {
 	return `
-		/* Hex comparison view (binary files): offset | old hex + ASCII || new hex + ASCII */
+		/* Hex comparison view (binary files): two panes side by side, each the hex editor's
+		   offset | bytes | gutter | ASCII grid — the same table Git Graph Studio's hex viewer
+		   draws, so the comparison reads like the viewer it sits next to. */
 		#diffArea.hexMode { overflow: hidden; display: flex; }
-		#hexWrap { --bpr: 16; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+		#hexWrap { --hcols: 10ch; flex: 1; display: flex; flex-direction: column; min-width: 0; }
 		#hexToolbar, #imgToolbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; font-size: 12px; }
 		#hexToolbar .hxSpacer, #imgToolbar .hxSpacer { flex: 1; }
 		#hexToolbar button, #imgToolbar button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; }
 		#hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
-		#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
+		/* The ruler and the rows share one font: the ch-based grid tracks only line up when
+		   both measure the same monospace glyph. */
+		#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: var(--vscode-editor-font-size, 13px); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
 		#hexInner { display: inline-block; min-width: 100%; }
-		/* Same font size as the rows: the column widths below are in ch, which scales with the
-		   font, so a smaller header font would slide its labels out of alignment with the bytes. */
-		#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); opacity: 0.9; }
+		/* The sticky head: each pane's caption (which side, how many bytes) over the column
+		   ruler — one hex digit above every byte column and again above the ASCII pane, so a
+		   character reads back to its byte. */
+		#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); border-bottom: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+		#hexCaps { display: flex; font-size: 12px; color: var(--vscode-descriptionForeground, rgba(128,128,128,0.9)); }
+		.hcap { flex: 1 1 50%; min-width: 0; display: flex; justify-content: space-between; gap: 2ch; padding: 4px 12px 2px; white-space: nowrap; overflow: hidden; }
+		.hcap:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+		.hcap .hxSize { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
+		#hexRuler { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
 		#hexSpacer { position: relative; }
 		#hexView { position: absolute; top: 0; left: 0; right: 0; }
 		.hrow { display: flex; height: 19px; line-height: 19px; white-space: pre; }
-		.hrow.hxPending { opacity: 0.35; }
-		.hoff { width: calc(var(--hoff, 10) * 1ch); flex-shrink: 0; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
-		.hhex { width: calc(var(--bpr) * 3ch); flex-shrink: 0; }
-		.hasc { width: calc((var(--bpr) + 1) * 1ch); flex-shrink: 0; }
-		.hgap { width: 1ch; flex-shrink: 0; border-left: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); margin: 0 2ch; }
-		.hrow b { font-weight: 400; border-radius: 2px; }
-		.hrow b.hxo { background: rgba(248,81,73,0.30); }
-		.hrow b.hxn { background: rgba(46,160,67,0.30); }
+		/* Every other row is faintly tinted, the zebra banding hex editors use to keep the eye
+		   on a row across the panes; a wash of the foreground so it suits any theme. */
+		.hrow.hxOdd { background: color-mix(in srgb, var(--vscode-editor-foreground, #ccc) 6%, transparent); }
+		/* Each side is a grid over the template the script builds (offset | bytes | gutter |
+		   ASCII), sized in ch so the ruler's digits sit exactly over their byte columns. A rule
+		   down the middle keeps the sides apart the way the offset and gutter rules do. */
+		.hside { display: grid; grid-template-columns: var(--hcols); flex: 1 1 50%; min-width: 0; padding: 0 12px; }
+		.hside:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+		.hoff { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); padding-right: 1ch; border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+		.hb, .ha { text-align: center; }
+		/* .hbg is the dedicated 1ch track hexColsTemplate opens between byte groups - a blank
+		   spacer, styled by nothing here. It keeps the group gap a single gap between two
+		   bytes, not extra width folded into the group's first byte cell (which would center
+		   that byte in the middle of its own widened column, splitting the gap into two
+		   smaller, unevenly-sized ones straddling the byte instead). */
+		/* The gutter's rule sits in its middle, 1.5ch clear of the last byte and the first char. */
+		.hg { border-left: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); margin-left: 1.5ch; }
+		/* A differing byte reads as a tinted cell on both sides — the diff editor's removed red
+		   on the old side and its added green on the new — over the hex and ASCII cell alike. */
+		.hb.hxo, .ha.hxo { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #f48771) 24%, transparent); }
+		.hb.hxn, .ha.hxn { background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #81b88b) 24%, transparent); }
+		.ha.hxo { color: var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
+		.ha.hxn { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
 		/* Image comparison view: old picture | pixel difference | new picture */
 		#diffArea.imgMode { overflow: hidden; display: flex; }
 		#imgWrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -173,19 +198,19 @@ export function binaryCompareScript(): string {
 	   of any size scrolls smoothly and costs the same memory. */
 	const HEX_ROW_H = 19;
 	const HEXDIGITS = [];
-	for (let i = 0; i < 256; i++) HEXDIGITS.push((i < 16 ? '0' : '') + i.toString(16));
+	for (let i = 0; i < 256; i++) HEXDIGITS.push(((i < 16 ? '0' : '') + i.toString(16)).toUpperCase());
 	const HEXDIFF_TPL = '${t('compareHexDiffStatus', '{0}', '{1}')}';
-	const HEXSIZES_TPL = '${t('compareHexSizes', '{0}', '{1}')}';
 	const IMGSTATS_TPL = '${t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5}')}';
 	function bcEscapeHtml(str) {
 		return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
 	let hexActive = false, hexIndex = -1, hexTotalRows = 0, hexSameSize = false, hexLayoutVersion = 0, hexBytesPerRow = 16;
 	let hexSections = null, hexDiffs = [], hexDiffPos = -1;
-	/* The offset gutter is sized by the largest number it will ever show: hexOffDigits is the hex
-	   digit count of the biggest offset of either side (8 until the sizes arrive), and the column
-	   is that plus a 2ch gap — never wider than the content needs, growing for files past 4 GiB. */
-	let hexOffDigits = 8, hexOffLabelCh = -1;
+	/* Offsets are hex, eight digits at the floor (the classic 4 GiB column) so the column never
+	   shifts while a file is viewed, one digit more for every 16x past 4 GiB: hexOffDigits is
+	   that count for the larger side (the floor until the sizes arrive). */
+	const HEX_OFFSET_DIGITS = 8;
+	let hexOffDigits = HEX_OFFSET_DIGITS;
 	let currentFileIsImage = false;
 	const hexRows = new Map();
 	let hexPending = false, hexEls = null, hexScrollQueued = false;
@@ -202,65 +227,83 @@ export function binaryCompareScript(): string {
 		return size < 0 ? '\\u2014' : size.toLocaleString() + ' B';
 	}
 
+	/* The offset digits a file of the given size needs: the eight-digit floor, or the digit count
+	   of its last offset when that is longer. */
+	function hexOffsetDigitsFor(size) {
+		return Math.max(HEX_OFFSET_DIGITS, Math.max(0, size - 1).toString(16).length);
+	}
+
 	function hexOffsetText(offset) {
-		let text = offset.toString(16);
+		let text = offset.toString(16).toUpperCase();
 		while (text.length < hexOffDigits) text = '0' + text;
 		return text;
 	}
 
-	/* The header's offset label in character cells (measured once, in the rows' own font): the
-	   gutter must at least fit the label or the header would clip. */
-	function hexOffsetLabelCh() {
-		if (hexOffLabelCh > 0) return hexOffLabelCh;
-		const probe = document.createElement('span');
-		probe.style.visibility = 'hidden';
-		probe.style.position = 'absolute';
-		probe.style.whiteSpace = 'pre';
-		probe.style.fontFamily = 'var(--vscode-editor-font-family, monospace)';
-		probe.style.fontSize = '12px';
-		document.body.appendChild(probe);
-		probe.textContent = '0000000000';
-		const zero = probe.getBoundingClientRect().width / 10;
-		probe.textContent = '${t('compareHexColOffset')}';
-		const label = probe.getBoundingClientRect().width;
-		document.body.removeChild(probe);
-		hexOffLabelCh = zero > 0 ? Math.max(1, Math.ceil(label / zero)) : 6;
-		return hexOffLabelCh;
-	}
-
-	/* The offset gutter's width in ch: the widest thing it holds — the padded max offset or the
-	   header label — plus a 2ch trailing gap. */
+	/* The offset column's width in ch: the padded offset plus the 1ch it keeps clear of its rule
+	   and 1ch of breathing room before the first byte. */
 	function hexOffCh() {
-		return Math.max(hexOffDigits + 2, hexOffsetLabelCh());
+		return hexOffDigits + 2;
 	}
 
-	/* The hex view fits the window: the widest row layout (16 bytes) needs roughly
-	   (8 * bpr + 2 * gutterCh + 9) character cells, so narrower windows step down to 12/8/4
-	   bytes per row — and a smaller file's narrower offset gutter buys room back. */
+	/* Bytes are grouped for the eye - eights at 16 per row, fours below - with an extra ch of
+	   space opening each group after the first. */
+	function hexGroupSize(bytesPerRow) {
+		return bytesPerRow >= 16 && bytesPerRow % 8 === 0 ? 8 : 4;
+	}
+
+	/* The width of one side in character cells: offset | one 3ch cell per byte plus a
+	   dedicated 1ch gap track opening each group | a 3ch gutter | one 1ch cell per ASCII
+	   character. */
+	function hexSideCh(bytesPerRow) {
+		return hexOffCh() + 3 * bytesPerRow + (bytesPerRow / hexGroupSize(bytesPerRow) - 1) + 3 + bytesPerRow;
+	}
+
+	/* The grid template every row and the ruler share, so the ruler's digits sit exactly over
+	   their byte columns however wide the font is. The group gap is its own 1ch track, not
+	   extra width folded into the group's first byte column - a widened byte column would
+	   center its digit in the middle of that width, splitting the gap into two smaller,
+	   unevenly-sized ones straddling the byte instead of one gap between the groups. */
+	function hexColsTemplate(bytesPerRow) {
+		const group = hexGroupSize(bytesPerRow);
+		const widths = [hexOffCh() + 'ch'];
+		for (let i = 0; i < bytesPerRow; i++) {
+			if (i % group === 0 && i > 0) widths.push('1ch');
+			widths.push('3ch');
+		}
+		widths.push('3ch');
+		for (let i = 0; i < bytesPerRow; i++) widths.push('1ch');
+		return widths.join(' ');
+	}
+
+	/* Each side of the row is padded 12px, like the hex viewer's rows. */
+	const HEX_SIDE_PAD = 12;
+
+	/* The hex view fits the window: both sides at 16 bytes per row need 2 * hexSideCh(16)
+	   character cells plus the sides' padding, so narrower windows step down to 12/8/4 bytes
+	   per row. The probe measures the rows' own font, so a font change re-picks correctly. */
 	function pickHexBytesPerRow() {
 		const probe = document.createElement('span');
 		probe.style.visibility = 'hidden';
 		probe.style.position = 'absolute';
-		probe.style.fontFamily = 'var(--vscode-editor-font-family, monospace)';
-		probe.style.fontSize = '12px';
+		probe.style.whiteSpace = 'pre';
+		probe.style.fontFamily = 'var(--vscode-editor-font-family, Consolas, monospace)';
+		probe.style.fontSize = 'var(--vscode-editor-font-size, 13px)';
 		probe.textContent = '0000000000000000000000000000';
 		document.body.appendChild(probe);
 		const charWidth = probe.getBoundingClientRect().width / 28;
 		document.body.removeChild(probe);
-		const available = diffArea.clientWidth - 24;
-		const gutter = 2 * hexOffCh() + 9;
+		const available = diffArea.clientWidth - 20 - 4 * HEX_SIDE_PAD;
 		const candidates = [16, 12, 8, 4];
 		for (let i = 0; i < candidates.length; i++) {
-			if ((8 * candidates[i] + gutter) * charWidth <= available) return candidates[i];
+			if (2 * hexSideCh(candidates[i]) * charWidth <= available) return candidates[i];
 		}
 		return 4;
 	}
 
 	function applyHexBytesPerRow() {
 		if (hexEls === null) return;
-		hexEls.wrap.style.setProperty('--bpr', String(hexBytesPerRow));
-		hexEls.wrap.style.setProperty('--hoff', String(hexOffCh()));
-		hexEls.head.innerHTML = hexHeadHtml();
+		hexEls.wrap.style.setProperty('--hcols', hexColsTemplate(hexBytesPerRow));
+		hexEls.ruler.innerHTML = hexRulerHtml();
 	}
 
 	function refreshHexLayout() {
@@ -276,42 +319,55 @@ export function binaryCompareScript(): string {
 		vscode.postMessage({ command: 'getHexInfo', index: hexIndex, bytesPerRow: hexBytesPerRow });
 	}
 
+	/* The ASCII pane's glyph for a byte: printable ASCII and Latin-1 as themselves, a 0x00 as a
+	   blank so zero-filled regions read as empty space, and other control bytes as a dot. */
+	function hexAsciiChar(byte) {
+		if (byte === 0) return ' ';
+		if (byte === 38) return '&amp;';
+		if (byte === 60) return '&lt;';
+		if (byte === 62) return '&gt;';
+		return (byte >= 32 && byte < 127) || byte >= 160 ? String.fromCharCode(byte) : '\\u00B7';
+	}
+
+	/* One side of a row: the offset cell, a cell per byte (blank past a short tail so the grid
+	   keeps its tracks), the gutter, and a cell per ASCII character. A side without a row on
+	   this line - the other file runs longer here - keeps its cells empty. */
 	function hexSideHtml(offset, b64, mask, side) {
-		if (offset < 0 || b64 === '') {
-			return '<span class="hoff"></span><span class="hhex"></span><span class="hasc"></span>';
-		}
-		const bytes = atob(b64);
-		const half = hexBytesPerRow / 2 - 1;
+		const bytes = offset < 0 || b64 === '' ? '' : atob(b64);
+		const group = hexGroupSize(hexBytesPerRow);
 		let hex = '', ascii = '';
-		for (let i = 0; i < bytes.length; i++) {
-			const byte = bytes.charCodeAt(i) & 0xff;
-			const changed = mask.charAt(i) === '1';
-			const hexText = HEXDIGITS[byte];
-			const asciiText = byte >= 32 && byte <= 126 ? bcEscapeHtml(String.fromCharCode(byte)) : '\\u00B7';
-			if (changed) {
-				hex += '<b class="hx' + side + '">' + hexText + '</b>';
-				ascii += '<b class="hx' + side + '">' + asciiText + '</b>';
-			} else {
-				hex += hexText;
-				ascii += asciiText;
-			}
-			if (i === half) hex += '  ';
-			else if (i < bytes.length - 1) hex += ' ';
-		}
-		return '<span class="hoff">' + hexOffsetText(offset) + '</span><span class="hhex">' + hex + '</span><span class="hasc">' + ascii + '</span>';
-	}
-
-	function hexRowHtml(row) {
-		return '<div class="hrow">' + hexSideHtml(row.o, row.ob, row.om, 'o') + '<span class="hgap"></span>' + hexSideHtml(row.n, row.nb, row.nm, 'n') + '</div>';
-	}
-
-	function hexHeadHtml() {
-		let hexHead = '';
 		for (let i = 0; i < hexBytesPerRow; i++) {
-			hexHead += HEXDIGITS[i] + (i === hexBytesPerRow / 2 - 1 ? '  ' : (i < hexBytesPerRow - 1 ? ' ' : ''));
+			if (i % group === 0 && i > 0) hex += '<span class="hbg"></span>';
+			if (i >= bytes.length) {
+				hex += '<span class="hb"></span>';
+				ascii += '<span class="ha"></span>';
+				continue;
+			}
+			const byte = bytes.charCodeAt(i) & 0xff;
+			const changed = mask.charAt(i) === '1' ? ' hx' + side : '';
+			hex += '<span class="hb' + changed + '">' + HEXDIGITS[byte] + '</span>';
+			ascii += '<span class="ha' + changed + '">' + hexAsciiChar(byte) + '</span>';
 		}
-		const cells = '<span class="hoff">${t('compareHexColOffset')}</span><span class="hhex">' + hexHead + '</span><span class="hasc">${t('compareHexColAscii')}</span>';
-		return cells + '<span class="hgap"></span>' + cells;
+		return '<div class="hside"><span class="hoff">' + (bytes === '' ? '' : hexOffsetText(offset)) + '</span>' + hex + '<span class="hg"></span>' + ascii + '</div>';
+	}
+
+	function hexRowHtml(row, odd) {
+		return '<div class="hrow' + (odd ? ' hxOdd' : '') + '">' + hexSideHtml(row.o, row.ob, row.om, 'o') + hexSideHtml(row.n, row.nb, row.nm, 'n') + '</div>';
+	}
+
+	/* The column ruler: a blank offset cell, one hex digit over each byte column (0..F), and
+	   the same digits again over the ASCII pane, on both sides. */
+	function hexRulerHtml() {
+		const group = hexGroupSize(hexBytesPerRow);
+		let hex = '', ascii = '';
+		for (let i = 0; i < hexBytesPerRow; i++) {
+			if (i % group === 0 && i > 0) hex += '<span class="hbg"></span>';
+			const digit = (i % 16).toString(16).toUpperCase();
+			hex += '<span class="hb">' + digit + '</span>';
+			ascii += '<span class="ha">' + digit + '</span>';
+		}
+		const side = '<div class="hside"><span class="hoff"></span>' + hex + '<span class="hg"></span>' + ascii + '</div>';
+		return side + side;
 	}
 
 	function enterHexView(index) {
@@ -325,7 +381,7 @@ export function binaryCompareScript(): string {
 		hexDiffPos = -1;
 		hexRows.clear();
 		hexPending = false;
-		hexOffDigits = 8; // the sizes are not known yet: the 8-digit default until hexInfo answers
+		hexOffDigits = HEX_OFFSET_DIGITS; // the sizes are not known yet: the floor until hexInfo answers
 		hexBytesPerRow = pickHexBytesPerRow();
 		stopImageBlink();
 		imgActive = false;
@@ -335,7 +391,6 @@ export function binaryCompareScript(): string {
 		diffArea.innerHTML =
 			'<div id="hexWrap">' +
 				'<div id="hexToolbar">' +
-					'<span id="hexSizes"></span>' +
 					'<span class="hxSpacer"></span>' +
 					(currentFileIsImage ? '<button id="hexImageBtn">${t('compareImageToggleButton')}</button>' : '') +
 					'<button id="hexPrevBtn" title="${t('compareHexPrevDiff')}">&#9650;</button>' +
@@ -343,17 +398,24 @@ export function binaryCompareScript(): string {
 					'<button id="hexNextBtn" title="${t('compareHexNextDiff')}">&#9660;</button>' +
 				'</div>' +
 				'<div id="hexScroller"><div id="hexInner">' +
-					'<div id="hexHead" class="hrow">' + hexHeadHtml() + '</div>' +
+					'<div id="hexHead">' +
+						'<div id="hexCaps">' +
+							'<div class="hcap"><span>${t('compareImageCaptionOld')}</span><span class="hxSize" id="hexOldSize"></span></div>' +
+							'<div class="hcap"><span>${t('compareImageCaptionNew')}</span><span class="hxSize" id="hexNewSize"></span></div>' +
+						'</div>' +
+						'<div id="hexRuler" class="hrow">' + hexRulerHtml() + '</div>' +
+					'</div>' +
 					'<div id="hexSpacer"><div id="hexView"></div></div>' +
 				'</div></div>' +
 			'</div>';
 		hexEls = {
 			wrap: document.getElementById('hexWrap'),
-			head: document.getElementById('hexHead'),
+			ruler: document.getElementById('hexRuler'),
 			scroller: document.getElementById('hexScroller'),
 			spacer: document.getElementById('hexSpacer'),
 			view: document.getElementById('hexView'),
-			sizes: document.getElementById('hexSizes'),
+			oldSize: document.getElementById('hexOldSize'),
+			newSize: document.getElementById('hexNewSize'),
 			status: document.getElementById('hexDiffStatus'),
 			prev: document.getElementById('hexPrevBtn'),
 			next: document.getElementById('hexNextBtn')
@@ -390,9 +452,9 @@ export function binaryCompareScript(): string {
 			if (cached === undefined) {
 				if (needStart < 0) needStart = row;
 				needEnd = row;
-				html += '<div class="hrow hxPending"></div>';
+				html += '<div class="hrow' + (row % 2 ? ' hxOdd' : '') + '"></div>';
 			} else {
-				html += hexRowHtml(cached);
+				html += hexRowHtml(cached, row % 2 === 1);
 			}
 		}
 		hexEls.view.innerHTML = html;
@@ -828,26 +890,26 @@ export function binaryCompareScript(): string {
 				return true;
 			}
 			hexSameSize = msg.oldSize === msg.newSize;
-			// Size the offset gutter by the largest offset either side will show. A small file's
-			// narrower gutter can also fit a wider row layout, which must be re-picked — the
-			// refresh re-requests everything, so this reply is not applied any further.
-			if (msg.oldSize > 0 || msg.newSize > 0) {
-				const digits = Math.max(Math.max(msg.oldSize, msg.newSize) - 1, 0).toString(16).length;
-				if (digits !== hexOffDigits) {
-					hexOffDigits = digits;
-					if (pickHexBytesPerRow() !== hexBytesPerRow && hexEls !== null) {
-						refreshHexLayout();
-						return true;
-					}
-					applyHexBytesPerRow(); // same row width: only the gutter narrows
+			// Size the offset column by the largest offset either side will show: the eight-digit
+			// floor, growing past 4 GiB. A wider column can push the row layout down a step, which
+			// must be re-picked — the refresh re-requests everything, so this reply is not applied
+			// any further.
+			const digits = hexOffsetDigitsFor(Math.max(msg.oldSize, msg.newSize));
+			if (digits !== hexOffDigits) {
+				hexOffDigits = digits;
+				if (pickHexBytesPerRow() !== hexBytesPerRow && hexEls !== null) {
+					refreshHexLayout();
+					return true;
 				}
+				applyHexBytesPerRow(); // same row width: only the offset column widens
 			}
 			if (typeof msg.bytesPerRow === 'number' && msg.bytesPerRow !== hexBytesPerRow) {
 				hexBytesPerRow = msg.bytesPerRow;
 				applyHexBytesPerRow();
 			}
 			if (hexEls !== null) {
-				hexEls.sizes.innerHTML = HEXSIZES_TPL.replace('{0}', hexBytesLabel(msg.oldSize)).replace('{1}', hexBytesLabel(msg.newSize));
+				hexEls.oldSize.textContent = hexBytesLabel(msg.oldSize);
+				hexEls.newSize.textContent = hexBytesLabel(msg.newSize);
 			}
 			if (msg.sections !== null) {
 				// The scan had already finished (e.g. while another view was showing): no hexMap
