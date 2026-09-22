@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, isImageChange, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
+import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, isImageChange, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { DataSource } from './dataSource';
 import { t } from './i18n';
 import { GitFileChange } from './types';
@@ -60,6 +60,8 @@ export class BinaryCompareView extends Disposable {
 					await respondHexRows(this.session, 0, msg.start, msg.count, this.post());
 				} else if (msg.command === 'getImageData') {
 					await respondImageData(this.session, 0, file, this.post());
+				} else if (msg.command === 'copyToClipboard') {
+					await respondCopyToClipboard(this.post(), msg.type, msg.data);
 				}
 			}),
 			toDisposable(() => {

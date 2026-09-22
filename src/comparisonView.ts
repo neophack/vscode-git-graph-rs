@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
+import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { BinaryCompareView } from './binaryCompareView';
 import { DataSource } from './dataSource';
 import { HexDiffSession } from './hexDiff';
@@ -97,6 +97,8 @@ export class CommitComparisonView extends Disposable {
 					const file = this.fileChanges[msg.index];
 					if (session === null || file === undefined) return;
 					await respondImageData(session, msg.index, file, this.hexPost());
+				} else if (msg.command === 'copyToClipboard') {
+					await respondCopyToClipboard(this.hexPost(), msg.type, msg.data);
 				}
 			}),
 			toDisposable(() => {

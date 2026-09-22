@@ -165,6 +165,56 @@ fn a_missing_path_is_not_found() {
     assert_eq!(error.kind, git_graph_core::ErrorKind::NotFound);
 }
 
+/// Unlike `commit_file`, the raw-byte read hands a binary blob's bytes back instead of
+/// discarding them - the hex/byte-level comparison views need the content precisely because
+/// it is not text.
+#[test]
+fn commit_file_bytes_returns_binary_content_verbatim() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.write("blob.bin", "text\0with a nul\n");
+    let hash = repo.commit("add a binary file");
+
+    let engine = open(&repo);
+    let bytes = blob::commit_file_bytes(&engine, &hash, "blob.bin").unwrap();
+
+    assert_eq!(bytes.as_deref(), Some("text\0with a nul\n".as_bytes()));
+}
+
+/// A path absent from the commit's tree reads as `None`, not an error: it is how the missing
+/// side of an added/deleted file materializes for the byte-level comparison views.
+#[test]
+fn commit_file_bytes_of_a_missing_path_is_none() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let hash = repo.commit_file("a.txt", "1\n", "first");
+
+    let engine = open(&repo);
+    let bytes = blob::commit_file_bytes(&engine, &hash, "no-such.bin").unwrap();
+
+    assert_eq!(bytes, None);
+}
+
+/// The staged copy's raw bytes, between "Modified" and "Staged" - the same content
+/// `index_file` reports as binary without handing back.
+#[test]
+fn index_file_bytes_reads_the_staged_binary_copy() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.write("staged.bin", "one\0two\n");
+    repo.git(&["add", "staged.bin"]);
+
+    let engine = open(&repo);
+    let bytes = blob::index_file_bytes(&engine, "staged.bin").unwrap();
+
+    assert_eq!(bytes.as_deref(), Some("one\0two\n".as_bytes()));
+    assert_eq!(
+        blob::index_file_bytes(&engine, "no-such.bin").unwrap(),
+        None
+    );
+}
+
 #[test]
 fn diffs_a_modified_file_against_its_parent() {
     require_git!();

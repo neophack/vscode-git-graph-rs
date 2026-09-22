@@ -2,7 +2,7 @@ import { DataSource } from './dataSource';
 import { HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
 import { t } from './i18n';
 import { GitFileChange } from './types';
-import { UNCOMMITTED } from './utils';
+import { UNCOMMITTED, copyToClipboard } from './utils';
 
 /**
  * Everything the two binary comparison surfaces share: the Commit Comparison View's embedded
@@ -107,6 +107,15 @@ export async function respondImageData(session: HexDiffSession, index: number, f
 	}
 }
 
+/**
+ * Answer a page's `copyToClipboard`: the hex view's own selection copy, and its Copy Address -
+ * both read entirely from data the page already has (the cached rows), so this only ever writes
+ * the clipboard and echoes back whether that succeeded.
+ */
+export async function respondCopyToClipboard(post: BinaryComparePost, type: string, data: string): Promise<void> {
+	post({ command: 'copyToClipboard', type: type, error: await copyToClipboard(data) });
+}
+
 /** Is a file change one the picture mode can render? (Shared so both pages agree with the responders.) */
 export function isImageChange(file: GitFileChange): boolean {
 	const filePath = file.newFilePath !== '' ? file.newFilePath : file.oldFilePath;
@@ -147,7 +156,7 @@ export function binaryCompareCss(): string {
 		/* Each side is a grid over the template the script builds (offset | bytes | gutter |
 		   ASCII), sized in ch so the ruler's digits sit exactly over their byte columns. A rule
 		   down the middle keeps the sides apart the way the offset and gutter rules do. */
-		.hside { display: grid; grid-template-columns: var(--hcols); flex: 1 1 50%; min-width: 0; padding: 0 12px; }
+		.hside { display: grid; grid-template-columns: var(--hcols); flex: 1 1 50%; min-width: 0; padding: 0 12px; user-select: none; }
 		.hside:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
 		.hoff { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); padding-right: 1ch; border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
 		.hb, .ha { text-align: center; }
@@ -164,6 +173,23 @@ export function binaryCompareCss(): string {
 		.hb.hxn, .ha.hxn { background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #81b88b) 24%, transparent); }
 		.ha.hxo { color: var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
 		.ha.hxn { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
+		/* A selection is one shared span of grid position (row, column), painted identically on
+		   both sides — the same position can hold different bytes on each side, so this marks
+		   "the same spot in the comparison", not "the same file address". Layered under the diff
+		   tint (later in the sheet), so a selected changed byte keeps its red/green and gains the
+		   selection's outline. */
+		.hb.hxSel, .ha.hxSel { background: var(--vscode-editor-selectionBackground, #264f78); }
+		.hb.hxSel.hxo, .ha.hxSel.hxo { box-shadow: inset 0 0 0 1px var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
+		.hb.hxSel.hxn, .ha.hxSel.hxn { box-shadow: inset 0 0 0 1px var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
+		.hxCopyStatus { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+		/* The right-click menu: a minimal VS Code-styled popup, since this page has none of the
+		   main Git Graph view's bundled menu component. */
+		#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, rgba(128,128,128,0.35))); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
+		.hexMenuItem { padding: 4px 14px; cursor: pointer; white-space: nowrap; }
+		.hexMenuItem:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
+		.hexMenuItem.disabled { opacity: 0.45; cursor: default; }
+		.hexMenuItem.disabled:hover { background: none; }
+		.hexMenuSep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
 		/* Image comparison view: old picture | pixel difference | new picture */
 		#diffArea.imgMode { overflow: hidden; display: flex; }
 		#imgWrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -201,6 +227,14 @@ export function binaryCompareScript(): string {
 	for (let i = 0; i < 256; i++) HEXDIGITS.push(((i < 16 ? '0' : '') + i.toString(16)).toUpperCase());
 	const HEXDIFF_TPL = '${t('compareHexDiffStatus', '{0}', '{1}')}';
 	const IMGSTATS_TPL = '${t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5}')}';
+	const HEXCOPY_DONE_TPL = '${t('compareHexCopyDone', '{0}')}';
+	const HEXCOPY_TOOLARGE_TPL = '${t('compareHexCopyTooLarge', '{0}')}';
+	const HEX_OLD_LABEL = '${t('compareImageCaptionOld')}';
+	const HEX_NEW_LABEL = '${t('compareImageCaptionNew')}';
+	/* The largest selection Copy reads at once, in cells (one cell is one byte on one side): a
+	   clipboard payload, not a file dump - past this, Copy is refused with a reminder rather than
+	   fetching an unbounded number of rows one request at a time. */
+	const HEX_COPY_LIMIT = 10 * 1024 * 1024;
 	function bcEscapeHtml(str) {
 		return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
@@ -214,6 +248,28 @@ export function binaryCompareScript(): string {
 	let currentFileIsImage = false;
 	const hexRows = new Map();
 	let hexPending = false, hexEls = null, hexScrollQueued = false;
+	/* ---------- Selection & copy ---------- */
+	/* A selection is a span of grid position, not file address: [hexSelAnchor, hexSelHead] as
+	   linear indices row*hexBytesPerRow+col, painted the same on both sides (see hexCellSelected) -
+	   the position a drag picks, not the bytes there, since the two sides can differ at it. -1
+	   means "not placed yet"; both invalidated whenever the row width changes (refreshHexLayout,
+	   enterHexView), since the linear index's meaning depends on it. */
+	let hexSelAnchor = -1, hexSelHead = -1;
+	/* The side ('o'/'n') and pane ('hex'/'ascii') a drag or click started in - a plain Copy reads
+	   that side, and 'smart' format follows that pane the way the hex viewer's own Copy does. The
+	   right-click menu overrides both with wherever it landed. */
+	let hexSelSide = 'o', hexSelPane = 'hex';
+	let hexDragging = false;
+	/* The absolute row index of hexEls.view's first child - renderHexViewport keeps it current -
+	   so a delegated event on a cell can recover that cell's row from its position in the DOM
+	   without the row's own address (which a differing side may not have). */
+	let hexViewFirstRow = 0;
+	/* Pending getHexRows fetches made for a copy (as opposed to the viewport's own, independent
+	   one): each resolves true once every row it asked for is cached, false on a reply that
+	   reported an error or an intervening layout change. */
+	let hexCopyWaiters = [];
+	let hexMenuEl = null;
+	let hexCopyStatusTimer = null;
 	let imgActive = false, imgEls = null, imgIndex = -1;
 	let imgZoomMode = -1, imgScale = 1, imgOld = null, imgNew = null, imgOldBytes = -1, imgNewBytes = -1;
 	/* The difference engine: one Uint8 per-pixel maximum channel delta (0..255, 255 where a
@@ -315,8 +371,355 @@ export function binaryCompareScript(): string {
 		hexSections = null;
 		hexDiffs = [];
 		hexDiffPos = -1;
+		// The row width is changing: hexSelAnchor/hexSelHead are linear indices over the OLD
+		// width, meaningless (and liable to point at the wrong bytes) under the new one.
+		hexClearSelection();
+		hexCancelCopyWaiters();
 		updateHexNav();
 		vscode.postMessage({ command: 'getHexInfo', index: hexIndex, bytesPerRow: hexBytesPerRow });
+	}
+
+	/* ---------- Selection & copy ---------- */
+
+	function hexHasSelection() {
+		return hexSelAnchor >= 0 && hexSelHead >= 0 && hexSelAnchor !== hexSelHead;
+	}
+
+	function hexSelStart() {
+		return Math.min(hexSelAnchor, hexSelHead);
+	}
+
+	function hexSelEnd() {
+		return Math.max(hexSelAnchor, hexSelHead);
+	}
+
+	/* Whether grid position (rowIndex, col) - not a file address - falls in the selection.
+	   rowIndex < 0 stands for "no real row" (the probe row hexRowHtml is measured with), which
+	   never selects. */
+	function hexCellSelected(rowIndex, col) {
+		if (rowIndex < 0 || !hexHasSelection()) return false;
+		const idx = rowIndex * hexBytesPerRow + col;
+		return idx >= hexSelStart() && idx <= hexSelEnd();
+	}
+
+	function hexClearSelection() {
+		hexSelAnchor = -1;
+		hexSelHead = -1;
+		hexDragging = false;
+	}
+
+	/* The byte a hex or ASCII cell under a delegated event stands for: its row (recovered from
+	   its position among hexEls.view's children, kept in lockstep by hexViewFirstRow - the row
+	   itself carries no address a differing side can be trusted to have), its column (its
+	   position among its own side's .hb or .ha cells - the .hbg gap spacers carry a different
+	   class, so they do not throw the count off), and which side and pane it belongs to. NULL
+	   anywhere else in the view (the offset cell, the gutter, a still-loading placeholder row). */
+	function hexCellAt(target) {
+		if (target === null || target === undefined || typeof target.closest !== 'function') return null;
+		const cell = target.closest('.hb, .ha');
+		if (cell === null || hexEls === null) return null;
+		const sideEl = cell.closest('.hside');
+		const rowEl = cell.closest('.hrow');
+		if (sideEl === null || rowEl === null) return null;
+		const rowPos = Array.prototype.indexOf.call(hexEls.view.children, rowEl);
+		if (rowPos < 0) return null;
+		const pane = cell.classList.contains('ha') ? 'ascii' : 'hex';
+		const cells = sideEl.querySelectorAll(pane === 'ascii' ? '.ha' : '.hb');
+		const col = Array.prototype.indexOf.call(cells, cell);
+		if (col < 0) return null;
+		const side = rowEl.children[0] === sideEl ? 'o' : 'n';
+		return { row: hexViewFirstRow + rowPos, col: col, side: side, pane: pane };
+	}
+
+	function hexCellIndex(row, col) {
+		return row * hexBytesPerRow + col;
+	}
+
+	function hexOnMouseDown(event) {
+		if (event.button !== 0) return;
+		const cell = hexCellAt(event.target);
+		if (cell === null) return;
+		// The cells carry the selection model; the browser's own text selection has no business
+		// over them (user-select: none on .hside already discourages it, this stops it outright).
+		event.preventDefault();
+		hexDragging = true;
+		const idx = hexCellIndex(cell.row, cell.col);
+		if (event.shiftKey && hexSelAnchor >= 0) {
+			hexSelHead = idx;
+			hexSelSide = cell.side;
+			hexSelPane = cell.pane;
+			renderHexViewport();
+			return;
+		}
+		hexSelAnchor = idx;
+		hexSelHead = idx;
+		hexSelSide = cell.side;
+		hexSelPane = cell.pane;
+		renderHexViewport();
+	}
+
+	function hexOnMouseMove(event) {
+		if (!hexDragging) return;
+		const cell = hexCellAt(event.target);
+		if (cell === null) return;
+		const idx = hexCellIndex(cell.row, cell.col);
+		if (idx === hexSelHead) return;
+		hexSelHead = idx;
+		renderHexViewport();
+	}
+
+	function hexOnMouseUp() {
+		hexDragging = false;
+	}
+	window.addEventListener('mouseup', hexOnMouseUp);
+
+	/* ---------- The right-click menu ---------- */
+	/* Nothing in this page's own bundle draws a menu (the main Git Graph view's is a separate,
+	   much larger script this lightweight page does not include), so this is a minimal
+	   VS Code-styled popup built by hand: a fixed-position list, closed by clicking away, an
+	   Escape, or picking an item. */
+
+	function hexCloseMenu() {
+		if (hexMenuEl !== null) {
+			hexMenuEl.remove();
+			hexMenuEl = null;
+		}
+	}
+
+	/* items: entries of { label, disabled, run } and the literal string 'sep' for a divider. */
+	function hexShowMenu(x, y, items) {
+		hexCloseMenu();
+		const menu = document.createElement('div');
+		menu.id = 'hexMenu';
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			if (item === 'sep') {
+				const sep = document.createElement('div');
+				sep.className = 'hexMenuSep';
+				menu.appendChild(sep);
+				continue;
+			}
+			const row = document.createElement('div');
+			row.className = 'hexMenuItem' + (item.disabled ? ' disabled' : '');
+			row.textContent = item.label;
+			if (!item.disabled) {
+				row.addEventListener('click', function (clickEvent) {
+					clickEvent.stopPropagation();
+					hexCloseMenu();
+					item.run();
+				});
+			}
+			menu.appendChild(row);
+		}
+		document.body.appendChild(menu);
+		const rect = menu.getBoundingClientRect();
+		const left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
+		const top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
+		menu.style.left = left + 'px';
+		menu.style.top = top + 'px';
+		hexMenuEl = menu;
+	}
+
+	document.addEventListener('mousedown', function (event) {
+		if (hexMenuEl !== null && (event.target === null || typeof event.target.closest !== 'function' || event.target.closest('#hexMenu') === null)) {
+			hexCloseMenu();
+		}
+	});
+	document.addEventListener('keydown', function (event) {
+		if (event.key === 'Escape' && hexMenuEl !== null) hexCloseMenu();
+	});
+
+	function hexOnContextMenu(event) {
+		event.preventDefault();
+		hexDragging = false;
+		const cell = hexCellAt(event.target);
+		const selected = hexHasSelection();
+		const side = cell !== null ? cell.side : hexSelSide;
+		const pane = cell !== null ? cell.pane : hexSelPane;
+		const sideLabel = side === 'o' ? HEX_OLD_LABEL : HEX_NEW_LABEL;
+		const copyItem = function (label, format) {
+			return { label: label + ' \\u2014 ' + sideLabel, disabled: !selected, run: function () { void hexCopySelection(format, side, pane); } };
+		};
+		hexShowMenu(event.clientX, event.clientY, [
+			copyItem('${t('compareHexMenuCopy')}', 'smart'),
+			copyItem('${t('compareHexMenuCopyHex')}', 'hex'),
+			copyItem('${t('compareHexMenuCopyText')}', 'text'),
+			copyItem('${t('compareHexMenuCopyC')}', 'c'),
+			copyItem('${t('compareHexMenuCopyBase64')}', 'base64'),
+			{ label: '${t('compareHexMenuCopyAddress')}', disabled: !selected && cell === null, run: function () { hexCopyAddress(cell); } },
+			'sep',
+			{ label: '${t('compareHexMenuClearSelection')}', disabled: !selected, run: function () { hexClearSelection(); renderHexViewport(); } }
+		]);
+	}
+
+	/* ---------- Copy ---------- */
+
+	function hexSetCopyStatus(text) {
+		if (hexEls === null || hexEls.copyStatus === undefined || hexEls.copyStatus === null) return;
+		hexEls.copyStatus.textContent = text;
+		if (hexCopyStatusTimer !== null) clearTimeout(hexCopyStatusTimer);
+		const forEls = hexEls;
+		hexCopyStatusTimer = setTimeout(function () {
+			if (forEls.copyStatus !== null && forEls.copyStatus !== undefined) forEls.copyStatus.textContent = '';
+		}, 4000);
+	}
+
+	/* Settles every pending copy fetch that asked for rows starting at "start" (the viewport's
+	   own request can share that start, so a reply is only ever a PARTIAL cover of what a waiter
+	   asked for) - "ok" false settles the waiter failed outright (an erroring reply, or one that
+	   belongs to a page or layout the waiter is no longer part of); a successful reply settles
+	   the waiter only once every row it asked for is actually in hexRows, and leaves it pending
+	   otherwise, for the copy's own complete reply to finish. */
+	function hexResolveCopyWaiters(start, ok) {
+		for (let i = hexCopyWaiters.length - 1; i >= 0; i--) {
+			const waiter = hexCopyWaiters[i];
+			if (waiter.first !== start) continue;
+			if (!ok || waiter.layoutVersion !== hexLayoutVersion) {
+				hexCopyWaiters.splice(i, 1);
+				waiter.resolve(false);
+				continue;
+			}
+			let complete = true;
+			for (let row = waiter.first; row <= waiter.last; row++) {
+				if (!hexRows.has(row)) { complete = false; break; }
+			}
+			if (complete) {
+				hexCopyWaiters.splice(i, 1);
+				waiter.resolve(true);
+			}
+		}
+	}
+
+	/* Settle every pending copy fetch as failed: a row-width change or a re-entry gives the
+	   waiters' row indices a new meaning, so whatever reply arrives next answers a question
+	   nobody asked any more. Resolving (rather than dropping) matters because
+	   hexEnsureRowsCached is still awaiting each waiter. */
+	function hexCancelCopyWaiters() {
+		for (let i = 0; i < hexCopyWaiters.length; i++) hexCopyWaiters[i].resolve(false);
+		hexCopyWaiters = [];
+	}
+
+	/* Makes sure rows [first, last] are in hexRows, fetching whatever is missing in batches (the
+	   host caps a single getHexRows at 512 rows) - the viewport's own request (hexPending) is
+	   independent and may be in flight at the same time; the two never collide because each
+	   waiter is only resolved by the one reply whose start matches what it asked for. */
+	async function hexEnsureRowsCached(first, last) {
+		for (let row = first; row <= last;) {
+			if (hexRows.has(row)) { row++; continue; }
+			const end = Math.min(last, row + 511);
+			const layoutVersion = hexLayoutVersion;
+			const ok = await new Promise(function (resolve) {
+				hexCopyWaiters.push({ first: row, last: end, layoutVersion: layoutVersion, resolve: resolve });
+				vscode.postMessage({ command: 'getHexRows', index: hexIndex, start: row, count: end - row + 1 });
+			});
+			if (!ok) return false;
+			row = end + 1;
+		}
+		return true;
+	}
+
+	/* One side's bytes over grid positions [cellStart, cellEnd] (inclusive, linear row*width+col
+	   indices) - only the positions that side actually has a byte at; a position past a short
+	   row, or a row with nothing cached, contributes nothing (NULL: the row was never fetched -
+	   the caller is expected to have awaited hexEnsureRowsCached first). */
+	function hexReadSideBytes(side, rowFirst, rowLast, cellStart, cellEnd) {
+		const out = [];
+		for (let row = rowFirst; row <= rowLast; row++) {
+			const cached = hexRows.get(row);
+			if (cached === undefined) return null;
+			const b64 = side === 'o' ? cached.ob : cached.nb;
+			const bytes = b64 === '' ? '' : atob(b64);
+			const rowBase = row * hexBytesPerRow;
+			const colFrom = Math.max(0, cellStart - rowBase);
+			const colTo = Math.min(hexBytesPerRow - 1, cellEnd - rowBase);
+			for (let col = colFrom; col <= colTo; col++) {
+				if (col < bytes.length) out.push(bytes.charCodeAt(col) & 0xff);
+			}
+		}
+		return out;
+	}
+
+	function hexBytesToLatin1(bytes) {
+		let text = '';
+		for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+		return text;
+	}
+
+	function hexFormatBytes(bytes, format, pane) {
+		if (format === 'base64') return btoa(hexBytesToLatin1(bytes));
+		if (format === 'c') return bytes.map(function (b) { return '0x' + HEXDIGITS[b]; }).join(', ');
+		if (format === 'text' || (format === 'smart' && pane === 'ascii')) return hexBytesToLatin1(bytes);
+		return bytes.map(function (b) { return HEXDIGITS[b]; }).join('');
+	}
+
+	/* Copies the selection in one of the hex viewer's own formats, reading side's file over the
+	   selected grid span - 'smart' honours pane: hex bytes from the hex pane, raw text from the
+	   ASCII pane, the way the standalone hex editor's Copy does. */
+	async function hexCopySelection(format, side, pane) {
+		if (!hexHasSelection()) return;
+		const start = hexSelStart(), end = hexSelEnd();
+		if (end - start + 1 > HEX_COPY_LIMIT) {
+			hexSetCopyStatus(HEXCOPY_TOOLARGE_TPL.replace('{0}', (end - start + 1).toLocaleString()));
+			return;
+		}
+		const rowFirst = Math.floor(start / hexBytesPerRow), rowLast = Math.floor(end / hexBytesPerRow);
+		const ok = await hexEnsureRowsCached(rowFirst, rowLast);
+		// The page may have left the hex view, the selection may have been cleared, or the layout
+		// may have changed, while the fetch was in flight.
+		if (!hexActive || !hexHasSelection() || hexSelStart() !== start || hexSelEnd() !== end) return;
+		if (!ok) {
+			hexSetCopyStatus('${t('compareHexCopyReadFailed')}');
+			return;
+		}
+		const bytes = hexReadSideBytes(side, rowFirst, rowLast, start, end);
+		if (bytes === null) {
+			hexSetCopyStatus('${t('compareHexCopyReadFailed')}');
+			return;
+		}
+		const text = hexFormatBytes(bytes, format, pane);
+		vscode.postMessage({ command: 'copyToClipboard', type: 'Hex Bytes', data: text });
+		hexSetCopyStatus(HEXCOPY_DONE_TPL.replace('{0}', side === 'o' ? HEX_OLD_LABEL : HEX_NEW_LABEL));
+	}
+
+	/* The real address behind grid position (row, col) on one side - NULL when that side has no
+	   byte there (a short row, or a row not yet cached). */
+	function hexAddressAt(row, col, side) {
+		const cached = hexRows.get(row);
+		if (cached === undefined) return null;
+		const offset = side === 'o' ? cached.o : cached.n;
+		if (offset < 0) return null;
+		const b64 = side === 'o' ? cached.ob : cached.nb;
+		const length = b64 === '' ? 0 : atob(b64).length;
+		if (col >= length) return null;
+		return hexOffsetText(offset + col);
+	}
+
+	/* Copies the address(es) behind the right-click: with a selection, both sides' real start-end
+	   spans for that grid span (which can genuinely differ - a diff aligns by position, not
+	   address); over a lone byte with nothing selected, that byte's own side's address. Every row
+	   involved is one the user has already clicked or dragged over, so it is already cached -
+	   no fetch is needed here the way Copy's selection body needs one. */
+	function hexCopyAddress(cell) {
+		let text = null;
+		if (hexHasSelection()) {
+			const start = hexSelStart(), end = hexSelEnd();
+			const rowFirst = Math.floor(start / hexBytesPerRow), colFirst = start - rowFirst * hexBytesPerRow;
+			const rowLast = Math.floor(end / hexBytesPerRow), colLast = end - rowLast * hexBytesPerRow;
+			const oldFrom = hexAddressAt(rowFirst, colFirst, 'o'), oldTo = hexAddressAt(rowLast, colLast, 'o');
+			const newFrom = hexAddressAt(rowFirst, colFirst, 'n'), newTo = hexAddressAt(rowLast, colLast, 'n');
+			const oldText = oldFrom !== null && oldTo !== null ? oldFrom + '-' + oldTo : '\\u2014';
+			const newText = newFrom !== null && newTo !== null ? newFrom + '-' + newTo : '\\u2014';
+			text = HEX_OLD_LABEL + ' ' + oldText + '   ' + HEX_NEW_LABEL + ' ' + newText;
+		} else if (cell !== null) {
+			const address = hexAddressAt(cell.row, cell.col, cell.side);
+			// A bare address is ambiguous in a comparison - the same position can hold different
+			// addresses on the two sides - so the lone byte names its side too, the way the
+			// selection path names both.
+			if (address !== null) text = (cell.side === 'o' ? HEX_OLD_LABEL : HEX_NEW_LABEL) + ' ' + address;
+		}
+		if (text === null) return;
+		vscode.postMessage({ command: 'copyToClipboard', type: 'Address', data: text });
+		hexSetCopyStatus('${t('compareHexCopyDoneAddress')}');
 	}
 
 	/* The ASCII pane's glyph for a byte: printable ASCII and Latin-1 as themselves, a 0x00 as a
@@ -331,28 +734,32 @@ export function binaryCompareScript(): string {
 
 	/* One side of a row: the offset cell, a cell per byte (blank past a short tail so the grid
 	   keeps its tracks), the gutter, and a cell per ASCII character. A side without a row on
-	   this line - the other file runs longer here - keeps its cells empty. */
-	function hexSideHtml(offset, b64, mask, side) {
+	   this line - the other file runs longer here - keeps its cells empty. rowIndex (-1 when
+	   omitted) is the row's absolute grid position, purely for hexCellSelected - it plays no
+	   part in which bytes are shown. */
+	function hexSideHtml(offset, b64, mask, side, rowIndex) {
 		const bytes = offset < 0 || b64 === '' ? '' : atob(b64);
 		const group = hexGroupSize(hexBytesPerRow);
 		let hex = '', ascii = '';
 		for (let i = 0; i < hexBytesPerRow; i++) {
 			if (i % group === 0 && i > 0) hex += '<span class="hbg"></span>';
+			const sel = hexCellSelected(rowIndex, i) ? ' hxSel' : '';
 			if (i >= bytes.length) {
-				hex += '<span class="hb"></span>';
-				ascii += '<span class="ha"></span>';
+				hex += '<span class="hb' + sel + '"></span>';
+				ascii += '<span class="ha' + sel + '"></span>';
 				continue;
 			}
 			const byte = bytes.charCodeAt(i) & 0xff;
 			const changed = mask.charAt(i) === '1' ? ' hx' + side : '';
-			hex += '<span class="hb' + changed + '">' + HEXDIGITS[byte] + '</span>';
-			ascii += '<span class="ha' + changed + '">' + hexAsciiChar(byte) + '</span>';
+			hex += '<span class="hb' + changed + sel + '">' + HEXDIGITS[byte] + '</span>';
+			ascii += '<span class="ha' + changed + sel + '">' + hexAsciiChar(byte) + '</span>';
 		}
 		return '<div class="hside"><span class="hoff">' + (bytes === '' ? '' : hexOffsetText(offset)) + '</span>' + hex + '<span class="hg"></span>' + ascii + '</div>';
 	}
 
-	function hexRowHtml(row, odd) {
-		return '<div class="hrow' + (odd ? ' hxOdd' : '') + '">' + hexSideHtml(row.o, row.ob, row.om, 'o') + hexSideHtml(row.n, row.nb, row.nm, 'n') + '</div>';
+	function hexRowHtml(row, odd, rowIndex) {
+		if (rowIndex === undefined) rowIndex = -1;
+		return '<div class="hrow' + (odd ? ' hxOdd' : '') + '">' + hexSideHtml(row.o, row.ob, row.om, 'o', rowIndex) + hexSideHtml(row.n, row.nb, row.nm, 'n', rowIndex) + '</div>';
 	}
 
 	/* The column ruler: a blank offset cell, one hex digit over each byte column (0..F), and
@@ -383,6 +790,10 @@ export function binaryCompareScript(): string {
 		hexPending = false;
 		hexOffDigits = HEX_OFFSET_DIGITS; // the sizes are not known yet: the floor until hexInfo answers
 		hexBytesPerRow = pickHexBytesPerRow();
+		hexClearSelection();
+		hexCancelCopyWaiters();
+		hexViewFirstRow = 0;
+		hexCloseMenu();
 		stopImageBlink();
 		imgActive = false;
 		imgEls = null;
@@ -391,6 +802,7 @@ export function binaryCompareScript(): string {
 		diffArea.innerHTML =
 			'<div id="hexWrap">' +
 				'<div id="hexToolbar">' +
+					'<span id="hexCopyStatus" class="hxCopyStatus"></span>' +
 					'<span class="hxSpacer"></span>' +
 					(currentFileIsImage ? '<button id="hexImageBtn">${t('compareImageToggleButton')}</button>' : '') +
 					'<button id="hexPrevBtn" title="${t('compareHexPrevDiff')}">&#9650;</button>' +
@@ -417,6 +829,7 @@ export function binaryCompareScript(): string {
 			oldSize: document.getElementById('hexOldSize'),
 			newSize: document.getElementById('hexNewSize'),
 			status: document.getElementById('hexDiffStatus'),
+			copyStatus: document.getElementById('hexCopyStatus'),
 			prev: document.getElementById('hexPrevBtn'),
 			next: document.getElementById('hexNextBtn')
 		};
@@ -424,6 +837,11 @@ export function binaryCompareScript(): string {
 		hexEls.scroller.addEventListener('scroll', queueHexRender);
 		hexEls.prev.addEventListener('click', function () { hexNavigate(-1); });
 		hexEls.next.addEventListener('click', function () { hexNavigate(1); });
+		// Delegated on the view's own stable element - its innerHTML is rebuilt on every render,
+		// but the element itself survives, so one listener here outlives every row it ever holds.
+		hexEls.view.addEventListener('mousedown', hexOnMouseDown);
+		hexEls.view.addEventListener('mousemove', hexOnMouseMove);
+		hexEls.view.addEventListener('contextmenu', hexOnContextMenu);
 		const hexImageBtn = document.getElementById('hexImageBtn');
 		if (hexImageBtn !== null) hexImageBtn.addEventListener('click', function () { enterImageView(hexIndex); });
 		updateHexNav();
@@ -446,6 +864,10 @@ export function binaryCompareScript(): string {
 		const first = Math.max(0, Math.floor(top / HEX_ROW_H) - 16);
 		const last = Math.min(hexTotalRows - 1, Math.ceil((top + height) / HEX_ROW_H) + 24);
 		hexEls.view.style.transform = 'translateY(' + (first * HEX_ROW_H) + 'px)';
+		// hexOnMouseDown/hexOnMouseMove recover a cell's row from its position among these
+		// children (renderHexViewport always rebuilds first..last with none skipped), so this
+		// must stay in lockstep with what is actually drawn below.
+		hexViewFirstRow = first;
 		let html = '', needStart = -1, needEnd = -1;
 		for (let row = first; row <= last; row++) {
 			const cached = hexRows.get(row);
@@ -454,7 +876,7 @@ export function binaryCompareScript(): string {
 				needEnd = row;
 				html += '<div class="hrow' + (row % 2 ? ' hxOdd' : '') + '"></div>';
 			} else {
-				html += hexRowHtml(cached, row % 2 === 1);
+				html += hexRowHtml(cached, row % 2 === 1, row);
 			}
 		}
 		hexEls.view.innerHTML = html;
@@ -535,6 +957,9 @@ export function binaryCompareScript(): string {
 		stopImageBlink();
 		hexActive = false;
 		hexEls = null;
+		// A copy still fetching rows for the hex view has nothing to land in any more; settling
+		// it here also covers a page that is disposed before the reply arrives at all.
+		hexCancelCopyWaiters();
 		diffArea.className = 'imgMode';
 		diffArea.innerHTML =
 			'<div id="imgWrap">' +
@@ -932,7 +1357,12 @@ export function binaryCompareScript(): string {
 			return true;
 		}
 		if (msg.command === 'hexRows') {
-			if (!hexActive || msg.index !== hexIndex) return true;
+			if (!hexActive || msg.index !== hexIndex) {
+				// The page moved on (or this pane's index isn't the active one): a copy fetch may
+				// still be waiting on this exact reply, so it must not be left hanging forever.
+				hexResolveCopyWaiters(msg.start, false);
+				return true;
+			}
 			hexPending = false;
 			if (msg.error !== null) {
 				if (hexEls !== null) hexEls.status.innerHTML = bcEscapeHtml(msg.error);
@@ -944,7 +1374,15 @@ export function binaryCompareScript(): string {
 					hexRows.delete(oldest.value);
 				}
 			}
+			hexResolveCopyWaiters(msg.start, msg.error === null);
 			renderHexViewport();
+			return true;
+		}
+		if (msg.command === 'copyToClipboard') {
+			// The write itself already happened optimistically (hexCopySelection/hexCopyAddress set
+			// the status right after posting); only a genuine failure needs to override it, with the
+			// host's own already-localised reason.
+			if (msg.error !== null) hexSetCopyStatus(msg.error);
 			return true;
 		}
 		if (msg.command === 'imageData') {

@@ -59,6 +59,23 @@ pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFil
     }
 }
 
+/// Read one file's raw bytes at a commit, whatever they are — unlike [`commit_file`], a binary
+/// blob is not discarded. The byte-level comparison views (the hex viewer, the hex/image
+/// comparison) need the original content precisely because it is not text.
+///
+/// `None` when the path does not exist in the commit's tree, which is how the missing side of
+/// an added or deleted file reads: not an error, just nothing to show there.
+pub fn commit_file_bytes(repo: &Repo, hash: &str, file_path: &str) -> Result<Option<Vec<u8>>> {
+    let id = repo.resolve_commit(hash)?;
+    let git = repo.borrow();
+    let tree = git
+        .find_commit(id)
+        .git_ctx("Could not read the commit")?
+        .tree()
+        .git_ctx("Could not read the commit tree")?;
+    blob_at(&git, &tree, file_path)
+}
+
 /* ---------- Single-file unified diff ---------- */
 
 /* ---------- File content in the index ---------- */
@@ -96,6 +113,22 @@ pub fn index_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
             binary: true,
         }),
     }
+}
+
+/// The same as [`commit_file_bytes`], for the staged copy: `None` when the path is not in the
+/// index.
+pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>> {
+    let git = repo.borrow();
+    let index = git.index().git_ctx("Could not read the index")?;
+    let Some(entry) = index.entry_by_path(file_path.as_bytes().into()) else {
+        return Ok(None);
+    };
+    let data = git
+        .find_blob(entry.id)
+        .git_ctx("Could not read the blob")?
+        .data
+        .to_vec();
+    Ok(Some(data))
 }
 
 /// The unified diff of one file between a commit and its first parent.

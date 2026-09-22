@@ -142,7 +142,11 @@ function makeHarness() {
 			if (!elements.has(id)) elements.set(id, makeStubElement('DIV'));
 			return elements.get(id);
 		},
-		createElement(tag) { return tag.toLowerCase() === 'canvas' ? makeStubCanvas() : makeStubElement(tag.toUpperCase()); }
+		createElement(tag) { return tag.toLowerCase() === 'canvas' ? makeStubCanvas() : makeStubElement(tag.toUpperCase()); },
+		// The shared script's hex selection installs its menu-close listeners on the document;
+		// this harness drives the picture engine only, so they are no-ops here.
+		addEventListener() { },
+		removeEventListener() { }
 	};
 	const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame',
 		binaryCompareScript() + `;return {

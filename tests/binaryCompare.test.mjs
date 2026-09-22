@@ -1,11 +1,15 @@
 /**
  * The plumbing around the hex comparison that both comparison pages share: the flattened section
- * layout, the host-side `hexInfo` / `hexMap` / `hexRows` responders (driven against throwaway git
- * repositories, like the hex tests), and the templates `binaryCompareScript()` bakes into the page.
+ * layout, the host-side `hexInfo` / `hexMap` / `hexRows` / `copyToClipboard` responders (driven
+ * against throwaway git repositories, like the hex tests), the templates `binaryCompareScript()`
+ * bakes into the page, and the script's own selection & copy surface — the painted selection, the
+ * copy formats, the row fetches a copy makes for uncached spans, the address copies, and the
+ * right-click menu that drives them all.
  *
  * The responders are the protocol boundary the webview talks to, so what matters is the echo:
- * the row width the page measured is the one the layout — and the reply — must use, and the scan
- * result must arrive as the flattened `hexMap` the page's renderer consumes.
+ * the row width the page measured is the one the layout — and the reply — must use, the scan
+ * result must arrive as the flattened `hexMap` the page's renderer consumes, and the clipboard
+ * write must answer with the outcome the page's status line shows.
  */
 
 import assert from 'node:assert/strict';
@@ -19,10 +23,20 @@ import { describe, it } from 'node:test';
 /* out/binaryCompare.js transitively requires the extension-host-only 'vscode' module (through
    dataSource and i18n). These tests exercise the vscode-free parts, so resolve it to a stub whose
    configuration answers with defaults — pinning the strings the script bakes in to the English
-   dictionary, the same one the imported t() below reads. */
+   dictionary, the same one the imported t() below reads. The clipboard is a controllable stub so
+   the copy responder's echo can be pinned in both its outcomes. */
+const clipboardState = { text: null, fail: false };
 const vscodeStub = {
 	Uri: { file: (p) => ({ fsPath: p, path: p }) },
-	env: { language: 'en' },
+	env: {
+		language: 'en',
+		clipboard: {
+			writeText: (text) => {
+				clipboardState.text = text;
+				return clipboardState.fail ? Promise.reject(new Error('clipboard unavailable')) : Promise.resolve();
+			}
+		}
+	},
 	/* config.js maps configured column names to these at module load time. */
 	ViewColumn: { Active: 1, Beside: 2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 },
 	workspace: {
@@ -40,7 +54,7 @@ Module._load = function (request, parent, isMain) {
 	return originalLoad.apply(this, arguments);
 };
 
-const { binaryCompareScript, createHexSession, flatSections, respondHexInfo, respondHexRows, wireHexSession } = await import('../out/binaryCompare.js');
+const { binaryCompareScript, createHexSession, flatSections, respondCopyToClipboard, respondHexInfo, respondHexRows, wireHexSession } = await import('../out/binaryCompare.js');
 const { t } = await import('../out/i18n.js');
 const { UNCOMMITTED } = await import('../out/utils.js');
 
@@ -281,8 +295,12 @@ function makeHexHarness(webviewWidth) {
 			tagName: String(tag).toUpperCase(),
 			style: { setProperty: (name, value) => cssVars.push([name, String(value)]) },
 			addEventListener() { },
-			appendChild() { },
+			// The right-click menu is built from real createElement calls; recording what is
+			// appended is how the tests read the items back (innerHTML stays a string sink).
+			children: [],
+			appendChild(child) { this.children.push(child); },
 			removeChild() { },
+			remove() { },
 			clientWidth: webviewWidth,
 			clientHeight: 400,
 			scrollTop: 0,
@@ -299,7 +317,12 @@ function makeHexHarness(webviewWidth) {
 	const document = {
 		body: makeElement('body'),
 		getElementById(id) { if (!elements.has(id)) elements.set(id, makeElement('div')); return elements.get(id); },
-		createElement: makeElement
+		createElement: makeElement,
+		// The right-click menu closes on an outside click or Escape via these; this harness never
+		// drives real DOM events (innerHTML is a string sink, not a parser), so they are no-ops
+		// here the same way every stub element's addEventListener is.
+		addEventListener() { },
+		removeEventListener() { }
 	};
 	const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame', 'cssVars',
 		binaryCompareScript() + `;return {
@@ -315,14 +338,28 @@ function makeHexHarness(webviewWidth) {
 				rulerHtml: hexRulerHtml,
 				asciiChar: hexAsciiChar,
 				element: (id) => document.getElementById(id),
-				vars: () => cssVars.slice()
+				vars: () => cssVars.slice(),
+				/* The selection & copy surface: place a selection the way a drag would (anchor,
+				   head, side, pane), then drive the copies and the menu against it. */
+				select: (anchor, head, side, pane) => { hexSelAnchor = anchor; hexSelHead = head; hexSelSide = side; hexSelPane = pane; },
+				hasSelection: () => hexHasSelection(),
+				clearSelection: () => hexClearSelection(),
+				cellSelected: hexCellSelected,
+				rowHtmlSelected: (row, rowIndex) => hexRowHtml(row, rowIndex % 2 === 1, rowIndex),
+				formatBytes: hexFormatBytes,
+				copySelection: hexCopySelection,
+				copyAddress: hexCopyAddress,
+				contextMenu: hexOnContextMenu,
+				menu: () => hexMenuEl,
+				refreshLayout: refreshHexLayout,
+				waiters: () => hexCopyWaiters.length
 			}
 		};`);
 	const api = factory(
 		{ postMessage: (message) => { posted.push(message); } },
 		makeElement('div'),
 		document,
-		{ addEventListener() { } },
+		{ addEventListener() { }, innerWidth: 1200, innerHeight: 800 },
 		function StubImage() { },
 		(fn) => fn(),
 		cssVars
@@ -478,12 +515,321 @@ describe('the webview script\'s baked-in templates', () => {
 			binaryCompareScript() + ';return [HEXDIFF_TPL, IMGSTATS_TPL];');
 		const nothing = () => { };
 		const [hexDiffTpl, imgStatsTpl] = factory(
-			{ postMessage: nothing }, nothing, nothing, { addEventListener: nothing }, function () { }, nothing
+			{ postMessage: nothing }, nothing, { addEventListener: nothing }, { addEventListener: nothing }, function () { }, nothing
 		);
 		assert.equal(hexDiffTpl, t('compareHexDiffStatus', '{0}', '{1}'));
 		assert.equal(imgStatsTpl, t('compareImageStatsTpl', '{0}', '{1}', '{2}', '{3}', '{4}', '{5}'));
 		const placeholdersOf = (template) => [...template.matchAll(/\{\d+\}/g)].map((match) => match[0]);
 		assert.deepEqual(placeholdersOf(hexDiffTpl), ['{0}', '{1}']);
 		assert.deepEqual(placeholdersOf(imgStatsTpl), ['{0}', '{1}', '{2}', '{3}', '{4}', '{5}']);
+	});
+});
+
+/* ---------- The hex comparison's selection & copy ---------- */
+
+/**
+ * The selection is a span of grid position shared by both panes, so these tests place one the way
+ * a drag would (anchor, head, the side and pane the drag started in) and pin what the page does
+ * with it: how rows paint it, what each copy format yields, which rows a copy fetches when the
+ * selection reaches past what is cached, the addresses behind the positions, and the right-click
+ * menu that offers all of it.
+ */
+describe('the hex selection paints by grid position', () => {
+	const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+	const count = (html, needle) => html.split(needle).length - 1;
+
+	it('paints the selected positions on both sides and both panes, over the diff tint', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(15, 17, 'o', 'hex'); // row 0 col 15 through row 1 col 1
+		const row = {
+			o: 0, ob: b64(new Array(16).fill(0x41)), om: '0'.repeat(15) + '1',
+			n: 0, nb: b64(new Array(16).fill(0x42)), nm: '0'.repeat(15) + '1'
+		};
+		const html = h.api.test.rowHtmlSelected(row, 0);
+		// Only position 15 is selected in row 0, and all four panes (old/new hex/ascii) carry it.
+		assert.equal(count(html, 'hxSel'), 4);
+		// The changed byte keeps its own side's tint and gains the selection on top of it.
+		assert.ok(html.includes('<span class="hb hxo hxSel">'), html);
+		assert.ok(html.includes('<span class="hb hxn hxSel">'), html);
+		// Row 1 holds the other two selected positions (cols 0 and 1), on its own paint.
+		assert.equal(count(h.api.test.rowHtmlSelected(row, 1), 'hxSel'), 8);
+	});
+
+	it('paints a short row\'s blank tail as selected too - the selection is positions, not bytes', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(2, 3, 'o', 'hex');
+		const row = { o: 0, ob: b64([0x41, 0x42]), om: '00', n: 0, nb: b64([0x41, 0x42]), nm: '00' };
+		const html = h.api.test.rowHtmlSelected(row, 0);
+		assert.ok(html.includes('<span class="hb hxSel"></span>'), html);
+		assert.ok(html.includes('<span class="ha hxSel"></span>'), html);
+	});
+
+	it('treats a single cell as no selection, and holds none until one is placed', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		assert.equal(h.api.test.hasSelection(), false);
+		// rowIndex < 0 is the probe row hexRowHtml is measured with: it never selects.
+		h.api.test.select(2, 6, 'o', 'hex');
+		assert.equal(h.api.test.cellSelected(-1, 2), false);
+		assert.equal(h.api.test.cellSelected(0, 1), false);
+		assert.equal(h.api.test.cellSelected(0, 2), true);
+		assert.equal(h.api.test.cellSelected(0, 6), true);
+		assert.equal(h.api.test.cellSelected(0, 7), false);
+		h.api.test.select(5, 5, 'o', 'hex'); // a plain click: anchor equals head
+		assert.equal(h.api.test.hasSelection(), false);
+		assert.equal(h.api.test.cellSelected(0, 5), false);
+		h.api.test.clearSelection();
+		assert.equal(h.api.test.hasSelection(), false);
+	});
+});
+
+describe('the copy formats', () => {
+	it('format one side\'s bytes the way the hex viewer\'s own Copy does', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		const bytes = [0x48, 0x69, 0x0a, 0xff];
+		assert.equal(h.api.test.formatBytes(bytes, 'hex', 'hex'), '48690AFF');
+		assert.equal(h.api.test.formatBytes(bytes, 'text', 'ascii'), 'Hi\n\xff');
+		// 'smart' follows the pane the drag started in: raw text from the ASCII pane.
+		assert.equal(h.api.test.formatBytes(bytes, 'smart', 'ascii'), 'Hi\n\xff');
+		assert.equal(h.api.test.formatBytes(bytes, 'smart', 'hex'), '48690AFF');
+		assert.equal(h.api.test.formatBytes(bytes, 'c', 'hex'), '0x48, 0x69, 0x0A, 0xFF');
+		assert.equal(h.api.test.formatBytes(bytes, 'base64', 'hex'), Buffer.from(bytes).toString('base64'));
+	});
+});
+
+describe('copying the selection', () => {
+	const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+	const seqRow = (row) => ({
+		o: row * 16, n: row * 16,
+		ob: b64(new Array(16).fill(0).map((_, i) => (row * 16 + i) & 0xff)),
+		nb: b64(new Array(16).fill(0).map((_, i) => (row * 16 + i) & 0xff)),
+		om: '0'.repeat(16), nm: '0'.repeat(16)
+	});
+	const replyRows = (h, start, rows, error = null) =>
+		h.api.message({ command: 'hexRows', index: 0, start, rows, layoutVersion: 0, error });
+	const copyStatus = (h) => h.api.test.element('hexCopyStatus').textContent;
+	const postedCommands = (h, command) => h.posted.filter((message) => message.command === command);
+
+	it('copies straight from the cached rows, naming the side it read', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		replyRows(h, 0, [{
+			o: 0, n: 0, ob: b64([0x41, 0x42, 0x43, 0x44]), nb: b64([0x61, 0x62, 0x63, 0x64]), om: '0000', nm: '0000'
+		}]);
+		h.api.test.select(0, 3, 'o', 'ascii');
+		await h.api.test.copySelection('text', 'o', 'ascii');
+		assert.deepEqual(postedCommands(h, 'copyToClipboard'),
+			[{ command: 'copyToClipboard', type: 'Hex Bytes', data: 'ABCD' }]);
+		assert.equal(copyStatus(h), t('compareHexCopyDone', 'Original'));
+		// The other side reads its own bytes over the same positions.
+		await h.api.test.copySelection('hex', 'n', 'hex');
+		assert.equal(postedCommands(h, 'copyToClipboard')[1].data, '61626364');
+		assert.equal(copyStatus(h), t('compareHexCopyDone', 'Modified'));
+	});
+
+	it('fetches the rows the selection spans before copying, one host-capped batch at a time', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(0, 47, 'o', 'hex'); // rows 0..2, none cached yet
+		const copying = h.api.test.copySelection('hex', 'o', 'hex');
+		const fetches = postedCommands(h, 'getHexRows');
+		assert.equal(fetches.length, 1);
+		assert.deepEqual({ start: fetches[0].start, count: fetches[0].count }, { start: 0, count: 3 });
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+		replyRows(h, 0, [seqRow(0), seqRow(1), seqRow(2)]);
+		await copying;
+		const expected = Buffer.concat([seqRow(0), seqRow(1), seqRow(2)]
+			.map((row) => Buffer.from(row.ob, 'base64'))).toString('hex').toUpperCase();
+		assert.deepEqual(postedCommands(h, 'copyToClipboard'),
+			[{ command: 'copyToClipboard', type: 'Hex Bytes', data: expected }]);
+	});
+
+	it('caps a single fetch at the 512 rows the host serves per getHexRows', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(0, 16 * 601 - 1, 'o', 'hex'); // rows 0..600
+		const copying = h.api.test.copySelection('hex', 'o', 'hex');
+		const fetches = postedCommands(h, 'getHexRows');
+		assert.equal(fetches.length, 1);
+		assert.deepEqual({ start: fetches[0].start, count: fetches[0].count }, { start: 0, count: 512 });
+		replyRows(h, 0, [], 'the blob is gone');
+		await copying;
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+		assert.equal(copyStatus(h), t('compareHexCopyReadFailed'));
+	});
+
+	it('keeps a copy waiting when the viewport\'s own reply only partly covers its span', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(0, 47, 'o', 'hex'); // one waiter over rows 0..2
+		const copying = h.api.test.copySelection('hex', 'o', 'hex');
+		// The viewport's independent request can share the copy's start; its shorter reply must
+		// not settle the waiter - rows 1 and 2 are still missing.
+		replyRows(h, 0, [seqRow(0)]);
+		assert.equal(h.api.test.waiters(), 1);
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+		replyRows(h, 0, [seqRow(0), seqRow(1), seqRow(2)]);
+		await copying;
+		assert.equal(h.api.test.waiters(), 0);
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 1);
+	});
+
+	it('aborts quietly when the selection moved on while the fetch was in flight', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		replyRows(h, 0, [seqRow(0)]);
+		h.api.test.select(0, 17, 'o', 'hex'); // rows 0..1, row 1 uncached
+		const copying = h.api.test.copySelection('text', 'o', 'ascii');
+		replyRows(h, 1, [seqRow(1)]);
+		h.api.test.select(20, 30, 'o', 'hex'); // the user dragged elsewhere before the reply
+		await copying;
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+		assert.equal(copyStatus(h), '');
+	});
+
+	it('settles an in-flight copy when the layout changes under it, instead of leaving it awaiting', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		replyRows(h, 0, [seqRow(0)]);
+		h.api.test.select(0, 17, 'o', 'hex');
+		const copying = h.api.test.copySelection('text', 'o', 'ascii');
+		assert.equal(postedCommands(h, 'getHexRows').length, 1);
+		// A row-width change re-requests the whole layout: the pending copy's row indices lose
+		// their meaning, so it must be settled (failed), never left hanging on a reply that no
+		// longer corresponds to anything.
+		h.api.test.refreshLayout();
+		await Promise.race([
+			copying,
+			new Promise((_, reject) => setTimeout(() => reject(new Error('the copy promise never settled')), 1000))
+		]);
+		assert.equal(h.api.test.waiters(), 0);
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+	});
+
+	it('refuses a selection past the copy limit without fetching anything', async () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(0, 10 * 1024 * 1024, 'o', 'hex'); // 10 MiB + 1 cells
+		await h.api.test.copySelection('hex', 'o', 'hex');
+		assert.equal(postedCommands(h, 'getHexRows').length, 0);
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 0);
+		assert.equal(copyStatus(h), t('compareHexCopyTooLarge', (10 * 1024 * 1024 + 1).toLocaleString()));
+	});
+});
+
+describe('copying addresses', () => {
+	const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+	const copyStatus = (h) => h.api.test.element('hexCopyStatus').textContent;
+	const postedCommands = (h, command) => h.posted.filter((message) => message.command === command);
+	const seedRow = (h) => h.api.message({
+		command: 'hexRows', index: 0, start: 0, layoutVersion: 0, error: null,
+		rows: [{ o: 0x10, n: 0x20, ob: b64([1, 2, 3, 4]), nb: b64([5, 6, 7, 8]), om: '0000', nm: '0000' }]
+	});
+
+	it('copies both sides\' real address spans, which can differ at the same positions', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		seedRow(h);
+		h.api.test.select(0, 3, 'o', 'hex');
+		h.api.test.copyAddress(null);
+		assert.deepEqual(postedCommands(h, 'copyToClipboard'), [{
+			command: 'copyToClipboard',
+			type: 'Address',
+			data: 'Original 00000010-00000013   Modified 00000020-00000023'
+		}]);
+		assert.equal(copyStatus(h), t('compareHexCopyDoneAddress'));
+		// The rows a right-click can act on are already on screen, so no fetch is issued.
+		assert.equal(postedCommands(h, 'getHexRows').length, 0);
+	});
+
+	it('copies the one side\'s address of the byte under the right-click', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		seedRow(h);
+		// Nothing is selected: the address is the byte's own, named by its side - a bare address
+		// could not say which of the two files it indexes.
+		h.api.test.copyAddress({ row: 0, col: 2, side: 'n', pane: 'hex' });
+		assert.deepEqual(postedCommands(h, 'copyToClipboard'),
+			[{ command: 'copyToClipboard', type: 'Address', data: 'Modified 00000022' }]);
+	});
+
+	it('writes an em dash for a side with nothing at the position, and nothing at all when neither has', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.message({
+			command: 'hexRows', index: 0, start: 0, layoutVersion: 0, error: null,
+			rows: [{ o: -1, n: 0x20, ob: '', nb: b64([5, 6, 7, 8]), om: '', nm: '0000' }]
+		});
+		h.api.test.select(0, 3, 'o', 'hex');
+		h.api.test.copyAddress(null);
+		assert.equal(postedCommands(h, 'copyToClipboard')[0].data, 'Original \u2014   Modified 00000020-00000023');
+		// With nothing selected, the byte under the right-click speaks for itself: a byte neither
+		// side has (the old side is absent here) copies nothing and says nothing.
+		h.api.test.clearSelection();
+		h.api.test.copyAddress({ row: 0, col: 2, side: 'o', pane: 'hex' });
+		assert.equal(postedCommands(h, 'copyToClipboard').length, 1);
+		assert.equal(copyStatus(h), t('compareHexCopyDoneAddress')); // unchanged by the no-op
+	});
+});
+
+describe('the right-click menu', () => {
+	const openMenu = (h) => h.api.test.contextMenu({ preventDefault() { }, clientX: 80, clientY: 80, target: null });
+	const menuItems = (h) => h.api.test.menu().children;
+
+	it('offers the copy formats for the side it lands on, disabled until a selection exists', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		openMenu(h);
+		const items = menuItems(h);
+		assert.equal(items.length, 8); // five copies, the address, a separator, clear selection
+		assert.equal(items[6].className, 'hexMenuSep');
+		const expected = [
+			t('compareHexMenuCopy'), t('compareHexMenuCopyHex'), t('compareHexMenuCopyText'),
+			t('compareHexMenuCopyC'), t('compareHexMenuCopyBase64')
+		];
+		for (let i = 0; i < 5; i++) {
+			// The side suffix tells the user WHICH file a plain Copy would read.
+			assert.equal(items[i].textContent, expected[i] + ' \u2014 Original');
+			assert.equal(items[i].className, 'hexMenuItem disabled');
+		}
+		assert.equal(items[5].textContent, t('compareHexMenuCopyAddress'));
+		assert.equal(items[5].className, 'hexMenuItem disabled'); // no selection and no byte under the click
+		assert.equal(items[7].textContent, t('compareHexMenuClearSelection'));
+		assert.equal(items[7].className, 'hexMenuItem disabled');
+	});
+
+	it('enables everything over a selection, naming the side that selection was made in', () => {
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		h.api.test.select(0, 3, 'n', 'ascii');
+		openMenu(h);
+		const items = menuItems(h);
+		for (let i = 0; i < 5; i++) {
+			assert.equal(items[i].textContent.endsWith(' \u2014 Modified'), true, items[i].textContent);
+			assert.equal(items[i].className, 'hexMenuItem');
+		}
+		assert.equal(items[5].className, 'hexMenuItem');
+		assert.equal(items[7].className, 'hexMenuItem');
+	});
+});
+
+describe('the clipboard responder', () => {
+	it('writes the payload through the VS Code clipboard and echoes the outcome for the status line', async () => {
+		clipboardState.fail = false;
+		clipboardState.text = null;
+		const posted = [];
+		await respondCopyToClipboard((message) => posted.push(message), 'Hex Bytes', '48690AFF');
+		assert.deepEqual(posted, [{ command: 'copyToClipboard', type: 'Hex Bytes', error: null }]);
+		assert.equal(clipboardState.text, '48690AFF');
+
+		// A refused write surfaces the localised failure the page's status line shows instead.
+		clipboardState.fail = true;
+		await respondCopyToClipboard((message) => posted.push(message), 'Address', '00000010-00000013');
+		assert.equal(posted.length, 2);
+		assert.equal(posted[1].type, 'Address');
+		assert.equal(posted[1].error, t('clipboardWriteFailed'));
 	});
 });
