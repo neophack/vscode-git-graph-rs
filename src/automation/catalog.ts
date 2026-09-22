@@ -32,8 +32,12 @@ export type UiStep =
 	   getBoundingClientRect (CSS pixels, invariant under editor zoom) with generous tolerances:
 	   the stylesheet's canonical value sits mid-range, so a small style tweak shifts a bound
 	   instead of flaking the suite, while a broken layout (collapsed, zero-sized, exploded)
-	   still falls far outside. */
-	| { readonly op: 'expectSize'; readonly selector: string; readonly minW?: number; readonly maxW?: number; readonly minH?: number; readonly maxH?: number } // the element's rendered box: width/height must lie within [minW, maxW] inclusive (a bound left out is not checked); fails with the measured box
+	   still falls far outside. WIDTH BOUNDS FOLLOW THE STYLESHEET'S OWN CURRENCY: absolutely
+	   sized elements (24x24 buttons, the 460px-capped dialog) get absolute minW/maxW, while
+	   elements the stylesheet sizes in vw units (the dropdowns' 12vw cap, widgets shrunk by
+	   max-width:calc(100vw - 56px)) get minWVw/maxWVw — percent of the webview's layout width —
+	   because absolute px bounds on those break as the user resizes the window. */
+	| { readonly op: 'expectSize'; readonly selector: string; readonly minW?: number; readonly maxW?: number; readonly minWVw?: number; readonly maxWVw?: number; readonly minH?: number; readonly maxH?: number } // the element's rendered box: width/height must lie within the bounds inclusive (a bound left out is not checked); fails with the measured box
 	| { readonly op: 'expectCount'; readonly selector: string; readonly min?: number; readonly max?: number } // how many elements the selector matches (defaults: min 1, no max)
 	| { readonly op: 'expectChecked'; readonly selector: string; readonly checked: boolean }; // a checkbox's checked state — the rendered effect of a toggle step
 
@@ -68,7 +72,7 @@ export interface AutomationAction {
 	readonly id: string;
 	/** Human-readable control label (the button tooltip or menu item title). */
 	readonly title: string;
-	/** Grouping for suite selection, e.g. `control-bar`, `row`, `menu-commit`, `menu-branch`, `cdv`, `settings`, `find`, `reflog`, `worktree`, `statistics`, `host`, `menu-vscode` (the extension's contributed VS Code menus). */
+	/** Grouping for suite selection, e.g. `control-bar`, `row`, `menu-commit`, `menu-branch`, `cdv`, `settings`, `find`, `reflog`, `worktree`, `statistics`, `host`, `menu-vscode` (the extension's contributed VS Code menus), `external` (changes made outside the view that the watcher must pick up). */
 	readonly group: string;
 	/** TRUE => the action mutates the repository (belongs to the `write` suite; the driver re-creates the fixture clone around it). */
 	readonly mutable: boolean;
@@ -444,6 +448,55 @@ const restoreSettingsCheckboxStep = (id: string): UiStep => ({
 });
 
 /**
+ * A UI step that flips the Settings widget's "Fetch Gerrit change refs" checkbox to `target` (a
+ * JS expression over window globals, e.g. a snapshot captured earlier) and resolves once the
+ * flip settled. Enabling runs straight through; disabling opens a confirmation whose primary
+ * action the step clicks on the run's behalf (the same policy as every data-loss confirmation
+ * in this suite). The checkbox is re-queried on every poll — setGerritFetchRefs re-renders the
+ * whole widget, replacing the element — and the action-running overlay the host request raises
+ * (a secondary-only dialog) is waited out, never dismissed: only a dialog that offers a primary
+ * action (#dialogAction, the disable confirmation) is clicked.
+ */
+const gerritFetchRefsFlipStep = (target: string): UiStep => ({
+	op: 'eval',
+	expr: '(function(){var target=' + target + ';var c=document.getElementById("settingsGerritFetchRefsCheckbox");'
+		+ 'if(c===null)throw new Error("settingsGerritFetchRefsCheckbox missing");'
+		+ 'if(c.checked!==target)c.click();'
+		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		+ 'var d=document.querySelector(".dialog");'
+		+ 'if(d!==null){var a=document.getElementById("dialogAction");if(a!==null)a.click();}'
+		+ 'var c2=document.getElementById("settingsGerritFetchRefsCheckbox");'
+		+ 'var row=document.querySelector(\'tr.commit[data-id="0"]\');'
+		+ 'if(c2!==null&&c2.checked===target&&d===null&&row!==null)return resolve("fetch refs "+(target?"on":"off"));'
+		+ 'if(++n>200)return reject(new Error("the fetch-refs toggle never settled"));'
+		+ 'setTimeout(t,100);};t();});})()'
+});
+
+/** A UI step that snapshots the "Fetch Gerrit change refs" checkbox state into window.__ggGerritWasOn (the run must return the repository to it). */
+const GERRIT_FETCH_REFS_SNAPSHOT_STEP: UiStep = {
+	op: 'eval',
+	expr: '(function(){var c=document.getElementById("settingsGerritFetchRefsCheckbox");if(c===null)throw new Error("settingsGerritFetchRefsCheckbox missing");window.__ggGerritWasOn=c.checked;return c.checked?"on":"off";})()'
+};
+
+/**
+ * A UI step that flips the Gerrit status-filter checkbox `id` to `target` (a JS expression) and
+ * resolves once the debounced reload (applyGerritFilterChange, 120 ms) settled: the checkbox
+ * shows the target state and the first row is rendered again.
+ */
+const gerritStatusFilterFlipStep = (id: string, target: string): UiStep => ({
+	op: 'eval',
+	expr: '(function(){var target=' + target + ';var c=document.getElementById(' + JSON.stringify(id) + ');'
+		+ 'if(c===null)throw new Error("' + id + ' missing");'
+		+ 'if(c.checked!==target)c.click();'
+		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		+ 'var c2=document.getElementById(' + JSON.stringify(id) + ');'
+		+ 'var row=document.querySelector(\'tr.commit[data-id="0"]\');'
+		+ 'if(c2!==null&&c2.checked===target&&row!==null)return resolve("' + id + '"+(target?" on":" off"));'
+		+ 'if(++n>200)return reject(new Error("the status-filter toggle never settled"));'
+		+ 'setTimeout(t,100);};t();});})()'
+});
+
+/**
  * Assertions every dialog-opening flow makes once its modal is up: exactly ONE dialog is visible,
  * it renders a sane box (CSS px; skipped where no layout engine exists, e.g. the jsdom harness),
  * and it offers a labelled action. Either button counts: form dialogs label their primary, while
@@ -453,7 +506,11 @@ const restoreSettingsCheckboxStep = (id: string): UiStep => ({
  */
 const DIALOG_ASSERT_STEPS: readonly UiStep[] = [
 	{ op: 'expectCount', selector: '.dialog', min: 1, max: 1 },
-	{ op: 'expectSize', selector: '.dialog', minW: 200, maxW: 1400, minH: 50, maxH: 1000 },
+	// The box bounds are absolute because the stylesheet's are: the dialog's content is capped at
+	// 460px, so every dialog renders 120px (the short action-running overlay) to ~470px (a form)
+	// at ANY window size. The minW fits that overlay, a content-sized dialog whose whole content
+	// is one short "Pushing Tag ..." line plus the Dismiss button (~150px).
+	{ op: 'expectSize', selector: '.dialog', minW: 120, maxW: 620, minH: 50, maxH: 1000 },
 	{ op: 'eval', expr: '(function(){var a=document.getElementById("dialogAction");var s=document.getElementById("dialogSecondaryAction");var t=(a===null?"":a.textContent.trim())+"|"+(s===null?"":s.textContent.trim());if(t==="|")throw new Error("the dialog offers no labelled action");return t;})()' }
 ];
 
@@ -482,6 +539,17 @@ const CLEAR_FILTER_STEPS: readonly UiStep[] = [
 const controlSizeStep = (selector: string): UiStep => ({ op: 'expectSize', selector, minW: 14, maxW: 72, minH: 14, maxH: 44 });
 
 /**
+ * The size the control-bar dropdowns' value displays render at: unlike the 24x24 icon buttons
+ * `controlSizeStep` bounds, a dropdown's value box is a select control whose width the stylesheet
+ * caps in VW UNITS (main.css: max-width 12vw, 16vw in the single-repository control bar) — it is
+ * content-sized up to that cap, so on a wide window it legitimately renders 150px+ and absolute
+ * bounds would flake. The bounds are therefore viewport-relative: at most 16.5vw (the 16vw cap
+ * plus sub-pixel slack), at least 3vw (well under the smallest real value box, so only a genuinely
+ * collapsed/empty render can trip it). Height stays absolute — the stylesheet draws it 26px tall.
+ */
+const dropdownValueSizeStep = (selector: string): UiStep => ({ op: 'expectSize', selector, minWVw: 3, maxWVw: 16.5, minH: 16, maxH: 44 });
+
+/**
  * Row-level assertions for the {{commit}} target, run once its row is rendered (windowed rendering
  * keeps only viewport rows in the DOM, so the scroll steps come first): the row's height matches
  * the stylesheet's row height (24px line-height, tolerant), and the description cell shows the
@@ -505,7 +573,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// callback skips the repo-info request, so no loadRepoInfo is expected) and restores the
 		// captured selection afterwards, leaving later runs the initial state.
 		ui: [
-			controlSizeStep('#authorDropdown .dropdownCurrentValue'),
+			dropdownValueSizeStep('#authorDropdown .dropdownCurrentValue'),
 			{ op: 'click', selector: '#authorDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#authorDropdown .dropdownOption' },
 			{
@@ -546,7 +614,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// branch would strand every later entry's targets (rows, ref labels) outside the filtered
 		// graph — the branch tip may be old history.
 		ui: [
-			controlSizeStep('#branchDropdown .dropdownCurrentValue'),
+			dropdownValueSizeStep('#branchDropdown .dropdownCurrentValue'),
 			{ op: 'click', selector: '#branchDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#branchDropdown .dropdownOption' },
 			{ op: 'eval', expr: '[...document.querySelectorAll("#branchDropdown .dropdownOption")].find((o) => o.textContent.trim() === \'{{branch}}\').click()' },
@@ -574,7 +642,7 @@ export const CATALOG: readonly AutomationAction[] = [
 		// repository until its reload lands, so it cannot signal the switch. No request path:
 		// the reload derives from view state only the live view can assemble.
 		ui: [
-			controlSizeStep('#repoDropdown .dropdownCurrentValue'),
+			dropdownValueSizeStep('#repoDropdown .dropdownCurrentValue'),
 			{ op: 'click', selector: '#repoDropdown .dropdownCurrentValue' },
 			{ op: 'waitFor', selector: '#repoDropdown .dropdownOption' },
 			{
@@ -671,7 +739,9 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#findBtn' },
 			{ op: 'waitFor', selector: '.findWidget.active' },
 			{ op: 'expectCount', selector: '.findWidget.active', min: 1, max: 1 },
-			{ op: 'expectSize', selector: '.findWidget', minW: 120, maxW: 3000, minH: 28, maxH: 48 } // findWidget.css: 34px tall
+			// findWidget.css: 34px tall, content-sized and vw-capped — the width bounds are
+			// viewport-relative so they hold at any window size.
+			{ op: 'expectSize', selector: '.findWidget', minWVw: 7, maxWVw: 95, minH: 28, maxH: 48 }
 		],
 		noHostTraffic: true,
 		expect: { responses: [] }
@@ -734,7 +804,10 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#settingsBtn' },
 			{ op: 'waitFor', selector: '#settingsWidget.active' },
 			{ op: 'expectCount', selector: '#settingsWidget.active', min: 1, max: 1 },
-			{ op: 'expectSize', selector: '#settingsWidget', minW: 260, maxW: 1400, minH: 100, maxH: 2400 },
+			// settingsWidget.css draws the widget at a fixed 840px shrunk by max-width:calc(100vw
+			// - 56px) on narrow windows: the floor is viewport-relative so it holds at any width,
+			// while the fixed 840px makes an absolute ceiling valid at every window size.
+			{ op: 'expectSize', selector: '#settingsWidget', minWVw: 12, maxW: 900, minH: 100, maxH: 2400 },
 			// The widget's load-option checkboxes are real rendered inputs. Only existence is
 			// asserted here — this entry also runs against real repositories, whose per-repo
 			// preferences (a user's own, untouched by the runner) set the checked direction; the
@@ -758,7 +831,11 @@ export const CATALOG: readonly AutomationAction[] = [
 		// path: the setRepoState payload is the whole GitRepoState, which only the live view
 		// can assemble.
 		ui: [
-			controlSizeStep('#showRemoteBranchesCheckbox'),
+			// The native input is hidden to 0x0 by the custom-checkbox CSS (main.css sizes all
+			// inputs[type=checkbox] to nothing and draws the 15x15 .customCheckbox sibling instead),
+			// so the VISIBLE box is what gets the size assertion; the clicks below still go to the
+			// input — element.click() needs no rendered box, and it carries the checked state.
+			controlSizeStep('#showRemoteBranchesControl > .customCheckbox'),
 			{ op: 'click', selector: '#showRemoteBranchesCheckbox' },
 			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }, // the OFF reload has rendered
 			{ op: 'expectChecked', selector: '#showRemoteBranchesCheckbox', checked: false },
@@ -779,7 +856,9 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#statisticsBtn' },
 			{ op: 'waitFor', selector: '#statisticsWidget.active' },
 			{ op: 'expectCount', selector: '#statisticsWidget.active', min: 1, max: 1 },
-			{ op: 'expectSize', selector: '#statisticsWidget', minW: 260, maxW: 1400, minH: 80, maxH: 2400 },
+			// statisticsView.css draws the widget at a fixed 560px shrunk by max-width:calc(100vw
+			// - 56px) on narrow windows: viewport-relative floor, fixed-width absolute ceiling.
+			{ op: 'expectSize', selector: '#statisticsWidget', minWVw: 12, maxW: 620, minH: 80, maxH: 2400 },
 			// The widget did not just open — it holds the computed statistics (author rows, the
 			// activity heatmap): content-bearing children, not an empty shell.
 			{ op: 'eval', expr: '(function(){var c=document.getElementById("statisticsContent");var n=c===null?0:c.children.length;if(n===0)throw new Error("the statistics widget rendered no content");return n;})()' },
@@ -947,6 +1026,51 @@ export const CATALOG: readonly AutomationAction[] = [
 		noHostTraffic: true,
 		expect: { responses: [] }
 	},
+		{
+			id: 'menu-vscode/palette-fetch',
+			title: 'Fetch from Remote(s) (command palette)',
+			group: 'menu-vscode',
+			mutable: true,
+			requires: ['remote'],
+			// The palette's Fetch command takes NO argument: with several repositories known it
+			// shows a quick pick — the dialog auto-answer takes its first item, which the command
+			// has unshifted to the front as the last active repository (the run's own) — and then
+			// loads the Git Graph view on it with runCommandOnLoad 'fetch', so the page runs the
+			// same fetch request the control-bar button does once it has loaded. The quick-pick
+			// chain is not awaited by the command handler, so the run completes on the fetch
+			// RESPONSE, not on the handler's return; the post-step barrier then waits for the view.
+			vscodeCommand: { command: 'git-graph-rs.fetch' },
+			uiAfter: [{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }],
+			expect: { responses: ['fetch'] }
+		},
+		{
+			id: 'menu-vscode/palette-clear-avatar-cache',
+			title: 'Clear Avatar Cache (command palette)',
+			group: 'menu-vscode',
+			mutable: false,
+			// The command's whole observable outcome is a fully localized notification ("Avatar
+			// cache cleared") — no language-invariant fragment exists, so its presence is pinned
+			// (expectAnyNotification). The handler does not await the notification's .then chain,
+			// so the post-step barrier gives it time to arrive before the assertion runs.
+			vscodeCommand: { command: 'git-graph-rs.clearAvatarCache' },
+			uiAfter: [{ op: 'eval', expr: '(function(){return new Promise(function(resolve){setTimeout(resolve,750);});})()' }],
+			expectAnyNotification: true,
+			noHostTraffic: true,
+			expect: { responses: [] }
+		},
+		{
+			id: 'menu-vscode/palette-version',
+			title: 'About Git Graph RS (command palette)',
+			group: 'menu-vscode',
+			mutable: false,
+			// The command raises a MODAL information message (auto-answered with its Copy button),
+			// and the modal is shown synchronously before the handler returns, so expectModal is
+			// deterministic: the command must reach its About dialog.
+			vscodeCommand: { command: 'git-graph-rs.version' },
+			expectModal: true,
+			noHostTraffic: true,
+			expect: { responses: [] }
+		},
 
 	/* ---------- Row interactions & column header menu ---------- */
 	{
@@ -2706,6 +2830,255 @@ export const CATALOG: readonly AutomationAction[] = [
 		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
 	},
 
+	{
+		id: 'settings/gerrit-fetch-refs',
+		title: 'Fetch Gerrit change refs',
+		group: 'settings',
+		mutable: false,
+		// The checkbox drives gerritSetFetchRefs (enabling marks the repository's Gerrit data
+		// stale, disabling deletes the fetched change refs behind a confirmation) and the response
+		// reloads the view either way. The flow snapshots the state, flips to the other side
+		// (driving BOTH directions — the plain enable and the confirmed disable), then restores
+		// the snapshot: the run leaves the repository exactly as it found it, whatever it was.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'waitFor', selector: '#settingsGerritFetchRefsCheckbox' },
+			GERRIT_FETCH_REFS_SNAPSHOT_STEP,
+			gerritFetchRefsFlipStep('!window.__ggGerritWasOn'),
+			gerritFetchRefsFlipStep('window.__ggGerritWasOn'),
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		expect: { responses: ['gerritSetFetchRefs', 'loadRepoInfo', 'loadCommits'] }
+	},
+	{
+		id: 'settings/gerrit-status-filter',
+		title: 'Gerrit status filter (Open)',
+		group: 'settings',
+		mutable: true,
+		// The four status-filter checkboxes and the fetch-limit row render only while "Fetch
+		// Gerrit change refs" is ON, so the flow enables it as a preamble (a no-op click when
+		// already on) and restores the snapshot at the end. The toggle itself persists via a
+		// silent setRepoState and reloads the graph (applyGerritFilterChange, debounced 120 ms);
+		// the New/Open checkbox is flipped OFF and back ON — with the checkbox left off, change
+		// refs of that status would vanish from every later run's graph.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'waitFor', selector: '#settingsGerritFetchRefsCheckbox' },
+			GERRIT_FETCH_REFS_SNAPSHOT_STEP,
+			gerritFetchRefsFlipStep('true'),
+			{ op: 'skipIfAbsent', selector: '#settingsGerritStatusNewCheckbox' },
+			{
+				op: 'eval',
+				expr: '(function(){var c=document.getElementById("settingsGerritStatusNewCheckbox");if(c===null)throw new Error("settingsGerritStatusNewCheckbox missing");window.__ggStatusWasChecked=c.checked;return c.checked?"on":"off";})()'
+			},
+			gerritStatusFilterFlipStep('settingsGerritStatusNewCheckbox', '!window.__ggStatusWasChecked'),
+			gerritStatusFilterFlipStep('settingsGerritStatusNewCheckbox', 'window.__ggStatusWasChecked'),
+			gerritFetchRefsFlipStep('window.__ggGerritWasOn'),
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
+	},
+	{
+		id: 'settings/gerrit-fetch-limit',
+		title: 'Gerrit fetch limit',
+		group: 'settings',
+		mutable: true,
+		// Same fetch-refs preamble/epilogue as the status-filter entry (the row only renders while
+		// Gerrit fetching is on). The pencil opens a form whose input is prefilled with the current
+		// override (empty when following the Extension Setting); the flow snapshots that original
+		// value, sets 200, saves (persisted via a silent setRepoState, then refresh(false) reloads
+		// the graph under the new limit) and restores the snapshot — an empty restore clears the
+		// override back to the setting default, so the run cannot leave a limit behind.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'waitFor', selector: '#settingsGerritFetchRefsCheckbox' },
+			GERRIT_FETCH_REFS_SNAPSHOT_STEP,
+			gerritFetchRefsFlipStep('true'),
+			{ op: 'skipIfAbsent', selector: '#editGerritFetchLimit' },
+			{ op: 'click', selector: '#editGerritFetchLimit' },
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{
+				op: 'eval',
+				expr: '(function(){var i=document.getElementById("dialogInput0");if(i===null)throw new Error("fetch limit dialog input missing");window.__ggGerritLimitOrig=i.value;i.value="200";i.dispatchEvent(new Event("input",{bubbles:true}));return "set 200";})()'
+			},
+			{ op: 'click', selector: '#dialogAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{ op: 'click', selector: '#editGerritFetchLimit' },
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{
+				op: 'eval',
+				expr: '(function(){var i=document.getElementById("dialogInput0");if(i===null)throw new Error("fetch limit dialog input missing");i.value=window.__ggGerritLimitOrig;i.dispatchEvent(new Event("input",{bubbles:true}));return "restored "+(window.__ggGerritLimitOrig===""?"(default)":window.__ggGerritLimitOrig);})()'
+			},
+			{ op: 'click', selector: '#dialogAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' },
+			gerritFetchRefsFlipStep('window.__ggGerritWasOn'),
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
+	},
+	{
+		id: 'settings/rename-repo',
+		title: 'Edit / Delete Repository Name',
+		group: 'settings',
+		mutable: false,
+		// The name dialog saves repo state 'name' through a silent setRepoState and re-renders the
+		// Repos dropdown — no host traffic. The round-trip covers BOTH controls state-independently:
+		// the current dropdown value and the dialog's placeholder (the folder name) are captured,
+		// the repository is renamed to a literal, the rename is verified on the dropdown, and the
+		// original is restored through the control the state dictates — deleteRepoName (rendered
+		// once a name exists) when the original was the default, editRepoName with the captured
+		// name when it was explicit — so a user's own display name survives the read suite.
+		ui: [
+			{
+				op: 'eval',
+				expr: '(function(){var v=document.querySelector("#repoDropdown .dropdownCurrentValue");if(v===null)throw new Error("repository dropdown value missing");window.__ggNameOrig=v.textContent.trim();return window.__ggNameOrig;})()'
+			},
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'click', selector: '#editRepoName' },
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{
+				op: 'eval',
+				expr: '(function(){var i=document.getElementById("dialogInput0");if(i===null)throw new Error("name dialog input missing");window.__ggNamePlaceholder=i.placeholder;i.value="automation-repo-name";i.dispatchEvent(new Event("input",{bubbles:true}));return "renaming";})()'
+			},
+			{ op: 'click', selector: '#dialogAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{
+				op: 'eval',
+				expr: '(function(){return new Promise(function(resolve,reject){var n=0;var t=function(){var v=document.querySelector("#repoDropdown .dropdownCurrentValue");if(v!==null&&v.textContent.trim()==="automation-repo-name")return resolve("the dropdown shows the new name");if(++n>100)return reject(new Error("the repository name never changed"));setTimeout(t,100);};t();});})()'
+			},
+			{
+				op: 'eval',
+				expr: '(function(){var orig=window.__ggNameOrig;var ph=window.__ggNamePlaceholder;var viaDelete=orig===ph;'
+					+ 'return new Promise(function(resolve,reject){var n=0;var step="start";'
+					+ 'var val=function(){var v=document.querySelector("#repoDropdown .dropdownCurrentValue");return v===null?"":v.textContent.trim();};'
+					+ 'var act=function(){var a=document.getElementById("dialogAction");if(a!==null)a.click();return a!==null;};'
+					+ 'var t=function(){try{'
+					+ 'if(step==="start"){'
+					+ 'if(viaDelete){var d=document.getElementById("deleteRepoName");if(d===null)throw new Error("deleteRepoName missing");d.click();step="confirm";}'
+					+ 'else{var e=document.getElementById("editRepoName");if(e===null)throw new Error("editRepoName missing");e.click();step="fill";}'
+					+ '}else if(step==="confirm"){'
+					+ 'if(document.querySelector(".dialog")!==null){if(act())step="settle";else if(++n>100)throw new Error("the delete confirmation never offered its action");}'
+					+ 'else if(++n>100)throw new Error("the delete confirmation never appeared");'
+					+ '}else if(step==="fill"){'
+					+ 'var i=document.getElementById("dialogInput0");'
+					+ 'if(i!==null){i.value=orig;i.dispatchEvent(new Event("input",{bubbles:true}));if(act())step="settle";else throw new Error("the name dialog has no action");}'
+					+ 'else if(++n>100)throw new Error("the name dialog never appeared");'
+					+ '}else{'
+					+ 'if(val()===orig)return resolve(viaDelete?"cleared back to "+orig:"renamed back to "+orig);'
+					+ 'if(++n>150)throw new Error("the repository name never returned to "+orig);'
+					+ '}'
+					+ '}catch(err){return reject(err);}setTimeout(t,100);};t();});})()'
+			},
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'settings/initial-branches-dialog',
+		title: 'Edit Initial Branches (unchanged save)',
+		group: 'settings',
+		mutable: false,
+		// The dialog's branch picker is a custom multi-select the shim cannot drive, so the flow
+		// opens the form and saves it UNCHANGED: the widget's no-change guard then writes nothing
+		// (and requests nothing) — the dialog round-trip is the coverage, the user's initial
+		// branches are preserved exactly.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'click', selector: '#editInitialBranches' },
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{ op: 'click', selector: '#dialogAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'settings/issue-linking',
+		title: 'Add / Edit / Remove Issue Linking',
+		group: 'settings',
+		mutable: false,
+		// State-independent round-trip over the section's one button pair (editIssueLinking
+		// renders as Add when nothing is configured, as Edit + Remove otherwise): on an
+		// unconfigured repository a literal config is added (a valid group regex and a $1 URL —
+		// the dialog's own validation — repo-scoped through the unchecked "use globally") and then
+		// removed again through the confirmation, leaving nothing behind; on a configured one the
+		// Edit dialog is saved UNCHANGED (a no-op rewrite of the same values, whatever scope they
+		// came from). Saving runs setIssueLinkingConfig → refresh(true), hence the responses.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{
+				op: 'eval',
+				expr: '(function(){var rm=document.getElementById("removeIssueLinking");window.__ggIssueConfigured=rm!==null;var ed=document.getElementById("editIssueLinking");if(ed===null)throw new Error("editIssueLinking missing");ed.click();return rm!==null?"editing existing configuration":"adding new configuration";})()'
+			},
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{
+				op: 'eval',
+				expr: '(function(){if(window.__ggIssueConfigured)return "no-op edit";var r=document.getElementById("dialogInput0");var u=document.getElementById("dialogInput1");if(r===null||u===null)throw new Error("issue linking dialog inputs missing");r.value="(\\\\d+)";r.dispatchEvent(new Event("input",{bubbles:true}));u.value="https://example.com/issues/$1";u.dispatchEvent(new Event("input",{bubbles:true}));return "filled";})()'
+			},
+			{ op: 'click', selector: '#dialogAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{
+				op: 'eval',
+				expr: '(function(){return new Promise(function(resolve,reject){var n=0;var t=function(){var d=document.querySelector(".dialog");var row=document.querySelector(\'tr.commit[data-id="0"]\');if(d===null&&row!==null)return resolve("saved");if(++n>150)return reject(new Error("the issue linking save never settled"));setTimeout(t,100);};t();});})()'
+			},
+			{
+				op: 'eval',
+				expr: '(function(){if(window.__ggIssueConfigured)return "kept the existing configuration";'
+					+ 'return new Promise(function(resolve,reject){var n=0;var step="start";'
+					+ 'var t=function(){try{'
+					+ 'if(step==="start"){var rm=document.getElementById("removeIssueLinking");if(rm!==null){rm.click();step="confirm";}else if(++n>100)throw new Error("removeIssueLinking never appeared after saving");}'
+					+ 'else if(step==="confirm"){var a=document.getElementById("dialogAction");if(document.querySelector(".dialog")!==null&&a!==null){a.click();step="settle";}else if(++n>100)throw new Error("the remove confirmation never appeared");}'
+					+ 'else{var d=document.querySelector(".dialog");var row=document.querySelector(\'tr.commit[data-id="0"]\');if(d===null&&row!==null)return resolve("removed again");if(++n>150)throw new Error("the issue linking removal never settled");}'
+					+ '}catch(err){return reject(err);}setTimeout(t,100);};t();});})()'
+			},
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		expect: { responses: ['loadRepoInfo', 'loadCommits'] }
+	},
+	{
+		id: 'settings/pull-request-dialog',
+		title: 'Configure Pull Request Integration (open and cancel)',
+		group: 'settings',
+		mutable: false,
+		// The integration wizard is a multi-step form of custom selects the shim cannot drive, so
+		// the flow verifies the entry point instead: the button (Add or Edit — the id is shared)
+		// opens the wizard's first dialog, a sane form renders, and Cancel leaves every value as
+		// it was. The wizard's deeper steps stay manual coverage.
+		ui: [
+			{ op: 'click', selector: '#settingsBtn' },
+			{ op: 'waitFor', selector: '#settingsWidget.active' },
+			{ op: 'click', selector: '#editPullRequestIntegration' },
+			{ op: 'waitFor', selector: '.dialog' },
+			...DIALOG_ASSERT_STEPS,
+			{ op: 'click', selector: '#dialogSecondaryAction' },
+			{ op: 'waitForGone', selector: '.dialog' },
+			{ op: 'click', selector: '#settingsClose' },
+			{ op: 'waitForGone', selector: '#settingsWidget.active' }
+		],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+
 	/* ---------- Find widget ---------- */
 	{
 		id: 'find/close',
@@ -3137,5 +3510,39 @@ export const CATALOG: readonly AutomationAction[] = [
 		mutable: false,
 		request: [{ command: 'viewScm' }],
 		expect: { responses: ['viewScm'] }
+	},
+
+	/* ---------- External changes (the watcher chain) ---------- */
+	{
+		id: 'external/commit-appears',
+		title: 'A commit made outside VS Code appears without any view interaction',
+		group: 'external',
+		mutable: true,
+		// The regression class of the dropped-watcher-event fix: the runner makes an empty commit
+		// OUT OF BAND (PRE_ACTION_SETUP — a real `git commit`, the way a user's terminal would)
+		// while the view sits on the repository, and the page steps do NOTHING but poll the
+		// rendered table: no Refresh click, no view control. The row appearing is the whole
+		// assertion — it proves the watcher chain end to end (fs event → RepoFileWatcher debounce
+		// → muted-event deferral past the previous action's suppression window → the host's
+		// 'refresh' push → the page's soft reload rendering the new commit at the top). No request
+		// path: the change comes from outside the view; no response expectations either — the
+		// watcher's own loadCommits response can precede the run's listening window (the commit
+		// is made before the engine starts the run), so the run is gated on the rendered outcome.
+		ui: [
+			{
+				op: 'eval',
+				expr: '(function(){var want="External automation commit";'
+					+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+					+ 'var rows=document.querySelectorAll("tr.commit .description span.text");'
+					+ 'for(var i=0;i<rows.length;i++){if(rows[i].textContent.indexOf(want)!==-1)return resolve("the externally committed row rendered without any view interaction");}'
+					+ 'if(++n>160)return reject(new Error("the external commit never appeared in the view (watcher-driven refresh missing?)"));'
+					+ 'setTimeout(t,125);};t();});})()'
+			}
+		],
+		noHostTraffic: true,
+		expect: { responses: [] },
+		// The commit the runner made must really be HEAD — the watcher did not just re-render the
+		// old graph.
+		verify: { kind: 'headSubjectStartsWith', placeholder: 'External automation commit' }
 	}
 ];

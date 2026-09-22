@@ -265,6 +265,104 @@ describe('the host-side hex responders', () => {
 	}));
 });
 
+/* ---------- The offset gutter's width ---------- */
+
+describe('the hex offset gutter sizes itself by the largest offset', () => {
+	/**
+	 * The real webview script in a stub DOM that lays text out at 7px per character: the probes
+	 * the script measures with measure in the same terms the assertions reason in, and every
+	 * style.setProperty call is recorded so the CSS variable the gutter's width reads is asserted
+	 * exactly as the page sets it.
+	 */
+	function makeHexHarness(webviewWidth) {
+		const posted = [], cssVars = [];
+		const elements = new Map();
+		const makeElement = (tag) => {
+			const element = {
+				tagName: String(tag).toUpperCase(),
+				style: { setProperty: (name, value) => cssVars.push([name, String(value)]) },
+				addEventListener() { },
+				appendChild() { },
+				removeChild() { },
+				clientWidth: webviewWidth,
+				clientHeight: 400,
+				scrollTop: 0,
+				disabled: false,
+				className: '',
+				title: '',
+				textContent: ''
+			};
+			let html = '';
+			Object.defineProperty(element, 'innerHTML', { get: () => html, set: (value) => { html = String(value); } });
+			element.getBoundingClientRect = () => ({ width: element.textContent.length * 7, height: 14 });
+			return element;
+		};
+		const document = {
+			body: makeElement('body'),
+			getElementById(id) { if (!elements.has(id)) elements.set(id, makeElement('div')); return elements.get(id); },
+			createElement: makeElement
+		};
+		const factory = new Function('vscode', 'diffArea', 'document', 'window', 'Image', 'requestAnimationFrame', 'cssVars',
+			binaryCompareScript() + `;return {
+				enterHexView: enterHexView,
+				message: handleBinaryCompareMessage,
+				test: {
+					offsetText: hexOffsetText,
+					digits: () => hexOffDigits,
+					gutterCh: () => hexOffCh(),
+					vars: () => cssVars.slice()
+				}
+			};`);
+		const api = factory(
+			{ postMessage: (message) => { posted.push(message); } },
+			makeElement('div'),
+			document,
+			{ addEventListener() { } },
+			function StubImage() { },
+			(fn) => fn(),
+			cssVars
+		);
+		return { api, posted };
+	}
+
+	it('narrows to the widest thing it must show — the padded max offset or the header label — never the old fixed 10ch', () => {
+		const labelCh = t('compareHexColOffset').length; // the header's own label, in character cells
+		const h = makeHexHarness(1400);
+		h.api.enterHexView(0);
+		// Before any size is known the 8-digit default applies: same width the fixed 10ch drew.
+		assert.equal(h.api.test.digits(), 8);
+		assert.equal(h.api.test.gutterCh(), Math.max(8 + 2, labelCh));
+		assert.equal(h.api.test.offsetText(16), '00000010');
+
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 300, totalRows: 19, sections: null, layoutVersion: 1, bytesPerRow: 16, rowHeight: 19 });
+		// 299 = 0x12b is a 3-digit offset: the gutter drops to max(3 digits + 2ch gap, the label).
+		assert.equal(h.api.test.digits(), 3);
+		assert.equal(h.api.test.gutterCh(), Math.max(3 + 2, labelCh));
+		assert.equal(h.api.test.offsetText(16), '010');
+		const hoff = h.api.test.vars().filter(([name]) => name === '--hoff').pop();
+		assert.ok(hoff !== undefined && hoff[1] === String(Math.max(3 + 2, labelCh)), JSON.stringify(hoff));
+
+		// A file past 64 KiB needs 5 digits: the gutter grows WITH the number, past the label.
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 70000, newSize: 70000, totalRows: 4375, sections: null, layoutVersion: 2, bytesPerRow: 16, rowHeight: 19 });
+		assert.equal(h.api.test.digits(), 5);
+		assert.equal(h.api.test.gutterCh(), 7);
+		assert.equal(h.api.test.offsetText(16), '00010');
+	});
+
+	it('re-picks the row width when a narrower gutter buys room for a wider one', () => {
+		// At 7px per character, a 1400px webview fits 16 bytes/row with either gutter, but 1100px
+		// fits 16 only once a small file's gutter has narrowed (at the 10ch default: 12 bytes/row).
+		const h = makeHexHarness(1100);
+		h.api.enterHexView(0);
+		assert.equal(h.posted[0].command, 'getHexInfo');
+		assert.equal(h.posted[0].bytesPerRow, 12);
+
+		h.api.message({ command: 'hexInfo', index: 0, error: null, oldSize: 300, newSize: 300, totalRows: 19, sections: null, layoutVersion: 1, bytesPerRow: 12, rowHeight: 19 });
+		// The gutter narrowed, 16 bytes/row now fits, and the view re-requested the layout with it.
+		assert.ok(h.posted.some((message) => message.command === 'getHexInfo' && message.bytesPerRow === 16), JSON.stringify(h.posted));
+	});
+});
+
 /* ---------- The templates baked into the webview script ---------- */
 
 describe('the webview script\'s baked-in templates', () => {

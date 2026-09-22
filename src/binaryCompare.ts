@@ -132,7 +132,7 @@ export function binaryCompareCss(): string {
 		#hexView { position: absolute; top: 0; left: 0; right: 0; }
 		.hrow { display: flex; height: 19px; line-height: 19px; white-space: pre; }
 		.hrow.hxPending { opacity: 0.35; }
-		.hoff { width: 10ch; flex-shrink: 0; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
+		.hoff { width: calc(var(--hoff, 10) * 1ch); flex-shrink: 0; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
 		.hhex { width: calc(var(--bpr) * 3ch); flex-shrink: 0; }
 		.hasc { width: calc((var(--bpr) + 1) * 1ch); flex-shrink: 0; }
 		.hgap { width: 1ch; flex-shrink: 0; border-left: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); margin: 0 2ch; }
@@ -182,6 +182,10 @@ export function binaryCompareScript(): string {
 	}
 	let hexActive = false, hexIndex = -1, hexTotalRows = 0, hexSameSize = false, hexLayoutVersion = 0, hexBytesPerRow = 16;
 	let hexSections = null, hexDiffs = [], hexDiffPos = -1;
+	/* The offset gutter is sized by the largest number it will ever show: hexOffDigits is the hex
+	   digit count of the biggest offset of either side (8 until the sizes arrive), and the column
+	   is that plus a 2ch gap — never wider than the content needs, growing for files past 4 GiB. */
+	let hexOffDigits = 8, hexOffLabelCh = -1;
 	let currentFileIsImage = false;
 	const hexRows = new Map();
 	let hexPending = false, hexEls = null, hexScrollQueued = false;
@@ -200,12 +204,39 @@ export function binaryCompareScript(): string {
 
 	function hexOffsetText(offset) {
 		let text = offset.toString(16);
-		while (text.length < 8) text = '0' + text;
+		while (text.length < hexOffDigits) text = '0' + text;
 		return text;
 	}
 
+	/* The header's offset label in character cells (measured once, in the rows' own font): the
+	   gutter must at least fit the label or the header would clip. */
+	function hexOffsetLabelCh() {
+		if (hexOffLabelCh > 0) return hexOffLabelCh;
+		const probe = document.createElement('span');
+		probe.style.visibility = 'hidden';
+		probe.style.position = 'absolute';
+		probe.style.whiteSpace = 'pre';
+		probe.style.fontFamily = 'var(--vscode-editor-font-family, monospace)';
+		probe.style.fontSize = '12px';
+		document.body.appendChild(probe);
+		probe.textContent = '0000000000';
+		const zero = probe.getBoundingClientRect().width / 10;
+		probe.textContent = '${t('compareHexColOffset')}';
+		const label = probe.getBoundingClientRect().width;
+		document.body.removeChild(probe);
+		hexOffLabelCh = zero > 0 ? Math.max(1, Math.ceil(label / zero)) : 6;
+		return hexOffLabelCh;
+	}
+
+	/* The offset gutter's width in ch: the widest thing it holds — the padded max offset or the
+	   header label — plus a 2ch trailing gap. */
+	function hexOffCh() {
+		return Math.max(hexOffDigits + 2, hexOffsetLabelCh());
+	}
+
 	/* The hex view fits the window: the widest row layout (16 bytes) needs roughly
-	   (8 * 16 + 29) character cells, so narrower windows step down to 12/8/4 bytes per row. */
+	   (8 * bpr + 2 * gutterCh + 9) character cells, so narrower windows step down to 12/8/4
+	   bytes per row — and a smaller file's narrower offset gutter buys room back. */
 	function pickHexBytesPerRow() {
 		const probe = document.createElement('span');
 		probe.style.visibility = 'hidden';
@@ -217,9 +248,10 @@ export function binaryCompareScript(): string {
 		const charWidth = probe.getBoundingClientRect().width / 28;
 		document.body.removeChild(probe);
 		const available = diffArea.clientWidth - 24;
+		const gutter = 2 * hexOffCh() + 9;
 		const candidates = [16, 12, 8, 4];
 		for (let i = 0; i < candidates.length; i++) {
-			if ((8 * candidates[i] + 29) * charWidth <= available) return candidates[i];
+			if ((8 * candidates[i] + gutter) * charWidth <= available) return candidates[i];
 		}
 		return 4;
 	}
@@ -227,6 +259,7 @@ export function binaryCompareScript(): string {
 	function applyHexBytesPerRow() {
 		if (hexEls === null) return;
 		hexEls.wrap.style.setProperty('--bpr', String(hexBytesPerRow));
+		hexEls.wrap.style.setProperty('--hoff', String(hexOffCh()));
 		hexEls.head.innerHTML = hexHeadHtml();
 	}
 
@@ -292,6 +325,7 @@ export function binaryCompareScript(): string {
 		hexDiffPos = -1;
 		hexRows.clear();
 		hexPending = false;
+		hexOffDigits = 8; // the sizes are not known yet: the 8-digit default until hexInfo answers
 		hexBytesPerRow = pickHexBytesPerRow();
 		stopImageBlink();
 		imgActive = false;
@@ -794,6 +828,20 @@ export function binaryCompareScript(): string {
 				return true;
 			}
 			hexSameSize = msg.oldSize === msg.newSize;
+			// Size the offset gutter by the largest offset either side will show. A small file's
+			// narrower gutter can also fit a wider row layout, which must be re-picked — the
+			// refresh re-requests everything, so this reply is not applied any further.
+			if (msg.oldSize > 0 || msg.newSize > 0) {
+				const digits = Math.max(Math.max(msg.oldSize, msg.newSize) - 1, 0).toString(16).length;
+				if (digits !== hexOffDigits) {
+					hexOffDigits = digits;
+					if (pickHexBytesPerRow() !== hexBytesPerRow && hexEls !== null) {
+						refreshHexLayout();
+						return true;
+					}
+					applyHexBytesPerRow(); // same row width: only the gutter narrows
+				}
+			}
 			if (typeof msg.bytesPerRow === 'number' && msg.bytesPerRow !== hexBytesPerRow) {
 				hexBytesPerRow = msg.bytesPerRow;
 				applyHexBytesPerRow();

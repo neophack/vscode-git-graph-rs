@@ -302,6 +302,25 @@ test('expectSize asserts the rendered box within its bounds and reports the meas
 	assert.ok(failH.error.indexOf('900.0px tall') !== -1, failH.error);
 });
 
+test('expectSize bounds width in vw of the webview layout width (the window-size-independent currency)', async () => {
+	// The layout stub measures the webview at 1200px, so 240px is 20vw, 400px is 33.3vw and
+	// 100px is 8.3vw. These bounds are for elements the stylesheet sizes in vw units: absolute
+	// px bounds on them would break as the user resizes the window.
+	const mid = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 240, height: 24 } });
+	const ok = await runSteps(mid.window, mid.posted, [{ op: 'expectSize', selector: '#ctl', minWVw: 15, maxWVw: 25 }]);
+	assert.equal(ok.ok, true, JSON.stringify(ok));
+
+	const wide = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 400, height: 24 } });
+	const failMax = await runSteps(wide.window, wide.posted, [{ op: 'expectSize', selector: '#ctl', maxWVw: 25 }]);
+	assert.equal(failMax.ok, false);
+	assert.ok(failMax.error.indexOf('33.3vw') !== -1 && failMax.error.indexOf('<= 25vw') !== -1, failMax.error);
+
+	const narrow = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 100, height: 24 } });
+	const failMin = await runSteps(narrow.window, narrow.posted, [{ op: 'expectSize', selector: '#ctl', minWVw: 15 }]);
+	assert.equal(failMin.ok, false);
+	assert.ok(failMin.error.indexOf('8.3vw') !== -1 && failMin.error.indexOf('>= 15vw') !== -1, failMin.error);
+});
+
 test('expectSize resolves as unassertable where no layout engine exists (jsdom)', async () => {
 	// The Node harness renders the real DOM with no layout: every box is 0x0. Size assertions
 	// must SKIP (not fail) there — the real editor has a layout engine and asserts for real.

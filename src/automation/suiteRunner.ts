@@ -489,7 +489,13 @@ const POST_ACTION_CLEANUP: ReadonlyMap<string, readonly string[][]> = new Map([
 const PRE_ACTION_SETUP: ReadonlyMap<string, readonly string[][]> = new Map([
 	['menu-stash/apply', [['checkout', '-f', 'main']]],
 	['menu-stash/pop', [['checkout', '-f', 'main']]],
-	['menu-stash/branch-from-stash', [['checkout', '-f', 'main']]]
+	['menu-stash/branch-from-stash', [['checkout', '-f', 'main']]],
+	// The external-change action's precondition is a commit made OUTSIDE the view — the same way
+	// a user's terminal would make it — which the action's page steps then wait to appear on its
+	// own (the watcher-driven refresh chain; see the catalog entry). An empty commit needs no
+	// staged changes, and the inline identity keeps it working on machines with no global Git
+	// identity configured (the fixture clone seeds none).
+	['external/commit-appears', [['-c', 'user.name=Automation', '-c', 'user.email=automation@example.com', 'commit', '--allow-empty', '-m', 'External automation commit']]]
 ]);
 
 /**

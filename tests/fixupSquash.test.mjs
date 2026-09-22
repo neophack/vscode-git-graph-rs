@@ -100,8 +100,13 @@ describe('createFixupCommit / createSquashCommit', () => {
 
 	it('createSquashCommit commits the staged changes with a squash! subject Git derives itself', async () => {
 		stage('base\nfixup content\nsquash content\n');
+		// `git commit --squash` opens an editor for the message unless told not to — a spawned Git
+		// process with no terminal then blocks forever. Pin that no editor is ever needed: if Git
+		// tried to launch one, spawning this nonexistent command would fail the commit.
+		git(['config', 'core.editor', 'git-graph-test-editor-must-not-run']);
 		const error = await dataSource.createSquashCommit(repoPath, targetHash);
 		assert.equal(error, null);
+		git(['config', '--unset', 'core.editor']);
 
 		const subject = git(['log', '-1', '--format=%s']).trim();
 		assert.equal(subject, 'squash! add the base feature');

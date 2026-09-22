@@ -1741,7 +1741,10 @@ export class DataSource extends Disposable {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['commitHash', commitHash, 'hash']);
 		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
 
-		const args = ['commit', '--squash', commitHash];
+		// Unlike --fixup, `git commit --squash` opens an editor for the message — a spawned Git
+		// process with no terminal blocks on it forever. --no-edit takes Git's own generated
+		// "squash! <target subject>" message (the exact subject the autosquash flow expects).
+		const args = ['commit', '--squash', commitHash, '--no-edit'];
 		if (getConfig().signCommits) {
 			args.push('-S');
 		}

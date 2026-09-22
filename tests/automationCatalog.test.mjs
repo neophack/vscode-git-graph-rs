@@ -47,6 +47,15 @@ function extractDomIds() {
 			let match;
 			while ((match = re.exec(text)) !== null) ids.add(match[1]);
 		}
+		// SettingsWidget.checkbox('x', ...) renders the native input with the composed id
+		// 'xCheckbox' (main.css hides it and draws the .customCheckbox sibling), so both the
+		// label id and the composed input id are DOM ids a selector may target.
+		let checkboxMatch;
+		const checkboxRe = /\bSettingsWidget\.checkbox\('([^']+)'/g;
+		while ((checkboxMatch = checkboxRe.exec(text)) !== null) {
+			ids.add(checkboxMatch[1]);
+			ids.add(checkboxMatch[1] + 'Checkbox');
+		}
 	}
 	return ids;
 }
@@ -63,7 +72,7 @@ const KNOWN_PLACEHOLDERS = new Set([
 const KNOWN_GROUPS = new Set([
 	'control-bar', 'row', 'menu-commit', 'menu-branch', 'menu-remote-branch', 'menu-stash',
 	'menu-tag', 'menu-uncommitted', 'cdv', 'settings', 'find', 'keyboard', 'reflog',
-	'worktree', 'statistics', 'host', 'menu-vscode'
+	'worktree', 'statistics', 'host', 'menu-vscode', 'external'
 ]);
 
 /* ---------- tests ---------- */

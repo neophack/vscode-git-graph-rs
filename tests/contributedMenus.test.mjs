@@ -153,12 +153,20 @@ test('every menu command is exercised by an automation catalog entry, and vice v
 		assert.ok(timesCovered.has(command), 'menu command "' + command + '" (' + menuLocations.filter((l) => l !== 'commandPalette' && menus[l].some((i) => i.command.replace(/\.zhCn$/, '') === command)).join(', ') + ') has no menu-vscode automation entry');
 	}
 
-	// Every catalog command action targets a command VS Code can actually reach (a menu or the
-	// palette) — otherwise it simulates a surface that does not exist.
+	// Every catalog command action targets a command VS Code can actually reach — otherwise it
+	// simulates a surface that does not exist. Reachable means: offered by any menu, or visible
+	// in the command palette. Every command declared in contributes.commands shows in the palette
+	// BY DEFAULT (VS Code lists them all unless a commandPalette entry hides it with `when:
+	// 'false'`), so the palette side is modelled as "declared and not hidden" rather than the
+	// literal commandPalette array (which only carries overrides).
+	const paletteHidden = new Set(menus.commandPalette.filter((i) => (i.when ?? '') === 'false').map((i) => i.command.replace(/\.zhCn$/, '')));
 	const reachable = new Set(menuCommands);
-	for (const item of menus.commandPalette) reachable.add(item.command.replace(/\.zhCn$/, ''));
+	for (const command of declaredCommands.keys()) {
+		const base = command.replace(/\.zhCn$/, '');
+		if (!paletteHidden.has(base)) reachable.add(base);
+	}
 	for (const action of commandActions) {
-		assert.ok(reachable.has(action.vscodeCommand.command), action.id + ' executes "' + action.vscodeCommand.command + '", which no menu or palette offers');
+		assert.ok(reachable.has(action.vscodeCommand.command), action.id + ' executes "' + action.vscodeCommand.command + '", which no menu offers and the palette hides');
 	}
 
 	// The four file-history menu surfaces map to four entries: three URI-shaped (Explorer,
