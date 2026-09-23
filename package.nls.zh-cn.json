@@ -1,6 +1,6 @@
 {
 	"displayName": "Git Graph（Rust）",
-	"extension.description": "显示 Git 分支与标签图",
+	"extension.description": "由进程内 Rust 引擎驱动的快速 Git 图形视图：浏览分支、标签与贮藏，检视提交详情、差异与文件历史，比较二进制文件（十六进制与图片模式），支持代码评审与 Gerrit 集成——所有仓库读取均在进程内完成。",
 	"command.git-graph-rs.view.title": "打开 Git Graph",
 	"command.git-graph-rs.addGitRepository.title": "添加 Git 仓库...",
 	"command.git-graph-rs.clearAvatarCache.title": "清除头像缓存",

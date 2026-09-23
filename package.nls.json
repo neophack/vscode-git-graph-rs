@@ -1,6 +1,6 @@
 {
 	"displayName": "Git Graph (Rust)",
-	"extension.description": "Show Git Branch & Tag Graph",
+	"extension.description": "A fast Git graph view powered by an in-process Rust engine: browse branches, tags and stashes, inspect commit details, diffs and file history, compare binaries (hex & image), code review and Gerrit integration — every repository read runs in-process.",
 	"command.git-graph-rs.view.title": "View Git Graph",
 	"command.git-graph-rs.addGitRepository.title": "Add Git Repository...",
 	"command.git-graph-rs.clearAvatarCache.title": "Clear Avatar Cache",
