@@ -18,7 +18,8 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use gix::ObjectId;
 
 use crate::error::{Error, Result, ResultExt};
-use crate::repository::Repo;
+use crate::repository::{Repo, Shallow};
+use crate::text::{self, CommitEncoding};
 use crate::types::{CommitOrdering, CommitRecord, GitAuthor, GitHistoryMatch};
 
 /// How many commits are read for every commit displayed, so that the topological re-ordering has
@@ -52,12 +53,25 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         return Ok(Vec::new());
     }
     let git = repo.borrow();
-    let filtering = !options.filter_paths.is_empty();
+    // An empty path and an empty author list are no filter at all, exactly as the CLI backend
+    // reads them: it drops empty paths before `-- <paths>` and passes no `--author` for an empty
+    // list. Taken literally they would instead filter out every empty commit and every commit.
+    let filter_paths: Vec<String> = options
+        .filter_paths
+        .iter()
+        .filter(|path| !path.is_empty())
+        .cloned()
+        .collect();
+    let authors = options
+        .authors
+        .as_deref()
+        .filter(|authors| !authors.is_empty());
+    let filtering = !filter_paths.is_empty();
     // An author filter has the same problem as a path filter: matches can be sparse, so a fixed
     // window can run dry and silently return fewer commits than asked for (and hide "Load More"
     // even though more matches exist deeper in history) instead of searching until the page is
     // full, the way `git log --author` does.
-    let searching = filtering || options.authors.is_some();
+    let searching = filtering || authors.is_some();
 
     // A filtered walk cannot know in advance how deep it must go to fill a page, so it walks until
     // the page is full (or the safety limit is hit) instead of taking a fixed window.
@@ -76,6 +90,7 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         platform = platform.first_parent_only();
     }
     let walk = platform.all().git_ctx("Could not walk the commit graph")?;
+    let shallow = Shallow::of(&git);
 
     let mut records: Vec<CommitRecord> = Vec::new();
     // While filtering, the parents of every commit the walk *reads* are kept, not just of the
@@ -104,29 +119,30 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         // its tree — so the message and the dates of the commits about to be dropped are never
         // decoded. On a filtered walk through a large repository that is nearly every commit it
         // reads.
-        if filtering || options.authors.is_some() {
-            let author_ok = match &options.authors {
+        if searching {
+            let author_ok = match authors {
                 Some(authors) => commit_matches_author(&commit, authors)?,
                 None => true,
             };
             if filtering {
                 visited_parents.push((
                     commit.id().detach().to_string(),
-                    commit
-                        .parent_ids()
-                        .map(|id| id.detach().to_string())
+                    shallow
+                        .parents(&commit)
+                        .iter()
+                        .map(ToString::to_string)
                         .collect(),
                 ));
             }
             if !author_ok {
                 continue;
             }
-            if filtering && !touches_paths(&git, &commit, &options.filter_paths)? {
+            if filtering && !touches_paths(&git, &commit, &shallow, &filter_paths)? {
                 continue;
             }
         }
 
-        records.push(read_commit(&commit)?);
+        records.push(read_commit(&commit, &shallow)?);
         if searching && records.len() >= options.limit {
             break;
         }
@@ -136,36 +152,39 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         // History simplification: a commit whose parent was filtered out is re-parented onto its
         // nearest shown ancestor, so the graph stays connected instead of breaking into fragments.
         rewrite_parents(&mut records, &visited_parents);
-        return Ok(records);
     }
 
+    // The filtered page is ordered like any other, over its re-parented graph: the walk read it by
+    // commit time alone, which is neither `--topo-order` nor topologically constrained.
     Ok(order(records, options.ordering, options.limit))
 }
 
 /// Read the fields the graph renders out of a commit object.
-pub fn read_commit(commit: &gix::Commit<'_>) -> Result<CommitRecord> {
+///
+/// `shallow` is the repository's shallow boundary: a boundary commit is reported without parents,
+/// as git reports it, rather than with parents that were never fetched.
+pub fn read_commit(commit: &gix::Commit<'_>, shallow: &Shallow) -> Result<CommitRecord> {
     let author = commit
         .author()
         .git_ctx("Could not decode the commit author")?;
     let committer = commit
         .committer()
         .git_ctx("Could not decode the commit committer")?;
-    let message = commit
-        .message()
-        .git_ctx("Could not decode the commit message")?;
+    let encoding = CommitEncoding::of(commit);
 
     Ok(CommitRecord {
         hash: commit.id().detach().to_string(),
-        parents: commit
-            .parent_ids()
-            .map(|id| id.detach().to_string())
+        parents: shallow
+            .parents(commit)
+            .iter()
+            .map(ToString::to_string)
             .collect(),
-        author: author.name.to_string(),
-        email: author.email.to_string(),
+        author: encoding.decode(author.name),
+        email: encoding.decode(author.email),
         // The graph's date column follows git's default and shows the *committer* date.
         date: committer.time().map(|time| time.seconds).unwrap_or(0),
         author_date: author.time().map(|time| time.seconds).unwrap_or(0),
-        message: message.summary().to_string(),
+        message: text::commit_subject(commit, &encoding),
     })
 }
 
@@ -196,10 +215,11 @@ fn commit_matches_author(commit: &gix::Commit<'_>, authors: &[String]) -> Result
 fn touches_paths(
     git: &gix::Repository,
     commit: &gix::Commit<'_>,
+    shallow: &Shallow,
     paths: &[String],
 ) -> Result<bool> {
     let tree = commit.tree().git_ctx("Could not read the commit tree")?;
-    let parents: Vec<_> = commit.parent_ids().map(|id| id.detach()).collect();
+    let parents = shallow.parents(commit);
     if parents.is_empty() {
         return changes_paths(git, None, &tree, paths);
     }
@@ -394,18 +414,27 @@ fn order(records: Vec<CommitRecord>, ordering: CommitOrdering, limit: usize) -> 
         CommitOrdering::Topo => 0,
     };
 
+    let mut initial: Vec<usize> = (0..records.len())
+        .filter(|&index| pending[index] == 0)
+        .collect();
+    // Topological order pops the highest sequence first, so seeding the ready set in walk order
+    // would start from the *oldest* tip. git reverses its initial queue (`prio_queue_reverse` in
+    // `sort_in_topological_order`) so the newest tip comes out first; seeding in reverse does the
+    // same. The date orderings rank by date and only use the sequence to break ties, lowest first.
+    if ordering == CommitOrdering::Topo {
+        initial.reverse();
+    }
+
     let mut sequence = 0usize;
     let mut ready: BinaryHeap<Ready> = BinaryHeap::new();
-    for (index, record) in records.iter().enumerate() {
-        if pending[index] == 0 {
-            ready.push(Ready {
-                date: key(record),
-                sequence,
-                index,
-                ordering,
-            });
-            sequence += 1;
-        }
+    for index in initial {
+        ready.push(Ready {
+            date: key(&records[index]),
+            sequence,
+            index,
+            ordering,
+        });
+        sequence += 1;
     }
 
     let mut ordered: Vec<CommitRecord> = Vec::with_capacity(limit.min(records.len()));
@@ -454,6 +483,7 @@ pub fn pin_commits(
         return Ok(());
     }
     let git = repo.borrow();
+    let shallow = Shallow::of(&git);
     let mut present: HashSet<String> = records.iter().map(|record| record.hash.clone()).collect();
     for id in pinned {
         if present.contains(&id.to_string()) {
@@ -462,7 +492,7 @@ pub fn pin_commits(
         let Ok(commit) = git.find_commit(*id) else {
             continue;
         };
-        let record = read_commit(&commit)?;
+        let record = read_commit(&commit, &shallow)?;
         let position = records
             .iter()
             .position(|existing| existing.date < record.date)
@@ -530,9 +560,17 @@ pub fn all_tips(repo: &Repo, include_tags: bool, include_remotes: bool) -> Resul
             .git_ctx("Could not read references")?
             .filter_map(std::result::Result::ok)
         {
-            // Tags are peeled because a tag object is not a commit and cannot be walked from.
+            // Tags are peeled because a tag object is not a commit and cannot be walked from. A tag
+            // can also name a tree or a blob, which `git log --all` passes over; handed to the
+            // walk, it would fail the whole walk ("expected commit, got blob").
             if let Ok(id) = reference.peel_to_id() {
-                add(id.detach(), &mut tips, &mut seen);
+                let id = id.detach();
+                let is_commit = git
+                    .find_header(id)
+                    .is_ok_and(|header| header.kind() == gix::object::Kind::Commit);
+                if is_commit {
+                    add(id, &mut tips, &mut seen);
+                }
             }
         }
     }
@@ -559,6 +597,13 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
         .case_insensitive(true)
         .build()
         .map_err(|e| Error::invalid_argument(format!("Invalid search query: {e}")))?;
+    // The history git searches runs through the replacement objects the engine cannot apply
+    // (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
 
     // A repository with no refs at all has nothing to search; git's `--all` simply matches nothing.
     let mut tips = all_tips(repo, true, true).unwrap_or_default();
@@ -592,10 +637,13 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
             Ok(commit) => commit,
             Err(_) => continue,
         };
-        let raw = commit
-            .message_raw()
-            .git_ctx("Could not decode the commit message")?
-            .to_string();
+        // `--grep` matches the message as `git log` re-encodes it for output.
+        let encoding = CommitEncoding::of(&commit);
+        let raw = encoding.decode(
+            commit
+                .message_raw()
+                .git_ctx("Could not decode the commit message")?,
+        );
         if !matcher.is_match(&raw) {
             continue;
         }
@@ -604,13 +652,9 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
             .git_ctx("Could not decode the commit author")?;
         matches.push(GitHistoryMatch {
             hash: commit.id().detach().to_string(),
-            author: author.name.to_string(),
+            author: encoding.decode(author.name),
             date: author.time().map(|time| time.seconds).unwrap_or(0),
-            message: commit
-                .message()
-                .git_ctx("Could not decode the commit message")?
-                .summary()
-                .to_string(),
+            message: text::commit_subject(&commit, &encoding),
         });
         if matches.len() >= SEARCH_LIMIT {
             break;
@@ -744,8 +788,9 @@ pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
         let Ok(author) = commit.author() else {
             continue;
         };
+        let encoding = CommitEncoding::of(&commit);
         *counts
-            .entry((author.name.to_string(), author.email.to_string()))
+            .entry((encoding.decode(author.name), encoding.decode(author.email)))
             .or_insert(0) += 1;
     }
 

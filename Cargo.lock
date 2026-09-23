@@ -400,6 +400,7 @@ name = "git-graph-core"
 version = "1.0.25"
 dependencies = [
  "bstr",
+ "encoding_rs",
  "gix",
  "regex",
  "serde",

@@ -18,6 +18,8 @@ gix = { version = "0.87", default-features = false, features = [
     "sha1",
 ] }
 bstr = "1"
+# Already built for gix-filter; decodes commits whose `encoding` header is not UTF-8.
+encoding_rs = "0.8"
 thiserror.workspace = true
 regex.workspace = true
 serde.workspace = true

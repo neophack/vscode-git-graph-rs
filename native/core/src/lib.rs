@@ -24,6 +24,7 @@ pub mod repository;
 pub mod stash;
 pub mod stats;
 pub mod status;
+pub mod text;
 pub mod types;
 
 pub use api::{Engine, GraphOptions};

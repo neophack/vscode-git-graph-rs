@@ -543,3 +543,187 @@ fn an_empty_repository_reports_no_head_rather_than_failing() {
     // `git status` report it — so the view names the branch the first commit will land on.
     assert_eq!(snapshot.branches, vec!["main"]);
 }
+
+#[test]
+fn an_empty_author_list_filters_nothing() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    repo.commit_file("b.txt", "2", "second");
+
+    // `git log` with no `--author` shows every commit; the CLI backend treats an empty author
+    // list the same way, so the engine must not read it as "match nobody".
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        authors: Some(Vec::new()),
+        ..Default::default()
+    };
+    let hashes: Vec<String> = log::walk(&engine, &tips, &options)
+        .unwrap()
+        .into_iter()
+        .map(|record| record.hash)
+        .collect();
+    assert_eq!(hashes, repo.log_hashes(&["--date-order", "--all"]));
+}
+
+#[test]
+fn an_empty_filter_path_filters_nothing() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    // An empty commit changes no path, so any path filter at all would drop it.
+    repo.git(&["commit", "--quiet", "--allow-empty", "-m", "empty"]);
+    repo.commit_file("b.txt", "2", "third");
+
+    // The CLI backend drops empty paths before building `-- <paths>`; with nothing left there is
+    // no filter, and the empty commit is shown.
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        filter_paths: vec![String::new()],
+        ..Default::default()
+    };
+    let hashes: Vec<String> = log::walk(&engine, &tips, &options)
+        .unwrap()
+        .into_iter()
+        .map(|record| record.hash)
+        .collect();
+    assert_eq!(hashes, repo.log_hashes(&["--date-order", "--all"]));
+}
+
+#[test]
+fn topological_order_matches_git_with_and_without_a_path_filter() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("src/base.txt", "0", "base");
+    repo.git(&["checkout", "--quiet", "-b", "side"]);
+    repo.commit_file("src/side1.txt", "1", "side 1");
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.commit_file("src/main1.txt", "1", "main 1");
+    repo.git(&["checkout", "--quiet", "side"]);
+    repo.commit_file("src/side2.txt", "2", "side 2");
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.commit_file("src/main2.txt", "2", "main 2");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let walk = |filter_paths: Vec<String>| -> Vec<String> {
+        let options = WalkOptions {
+            limit: 100,
+            ordering: CommitOrdering::Topo,
+            filter_paths,
+            ..Default::default()
+        };
+        log::walk(&engine, &tips, &options)
+            .unwrap()
+            .into_iter()
+            .map(|record| record.hash)
+            .collect()
+    };
+
+    // git reverses its initially-ready commits so that the newest tip comes out first, then keeps
+    // following the line it is on: main 2, main 1, side 2, side 1, base.
+    assert_eq!(
+        walk(Vec::new()),
+        repo.log_hashes(&["--topo-order", "--all"])
+    );
+    // A path-filtered page is ordered the same way, not left in the walk's commit-time order.
+    assert_eq!(
+        walk(vec!["src".to_string()]),
+        repo.log_hashes(&[
+            "--topo-order",
+            "--full-history",
+            "--simplify-merges",
+            "--all",
+            "--",
+            "src",
+        ])
+    );
+}
+
+#[test]
+fn topological_order_matches_git_across_merges() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("base.txt", "0", "base");
+    for round in 1..=3 {
+        repo.git(&["checkout", "--quiet", "-b", &format!("topic{round}")]);
+        repo.commit_file(
+            &format!("topic{round}a.txt"),
+            "a",
+            &format!("topic {round} a"),
+        );
+        repo.git(&["checkout", "--quiet", "main"]);
+        repo.commit_file(&format!("main{round}.txt"), "m", &format!("main {round}"));
+        repo.git(&["checkout", "--quiet", &format!("topic{round}")]);
+        repo.commit_file(
+            &format!("topic{round}b.txt"),
+            "b",
+            &format!("topic {round} b"),
+        );
+        repo.git(&["checkout", "--quiet", "main"]);
+        repo.git(&[
+            "merge",
+            "--quiet",
+            "--no-ff",
+            "-m",
+            &format!("merge {round}"),
+            &format!("topic{round}"),
+        ]);
+    }
+    // One unmerged branch as a second tip.
+    repo.git(&["checkout", "--quiet", "-b", "loose", "HEAD~1"]);
+    repo.commit_file("loose.txt", "l", "loose");
+    repo.git(&["checkout", "--quiet", "main"]);
+
+    assert_eq!(
+        walk_all(&repo, 100, CommitOrdering::Topo),
+        repo.log_hashes(&["--topo-order", "--all"])
+    );
+}
+
+#[test]
+fn a_remote_branch_with_tags_in_its_path_stays_a_branch() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let head = repo.commit_file("a.txt", "1", "first");
+    repo.add_fake_remote("origin", "feature/tags/cleanup", &head);
+    // The layout a `+refs/tags/*:refs/remotes/origin/tags/*` refspec writes: a real remote tag.
+    repo.update_ref("refs/remotes/origin/tags/v1", &head);
+
+    let engine = open(&repo);
+    let options = RefReadOptions {
+        show_remote_branches: true,
+        ..Default::default()
+    };
+    let snapshot = read_refs(&engine, &options).unwrap();
+    let remotes: Vec<&str> = snapshot
+        .ref_data
+        .remotes
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    let tags: Vec<&str> = snapshot
+        .ref_data
+        .tags
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
+    assert!(
+        remotes.contains(&"origin/feature/tags/cleanup"),
+        "a branch whose name contains `tags/` is still a branch: {remotes:?}"
+    );
+    assert!(snapshot
+        .branches
+        .contains(&"remotes/origin/feature/tags/cleanup".to_string()));
+    assert!(
+        !tags.contains(&"origin/feature/cleanup"),
+        "the branch must not be mistaken for a tag: {tags:?}"
+    );
+    // The genuine remote tag directly below the remote is still read as one.
+    assert!(tags.contains(&"origin/v1"), "{tags:?}");
+    assert!(!remotes.contains(&"origin/tags/v1"));
+}

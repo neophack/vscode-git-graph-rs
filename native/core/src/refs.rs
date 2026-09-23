@@ -166,7 +166,12 @@ fn read_remote_refs(
             continue;
         };
 
-        if let Some(tags_index) = remote_ref.find("/tags/") {
+        // Only `tags/` directly below the remote's name marks a tag: a branch pushed as
+        // `feature/tags/cleanup` also carries a `/tags/` further down, and is still a branch.
+        let tags_index = remote_ref
+            .find('/')
+            .filter(|&slash| remote_ref[slash + 1..].starts_with("tags/"));
+        if let Some(tags_index) = tags_index {
             // `refs/remotes/<remote>/tags/<tag>` is displayed as the tag `<remote>/<tag>`.
             let name = format!(
                 "{}/{}",

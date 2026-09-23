@@ -28,10 +28,12 @@ fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
 }
 
 /// Commit counts per author, across all refs, merge commits excluded - what
-/// `git shortlog -sne --all --no-merges` aggregates into.
+/// `git shortlog -sne --all --no-merges` aggregates into, `.mailmap` applied as shortlog applies it.
 pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();
+    let shallow = crate::repository::Shallow::of(&git);
+    let mailmap = git.open_mailmap();
 
     let mut counts: HashMap<(String, String), usize> = HashMap::new();
     for info in git
@@ -47,14 +49,21 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
             continue;
         };
         // --no-merges: a commit with more than one parent is excluded.
-        if commit.parent_ids().count() > 1 {
+        if shallow.parents(&commit).len() > 1 {
             continue;
         }
         let Ok(author) = commit.author() else {
             continue;
         };
+        // `git shortlog` maps every identity through the repository's mailmap, so two spellings
+        // of one person are counted together under the canonical one.
+        let author = mailmap.resolve_cow(author);
+        let encoding = crate::text::CommitEncoding::of(&commit);
         *counts
-            .entry((author.name.to_string(), author.email.to_string()))
+            .entry((
+                encoding.decode(&author.name),
+                encoding.decode(&author.email),
+            ))
             .or_insert(0) += 1;
     }
 
@@ -81,6 +90,7 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
 pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();
+    let shallow = crate::repository::Shallow::of(&git);
 
     let mut counts: HashMap<(u8, u8), usize> = HashMap::new();
     for info in git
@@ -95,7 +105,7 @@ pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
         let Ok(commit) = git.find_commit(info.id) else {
             continue;
         };
-        if commit.parent_ids().count() > 1 {
+        if shallow.parents(&commit).len() > 1 {
             continue;
         }
         let Ok(author) = commit.author() else {

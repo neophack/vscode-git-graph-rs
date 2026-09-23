@@ -273,12 +273,13 @@ export class CliBackend implements GitBackend {
 	public async getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
 		// `git diff HEAD` sees neither untracked files nor files deleted from the working tree, so
 		// the status scan is layered on top of it — as the original extension does. An unborn HEAD
-		// (a fresh repository with no commits) cannot be diffed against at all: everything the
-		// status scan reports — untracked files — is then the whole difference.
+		// (a fresh repository, or an orphan branch) has no commit to diff against: the working
+		// tree is diffed against the empty tree instead, so the files already staged for the first
+		// commit are listed as added - as `git status` lists them - rather than left out.
 		const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
 			.then((out) => out.trim() !== '', () => false);
 		const [changes, status] = await Promise.all([
-			headExists ? this.getFileChanges(repo, 'HEAD', '') : Promise.resolve(<GitFileChange[]>[]),
+			this.getFileChanges(repo, headExists ? 'HEAD' : EMPTY_TREE, ''),
 			this.getStatusFiles(repo)
 		]);
 		return {
@@ -302,20 +303,24 @@ export class CliBackend implements GitBackend {
 	 * `git status -z` terminates each entry with a NUL, and a rename spends two entries (the new
 	 * path then the old one), which is why the cursor advances by two for `R` and `C`.
 	 */
-	private async getStatusFiles(repo: string): Promise<{ deleted: string[]; untracked: string[] }> {
+	private async getStatusFiles(repo: string): Promise<{ deleted: string[]; untracked: string[]; unmerged: string[] }> {
 		const out = await this.run(
 			['status', '-s', '--untracked-files=all', '--porcelain', '-z'],
 			repo
 		);
 		const entries = out.split('\u0000');
-		const status = { deleted: [] as string[], untracked: [] as string[] };
+		const status = { deleted: [] as string[], untracked: [] as string[], unmerged: [] as string[] };
 		for (let i = 0; i < entries.length && entries[i] !== ''; ) {
 			if (entries[i].length < 4) break;
 			const path = entries[i].slice(3);
 			const staged = entries[i][0];
 			const unstaged = entries[i][1];
+			// In an unmerged pair (`UD`, `DU`, `AU`, …) a `D` says which side of the merge deleted
+			// the file, which is still in the working tree; only `DD` (both deleted) is gone.
+			const unmerged = staged === 'U' || unstaged === 'U' || (staged === 'A' && unstaged === 'A') || (staged === 'D' && unstaged === 'D');
 
-			if (staged === 'D' || unstaged === 'D') status.deleted.push(path);
+			if ((staged === 'D' || unstaged === 'D') && (!unmerged || staged === unstaged)) status.deleted.push(path);
+			else if (unmerged) status.unmerged.push(path);
 			else if (staged === '?' || unstaged === '?') status.untracked.push(path);
 
 			i += staged === 'R' || unstaged === 'R' || staged === 'C' || unstaged === 'C' ? 2 : 1;
@@ -765,7 +770,11 @@ export class CliBackend implements GitBackend {
 			args.push('--branches', '--tags');
 			if (showRemoteBranches) args.push('--remotes');
 			if (includeCommitsMentionedByReflogs) args.push('--reflog');
-			args.push('HEAD');
+			// HEAD is only a tip when it resolves: on an orphan branch it names no commit, and
+			// passing it would fail the whole count (the engine skips it the same way).
+			const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
+				.then((out) => out.trim() !== '', () => false);
+			if (headExists) args.push('HEAD');
 		}
 		args.push(`^${hash}`);
 		const out = await this.run(args, repo);
@@ -921,7 +930,11 @@ export class CliBackend implements GitBackend {
 			`--max-count=${options.maxCommits + 1}`,
 			`--format=${format}`,
 			`--${order}-order`,
-			'-z'
+			'-z',
+			// A tip that does not resolve is skipped, as the engine skips it: `HEAD` on an orphan
+			// branch (no commit yet, other branches still there) or a stale branch name from the
+			// view's saved state would otherwise fail the whole log with "bad revision".
+			'--ignore-missing'
 		];
 		// `log.mailmap` (and not `--use-mailmap`, whose availability varies) maps %an/%ae through
 		// the work tree's `.mailmap`, matching the engine's decline of the same request.
@@ -1099,7 +1112,10 @@ export class CliBackend implements GitBackend {
 			if (!options.showRemoteHeads && ref.endsWith('/HEAD')) continue;
 
 			const name = ref.slice(13);
-			const tagsIndex = name.indexOf('/tags/');
+			// Only `tags/` directly below the remote's name marks a tag (see refs.rs): a branch
+			// pushed as `feature/tags/cleanup` also carries a `/tags/` further down.
+			const slash = name.indexOf('/');
+			const tagsIndex = slash > -1 && name.startsWith('tags/', slash + 1) ? slash : -1;
 			if (tagsIndex > -1) {
 				const peeledHash = remoteAnnotatedTags.get(ref);
 				refData.tags.push({
@@ -1398,10 +1414,21 @@ function unquoteCPath(quoted: string): string {
 }
 
 function mergeStatusFiles(changes: ReadonlyArray<GitFileChange>,
-	status: { deleted: ReadonlyArray<string>; untracked: ReadonlyArray<string> }
+	status: { deleted: ReadonlyArray<string>; untracked: ReadonlyArray<string>; unmerged: ReadonlyArray<string> }
 ): GitFileChange[] {
 	const merged = [...changes];
+	// A conflicted file still in the working tree (`UD` when the other side deleted it) can be
+	// identical to HEAD, so `git diff` leaves it out; it is listed as modified, as `git status`
+	// counts it and the engine lists it, rather than vanishing mid-merge.
+	for (const path of status.unmerged) {
+		if (!merged.some((change) => change.newFilePath === path)) {
+			merged.push({ oldFilePath: path, newFilePath: path, type: GitFileStatus.Modified, additions: null, deletions: null });
+		}
+	}
 	for (const path of status.deleted) {
+		// The source of a rename the diff already paired (`git status` lists it as deleted when
+		// `status.renames` is off) is accounted for by that rename record.
+		if (merged.some((change) => change.type === GitFileStatus.Renamed && change.oldFilePath === path)) continue;
 		const index = merged.findIndex((change) => change.newFilePath === path);
 		if (index !== -1) {
 			merged[index] = { ...merged[index], type: GitFileStatus.Deleted };

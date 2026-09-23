@@ -6,6 +6,7 @@ use std::ops::Deref;
 use crate::diff;
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
+use crate::text::CommitEncoding;
 use crate::types::{
     GitCommitDetails, GitCommitStash, GitCommitSummary, GitFileStatus, GitSignature,
     GitSignatureStatus, GitTagDetails, UNCOMMITTED,
@@ -17,6 +18,13 @@ use crate::types::{
 /// which on a commit touching thousands of files dominates the load. They arrive separately, for
 /// the paths the view asks about, through [`crate::diff::line_counts`].
 pub fn commit_details(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
+    // A replaced commit's parents and tree are the replacement's in git; see
+    // `Repo::uses_replace_refs` for why the engine cannot show them.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let mut details = commit_details_base(repo, hash)?;
     details.file_changes = diff::diff_commit(repo, hash)?;
     Ok(details)
@@ -37,21 +45,25 @@ pub fn commit_details_base(repo: &Repo, hash: &str) -> Result<GitCommitDetails> 
     let body = commit
         .message_raw()
         .git_ctx("Could not decode the commit message")?;
+    let encoding = CommitEncoding::of(&commit);
 
     Ok(GitCommitDetails {
         hash: commit.id().detach().to_string(),
-        parents: commit
-            .parent_ids()
-            .map(|parent| parent.detach().to_string())
+        parents: crate::repository::Shallow::of(&git)
+            .parents(&commit)
+            .iter()
+            .map(ToString::to_string)
             .collect(),
-        author: author.name.to_string(),
-        author_email: author.email.to_string(),
+        author: encoding.decode(author.name),
+        author_email: encoding.decode(author.email),
         author_date: author.time().map(|time| time.seconds).unwrap_or(0),
-        committer: committer.name.to_string(),
-        committer_email: committer.email.to_string(),
+        committer: encoding.decode(committer.name),
+        committer_email: encoding.decode(committer.email),
         committer_date: committer.time().map(|time| time.seconds).unwrap_or(0),
         signature: read_signature(&commit),
-        body: body.to_string(),
+        // Trimmed as the CLI backend trims `%B`, so the trailing newline every message carries
+        // does not reach the view from one backend only.
+        body: encoding.decode(body).trim().to_string(),
         file_changes: Vec::new(),
     })
 }
@@ -145,10 +157,11 @@ pub fn commit_bodies(repo: &Repo, hashes: &[String]) -> Result<BTreeMap<String, 
         let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
         // git's `%B` ends with the message's trailing newline, which the caller strips; strip it
         // here so the two spellings of "the body" agree byte for byte.
-        let body = commit
-            .message_raw()
-            .git_ctx("Could not decode the commit message")?
-            .to_string();
+        let body = CommitEncoding::of(&commit).decode(
+            commit
+                .message_raw()
+                .git_ctx("Could not decode the commit message")?,
+        );
         bodies.insert(commit.id().detach().to_string(), strip_one_newline(body));
     }
     Ok(bodies)
@@ -160,10 +173,10 @@ pub fn commit_subject(repo: &Repo, hash: &str) -> Result<String> {
     let git = repo.borrow();
     let id = crate::repository::resolve_commit_in(&git, hash)?;
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
-    let message = commit
-        .message()
-        .git_ctx("Could not decode the commit message")?;
-    Ok(collapse_whitespace(message.summary().to_string()))
+    let encoding = CommitEncoding::of(&commit);
+    Ok(collapse_whitespace(crate::text::commit_subject(
+        &commit, &encoding,
+    )))
 }
 
 /// The summary of each of the given commits (author, email, author date, full message), keyed by
@@ -180,14 +193,16 @@ pub fn commit_summaries(
         let author = commit
             .author()
             .git_ctx("Could not decode the commit author")?;
-        let message = commit
-            .message_raw()
-            .git_ctx("Could not decode the commit message")?
-            .to_string();
+        let encoding = CommitEncoding::of(&commit);
+        let message = encoding.decode(
+            commit
+                .message_raw()
+                .git_ctx("Could not decode the commit message")?,
+        );
         let summary = GitCommitSummary {
             hash: commit.id().detach().to_string(),
-            author: author.name.to_string(),
-            email: author.email.to_string(),
+            author: encoding.decode(author.name),
+            email: encoding.decode(author.email),
             date: author.time().map(|time| time.seconds).unwrap_or(0),
             // `git show --format=%B` output is trimmed before use.
             message: message.trim().to_string(),
@@ -275,7 +290,16 @@ pub fn tag_details(repo: &Repo, tag_name: &str) -> Result<GitTagDetails> {
                 signature: None,
             })
         }
-        _ => Err(not_a_tag()),
+        // A lightweight tag of a tree or a blob: `for-each-ref` reports the object's hash and no
+        // message, which is all the dialogue has to show.
+        _ => Ok(GitTagDetails {
+            hash: id.to_string(),
+            tagger_name: String::new(),
+            tagger_email: String::new(),
+            tagger_date: 0,
+            message: String::new(),
+            signature: None,
+        }),
     }
 }
 

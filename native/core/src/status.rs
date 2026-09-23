@@ -39,7 +39,15 @@ struct PathState {
 ///
 /// git prints one porcelain line per path however many ways that path changed, and the view counts
 /// those lines, so the states are keyed by path here for the same reason.
-fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathState>> {
+///
+/// `renames` picks how staged deletions and additions are paired: [`Renames::AsStatus`] follows the
+/// configuration exactly as `git status` does, [`Renames::Always`] pairs them as
+/// `git diff --find-renames` does whatever the configuration says.
+fn scan(
+    repo: &Repo,
+    include_untracked: bool,
+    renames: Renames,
+) -> Result<BTreeMap<String, PathState>> {
     let git = repo.borrow();
     let mut states: BTreeMap<String, PathState> = BTreeMap::new();
 
@@ -48,9 +56,28 @@ fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathSta
         return Ok(states);
     }
 
+    // `git status` pairs staged deletions and additions into renames unless `status.renames` (or,
+    // when that is unset, `diff.renames`) turns it off — and then prints both halves, which the
+    // count must see as two lines. Resolved here rather than left to gix's own reading of the keys,
+    // which kept pairing renames with `status.renames=false` set.
+    let renames_off = {
+        let config = git.config_snapshot();
+        config
+            .boolean("status.renames")
+            .or_else(|| config.boolean("diff.renames"))
+            == Some(false)
+    };
+    let track_renames = match renames {
+        Renames::AsStatus if renames_off => gix::status::tree_index::TrackRenames::Disabled,
+        Renames::AsStatus => gix::status::tree_index::TrackRenames::AsConfigured,
+        Renames::Always => {
+            gix::status::tree_index::TrackRenames::Given(gix::diff::Rewrites::default())
+        }
+    };
     let platform = git
         .status(gix::progress::Discard)
         .git_ctx("Could not read the working tree status")?
+        .tree_index_track_renames(track_renames)
         .untracked_files(if include_untracked {
             gix::status::UntrackedFiles::Files
         } else {
@@ -84,6 +111,15 @@ fn scan(repo: &Repo, include_untracked: bool) -> Result<BTreeMap<String, PathSta
     }
 
     Ok(states)
+}
+
+/// How [`scan`] pairs staged deletions and additions into renames.
+#[derive(Clone, Copy)]
+enum Renames {
+    /// As `git status` does: `status.renames`, then `diff.renames`, may turn it off.
+    AsStatus,
+    /// As `git diff --find-renames` does, whatever the configuration.
+    Always,
 }
 
 /// Returns the path, its status, and — for a rename — the source path it was renamed from.
@@ -146,6 +182,11 @@ fn classify_unstaged(
                 gix::status::plumbing::index_as_worktree::EntryStatus::Conflict { .. } => {
                     Some((path, GitFileStatus::Modified, false))
                 }
+                // `git add -N`: the index records the path with no content yet, and git lists it
+                // as an addition the working tree has not staged (` A`).
+                gix::status::plumbing::index_as_worktree::EntryStatus::IntentToAdd => {
+                    Some((path, GitFileStatus::Added, false))
+                }
                 // `NeedsUpdate` means only the cached stat is stale; the content is unchanged, and
                 // git would print nothing for it.
                 _ => None,
@@ -153,7 +194,12 @@ fn classify_unstaged(
         }
         Item::DirectoryContents { entry, .. } => {
             if entry.status == gix::dir::entry::Status::Untracked {
-                let path = entry.rela_path.to_str_lossy().into_owned();
+                let mut path = entry.rela_path.to_str_lossy().into_owned();
+                // Only a directory that cannot be expanded (a nested repository) is reported
+                // whole, and git spells it with a trailing slash (`?? inner/`).
+                if entry.disk_kind.is_some_and(|kind| kind.is_dir()) && !path.ends_with('/') {
+                    path.push('/');
+                }
                 Some((path, GitFileStatus::Untracked, true))
             } else {
                 None
@@ -166,25 +212,37 @@ fn classify_unstaged(
     }
 }
 
+impl PathState {
+    /// Removed from the index (`git rm --cached`) yet still on disk: git prints this path twice,
+    /// once as the staged deletion (`D  path`) and once as untracked (`?? path`).
+    fn deleted_and_untracked(&self) -> bool {
+        self.untracked && self.staged == Some(GitFileStatus::Deleted)
+    }
+}
+
 /// How many uncommitted changes are there?
 ///
 /// This is the number of lines `git status --porcelain` would print, which is what the
 /// "Uncommitted Changes (N)" row shows.
 pub fn count_changes(repo: &Repo, include_untracked: bool) -> Result<usize> {
-    Ok(scan(repo, include_untracked)?.len())
+    Ok(scan(repo, include_untracked, Renames::AsStatus)?
+        .values()
+        .map(|state| 1 + usize::from(state.deleted_and_untracked()))
+        .sum())
 }
 
 /// The untracked and deleted files of the working tree.
 pub fn status_files(repo: &Repo, include_untracked: bool) -> Result<GitStatusFiles> {
-    let states = scan(repo, include_untracked)?;
+    let states = scan(repo, include_untracked, Renames::AsStatus)?;
     let mut files = GitStatusFiles::default();
     for (path, state) in states {
-        if state.untracked {
-            files.untracked.push(path);
-        } else if state.staged == Some(GitFileStatus::Deleted)
+        if state.staged == Some(GitFileStatus::Deleted)
             || state.unstaged == Some(GitFileStatus::Deleted)
         {
-            files.deleted.push(path);
+            files.deleted.push(path.clone());
+        }
+        if state.untracked {
+            files.untracked.push(path);
         }
     }
     Ok(files)
@@ -195,9 +253,20 @@ pub fn status_files(repo: &Repo, include_untracked: bool) -> Result<GitStatusFil
 /// The staged side wins when a path changed on both, because it describes the change relative to
 /// HEAD — which is what the view is comparing against.
 pub fn uncommitted_changes(repo: &Repo) -> Result<Vec<GitFileChange>> {
-    let states = scan(repo, true)?;
+    // Renames are always paired here, as the CLI backend's `git diff --find-renames HEAD` pairs
+    // them: the rename configuration only changes how `git status` lists them.
+    let states = scan(repo, true, Renames::Always)?;
     let mut changes = Vec::with_capacity(states.len());
     for (path, state) in states {
+        if state.deleted_and_untracked() {
+            changes.push(GitFileChange {
+                old_file_path: path.clone(),
+                new_file_path: path.clone(),
+                kind: GitFileStatus::Deleted,
+                additions: None,
+                deletions: None,
+            });
+        }
         let kind = if state.untracked {
             GitFileStatus::Untracked
         } else if let Some(staged) = state.staged {
@@ -254,7 +323,7 @@ fn status_name(status: GitFileStatus) -> &'static str {
 /// The working tree's changes as the Source Control view lists them, staged and unstaged halves
 /// separate, so it can fill its two sections without a second read.
 pub fn scm_changes(repo: &Repo) -> Result<Vec<ScmChange>> {
-    let states = scan(repo, true)?;
+    let states = scan(repo, true, Renames::AsStatus)?;
     Ok(states
         .into_iter()
         .map(|(path, state)| ScmChange {

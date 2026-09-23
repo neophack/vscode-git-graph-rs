@@ -1502,3 +1502,272 @@ describe('the backend capability report', () => {
 		}
 	});
 });
+
+describe('graph options and ref shapes both backends must read alike', () => {
+	// Each of these once disagreed: an empty author list or filter path the engine read as a
+	// filter, a topological order that started from the oldest tip, and a remote branch whose
+	// name contains `tags/` read as a remote tag.
+	let rust;
+	let cli;
+	let root;
+	let repoDir;
+	let tip;
+
+	before(async () => {
+		repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-options-'));
+		let tick = 1_600_000_000;
+		const gitIn = (args, date) =>
+			execFileSync('git', args, {
+				cwd: repoDir,
+				encoding: 'utf8',
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: repoDir, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }
+			});
+		const commitIn = (file, message) => {
+			if (file !== null) fs.writeFileSync(path.join(repoDir, file), message + '\n');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '--allow-empty', '-m', message], `${(tick += 60)} +0000`);
+			return gitIn(['rev-parse', 'HEAD']).trim();
+		};
+
+		gitIn(['init', '--quiet', '--initial-branch=main']);
+		gitIn(['config', 'user.name', 'Test User']);
+		gitIn(['config', 'user.email', 'test@example.com']);
+		gitIn(['config', 'commit.gpgsign', 'false']);
+
+		commitIn('base.txt', 'base');
+		gitIn(['checkout', '--quiet', '-b', 'side']);
+		commitIn('side1.txt', 'side 1');
+		gitIn(['checkout', '--quiet', 'main']);
+		commitIn('main1.txt', 'main 1');
+		gitIn(['checkout', '--quiet', 'side']);
+		commitIn('side2.txt', 'side 2');
+		gitIn(['checkout', '--quiet', 'main']);
+		// An empty commit: any path filter at all drops it.
+		commitIn(null, 'an empty commit');
+		tip = commitIn('main2.txt', 'main 2');
+
+		gitIn(['remote', 'add', 'origin', 'https://example.invalid/repo.git']);
+		gitIn(['update-ref', 'refs/remotes/origin/main', tip]);
+		gitIn(['update-ref', 'refs/remotes/origin/feature/tags/cleanup', tip]);
+		gitIn(['update-ref', 'refs/remotes/origin/tags/v1', tip]);
+
+		rust = new NativeBackend();
+		cli = new CliBackend();
+		root = await rust.openRepository(repoDir);
+		await cli.openRepository(repoDir);
+	});
+
+	after(() => {
+		rust?.closeAllRepositories();
+		if (repoDir) fs.rmSync(repoDir, { recursive: true, force: true });
+	});
+
+	const baseOptions = {
+		maxCommits: 100,
+		showTags: true,
+		showRemoteBranches: true,
+		remotes: ['origin'],
+		commitOrdering: 'date'
+	};
+
+	async function bothGraphs(options) {
+		const [a, b] = await Promise.all([rust.getCommits(root, options), cli.getCommits(root, options)]);
+		assert.equal(a.error, null, `the engine failed: ${a.error}`);
+		assert.equal(b.error, null, `the CLI failed: ${b.error}`);
+		return [a, b];
+	}
+
+	it('reads an empty author list as no filter', async () => {
+		const [unfiltered] = await bothGraphs(baseOptions);
+		const [a, b] = await bothGraphs({ ...baseOptions, authors: [] });
+		assertSameCommits(a.commits, b.commits, 'getCommits (authors: [])');
+		assert.equal(a.commits.length, unfiltered.commits.length, 'an empty author list must hide nothing');
+	});
+
+	it('reads an empty filter path as no filter', async () => {
+		const [unfiltered] = await bothGraphs(baseOptions);
+		const [a, b] = await bothGraphs({ ...baseOptions, filterPaths: [''] });
+		assertSameCommits(a.commits, b.commits, "getCommits (filterPaths: [''])");
+		assert.equal(a.commits.length, unfiltered.commits.length, 'the empty commit must stay on the graph');
+	});
+
+	it('orders a topological graph the way git does, filtered or not', async () => {
+		for (const filterPaths of [[], ['side1.txt', 'side2.txt', 'main1.txt', 'main2.txt']]) {
+			const [a, b] = await bothGraphs({ ...baseOptions, commitOrdering: 'topo', filterPaths });
+			assertSameCommits(a.commits, b.commits, `getCommits (topo, filterPaths: ${JSON.stringify(filterPaths)})`);
+		}
+	});
+
+	it('keeps a remote branch whose name contains tags/ a branch', async () => {
+		const [a, b] = await bothGraphs(baseOptions);
+		assertSameCommits(a.commits, b.commits, 'getCommits (remote tags)');
+		for (const graph of [a, b]) {
+			assert.ok(graph.branches.includes('remotes/origin/feature/tags/cleanup'), `${graph.branches}`);
+			const head = graph.commits.find((commit) => commit.hash === tip);
+			const remotes = head.remotes.map((remote) => remote.name);
+			const tags = head.tags.map((tag) => tag.name);
+			assert.ok(remotes.includes('origin/feature/tags/cleanup'), `remotes: ${remotes}`);
+			assert.ok(!tags.includes('origin/feature/cleanup'), `tags: ${tags}`);
+			// The genuine remote tag, directly below the remote, is still a tag.
+			assert.ok(tags.includes('origin/v1'), `tags: ${tags}`);
+		}
+		const [infoA, infoB] = await Promise.all([
+			rust.getRepoInfo(root, { showRemoteBranches: true }),
+			cli.getRepoInfo(root, { showRemoteBranches: true })
+		]);
+		assert.deepEqual([...infoA.branches].sort(), [...infoB.branches].sort());
+		assert.ok(infoA.branches.includes('remotes/origin/feature/tags/cleanup'));
+	});
+});
+
+describe('working-tree and history shapes gix and git once read differently', () => {
+	// Each repository here is a shape a differential run of the two backends found them disagreeing
+	// on, where git itself decides which answer is right: the engine (gix) misread the first four,
+	// the CLI backend the last two.
+	const made = [];
+	let rust;
+	let cli;
+
+	function fixture(build) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-parity-'));
+		made.push(dir);
+		let tick = 1_600_000_000;
+		const gitIn = (args) =>
+			execFileSync('git', args, {
+				cwd: dir,
+				encoding: 'utf8',
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: dir, GIT_AUTHOR_DATE: `${(tick += 60)} +0000`, GIT_COMMITTER_DATE: `${tick} +0000` }
+			});
+		const writeIn = (file, contents) => fs.writeFileSync(path.join(dir, file), contents);
+		gitIn(['init', '--quiet', '--initial-branch=main']);
+		gitIn(['config', 'user.name', 'Test User']);
+		gitIn(['config', 'user.email', 'test@example.com']);
+		gitIn(['config', 'commit.gpgsign', 'false']);
+		gitIn(['config', 'core.autocrlf', 'false']);
+		build(gitIn, writeIn, dir);
+		return dir;
+	}
+
+	before(() => {
+		rust = new NativeBackend();
+		cli = new CliBackend();
+	});
+
+	after(() => {
+		rust?.closeAllRepositories();
+		for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+	});
+
+	const sortChanges = (changes) => [...changes].map((c) => ({ ...c })).sort((a, b) => (a.newFilePath + a.type).localeCompare(b.newFilePath + b.type));
+
+	async function sameUncommitted(dir) {
+		const [a, b] = await Promise.all([rust.getUncommittedDetails(dir), cli.getUncommittedDetails(dir)]);
+		assert.deepEqual(sortChanges(a.fileChanges), sortChanges(b.fileChanges));
+		const [countA, countB] = await Promise.all([rust.getUncommittedChangeCount(dir, true), cli.getUncommittedChangeCount(dir, true)]);
+		assert.equal(countA, countB, 'the "Uncommitted Changes (N)" count');
+		return { changes: sortChanges(a.fileChanges), count: countA };
+	}
+
+	it('sees an intent-to-add file', async () => {
+		const dir = fixture((gitIn, writeIn) => {
+			writeIn('a.txt', '1\n');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '-m', 'one']);
+			writeIn('new.txt', 'new\n');
+			gitIn(['add', '-N', 'new.txt']);
+		});
+		const { changes, count } = await sameUncommitted(dir);
+		assert.equal(count, 1);
+		assert.deepEqual(changes.map((c) => `${c.type} ${c.newFilePath}`), ['A new.txt']);
+	});
+
+	it('counts a file removed from the index but kept on disk twice, as git status does', async () => {
+		const dir = fixture((gitIn, writeIn) => {
+			writeIn('a.txt', '1\n');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '-m', 'one']);
+			gitIn(['rm', '--quiet', '--cached', 'a.txt']);
+		});
+		const { changes, count } = await sameUncommitted(dir);
+		assert.equal(count, 2);
+		assert.deepEqual(changes.map((c) => c.type), ['D', 'U']);
+	});
+
+	it('follows status.renames for the count, and pairs the rename once in the details', async () => {
+		const dir = fixture((gitIn, writeIn) => {
+			writeIn('a.txt', 'x\n'.repeat(20));
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '-m', 'one']);
+			gitIn(['config', 'status.renames', 'false']);
+			gitIn(['mv', 'a.txt', 'b.txt']);
+		});
+		const { changes, count } = await sameUncommitted(dir);
+		assert.equal(count, 2, '`D a.txt` and `A b.txt`');
+		// The rename's source is not listed a second time as a deletion.
+		assert.deepEqual(changes.map((c) => `${c.type} ${c.oldFilePath}->${c.newFilePath}`), ['R a.txt->b.txt']);
+	});
+
+	it('reads the subject and the encoding the way git log prints them', async () => {
+		const dir = fixture((gitIn, writeIn, dir) => {
+			writeIn('a.txt', '1');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '--cleanup=verbatim', '-m', '\n\n  leading blanks  \n\nbody']);
+			writeIn('a.txt', '2');
+			gitIn(['add', '-A']);
+			execFileSync('git', ['-c', 'i18n.commitEncoding=ISO-8859-1', 'commit', '--quiet', '-F', '-'], {
+				cwd: dir,
+				input: Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]),
+				env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: dir, GIT_AUTHOR_DATE: '1600009999 +0000', GIT_COMMITTER_DATE: '1600009999 +0000' }
+			});
+		});
+		const options = { maxCommits: 10, showTags: true, remotes: [], commitOrdering: 'date' };
+		const [a, b] = await Promise.all([rust.getCommits(dir, options), cli.getCommits(dir, options)]);
+		assertSameCommits(a.commits, b.commits, 'getCommits (subjects)');
+		assert.deepEqual(a.commits.map((c) => c.message), ['café', '  leading blanks']);
+	});
+
+	it('shows the other branches when HEAD is an unborn orphan branch', async () => {
+		const dir = fixture((gitIn, writeIn) => {
+			writeIn('a.txt', '1\n');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '-m', 'one']);
+			gitIn(['checkout', '--quiet', '--orphan', 'orphan']);
+		});
+		const options = { maxCommits: 10, showTags: true, remotes: [], commitOrdering: 'date' };
+		const [a, b] = await Promise.all([rust.getCommits(dir, options), cli.getCommits(dir, options)]);
+		assert.equal(b.error, null, `the CLI failed: ${b.error}`);
+		assertSameCommits(a.commits, b.commits, 'getCommits (orphan branch)');
+		assert.equal(b.commits.length, 1);
+		// The files staged for the orphan's first commit are uncommitted additions, as git status lists them.
+		const { changes } = await sameUncommitted(dir);
+		assert.deepEqual(changes.map((c) => `${c.type} ${c.newFilePath}`), ['A a.txt']);
+		const [countA, countB] = await Promise.all([
+			rust.countCommitsBefore(dir, null, b.commits[0].hash, true, false),
+			cli.countCommitsBefore(dir, null, b.commits[0].hash, true, false)
+		]);
+		assert.equal(countB, countA);
+	});
+
+	it('keeps a conflicted file the other side deleted in the uncommitted list', async () => {
+		const dir = fixture((gitIn, writeIn) => {
+			writeIn('d.txt', 'd\n');
+			gitIn(['add', '-A']);
+			gitIn(['commit', '--quiet', '-m', 'base']);
+			gitIn(['checkout', '--quiet', '-b', 'other']);
+			gitIn(['rm', '--quiet', 'd.txt']);
+			gitIn(['commit', '--quiet', '-m', 'delete it']);
+			gitIn(['checkout', '--quiet', 'main']);
+			writeIn('d.txt', 'changed on main\n');
+			gitIn(['commit', '--quiet', '-am', 'change it']);
+			try {
+				gitIn(['merge', '--quiet', 'other']);
+			} catch {
+				/* the conflict is the point */
+			}
+		});
+		// `UD d.txt`: deleted by them, still in the working tree - modified, not deleted.
+		const { changes, count } = await sameUncommitted(dir);
+		assert.equal(count, 1);
+		assert.deepEqual(changes.map((c) => `${c.type} ${c.newFilePath}`), ['M d.txt']);
+	});
+});

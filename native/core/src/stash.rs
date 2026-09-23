@@ -47,9 +47,7 @@ pub fn read_stashes(repo: &Repo) -> Result<Vec<GitStash>> {
         let Ok(committer) = commit.committer() else {
             continue;
         };
-        let Ok(message) = commit.message() else {
-            continue;
-        };
+        let encoding = crate::text::CommitEncoding::of(&commit);
 
         stashes.push(GitStash {
             hash: hash.to_string(),
@@ -57,10 +55,10 @@ pub fn read_stashes(repo: &Repo) -> Result<Vec<GitStash>> {
             // Only a stash taken with `--include-untracked` has the third parent.
             untracked_files_hash: parents.get(2).map(ToString::to_string),
             selector: format!("refs/stash@{{{index}}}"),
-            author: author.name.to_string(),
-            email: author.email.to_string(),
+            author: encoding.decode(author.name),
+            email: encoding.decode(author.email),
             date: committer.time().map(|time| time.seconds).unwrap_or(0),
-            message: message.summary().to_string(),
+            message: crate::text::commit_subject(&commit, &encoding),
         });
     }
 

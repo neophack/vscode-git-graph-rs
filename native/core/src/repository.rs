@@ -5,7 +5,7 @@
 //! Here a repository is opened once and kept open for the whole editor session, so the pack
 //! indexes and the object cache stay resident between requests.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -71,6 +71,26 @@ impl Repo {
         let mut repo = self.inner.to_thread_local();
         repo.object_cache_size_if_unset(OBJECT_CACHE_BYTES);
         repo
+    }
+
+    /// Does the repository carry replacement objects (`git replace`, `refs/replace/*`)?
+    ///
+    /// git applies them to every object read unless `core.useReplaceRefs=false` turns that off.
+    /// gix 0.87 inverts the setting when it opens a repository (the "enabled" answer is bound to
+    /// `is_disabled`): by default it never applies them, and with `core.useReplaceRefs=false` it
+    /// does — the opposite of git either way. Reads whose answer depends on them are declined
+    /// whenever any exist, and the CLI answers them.
+    pub fn uses_replace_refs(&self) -> bool {
+        let git = self.borrow();
+        git.references()
+            .ok()
+            .and_then(|platform| {
+                platform
+                    .prefixed("refs/replace/")
+                    .ok()
+                    .map(|mut refs| refs.next().is_some())
+            })
+            .unwrap_or(false)
     }
 
     /// The worktree root (what `git rev-parse --show-toplevel` prints), or the git directory when
@@ -177,6 +197,33 @@ pub fn resolve_commit_in(repo: &gix::Repository, rev: &str) -> Result<gix::Objec
         .peel_to_kind(gix::object::Kind::Commit)
         .map_err(|e| Error::not_found(format!("'{rev}' is not a commit: {e}")))?;
     Ok(commit.id)
+}
+
+/// The commits on a shallow clone's boundary (`.git/shallow`), whose parents git treats as absent.
+///
+/// gix hands out a boundary commit's parent ids as its object records them, but those parents were
+/// never fetched: git shows the commit as a root (`git log --format=%P` prints nothing for it), and
+/// diffs it against the empty tree. Every parent the engine reports or diffs against goes through
+/// [`Shallow::parents`] so the two agree. Read once per operation — the boundary is a small file,
+/// and a missing one (every non-shallow repository) costs a failed open.
+#[derive(Debug, Default)]
+pub struct Shallow(HashSet<gix::ObjectId>);
+
+impl Shallow {
+    pub fn of(git: &gix::Repository) -> Shallow {
+        match git.shallow_commits() {
+            Ok(Some(commits)) => Shallow(commits.iter().copied().collect()),
+            _ => Shallow::default(),
+        }
+    }
+
+    /// A commit's parents as git reports them: none for a commit on the shallow boundary.
+    pub fn parents(&self, commit: &gix::Commit<'_>) -> Vec<gix::ObjectId> {
+        if self.0.contains(&commit.id) {
+            return Vec::new();
+        }
+        commit.parent_ids().map(|parent| parent.detach()).collect()
+    }
 }
 
 /// The set of repositories the extension has open.

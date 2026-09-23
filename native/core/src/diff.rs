@@ -62,7 +62,10 @@ pub fn diff_commit(repo: &Repo, hash: &str) -> Result<Vec<GitFileChange>> {
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
-    let parent = commit.parent_ids().next().map(|parent| parent.detach());
+    let parent = crate::repository::Shallow::of(&git)
+        .parents(&commit)
+        .first()
+        .copied();
     diff_commits(repo, parent, id)
 }
 
@@ -113,22 +116,64 @@ fn diff_against_worktree(repo: &Repo, from: &str) -> Result<Vec<GitFileChange>> 
 
     // Everything uncommitted on top of HEAD is only visible to the working-tree scan.
     for change in crate::status::uncommitted_changes(repo)? {
-        match changes
-            .iter_mut()
-            .find(|existing| existing.new_file_path == change.new_file_path)
-        {
-            // The file already differs from the revision; the worktree state decides how it reads
-            // now, and the counts no longer describe the whole difference.
-            Some(existing) => {
-                existing.kind = change.kind;
-                existing.additions = None;
-                existing.deletions = None;
-            }
-            None => changes.push(change),
+        // An uncommitted rename of a path the revision range also touched cannot stay one record:
+        // relative to the revision, its source is gone and its destination is new.
+        let committed_source = change.kind == GitFileStatus::Renamed
+            && changes
+                .iter()
+                .any(|existing| existing.new_file_path == change.old_file_path);
+        if committed_source {
+            layer_uncommitted(
+                &mut changes,
+                GitFileChange {
+                    new_file_path: change.old_file_path.clone(),
+                    kind: GitFileStatus::Deleted,
+                    ..change.clone()
+                },
+            );
+            layer_uncommitted(
+                &mut changes,
+                GitFileChange {
+                    old_file_path: change.new_file_path.clone(),
+                    kind: GitFileStatus::Added,
+                    ..change
+                },
+            );
+        } else {
+            layer_uncommitted(&mut changes, change);
         }
     }
 
     Ok(changes)
+}
+
+/// Layer one uncommitted change (HEAD → working tree) onto the committed changes of a
+/// revision → HEAD diff, so the record describes revision → working tree as `git diff <revision>`
+/// plus the status scan (the CLI backend's two sources) describe it.
+///
+/// The combined status follows the path from the revision to the working tree: a file added since
+/// the revision is still an addition however it has been edited since, a rename stays a rename,
+/// and a file deleted since the revision and now back on disk untracked is both — the deletion
+/// `git diff` reports and the untracked file the status scan lists.
+fn layer_uncommitted(changes: &mut Vec<GitFileChange>, change: GitFileChange) {
+    let Some(existing) = changes
+        .iter_mut()
+        .find(|existing| existing.new_file_path == change.new_file_path)
+    else {
+        changes.push(change);
+        return;
+    };
+    // The counts described revision → HEAD, not the whole difference any more.
+    existing.additions = None;
+    existing.deletions = None;
+    match (existing.kind, change.kind) {
+        (GitFileStatus::Deleted, GitFileStatus::Untracked) => changes.push(change),
+        (_, GitFileStatus::Deleted) => existing.kind = GitFileStatus::Deleted,
+        (GitFileStatus::Added | GitFileStatus::Renamed, _) => {}
+        // Deleted since the revision, then added back to the index: the path exists on both sides.
+        (GitFileStatus::Deleted, _) => existing.kind = GitFileStatus::Modified,
+        (_, kind) => existing.kind = kind,
+    }
 }
 
 /// Layer the untracked and deleted files of the working tree onto a diff.
@@ -172,11 +217,7 @@ fn collect_changes(
 ) -> Result<Vec<GitFileChange>> {
     let mut changes = from_tree.changes().git_ctx("Could not diff the trees")?;
     changes.options(|options| {
-        options.track_rewrites(Some(gix::diff::Rewrites {
-            copies: None,
-            percentage: Some(RENAME_SIMILARITY),
-            ..Default::default()
-        }));
+        options.track_rewrites(Some(rewrites()));
     });
 
     let mut collected: Vec<GitFileChange> = Vec::new();
@@ -229,11 +270,13 @@ pub fn line_counts(
         }
         // `None` is the commit's first parent — or the empty tree for a root commit, so that a
         // repository's initial commit reports its files as added rather than as unaccounted for.
-        None => match git
-            .find_commit(to_id)
-            .git_ctx("Could not read the commit")?
-            .parent_ids()
-            .next()
+        None => match crate::repository::Shallow::of(&git)
+            .parents(
+                &git.find_commit(to_id)
+                    .git_ctx("Could not read the commit")?,
+            )
+            .first()
+            .copied()
         {
             Some(parent) => git
                 .find_commit(parent)
@@ -246,11 +289,7 @@ pub fn line_counts(
 
     let mut changes = from_tree.changes().git_ctx("Could not diff the trees")?;
     changes.options(|options| {
-        options.track_rewrites(Some(gix::diff::Rewrites {
-            copies: None,
-            percentage: Some(RENAME_SIMILARITY),
-            ..Default::default()
-        }));
+        options.track_rewrites(Some(rewrites()));
     });
 
     // The resource cache holds the blob data the line counting reads, and is reused across every
@@ -270,22 +309,89 @@ pub fn line_counts(
         if !wanted.contains(change.location().to_str_lossy().as_ref()) {
             return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
         }
-        let mut counts = GitLineCounts {
-            additions: None,
-            deletions: None,
-        };
-        if let Ok(mut platform) = change.diff(&mut cache) {
-            if let Ok(Some(line_counts)) = platform.line_counts() {
-                counts.additions = Some(line_counts.insertions);
-                counts.deletions = Some(line_counts.removals);
-            }
-        }
+        let counts =
+            gitlink_line_counts(&change).unwrap_or_else(|| blob_line_counts(&change, &mut cache));
         counted.insert(change.location().to_string(), counts);
         Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
     });
     outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
 
     Ok(counted)
+}
+
+/// The rename tracking every tree diff uses: git's `--find-renames` at its default similarity.
+///
+/// `track_empty` pairs an emptied file's deletion with an empty file's addition, which git's exact
+/// rename detection does (`git mv empty new` shows `R100`) while gix skips empty blobs by default.
+fn rewrites() -> gix::diff::Rewrites {
+    gix::diff::Rewrites {
+        copies: None,
+        percentage: Some(RENAME_SIMILARITY),
+        track_empty: true,
+        ..Default::default()
+    }
+}
+
+/// The `+N/-M` of a submodule (gitlink) change, which git's numstat reports from the one
+/// `Subproject commit <hash>` line it diffs in place of the content; `None` for any other entry.
+fn gitlink_line_counts(
+    change: &gix::object::tree::diff::Change<'_, '_, '_>,
+) -> Option<GitLineCounts> {
+    use gix::object::tree::diff::Change;
+    let (before, after) = match change {
+        Change::Addition { entry_mode, .. } => (false, entry_mode.is_commit()),
+        Change::Deletion { entry_mode, .. } => (entry_mode.is_commit(), false),
+        Change::Modification {
+            entry_mode,
+            previous_entry_mode,
+            ..
+        } => (previous_entry_mode.is_commit(), entry_mode.is_commit()),
+        Change::Rewrite {
+            entry_mode,
+            source_entry_mode,
+            ..
+        } => (source_entry_mode.is_commit(), entry_mode.is_commit()),
+    };
+    (before || after).then(|| GitLineCounts {
+        additions: Some(u32::from(after)),
+        deletions: Some(u32::from(before)),
+    })
+}
+
+/// The `+N/-M` of a blob change, or `None` counts for a binary one (as numstat's `-`).
+///
+/// The lines are compared *with* their terminators, as git compares them: a last line that gains
+/// or loses its newline is a changed line (`-b` / `+b` with "\ No newline at end of file"). gix's
+/// own `line_counts` interns the lines with the terminators stripped, which counts that 0/0.
+fn blob_line_counts(
+    change: &gix::object::tree::diff::Change<'_, '_, '_>,
+    cache: &mut gix::diff::blob::Platform,
+) -> GitLineCounts {
+    use gix::diff::blob::platform::prepare_diff::Operation;
+    let mut counts = GitLineCounts {
+        additions: None,
+        deletions: None,
+    };
+    let Ok(platform) = change.diff(cache) else {
+        return counts;
+    };
+    platform
+        .resource_cache
+        .options
+        .skip_internal_diff_if_external_is_configured = false;
+    let Ok(prepared) = platform.resource_cache.prepare_diff() else {
+        return counts;
+    };
+    if let Operation::InternalDiff { algorithm } = prepared.operation {
+        let input = gix::diff::blob::InternedInput::new(
+            prepared.old.intern_source(),
+            prepared.new.intern_source(),
+        );
+        let diff = gix::diff::blob::Diff::compute(algorithm, &input);
+        counts.additions = Some(diff.count_additions());
+        counts.deletions = Some(diff.count_removals());
+    }
+    counts
 }
 
 /// Turn one tree change into a file change record, or `None` for changes the view does not list.

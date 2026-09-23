@@ -74,6 +74,14 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         ));
     }
 
+    // Replacement objects rewrite the history git shows; the engine cannot apply them (see
+    // `Repo::uses_replace_refs`), so the load is declined rather than drawing the original graph.
+    if repo.uses_replace_refs() {
+        return Err(crate::error::Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
+
     let ref_options = RefReadOptions {
         show_remote_branches: options.show_remote_branches && !options.defer_remote_refs,
         show_remote_heads: options.show_remote_heads,

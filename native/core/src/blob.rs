@@ -150,9 +150,12 @@ pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<Stri
     let git = repo.borrow();
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
     let new_tree = commit.tree().git_ctx("Could not read the commit tree")?;
-    let old_tree = match commit.parent_ids().next() {
-        Some(parent) => git
-            .find_commit(parent.detach())
+    let old_tree = match crate::repository::Shallow::of(&git)
+        .parents(&commit)
+        .first()
+    {
+        Some(&parent) => git
+            .find_commit(parent)
             .git_ctx("Could not read the parent commit")?
             .tree()
             .git_ctx("Could not read the parent tree")?,
@@ -162,26 +165,52 @@ pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<Stri
 
     let old_path = change.old_file_path.as_str();
     let new_path = change.new_file_path.as_str();
-    let old_data = blob_at(&git, &old_tree, old_path)?;
-    let new_data = blob_at(&git, &new_tree, new_path)?;
+    let old_entry = file_entry_at(&old_tree, old_path)?;
+    let new_entry = file_entry_at(&new_tree, new_path)?;
+    let old_data = entry_data(&git, old_entry)?;
+    let new_data = entry_data(&git, new_entry)?;
 
     // The same header git prints, with `/dev/null` standing in for a side that does not exist,
     // which is how additions and deletions are rendered.
     let mut out = String::new();
     out.push_str(&format!("diff --git a/{old_path} b/{new_path}\n"));
+    match (old_entry, new_entry) {
+        (None, Some((mode, _))) => out.push_str(&format!("new file mode {}\n", octal(mode))),
+        (Some((mode, _)), None) => out.push_str(&format!("deleted file mode {}\n", octal(mode))),
+        (Some((old_mode, _)), Some((new_mode, _))) if old_mode != new_mode => {
+            out.push_str(&format!(
+                "old mode {}\nnew mode {}\n",
+                octal(old_mode),
+                octal(new_mode)
+            ))
+        }
+        _ => {}
+    }
     if change.kind == crate::types::GitFileStatus::Renamed {
         out.push_str(&format!("rename from {old_path}\nrename to {new_path}\n"));
     }
 
-    let old_binary = old_data.as_deref().is_some_and(is_binary);
-    let new_binary = new_data.as_deref().is_some_and(is_binary);
-    if old_binary || new_binary {
+    // git decides "binary" and the diff algorithm per path: `.gitattributes` can mark a text file
+    // `binary` / `-diff`, and `diff.algorithm` picks the algorithm (Myers unless configured). The
+    // resource cache applies both; a gitlink is never binary, it diffs as its one-line summary.
+    let (binary, algorithm) = match (old_entry, new_entry) {
+        (Some((mode, _)), _) | (_, Some((mode, _))) if mode.is_commit() => {
+            (false, Algorithm::Myers)
+        }
+        _ => diff_decision(&git, old_path, old_entry, new_path, new_entry)?,
+    };
+    if binary {
         out.push_str(&format!(
             "Binary files a/{old_path} and b/{new_path} differ\n"
         ));
         return Ok(out);
     }
 
+    // A pure rename or mode change has no content difference, and git prints no `---`/`+++`
+    // lines for it: the header above is the whole diff.
+    if old_data.is_some() && old_data == new_data {
+        return Ok(out);
+    }
     let old = old_data.clone().unwrap_or_default();
     let new = new_data.clone().unwrap_or_default();
     out.push_str(&format!(
@@ -192,7 +221,7 @@ pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<Stri
 
     // `InternedInput` borrows the blobs, so they must outlive the diff; both are owned above.
     let input = InternedInput::new(old.as_slice(), new.as_slice());
-    let computed = diff_with_slider_heuristics(Algorithm::default(), &input);
+    let computed = diff_with_slider_heuristics(algorithm, &input);
     UnifiedDiff::new(
         &computed,
         &input,
@@ -224,6 +253,95 @@ fn blob_at(git: &gix::Repository, tree: &gix::Tree<'_>, path: &str) -> Result<Op
         }
         _ => Ok(None),
     }
+}
+
+/// A path's non-directory entry in a tree — a blob, a symlink or a gitlink — as its mode and id.
+fn file_entry_at(
+    tree: &gix::Tree<'_>,
+    path: &str,
+) -> Result<Option<(gix::object::tree::EntryMode, gix::ObjectId)>> {
+    let entry = tree
+        .lookup_entry(path.split('/'))
+        .git_ctx("Could not look up the path in the tree")?;
+    Ok(entry
+        .filter(|entry| !entry.mode().is_tree())
+        .map(|entry| (entry.mode(), entry.id().detach())))
+}
+
+/// What one side of a diff contains: the blob, or for a gitlink the line git diffs in its place.
+fn entry_data(
+    git: &gix::Repository,
+    entry: Option<(gix::object::tree::EntryMode, gix::ObjectId)>,
+) -> Result<Option<Vec<u8>>> {
+    match entry {
+        None => Ok(None),
+        Some((mode, id)) if mode.is_commit() => {
+            Ok(Some(format!("Subproject commit {id}\n").into_bytes()))
+        }
+        Some((_, id)) => Ok(Some(
+            git.find_blob(id)
+                .git_ctx("Could not read the blob")?
+                .data
+                .to_vec(),
+        )),
+    }
+}
+
+/// A tree entry mode the way git's diff headers print it (`100644`, `100755`, `120000`, …).
+fn octal(mode: gix::object::tree::EntryMode) -> String {
+    format!("{:06o}", mode.value())
+}
+
+/// Whether git would diff this pair as binary, and with which algorithm — both read through the
+/// diff resource cache, which honours `.gitattributes` (`binary`, `-diff`) and `diff.algorithm`.
+fn diff_decision(
+    git: &gix::Repository,
+    old_path: &str,
+    old: Option<(gix::object::tree::EntryMode, gix::ObjectId)>,
+    new_path: &str,
+    new: Option<(gix::object::tree::EntryMode, gix::ObjectId)>,
+) -> Result<(bool, Algorithm)> {
+    use gix::diff::blob::platform::prepare_diff::Operation;
+    use gix::diff::blob::ResourceKind;
+
+    let mut cache = git
+        .diff_resource_cache_for_tree_diff()
+        .git_ctx("Could not prepare the diff")?;
+    cache.options.skip_internal_diff_if_external_is_configured = false;
+    let null = gix::ObjectId::null(git.object_hash());
+    // A missing side is a null id at the other side's path and kind, which the cache reads as
+    // "no data" — the shape an addition or a deletion takes in a tree diff.
+    let kind = |entry: Option<(gix::object::tree::EntryMode, gix::ObjectId)>| {
+        entry
+            .or(old)
+            .or(new)
+            .and_then(|(mode, _)| mode.kind().into())
+            .unwrap_or(gix::object::tree::EntryKind::Blob)
+    };
+    cache
+        .set_resource(
+            old.map_or(null, |(_, id)| id),
+            kind(old),
+            old_path.into(),
+            ResourceKind::OldOrSource,
+            &git.objects,
+        )
+        .git_ctx("Could not read the old side of the diff")?;
+    cache
+        .set_resource(
+            new.map_or(null, |(_, id)| id),
+            kind(new),
+            new_path.into(),
+            ResourceKind::NewOrDestination,
+            &git.objects,
+        )
+        .git_ctx("Could not read the new side of the diff")?;
+    let prepared = cache.prepare_diff().git_ctx("Could not prepare the diff")?;
+    Ok(match prepared.operation {
+        Operation::InternalDiff { algorithm } => (false, algorithm),
+        Operation::SourceOrDestinationIsBinary => (true, Algorithm::Myers),
+        Operation::ExternalCommand { .. } => (false, Algorithm::Myers),
+    })
 }
 
 /// The label a side of the diff carries: the path prefixed with the side's letter, or
