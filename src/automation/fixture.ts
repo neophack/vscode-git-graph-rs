@@ -273,7 +273,20 @@ function mkdirAll(target: string): void {
 	f.mkdirSync(target, { recursive: true });
 }
 
-function git(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string }> {
+/**
+ * Transient lock contention, as git words it: the editor's background git probes (the view's
+ * status refresh, VS Code's own git extension) hold `.git/index.lock` for milliseconds while a
+ * fixture git child runs, and git does not wait — it fails. fast-import's collisions read
+ * differently (pack and ref locks), so the signature covers git's whole lock-failure family.
+ */
+const GIT_LOCK_SIGNATURE = /index\.lock|could not write index|Another git process|cannot lock ref|Unable to create '[^']+\.lock'/i;
+/** Retry schedule: ~6.8 s total, many multiples of a background probe's hold time. */
+const GIT_LOCK_BACKOFF_MS = [200, 400, 600, 800, 1200, 1600, 2000];
+/** A lock older than this outlived any live writer on a fixture repository — it is a leftover. */
+const STALE_INDEX_LOCK_AGE_MS = 60000;
+
+/** One git invocation exactly as spawned: the fixture's base args plus the caller's. */
+function gitRaw(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string }> {
 	return execFileAsync('git', [...GIT_BASE_ARGS, ...args], {
 		timeout: GIT_TIMEOUT_MS,
 		windowsHide: true,
@@ -282,8 +295,71 @@ function git(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: 
 	});
 }
 
+/** The error's full text: git's fatal lines land in stderr, and exec repeats them in message. */
+function gitErrorText(error: unknown): string {
+	if (!(error instanceof Error)) return String(error);
+	const stderr = (error as { stderr?: unknown }).stderr;
+	return error.message + (typeof stderr === 'string' ? '\n' + stderr : '');
+}
+
+/**
+ * The `index.lock` path git refused to create, when the file is old enough that no live writer
+ * holds it. A fixture git call that hits its timeout is killed mid-index-write and leaves the
+ * lock behind — every later call in the run then fails on it, which is why git's own error tells
+ * a human to remove the file by hand. A background probe's write holds the lock for
+ * milliseconds, so a lock a minute old is a dead writer's, not a live one's.
+ */
+function staleIndexLockPath(error: unknown): string | null {
+	const match = gitErrorText(error).match(/Unable to create '([^']+\.lock)'/i);
+	if (match === null || !match[1].endsWith('index.lock')) return null;
+	try {
+		if (Date.now() - fs.statSync(match[1]).mtimeMs < STALE_INDEX_LOCK_AGE_MS) return null;
+	} catch (_) {
+		return null; // already gone — the retry loop's next attempt re-reads the real state
+	}
+	return match[1];
+}
+
+/**
+ * Run one git step, retrying lock-contention failures with backoff; past the retries, a lock
+ * that outlived the whole schedule is either a still-running writer (yield the real error) or a
+ * timed-out child's leftover (remove it and take exactly one more swing). Every other failure
+ * fails straight through — the retry must never paper over a real fixture bug.
+ */
+async function withLockRetry<T>(step: () => Promise<T>): Promise<T> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await step();
+		} catch (error) {
+			if (!GIT_LOCK_SIGNATURE.test(gitErrorText(error))) throw error;
+			if (attempt >= GIT_LOCK_BACKOFF_MS.length) {
+				const stale = staleIndexLockPath(error);
+				if (stale === null) throw error;
+				rmFile(stale);
+				return await step();
+			}
+			await new Promise((resolve) => setTimeout(resolve, GIT_LOCK_BACKOFF_MS[attempt]));
+		}
+	}
+}
+
+/**
+ * One git call with the fixture's base config, resilient to the editor's concurrent git probes.
+ * Exported for the whole automation layer: suiteRunner's reseed and pre/post-action git calls
+ * run inside the live editor session too, and each of them used to be a separate unprotected
+ * exec that one background index write could abort the run with.
+ */
+export async function git(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string }> {
+	return withLockRetry(() => gitRaw(args, options));
+}
+
 /** Feed the whole stream to `git fast-import --quiet` in the given working directory. */
-function fastImport(cwd: string, stream: Buffer): Promise<void> {
+async function fastImport(cwd: string, stream: Buffer): Promise<void> {
+	return withLockRetry(() => fastImportOnce(cwd, stream));
+}
+
+/** One fast-import attempt: the stream is deterministic, so a retried run is idempotent. */
+function fastImportOnce(cwd: string, stream: Buffer): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn('git', [...GIT_BASE_ARGS, 'fast-import', '--quiet'], {
 			cwd,

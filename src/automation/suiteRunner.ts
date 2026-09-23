@@ -1,11 +1,9 @@
-import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON } from './catalog';
-import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, seedEmptyRepo, seedRepo } from './fixture';
+import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, git, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
 
@@ -24,8 +22,6 @@ import { AutomationServer } from './server';
  * runs, nothing is ever written to it. Whatever an action opens (editor tabs, terminals) is
  * closed again afterwards, leaving the user's workspace as it was.
  */
-
-const execFileAsync = promisify(execFile);
 
 export interface SuiteProgress {
 	readonly phase: 'read' | 'write';
@@ -170,17 +166,11 @@ export function readFixtureMarker(repo: string): { remote: string } | null {
 export async function reseedFixtureClone(repo: string): Promise<void> {
 	const marker = readFixtureMarker(repo);
 	if (marker === null) throw new Error(repo + ' is not a fixture clone (no .gg-fixture marker)');
-	const git = async (args: string[]): Promise<{ stdout: string }> => {
-		// The same per-call config as fixture.ts's GIT_BASE_ARGS: a CI runner has no global user
-		// identity (the seed's commit would fail with "Author identity unknown"), and the working
-		// tree must keep LF endings like the initial seed's checkout.
-		return execFileAsync('git', [
-			'-c', 'core.autocrlf=false',
-			'-c', 'user.name=Fixture',
-			'-c', 'user.email=fixture@fixture.dev',
-			...args
-		], { timeout: 120000, windowsHide: true });
-	};
+	// Every git call below goes through fixture.ts's `git`: the per-call config it needs (a CI
+	// runner has no global user identity — the seed's commit would fail with "Author identity
+	// unknown"; the working tree must keep LF endings like the initial seed's checkout), plus the
+	// lock-contention retry — VS Code's own git extension keeps probing this repository's index
+	// even after the engine's warm handles are closed above.
 	const lines = (out: { stdout: string }) => out.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '');
 
 	// The engine keeps one warm repository handle per path for the whole editor session, and its
@@ -506,12 +496,6 @@ const PRE_ACTION_SETUP: ReadonlyMap<string, readonly string[][]> = new Map([
  */
 async function stageFreshChange(repo: string, logger: { log(message: string): void; logError(message: string): void }): Promise<void> {
 	try {
-		const git = (args: string[]) => execFileAsync('git', [
-			'-c', 'core.autocrlf=false',
-			'-c', 'user.name=Fixture',
-			'-c', 'user.email=fixture@fixture.dev',
-			...args
-		], { timeout: 120000, windowsHide: true });
 		const listed = await git(['-C', repo, 'ls-files']);
 		const files = listed.stdout.split('\n').map((s) => s.trim()).filter((s) => s !== '' && s.indexOf('.') !== 0);
 		// Never a dotfile: `.gitmodules` (the fixture submodule) is a git CONFIG file — appending
@@ -650,7 +634,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				if (setupCommands !== undefined) {
 					for (const args of setupCommands) {
 						try {
-							await execFileAsync('git', ['-c', 'core.autocrlf=false', '-C', repo, ...args], { timeout: 120000, windowsHide: true });
+							await git(['-C', repo, ...args]);
 						} catch (error) {
 							options.logger.logError('[automation] pre-action setup ' + JSON.stringify(args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
 						}
@@ -702,7 +686,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 					// resolve your current index first"). Bounded, failures logged not thrown.
 					for (const args of cleanupCommands) {
 						try {
-							await execFileAsync('git', ['-c', 'core.autocrlf=false', '-C', repo, ...args], { timeout: 120000, windowsHide: true });
+							await git(['-C', repo, ...args]);
 						} catch (error) {
 							options.logger.logError('[automation] post-action cleanup ' + JSON.stringify(args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
 						}
