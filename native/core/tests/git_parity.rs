@@ -400,6 +400,18 @@ fn the_file_diff_honours_gitattributes_and_mode_changes() {
     repo.commit("one");
     repo.write("a.dat", "text2\n");
     repo.git(&["add", "-A"]);
+    // `commit()` restages everything with its own `add -A`, which on a platform that tracks
+    // the executable bit restats every path from disk - so `update-index --chmod` alone would
+    // be undone by that restage. The real chmod survives it; `update-index` is kept for
+    // Windows, where the filesystem has no executable bit for `add -A` to restage from.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let script = repo.path().join("run.sh");
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+    }
     repo.git(&["update-index", "--chmod=+x", "run.sh"]);
     let commit = repo.commit("two");
 
