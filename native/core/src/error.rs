@@ -57,6 +57,29 @@ impl Error {
     pub fn cancelled() -> Self {
         Error::new(ErrorKind::Cancelled, "The operation was cancelled")
     }
+
+    /// The failure with its kind named: `"NotARepository: …"`, the one string form every
+    /// boundary agrees on. The typed ones throw it (`native/node`'s error conversion), the
+    /// single dispatch surface answers it in-band (`dispatch::request`), and the TypeScript
+    /// side parses the prefix back into a kind to decide between fallback and error dialogue.
+    pub fn with_kind_prefix(&self) -> String {
+        format!("{}: {}", self.kind.as_str(), self.message)
+    }
+}
+
+impl ErrorKind {
+    /// The kind's wire name — the prefix of [`Error::with_kind_prefix`].
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ErrorKind::NotARepository => "NotARepository",
+            ErrorKind::NotFound => "NotFound",
+            ErrorKind::InvalidArgument => "InvalidArgument",
+            ErrorKind::Git => "Git",
+            ErrorKind::Io => "Io",
+            ErrorKind::Cancelled => "Cancelled",
+            ErrorKind::Unsupported => "Unsupported",
+        }
+    }
 }
 
 impl From<std::io::Error> for Error {

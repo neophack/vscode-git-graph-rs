@@ -9,12 +9,15 @@
 //! that exposes everything a host needs (graph pages, commit details, diffs, file contents at a
 //! revision, working-tree status, configuration, statistics). The per-topic modules below are
 //! the implementation; they stay public for finer-grained access, but `api` is the contract.
+//! A host that speaks JSON instead of Rust — the Node addon's `request` export — goes through
+//! [`dispatch::request`], which routes the same surface as one `{"method", "params"}` call.
 
 pub mod api;
 pub mod blob;
 pub mod config;
 pub mod details;
 pub mod diff;
+pub mod dispatch;
 pub mod error;
 pub mod gerrit;
 pub mod graph;

@@ -8,14 +8,17 @@
 //!
 //! The extension never calls this module directly: `src/backend/addon.ts` wraps it in the typed
 //! API, and `src/backend/api.ts` is what replaces the original `DataSource`.
+//!
+//! Alongside the typed exports sits [`request`], the engine's whole surface as one JSON call —
+//! the same method table (`git_graph_core::dispatch`) the typed exports share, for hosts that want the engine without a binding per method.
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use git_graph_core::types::{LogOptions, RefReadOptions};
+use git_graph_core::dispatch::RefOptionsPayload;
+use git_graph_core::types::LogOptions;
 use git_graph_core::{
-    blob, config, details, diff, gerrit, graph, log, refs, stash, stats, status, Error, ErrorKind,
-    RepoManager,
+    blob, config, details, diff, gerrit, graph, log, refs, stash, stats, status, Error, RepoManager,
 };
 
 /// Open a repository and keep it open.
@@ -50,6 +53,20 @@ pub fn close_all_repositories() {
 #[napi]
 pub fn open_repository_count() -> u32 {
     RepoManager::global().open_count() as u32
+}
+
+/// The whole engine behind one call: `{"method": "loadCommits", "params": {…}}` in, the method's
+/// own JSON document out.
+///
+/// The typed exports in this file are the extension's contract; this one is the single seam a
+/// second host drives — a REPL, a test harness, another language embedding Node — without a
+/// binding per method. Both share one method table, `git_graph_core::dispatch`, so they cannot
+/// drift. The single interface never throws: a failure — an unknown method, parameters that do
+/// not fit, a repository that cannot be opened — is the in-band answer
+/// `{"error": "Kind: message"}`, the same string a typed call throws.
+#[napi]
+pub async fn request(repo: String, request_json: String) -> Result<String> {
+    run(move || Ok(git_graph_core::dispatch::request(&repo, &request_json))).await
 }
 
 /// The repository information the view opens with: branches, tags, remotes, stashes and HEAD.
@@ -463,21 +480,10 @@ where
 /// Turn an engine error into the JavaScript error the extension will see.
 ///
 /// The kind is prefixed onto the message so that the TypeScript side can tell "this repository is
-/// not usable, fall back to the `git` CLI" from "this operation failed, show the user".
+/// not usable, fall back to the `git` CLI" from "this operation failed, show the user" — the same
+/// `Kind: message` string the single dispatch surface answers in-band.
 fn to_js_error(error: Error) -> napi::Error {
-    let kind = match error.kind {
-        ErrorKind::NotARepository => "NotARepository",
-        ErrorKind::NotFound => "NotFound",
-        ErrorKind::InvalidArgument => "InvalidArgument",
-        ErrorKind::Git => "Git",
-        ErrorKind::Io => "Io",
-        ErrorKind::Cancelled => "Cancelled",
-        ErrorKind::Unsupported => "Unsupported",
-    };
-    napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("{kind}: {}", error.message),
-    )
+    napi::Error::new(napi::Status::GenericFailure, error.with_kind_prefix())
 }
 
 /// Serialising a response cannot fail for the engine's own types, but a failure would mean the
@@ -485,55 +491,19 @@ fn to_js_error(error: Error) -> napi::Error {
 fn encode<T: serde::Serialize>(value: &T) -> git_graph_core::Result<String> {
     serde_json::to_string(value).map_err(|e| {
         Error::new(
-            ErrorKind::Git,
+            git_graph_core::ErrorKind::Git,
             format!("Could not encode the response: {e}"),
         )
     })
 }
 
-/// A malformed request means the TypeScript and Rust sides disagree about the contract, which is a
-/// bug rather than a user error — so it names the field that did not fit.
+/// A malformed request means the TypeScript and Rust sides disagree about the contract, which is
+/// a bug rather than a user error — so it names the field that did not fit.
 fn decode<T: serde::de::DeserializeOwned>(json: &str) -> git_graph_core::Result<T> {
     serde_json::from_str(json).map_err(|e| {
         Error::new(
-            ErrorKind::InvalidArgument,
+            git_graph_core::ErrorKind::InvalidArgument,
             format!("Could not decode the request: {e}"),
         )
     })
-}
-
-/// The wire form of [`RefReadOptions`], plus the stash flag `loadRepoInfo` also needs.
-///
-/// The defaults are the ones a view load uses, so an omitted field means "the usual".
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct RefOptionsPayload {
-    show_remote_branches: bool,
-    show_remote_heads: bool,
-    hide_remotes: Vec<String>,
-    show_change_refs: bool,
-    show_stashes: bool,
-}
-
-impl Default for RefOptionsPayload {
-    fn default() -> Self {
-        RefOptionsPayload {
-            show_remote_branches: true,
-            show_remote_heads: false,
-            hide_remotes: Vec::new(),
-            show_change_refs: false,
-            show_stashes: true,
-        }
-    }
-}
-
-impl RefOptionsPayload {
-    fn to_options(&self) -> RefReadOptions {
-        RefReadOptions {
-            show_remote_branches: self.show_remote_branches,
-            show_remote_heads: self.show_remote_heads,
-            hide_remotes: self.hide_remotes.clone(),
-            show_change_refs: self.show_change_refs,
-        }
-    }
 }

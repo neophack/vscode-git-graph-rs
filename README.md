@@ -189,6 +189,19 @@ Three rules hold the shape together:
 The *lane* layout — which column a commit's dot sits in — deliberately stays in the webview: it is
 a rendering decision that depends on the viewport.
 
+### One method table
+
+The engine's whole read surface sits behind one method table
+([`native/core/src/dispatch.rs`](native/core/src/dispatch.rs)). The Node addon (`native/node`,
+through napi-rs) serves typed exports for every read — what the extension's backend consumes
+through `src/backend/addon.ts` — plus `request`, the same surface as one JSON call
+(`{"method": "loadCommits", "params": {…}}`) for REPL probes and test harnesses that want the
+engine without a binding per method. Both routes share the table, so they cannot drift.
+
+Failures ride the same shape on both: a typed export throws `Kind: message` and the single
+interface answers `{"error": "Kind: message"}` in band — the same kinds, so one parse decides
+between fallback and error dialogue.
+
 ### The fallback
 
 `createBackend()` returns the Rust engine wrapped so that anything it cannot answer reaches the

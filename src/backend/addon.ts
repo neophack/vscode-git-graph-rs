@@ -55,6 +55,8 @@ interface NativeAddon {
 	parseGerritMetas(path: string, remote: string, changes: number[], urlBase: string | null): Promise<string>;
 	listChangeRefs(path: string, remote: string): Promise<string>;
 	engineVersion(): string;
+	/** The whole engine as one JSON call; see `native/core/src/dispatch.rs` for the method table. */
+	request(repo: string, requestJson: string): Promise<string>;
 }
 
 /**
@@ -272,4 +274,40 @@ export async function call<T>(work: () => Promise<T>): Promise<T> {
 	} catch (error) {
 		throw toBackendError(error);
 	}
+}
+
+/**
+ * One engine request through the single dispatch seam (`request`), answered as parsed JSON —
+ * with the in-band error (`{"error": "Kind: message"}`, the string a typed call throws) raised
+ * as the same backend error. The extension's own reads go through the typed API above; this is
+ * the one-call surface for tools and second hosts that want the whole engine without a binding
+ * per method. The method table lives in `native/core/src/dispatch.rs`.
+ */
+export async function engineRequest<T = unknown>(
+	repo: string,
+	method: string,
+	params?: object,
+	root?: string
+): Promise<T> {
+	let raw: string;
+	try {
+		raw = await loadAddon(root).request(repo, JSON.stringify({ method, params }));
+	} catch (error) {
+		throw toBackendError(error);
+	}
+	let answer: unknown;
+	try {
+		answer = JSON.parse(raw);
+	} catch (error) {
+		throw new GitBackendError('Git', `The engine returned a malformed response: ${errorMessage(error)}`);
+	}
+	if (
+		typeof answer === 'object' &&
+		answer !== null &&
+		'error' in answer &&
+		typeof (answer as { error: unknown }).error === 'string'
+	) {
+		throw toBackendError((answer as { error: string }).error);
+	}
+	return answer as T;
 }
