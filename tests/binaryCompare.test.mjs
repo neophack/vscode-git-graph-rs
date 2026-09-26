@@ -56,7 +56,7 @@ Module._load = function (request, parent, isMain) {
 
 const { binaryCompareScript, createHexSession, flatSections, respondCopyToClipboard, respondHexInfo, respondHexRows, wireHexSession } = await import('../out/binaryCompare.js');
 const { t } = await import('../out/i18n.js');
-const { UNCOMMITTED } = await import('../out/utils.js');
+const { UNCOMMITTED } = await import('../out/utils/git.js');
 
 /* ---------- The flattened section layout ---------- */
 

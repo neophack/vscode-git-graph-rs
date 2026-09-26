@@ -3,7 +3,8 @@ import * as vscode from 'vscode';
 import { DataSource } from './dataSource';
 import { t } from './i18n';
 import { GitFileStatus } from './types';
-import { UNCOMMITTED, getPathFromStr } from './utils';
+import { UNCOMMITTED } from './utils/git';
+import { getPathFromStr } from './utils/paths';
 import { Disposable, toDisposable } from './utils/disposable';
 
 export const enum DiffSide {

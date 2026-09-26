@@ -5,7 +5,7 @@ import * as https from 'https';
 import * as path from 'path';
 import { resolve as resolveUrl } from 'url';
 import { ErrorInfo, GerritChangeEvent, GerritChangeState, GerritChangeStatus, GerritPatchsetsMode } from './types';
-import { evalPromises } from './utils';
+import { evalPromises } from './utils/childProcess';
 
 /**
  * A minimal structural interface for running Git commands (implemented by `DataSource`).

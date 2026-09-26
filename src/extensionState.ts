@@ -4,7 +4,8 @@ import { Avatar, AvatarCache } from './avatarManager';
 import { getConfig } from './config';
 import { t } from './i18n';
 import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from './types';
-import { GitExecutable, getPathFromStr } from './utils';
+import { GitExecutable } from './utils/findGit';
+import { getPathFromStr } from './utils/paths';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 

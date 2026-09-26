@@ -44,7 +44,24 @@ import { buildPullRequestHeadRefspecs, findStalePullRequestRefs, parseGitRemoteV
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, PullRequestInfo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
-import { UNCOMMITTED, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, encodeJsonForInlineScript, getNonce, openExtensionSettings, openExternalUrl, openFile, resolveDiffFromHash, showErrorMessage, unableToFindGitMsg, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
+import { UNCOMMITTED } from './utils/git';
+import {
+	archive,
+	copyFilePathToClipboard,
+	copyToClipboard,
+	createPullRequest,
+	openExtensionSettings,
+	openExternalUrl,
+	openFile,
+	resolveDiffFromHash,
+	showErrorMessage,
+	viewDiff,
+	viewDiffWithWorkingFile,
+	viewFileAtRevision,
+	viewScm,
+} from './utils/actions';
+import { encodeJsonForInlineScript, getNonce } from './utils/format';
+import { unableToFindGitMsg } from './utils/findGit';
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**

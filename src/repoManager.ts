@@ -7,7 +7,15 @@ import { DEFAULT_REPO_STATE, ExtensionState } from './extensionState';
 import { t } from './i18n';
 import { Logger } from './logger';
 import { BooleanOverride, ErrorInfo, FileViewType, GitRepoSet, GitRepoState, PinnedCommit, PullRequestConfig, PullRequestConfigBase, PullRequestProvider, RepoCommitOrdering } from './types';
-import { evalPromises, getPathFromStr, getPathFromUri, getRepoName, pathWithTrailingSlash, realpath, showErrorMessage, showInformationMessage } from './utils';
+import { evalPromises } from './utils/childProcess';
+import {
+	getPathFromStr,
+	getPathFromUri,
+	getRepoName,
+	pathWithTrailingSlash,
+	realpath,
+} from './utils/paths';
+import { showErrorMessage, showInformationMessage } from './utils/actions';
 import { BufferedQueue } from './utils/bufferedQueue';
 import { Disposable, toDisposable } from './utils/disposable';
 import { EventEmitter, GgEvent } from './utils/event';

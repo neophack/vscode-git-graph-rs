@@ -11,7 +11,13 @@ import { t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { StatusBarItem } from './statusBarItem';
-import { GitExecutable, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
+import {
+	GitExecutable,
+	findGit,
+	getGitExecutableFromPaths,
+	unableToFindGitMsg,
+} from './utils/findGit';
+import { showErrorMessage, showInformationMessage } from './utils/actions';
 import { EventEmitter } from './utils/event';
 
 /**

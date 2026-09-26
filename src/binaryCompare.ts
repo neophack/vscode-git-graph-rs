@@ -2,7 +2,8 @@ import { DataSource } from './dataSource';
 import { HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
 import { t } from './i18n';
 import { GitFileChange } from './types';
-import { UNCOMMITTED, copyToClipboard } from './utils';
+import { UNCOMMITTED } from './utils/git';
+import { copyToClipboard } from './utils/actions';
 
 /**
  * Everything the two binary comparison surfaces share: the Commit Comparison View's embedded

@@ -11,7 +11,21 @@ import { GerritDataSource } from './gerrit';
 import { t } from './i18n';
 import { Logger } from './logger';
 import { ActionedUser, CommitOrdering, ErrorInfo, ErrorInfoExtensionPrefix, GerritChangeState, GitActivityCell, GitAuthorStat, GitCommit, GitCommitDetails, GitCommitStash, GitConfigLocation, GitConflictPrediction, GitFileChange, GitLineCounts, GitOperationState, GitOperationType, GitPushBranchMode, GitReflogEntry, GitWorktree, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitTagDetails, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from './types';
-import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromUri, isSafeRefName, isSafeStashSelector, isValidCommitHash, openGitTerminal, pathWithTrailingSlash, quoteShellArg, realpath, resolveSpawnOutput, showErrorMessage, unableToFindGitMsg } from './utils';
+import { GitExecutable, unableToFindGitMsg } from './utils/findGit';
+import {
+	GitVersionRequirement,
+	UNCOMMITTED,
+	abbrevCommit,
+	constructIncompatibleGitVersionMessage,
+	doesVersionMeetRequirement,
+	isSafeRefName,
+	isSafeStashSelector,
+	isValidCommitHash,
+	quoteShellArg,
+} from './utils/git';
+import { getPathFromUri, pathWithTrailingSlash, realpath } from './utils/paths';
+import { openGitTerminal, resolveSpawnOutput } from './utils/childProcess';
+import { showErrorMessage } from './utils/actions';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 

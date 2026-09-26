@@ -3,7 +3,8 @@ import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSess
 import { DataSource } from './dataSource';
 import { t } from './i18n';
 import { GitFileChange } from './types';
-import { UNCOMMITTED, abbrevCommit, getNonce } from './utils';
+import { UNCOMMITTED, abbrevCommit } from './utils/git';
+import { getNonce } from './utils/format';
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**

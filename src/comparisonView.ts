@@ -6,7 +6,9 @@ import { DataSource } from './dataSource';
 import { HexDiffSession } from './hexDiff';
 import { t } from './i18n';
 import { GitFileChange } from './types';
-import { UNCOMMITTED, abbrevCommit, encodeJsonForInlineScript, getNonce, viewDiff } from './utils';
+import { UNCOMMITTED, abbrevCommit } from './utils/git';
+import { encodeJsonForInlineScript, getNonce } from './utils/format';
+import { viewDiff } from './utils/actions';
 import { Disposable, toDisposable } from './utils/disposable';
 
 /**

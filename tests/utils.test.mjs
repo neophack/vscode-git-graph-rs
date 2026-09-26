@@ -22,7 +22,17 @@ const workspacePath = workspaceRoot.replace(/\\/g, '/');
 const vscode = createVscodeStub({ workspaceFolders: [{ path: workspaceRoot }] });
 installVscodeStub(vscode);
 
-const utils = await import('../out/utils.js');
+// The former grab-bag module, now split by concern - merged back into one object so
+// the suite can keep addressing it as utils.*.
+const utils = {
+	...(await import('../out/utils/paths.js')),
+	...(await import('../out/utils/git.js')),
+	...(await import('../out/utils/format.js')),
+	...(await import('../out/utils/repo.js')),
+	...(await import('../out/utils/childProcess.js')),
+	...(await import('../out/utils/findGit.js')),
+	...(await import('../out/utils/actions.js')),
+};
 const { t } = await import('../out/i18n.js');
 const { BufferedQueue } = await import('../out/utils/bufferedQueue.js');
 const { decodeDiffDocUri } = await import('../out/diffDocProvider.js');

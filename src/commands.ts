@@ -12,7 +12,29 @@ import { isZhCn, t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { ErrorInfo } from './types';
-import { GitExecutable, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, isSafeRefName, openExternalUrl, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage, unableToFindGitMsg } from './utils';
+import { GitExecutable, unableToFindGitMsg } from './utils/findGit';
+import {
+	VsCodeVersionRequirement,
+	abbrevCommit,
+	doesVersionMeetRequirement,
+	isSafeRefName,
+} from './utils/git';
+import { abbrevText, getExtensionVersion, getRelativeTimeDiff } from './utils/format';
+import {
+	copyToClipboard,
+	openExternalUrl,
+	openFile,
+	showErrorMessage,
+	showInformationMessage,
+} from './utils/actions';
+import {
+	getPathFromStr,
+	getPathFromUri,
+	getRepoName,
+	isPathInWorkspace,
+	resolveToSymbolicPath,
+} from './utils/paths';
+import { getSortedRepositoryPaths } from './utils/repo';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
 
