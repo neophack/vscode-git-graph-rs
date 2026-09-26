@@ -259,8 +259,8 @@ when the user confirms. The guarded operations:
 Every control in the Git Graph view — buttons, context menus, dialogs, widgets — can drive and
 verify itself, with per-action timings, to answer two questions about a real install: *does
 every control still work?* and *how long does each take?* It is a **packaging variant**: the
-automation build ships it, the default build does not. `build-and-install-automation.bat`
-(like `build-and-install.bat`, but packaging `npm run package:automation`) produces the
+automation build ships it, the default build does not. `build-and-install.bat automation`
+(the optional argument packaging `npm run package:automation`) produces the
 automation-enabled vsix and installs it; the original bats and CI (`npm run package`) package
 the extension **without** it — the automation modules are moved out of the package and the
 contributions (button, command) are absent. The same source loads fine either way. There is no

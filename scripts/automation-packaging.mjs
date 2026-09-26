@@ -1,7 +1,7 @@
 /**
  * The automation-testing capability is a packaging variant, not a runtime setting: the default
- * build (original bats + CI, `npm run package`) ships WITHOUT it, the automation build (the
- * `build-and-install-automation.bat` chain, `npm run package:automation`) ships WITH it.
+ * build (the default, `npm run package`) ships WITHOUT it, the automation build
+ * (`build-and-install.bat automation`, `npm run package:automation`) ships WITH it.
  *
  * This module is the shared mechanism both wrappers and scripts/package-platforms.mjs use:
  *   - withAutomationExcluded(task): moves out/automation/ and resources/automation/ aside for

@@ -1,11 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
 rem ============================================================================
-rem  build-and-install.bat - full build and install of the Git Graph (Rust) extension
+rem  build-and-install.bat [automation] - full build and install of the Git Graph (Rust) extension
 rem
 rem  Runs the whole chain: native addon (release) -> TypeScript -> webview ->
-rem  vsix package -> install into VS Code. Each step is checked, and the batch
-rem  stops at the first failure so a stale vsix can never be installed.
+rem  tests -> vsix package -> install into VS Code. Each step is checked, and
+rem  the batch stops at the first failure so a stale vsix can never be installed.
+rem
+rem  Pass "automation" as the first argument to package the AUTOMATION-enabled
+rem  vsix instead (npm run package:automation - ships the in-process test
+rem  runner, the Run Automation Test button and the report page).
 rem ============================================================================
 
 cd /d "%~dp0"
@@ -40,11 +44,15 @@ call npm run compile || goto :fail
 echo [5/6] Running the test suite...
 call npm test || goto :fail
 
-echo [6/6] Packaging the vsix...
+rem The packaging step honours the optional "automation" argument (see the header).
+set "PACKAGE_SCRIPT=package"
+if /i "%~1"=="automation" set "PACKAGE_SCRIPT=package:automation"
+
+echo [6/6] Packaging the vsix (npm run %PACKAGE_SCRIPT%)...
 for /f "delims=" %%i in ('dir /b /o-d *.vsix 2^>nul') do (
     del "%%i" 2>nul
 )
-call npm run package || goto :fail
+call npm run %PACKAGE_SCRIPT% || goto :fail
 
 set "VSIX="
 for /f "delims=" %%i in ('dir /b /o-d *.vsix 2^>nul') do (
