@@ -1180,12 +1180,28 @@ export const CATALOG: readonly AutomationAction[] = [
 		group: 'row',
 		mutable: false,
 		// The per-row button opens the commit's changes (against its first parent) in a Commit
-		// Comparison tab; the host answers openCompareTab with no response.
+		// Comparison tab; the host answers openCompareTab with no response. main.css hides the
+		// button at WIDTH 0 (taking no space, so a truncated description runs to its boundary) until
+		// the row is hovered or active, so the flow pins BOTH states: hidden at rest, revealed at
+		// its 20x20 size once active. The shim cannot drive the CSS :hover state (synthetic mouse
+		// events never set it), so the row is activated the other UI way the stylesheet reveals the
+		// button for: clicking it opens the Commit Details View, which marks the row
+		// commitDetailsOpen — the class is added synchronously before #cdv renders, and re-applied
+		// on the CDV's own re-renders, so waitFor the class cannot race the reveal.
 		ui: [
 			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
 			...ROW_ASSERT_STEPS,
+			// Hidden at rest: width 0, but height 20px (the box is never 0x0, so expectSize's
+			// not-rendered guard does not fire) — the button ceding its space back to the
+			// description text is exactly the behavior under test.
+			{ op: 'expectSize', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn', maxW: 0, minH: 12, maxH: 40 },
+			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"]' },
+			{ op: 'waitFor', selector: 'tr.commit.commitDetailsOpen[data-hash="{{commit}}"]' },
 			{ op: 'expectSize', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn', minW: 12, maxW: 48, minH: 12, maxH: 40 },
-			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn' }
+			{ op: 'click', selector: 'tr.commit[data-hash="{{commit}}"] .openChangesBtn' },
+			// Close the Commit Details View again, leaving the view as later entries expect it.
+			{ op: 'click', selector: '#cdvClose' },
+			{ op: 'waitForGone', selector: '#cdv' }
 		],
 		request: [{ command: 'openCompareTab', repo: '{{repo}}', fromHash: '{{commitParent}}', toHash: '{{commit}}', singleCommit: true }],
 		noHostTraffic: true,
