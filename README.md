@@ -260,7 +260,8 @@ Every control in the Git Graph view — buttons, context menus, dialogs, widgets
 verify itself, with per-action timings, to answer two questions about a real install: *does
 every control still work?* and *how long does each take?* It is a **packaging variant**: the
 automation build ships it, the default build does not. `build-and-install.bat automation`
-(the optional argument packaging `npm run package:automation`) produces the
+on Windows, `./build-and-install.sh automation` on macOS/Linux (the optional argument
+packaging `npm run package:automation`) produces the
 automation-enabled vsix and installs it; the original bats and CI (`npm run package`) package
 the extension **without** it — the automation modules are moved out of the package and the
 contributions (button, command) are absent. The same source loads fine either way. There is no
@@ -377,8 +378,9 @@ npm run bench:all -- <repo-path> # every read operation, one table row each (--j
 npm run lint                     # clippy + rustfmt
 ```
 
-On Windows, `build-and-install.bat` runs the whole chain — addon, TypeScript, webview, tests —
-packages the VSIX and installs it into VS Code, stopping at the first failure.
+`build-and-install.bat` (Windows) and `./build-and-install.sh` (macOS/Linux) run the whole
+chain — addon, TypeScript, webview, tests — package the VSIX and install it into VS Code,
+stopping at the first failure.
 
 While `git-graph-rs.enableLog` is on, every spawned `git` command is logged with its duration and
 every engine→CLI fallback with its reason; `node scripts/analyze-log.mjs <logfile>` summarises a
