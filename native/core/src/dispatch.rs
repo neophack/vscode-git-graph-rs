@@ -185,6 +185,25 @@ fn answer(repo_path: &str, method: &str, params: Value) -> Result<Value> {
                 &request.file,
             ))
         }
+        // A file's raw bytes at one revision — `{"bytes": "<base64>"}` or `{"bytes": null}`
+        // when the path does not exist there. The one channel for binary content: the compare
+        // pages' hex machinery, or any host that must not go through a lossy text decode.
+        // `revision` is a commit-ish, or `:index` for the staged copy.
+        "fileBytes" => {
+            let request: FileBytesParams = decode(method, params)?;
+            let bytes = if request.revision == ":index" {
+                crate::blob::index_file_bytes(&repo, &request.path)
+            } else {
+                crate::blob::commit_file_bytes(&repo, &request.revision, &request.path)
+            };
+            use base64::Engine;
+            respond(bytes.map(|bytes| {
+                json!({
+                    "bytes": bytes
+                        .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
+                })
+            }))
+        }
 
         /* ---------- The working tree ---------- */
         "countUncommittedChanges" => {
@@ -371,6 +390,13 @@ struct LineCountsParams {
 struct RenamedFileParams {
     commit_hash: String,
     old_file_path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileBytesParams {
+    revision: String,
+    path: String,
 }
 
 #[derive(Deserialize)]

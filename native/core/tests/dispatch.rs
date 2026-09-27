@@ -152,6 +152,32 @@ fn the_table_covers_the_host_workflow() {
         "the file diff carries the added line, got {diff}"
     );
 
+    /* Raw bytes: base64 across the JSON boundary, binary content included, the staged copy
+    through the `:index` revision, and null for a path that is not there. */
+    let bytes = ask(
+        &root,
+        "fileBytes",
+        json!({ "revision": &first, "path": "a.txt" }),
+    );
+    assert_eq!(bytes["bytes"], json!("b25lCg==")); // base64 of "one\n"
+    let staged = ask(
+        &root,
+        "fileBytes",
+        json!({ "revision": ":index", "path": "a.txt" }),
+    );
+    assert!(
+        staged["bytes"].is_string(),
+        "the staged copy reads through the index revision"
+    );
+    assert_eq!(
+        ask(
+            &root,
+            "fileBytes",
+            json!({ "revision": &first, "path": "no-such" })
+        )["bytes"],
+        json!(null)
+    );
+
     /* Diffs and line counts between the two revisions. */
     let changed = ask(
         &root,
