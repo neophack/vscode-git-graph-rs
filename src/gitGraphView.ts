@@ -310,7 +310,7 @@ export class GitGraphView extends Disposable {
 	 * an existing branch changes no name, so a name-only signature would never notice it.
 	 */
 	private static readonly BACKGROUND_POLL_INTERVAL_MS = 5000;
-	private backgroundRefreshTimer: NodeJS.Timer | null = null;
+	private backgroundRefreshTimer: NodeJS.Timeout | null = null;
 	/** The last repository signature the background poll observed (NULL => record a baseline first). */
 	private lastRepoSignature: string | null = null;
 

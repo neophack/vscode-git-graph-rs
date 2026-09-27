@@ -26,7 +26,7 @@ export class RepoFileWatcher {
 	private repo: string | null = null;
 	private fsWatcher: vscode.FileSystemWatcher | null = null;
 	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
-	private refreshTimeout: NodeJS.Timer | null = null;
+	private refreshTimeout: NodeJS.Timeout | null = null;
 	private pendingCommitsAffected: boolean = false;
 	/**
 	 * A repo change event arrived while muted. The watcher is muted for the whole duration of every
