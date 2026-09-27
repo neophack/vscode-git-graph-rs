@@ -266,8 +266,7 @@ code{
 	text-overflow:ellipsis;
 	white-space:nowrap;
 	overflow:hidden;
-	/*	flex-grow:1; */
-	margin-right:1em;
+/*	flex-grow:1; */
 }
 
 #commitTable tr.commit span.description .commitbody{
@@ -1370,9 +1369,13 @@ body.tagLabelsRightAligned .tagsWrapper {
 }
 
 /* The "Open Changes" action shown at the end of each commit's description (the same action as
-   VS Code's built-in Source Control Graph): hidden by default, shown while the row is hovered
-   or otherwise active, and styled like a VS Code inline action - a codicon-sized 20x20 hit
-   area around the 16px icon, with the list hover background while it is itself hovered. */
+   VS Code's built-in Source Control Graph): hidden by default - and taking up NO space while
+   hidden (width:0), so a truncated description always runs to its cell's boundary - and shown,
+   at its full 20x20 size (the row's text giving up exactly that much room), while the row is
+   hovered or otherwise active, styled like a VS Code inline action - a codicon-sized 20x20 hit
+   area around the 16px icon, with the list hover background while it is itself hovered. The
+   button stays in the flow even at width:0 (rather than display:none) so its auto margin keeps
+   pushing a following right-aligned tagsWrapper to the row's right edge while hidden. */
 #commitTable tr.commit span.description .openChangesBtn {
 	flex-shrink:0;
 	align-self:center;
@@ -1382,8 +1385,9 @@ body.tagLabelsRightAligned .tagsWrapper {
 	display:inline-flex;
 	align-items:center;
 	justify-content:center;
-	width:20px;
+	width:0;
 	height:20px;
+	overflow:hidden;
 	cursor:pointer;
 	opacity:0;
 	pointer-events:none;
@@ -1404,6 +1408,7 @@ body.tagLabelsRightAligned .tagsWrapper {
 #commitTable tr.commit.graphVertexActive span.description .openChangesBtn,
 #commitTable tr.commit.dialogActive span.description .openChangesBtn,
 #commitTable tr.commit.commitDetailsOpen span.description .openChangesBtn {
+	width:20px;
 	opacity:1;
 	pointer-events:auto;
 }
@@ -1425,6 +1430,12 @@ body.tagLabelsRightAligned .tagsWrapper {
    tags move to the row's right edge together as one group. */
 #commitTable tr.commit span.description .openChangesBtn + .tagsWrapper {
 	margin-left:4px;
+}
+/* Root commits carry no Open Changes button, so their tags follow the text directly: the same
+   4px breathing room as above, as padding so the tagsWrapper's own auto margin (pushing the
+   tags to the row's right edge while there is spare room) still applies. */
+#commitTable tr.commit span.description .text + .tagsWrapper {
+	padding-left:4px;
 }
 
 
