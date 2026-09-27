@@ -94,7 +94,8 @@ pub struct GitRefData {
 
 /// One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
 /// requests of a single view load.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RefSnapshot {
     pub ref_data: GitRefData,
     /// Local branch names, in the order the view lists them.

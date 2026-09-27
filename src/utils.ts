@@ -702,18 +702,20 @@ export function resolveSpawnOutput(cmd: cp.ChildProcess) {
 			});
 			cmd.on('exit', (code) => {
 				if (resolved) return;
-				resolve({ code: code, error: null });
+				resolve({ code: code ?? -1, error: null });
 				resolved = true;
 			});
 		}),
 		new Promise<Buffer>((resolve) => {
 			// stdout promise
+			if (cmd.stdout === null) return resolve(Buffer.alloc(0));
 			let buffers: Buffer[] = [];
 			cmd.stdout.on('data', (b: Buffer) => { buffers.push(b); });
 			cmd.stdout.on('close', () => resolve(Buffer.concat(buffers)));
 		}),
 		new Promise<string>((resolve) => {
 			// stderr promise
+			if (cmd.stderr === null) return resolve('');
 			let stderr = '';
 			cmd.stderr.on('data', (d) => { stderr += d; });
 			cmd.stderr.on('close', () => resolve(stderr));

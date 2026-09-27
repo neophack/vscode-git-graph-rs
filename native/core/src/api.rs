@@ -40,10 +40,12 @@ use crate::types::{
     GitCommitData, GitCommitDetails, GitFileChange, GitHistoryMatch, GitRepoInfo, GitStash,
     GitTagDetails, LogOptions, RefReadOptions, RefSnapshot,
 };
+use serde::Deserialize;
 
 /// How a graph page is loaded. `Default` is the view's own default request: every local
 /// branch, tag and remote-tracking branch, 300 commits, commit-date order.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct GraphOptions {
     /// The branch names to walk from, or `None` for all refs.
     pub branches: Option<Vec<String>>,
