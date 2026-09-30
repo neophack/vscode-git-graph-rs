@@ -10,6 +10,13 @@ use common::TestRepo;
 
 use git_graph_core::dispatch;
 use serde_json::{json, Value};
+use std::sync::Mutex;
+
+/// Both tests in this file drive the process-global handle registry (`open` / `close` /
+/// `closeAll` / `openCount` share `RepoManager::global()`), and the default parallel test runner
+/// would interleave them: one test's `closeAll` can drop the other's handle mid-assertion, or
+/// its `open` can inflate the count the other reads. Serialize them instead.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 /// Ask the dispatcher, asserting it always answers parseable JSON.
 fn ask(repo_path: &str, method: &str, params: Value) -> Value {
@@ -29,6 +36,7 @@ fn error_of(answer: &Value) -> String {
 
 #[test]
 fn lifecycle_meta_and_errors_answer_in_band() {
+    let _registry = REGISTRY_LOCK.lock().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let outside_path = outside.path().to_str().unwrap();
 
@@ -78,6 +86,7 @@ fn lifecycle_meta_and_errors_answer_in_band() {
 
 #[test]
 fn the_table_covers_the_host_workflow() {
+    let _registry = REGISTRY_LOCK.lock().unwrap();
     require_git!();
     let mut repo = TestRepo::new();
     let first = repo.commit_file("a.txt", "one\n", "first commit");
