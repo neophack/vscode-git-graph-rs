@@ -185,7 +185,7 @@
 	"config.git-graph-rs.keyboardShortcut.scrollToStash.description": "将 Git Graph 视图滚动到已加载提交中第一个（或下一个）贮藏的键盘快捷键的键绑定。可配合 Shift 修饰键将视图滚动到最后一个（上一个）贮藏。",
 	"config.git-graph-rs.markdown.description": "解析并渲染提交信息和标签详情中常用的一部分内联 Markdown 格式规则（粗体、斜体、粗斜体和行内代码块）。",
 	"config.git-graph-rs.maxDepthOfRepoSearch.description": "指定在工作区中发现仓库时搜索子文件夹的最大深度。注意：搜索子文件夹时不会自动检测子仓库，但可以通过在命令面板中运行 \"Git Graph: 添加 Git 仓库\" 命令手动添加。",
-	"config.git-graph-rs.mobileAdaptation.description": "开启窄窗口显示适配：当 Git Graph 视图宽度不超过 600 像素时，隐藏 \"日期\"、\"作者\" 和 \"提交\" 列，使图形和提交信息适配手机屏幕；窗口较宽时显示保持不变。",
+	"config.git-graph-rs.mobileAdaptation.description": "当 Git Graph 视图宽度不超过 600 像素时使用适合触屏的手机布局：两行式提交行（标题下显示日期、作者和提交哈希）、更大的按钮、全屏的提交详情面板，以及通过长按打开的底部操作菜单；窗口较宽时保持常规布局。",
 	"config.git-graph-rs.openNewTabEditorGroup.description": "指定从 Git Graph 视图执行以下操作时打开新标签页所在的编辑器组：查看 Visual Studio Code 差异视图、打开文件、查看文件的特定版本。",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription0": "在当前活动的编辑器组中打开新标签页。",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription1": "在当前活动的编辑器组旁边打开新标签页。",

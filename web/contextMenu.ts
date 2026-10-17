@@ -70,7 +70,11 @@ class ContextMenu {
 		menu.className = 'contextMenu' + (checked ? ' checked' : '') + (className !== null ? ' ' + className : '');
 		menu.style.opacity = '0';
 		menu.innerHTML = html;
-		frameElem.appendChild(menu);
+		// The mobile layout shows the menu as a full-screen action sheet (mobile.css), so it must
+		// live on <body>: inside a frame such as #view (position:fixed, a stacking context of its
+		// own) no z-index could lift it above the Commit Details sheet it is often opened from.
+		// Its position is set by the stylesheet there, so the frame-relative maths below is moot.
+		(document.body.classList.contains(CLASS_MOBILE_MODE) ? document.body : frameElem).appendChild(menu);
 		const menuBounds = menu.getBoundingClientRect(), frameBounds = frameElem.getBoundingClientRect();
 		const relativeX = event.pageX + menuBounds.width < frameBounds.right
 			? -2 // context menu fits to the right
@@ -98,6 +102,9 @@ class ContextMenu {
 		menu.addEventListener('click', (e) => {
 			// The user clicked on the context menu (but not a specific item) => keep the context menu open to allow the user to reattempt clicking on a specific item
 			e.stopPropagation();
+			// In the mobile layout the menu element is the action sheet's full-screen scrim (see
+			// mobile.css): a tap on the scrim itself, outside the sheet's items, dismisses it
+			if (e.target === menu && document.body.classList.contains(CLASS_MOBILE_MODE)) this.close();
 		});
 
 		menu.addEventListener('contextmenu', (e) => {

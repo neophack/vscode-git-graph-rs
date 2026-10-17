@@ -94,6 +94,8 @@ class GitGraphView {
 	 */
 	private renderedNarrowWindow = false;
 	private static readonly NARROW_WINDOW_MAX_WIDTH = 600;
+	/** The two-line commit row of the mobile layout: subject + meta line, above the 48px touch minimum. */
+	private static readonly MOBILE_ROW_HEIGHT = 52;
 	private static readonly VIRTUAL_ROW_BUFFER = 10;
 
 	/**
@@ -228,6 +230,8 @@ class GitGraphView {
 		observeViewScroll(this);
 		observeKeyboardEvents(this);
 		observeUrls(this);
+		observeLongPress(this);
+		observeFastScroller(this);
 		observeTableEvents(this);
 
 		if (prevState) {
@@ -298,11 +302,26 @@ class GitGraphView {
 			statisticsBtn.innerHTML = SVG_ICONS.graph;
 			statisticsBtn.addEventListener('click', () => this.statisticsView.show());
 		}
+		// The mobile layout's app bar keeps only Find and Refresh: every other control (and the
+		// "Show Remote Branches" checkbox) moves into this overflow menu. Hidden in the wide layout.
+		const controlBtns = document.getElementById('controlBtns');
+		let moreBtn: HTMLElement | null = null;
+		if (controlBtns !== null) {
+			moreBtn = document.createElement('div');
+			moreBtn.id = 'mobileMoreBtn';
+			moreBtn.title = strings.mobileMoreActions;
+			moreBtn.innerHTML = SVG_ICONS.ellipsis;
+			controlBtns.appendChild(moreBtn);
+			moreBtn.addEventListener('click', (e) => {
+				e.stopPropagation(); // the document listener would close the menu as it opens
+				this.showMobileOverflowMenu(e);
+			});
+		}
 
 		// These toolbar icons are styled <div>s rather than native <button>s, so they need to be
 		// wired into the tab order and given Enter/Space activation manually (the CSS already has
 		// :focus-visible rules for them, they just weren't reachable by keyboard)
-		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn, statisticsBtn].forEach((btn) => {
+		[currentBtn, fetchBtn, findBtn, settingsBtn, terminalBtn, filterBtn, statisticsBtn, moreBtn].forEach((btn) => {
 			if (btn === null) return;
 			btn.tabIndex = 0;
 			btn.setAttribute('role', 'button');
@@ -1069,7 +1088,9 @@ class GitGraphView {
 		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, config.referenceLabels.branchLabelsAlignedToGraph);
 		alterClass(document.body, CLASS_TAG_LABELS_RIGHT_ALIGNED, config.referenceLabels.tagLabelsOnRight);
 		document.body.style.setProperty('--git-graph-fontSize', config.graph.fontSize + 'px');
-		document.body.style.setProperty('--git-graph-rowHeight', config.graph.rowHeight + 'px');
+		// A fresh configuration carries the configured grid: re-apply the mobile row pitch over it
+		if (this.renderedNarrowWindow) this.resetGraphRowGrid();
+		document.body.style.setProperty('--git-graph-rowHeight', this.getRowHeight() + 'px');
 		for (let i = 0; i < config.graph.colours.length; i++) {
 			document.body.style.setProperty('--git-graph-color' + i, config.graph.colours[i]);
 		}
@@ -1486,7 +1507,8 @@ class GitGraphView {
 
 		const colHeadersElem = document.getElementById('tableColHeaders');
 		const cdvHeight = this.gitRepos[this.currentRepo].cdvHeight;
-		const headerHeight = colHeadersElem !== null ? colHeadersElem.clientHeight + 1 : 0;
+		// (+1 for its bottom border; the mobile layout hides the header row, which then adds nothing)
+		const headerHeight = colHeadersElem !== null && colHeadersElem.clientHeight > 0 ? colHeadersElem.clientHeight + 1 : 0;
 		const expandedCommit = isCdvDocked(this) ? null : this.expandedCommit;
 		const expandedCommitElem = expandedCommit !== null ? document.getElementById('cdv') : null;
 
@@ -1668,7 +1690,20 @@ class GitGraphView {
 		const openChangesBtn = commit.parents.length > 0
 			? '<span class="openChangesBtn" title="' + escapeHtml(formatStr(strings.openChangesTitleWithSubject, openChangesSubject)) + '">' + SVG_ICONS.openChanges + '</span>'
 			: '';
-		let html = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">' +
+		const rowOpenHtml = '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-hash="' + commit.hash + '" data-color="' + vertexColours[i] + '">';
+		if (this.renderedNarrowWindow) {
+			// The mobile layout drops the Date, Author and Commit columns. Its two-line row reads
+			// like a mail list: the subject with a compact date on the right, then the refs, the
+			// author and the abbreviated hash. Refs moved off the first line keep the subject
+			// readable on a phone; the full date stays in the date's tooltip.
+			const refs = refBranches + refTags + refGerrit + refPullRequest;
+			return rowOpenHtml + '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) +
+				'<span class="description">' + commitDot + pinnedBadge + message + '<span class="mobileMetaDate" title="' + date.title + '">' + formatCompactDate(commit.date) + '</span></span>' +
+				'<span class="mobileMeta">' + (refs !== '' ? '<span class="mobileRefs">' + refs + '</span>' : '') +
+				(commit.hash !== UNCOMMITTED ? '<span class="mobileMetaAuthor">' + escapeHtml(commit.author) + '</span><span class="mobileMetaHash">' + abbrevCommit(commit.hash) + '</span>' : '') +
+				'</span></td></tr>';
+		}
+		let html = rowOpenHtml +
 			(this.config.referenceLabels.branchLabelsAlignedToGraph ? '<td>' + getResizeColHtml(0) + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge : '<td>' + getResizeColHtml(0) + '</td><td>' + getResizeColHtml(1) + '<span class="description">' + commitDot + pinnedBadge + refBranches) + (this.config.referenceLabels.tagLabelsOnRight ? refGerrit + refPullRequest + message + openChangesBtn + (refTags !== '' ? '<span class="tagsWrapper">' + refTags + '</span>' : '') : refTags + refGerrit + refPullRequest + message + openChangesBtn) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + getResizeColHtml(2) + date.formatted + '</td>' : '') +
 			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + getResizeColHtml(3) + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" decoding="sync" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : '') + escapeHtml(commit.author) + '</td>' : '') +
@@ -1686,7 +1721,7 @@ class GitGraphView {
 	 */
 	private canVirtualize() {
 		if (this.commits.length <= 100) return false; // small lists: not worth the window churn
-		if (!(this.config.graph.rowHeight > 0)) return false; // no uniform row height available
+		if (!(this.getRowHeight() > 0)) return false; // no uniform row height available
 		if (this.expandedCommit !== null) return false;
 		if (this.findWidget.isSearching()) return false;
 		if (this.viewElem.clientHeight <= 0) return false; // unmeasured (e.g. hidden view): keep a full render
@@ -1697,7 +1732,7 @@ class GitGraphView {
 	 * Compute the range of commit rows to render (viewport plus a buffer).
 	 */
 	private computeVisibleRange() {
-		const rowHeight = this.config.graph.rowHeight;
+		const rowHeight = this.getRowHeight();
 		const start = Math.max(0, Math.floor((this.viewElem.scrollTop - this.getHeaderHeight()) / rowHeight) - GitGraphView.VIRTUAL_ROW_BUFFER);
 		const count = Math.ceil(this.viewElem.clientHeight / rowHeight) + 1 + 2 * GitGraphView.VIRTUAL_ROW_BUFFER;
 		return { start: start, end: Math.min(this.commits.length, start + count) };
@@ -1714,8 +1749,8 @@ class GitGraphView {
 	private getRowTop(index: number) {
 		const colHeadersElem = document.getElementById('tableColHeaders');
 		return this.getHeaderHeight()
-			+ (colHeadersElem !== null ? colHeadersElem.offsetHeight : this.config.graph.rowHeight)
-			+ index * this.config.graph.rowHeight;
+			+ (colHeadersElem !== null ? colHeadersElem.offsetHeight : this.getRowHeight())
+			+ index * this.getRowHeight();
 	}
 
 	/**
@@ -1737,7 +1772,7 @@ class GitGraphView {
 			// commit sits at the top of the viewport is exact arithmetic - the inverse of
 			// getRowTop(). Preferred over measuring the DOM because it also holds for a row that
 			// windowing left out of the DOM entirely.
-			const index = Math.min(this.commits.length - 1, Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / this.config.graph.rowHeight)));
+			const index = Math.min(this.commits.length - 1, Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / this.getRowHeight())));
 			return { hash: this.commits[index].hash, offset: this.viewElem.scrollTop - this.getRowTop(index), atTop: atTop };
 		}
 
@@ -1907,7 +1942,7 @@ class GitGraphView {
 		if (!top) tableBody.appendChild(spacer); // always the last row, whatever was appended before it
 		const td = <HTMLElement | null>spacer.querySelector('td');
 		if (td !== null) {
-			const height = Math.max(0, rows) * this.config.graph.rowHeight + 'px';
+			const height = Math.max(0, rows) * this.getRowHeight() + 'px';
 			if (td.style.height !== height) td.style.height = height;
 			const colspan = String(this.getNumColumns());
 			if (td.getAttribute('colspan') !== colspan) td.setAttribute('colspan', colspan);
@@ -1951,13 +1986,13 @@ class GitGraphView {
 		const cdvElem = this.expandedCommit !== null && !isCdvDocked(this) ? document.getElementById('cdv') : null;
 		if (cdvElem !== null && cdvElem.parentNode !== null) cdvElem.parentNode.removeChild(cdvElem);
 
+		// The narrow window (mobile) layout is re-evaluated on every render, before any row is
+		// built; the resize observer compares against this record to re-render exactly when a
+		// resize crosses the breakpoint
+		this.applyNarrowWindowLayout(this.isNarrowWindow());
+
 		const ctx = this.createRowRenderingContext();
 		const colVisibility = ctx.colVisibility;
-
-		// The narrow window layout is re-evaluated on every render; the resize observer compares
-		// against this record to re-render exactly when a resize crosses the breakpoint
-		this.renderedNarrowWindow = this.isNarrowWindow();
-		alterClass(document.body, 'narrowWindow', this.renderedNarrowWindow);
 
 		const headerHtml = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">' + strings.columnGraph + '</th><th class="tableColHeader" data-col="1">' + strings.columnDescription + '</th>' +
 			(colVisibility.date ? '<th class="tableColHeader dateCol" data-col="2">' + strings.columnDate + '</th>' : '') +
@@ -1972,7 +2007,7 @@ class GitGraphView {
 		// also contributes to the scrollable height, so clamping to the table's height alone would
 		// nudge the view up on every re-render while the user is scrolled to the very bottom.
 		if (this.canVirtualize() && this.computeVisibleRange().start >= this.commits.length) {
-			const maxScroll = Math.max(0, this.getHeaderHeight() + this.commits.length * this.config.graph.rowHeight - this.viewElem.clientHeight);
+			const maxScroll = Math.max(0, this.getHeaderHeight() + this.commits.length * this.getRowHeight() - this.viewElem.clientHeight);
 			if (this.viewElem.scrollTop > maxScroll) this.viewElem.scrollTop = maxScroll;
 		}
 		this.renderedRange = this.canVirtualize() ? this.computeVisibleRange() : null;
@@ -2181,6 +2216,12 @@ class GitGraphView {
 		if (messageElem !== null && messageElem.textContent !== this.commits[0].message) {
 			messageElem.textContent = this.commits[0].message;
 		}
+		const mobileDateElem = <HTMLElement | null>uncommittedElem.querySelector('.mobileMetaDate');
+		if (mobileDateElem !== null) {
+			const compact = formatCompactDate(this.commits[0].date);
+			if (mobileDateElem.title !== date.title) mobileDateElem.title = date.title;
+			if (mobileDateElem.textContent !== compact) mobileDateElem.textContent = compact;
+		}
 		const dateElem = <HTMLElement | null>uncommittedElem.querySelector('.dateCol');
 		if (dateElem !== null) {
 			if (dateElem.title !== date.title) dateElem.title = date.title;
@@ -2190,6 +2231,36 @@ class GitGraphView {
 				dateText.textContent = date.formatted;
 			}
 		}
+	}
+
+	/**
+	 * The mobile app bar's overflow menu (a bottom action sheet): the toolbar buttons the app bar
+	 * has no room for, each triggering its hidden button so the two can never disagree, and the
+	 * "Show Remote Branches" checkbox as a switch.
+	 */
+	private showMobileOverflowMenu(event: MouseEvent) {
+		const click = (id: string) => () => { const btn = document.getElementById(id); if (btn !== null) btn.click(); };
+		const item = (icon: string, label: string) => '<span class="mobileMenuIcon">' + icon + '</span><span class="mobileMenuLabel">' + label + '</span>';
+		const filterLabel = this.commitPathFilter !== null ? escapeHtml(formatStr(strings.filterTitleActive, this.commitPathFilter)) : strings.filterTitle;
+		contextMenu.show([
+			[
+				{ title: item(SVG_ICONS.current, strings.mobileGoToHead), visible: this.commitHead !== null, onClick: click('currentBtn') },
+				{ title: item(SVG_ICONS.download, this.config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle), visible: this.gitRemotes.length > 0, onClick: click('fetchBtn') },
+				{ title: item(SVG_ICONS.filter, filterLabel), visible: document.getElementById('filterBtn') !== null, onClick: click('filterBtn') }
+			],
+			[
+				{
+					title: item(SVG_ICONS.branch, strings.mobileShowRemoteBranches) + '<span class="mobileMenuSwitch' + (this.showRemoteBranchesElem.checked ? ' on' : '') + '"></span>',
+					visible: true,
+					onClick: () => this.showRemoteBranchesElem.click()
+				}
+			],
+			[
+				{ title: item(SVG_ICONS.graph, strings.statisticsTitle), visible: document.getElementById('statisticsBtn') !== null, onClick: click('statisticsBtn') },
+				{ title: item(SVG_ICONS.terminal, strings.terminalTitle), visible: true, onClick: click('terminalBtn') },
+				{ title: item(SVG_ICONS.gear, strings.settingsTitle), visible: true, onClick: click('settingsBtn') }
+			]
+		], false, null, event, this.viewElem, null, 'mobileOverflowMenu');
 	}
 
 	private renderFetchButton() {
@@ -2368,7 +2439,59 @@ class GitGraphView {
 	 * plain render would never run (ordinary resizes only reflow the graph).
 	 */
 	public updateNarrowWindowLayout() {
-		if (this.isNarrowWindow() !== this.renderedNarrowWindow) this.render();
+		if (this.isNarrowWindow() === this.renderedNarrowWindow) return;
+		if (this.expandedCommit !== null && this.config.commitDetailsView.location !== GG.CommitDetailsViewLocation.DockedToBottom) {
+			// The mobile layout always shows the Commit Details View as a full-screen sheet (docked),
+			// the wide layout inline in the table (as configured): the open view's element is of the
+			// other kind, so close it rather than leave a docked <div> in the table or vice versa
+			closeCommitDetails(this, false);
+		}
+		this.render();
+	}
+
+	/**
+	 * Is the mobile layout currently rendered? It is decided once per render (see renderTable),
+	 * so everything that reasons about the rows in the DOM - their height, the Commit Details View
+	 * placement - agrees with what is actually on screen, even mid-resize.
+	 */
+	public isMobileLayout() {
+		return this.renderedNarrowWindow;
+	}
+
+	/**
+	 * The uniform height of a commit row in the current layout: the configured graph.rowHeight,
+	 * or the taller two-line row of the mobile layout (a 48px+ touch target, see MOBILE-DESIGN.md).
+	 */
+	public getRowHeight() {
+		return this.renderedNarrowWindow ? GitGraphView.MOBILE_ROW_HEIGHT : this.config.graph.rowHeight;
+	}
+
+	/** The index of the commit row at the top of the viewport (arithmetic, so it holds for rows windowing left out of the DOM), or -1 with no commits. */
+	public getTopVisibleCommitIndex() {
+		if (this.commits.length === 0) return -1;
+		return Math.min(this.commits.length - 1, Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / this.getRowHeight())));
+	}
+
+	/**
+	 * Switch the rendered layout between the wide and the mobile one: the <body> classes that the
+	 * mobile stylesheet keys on, the row height CSS variable, and - when the layout actually
+	 * changes - the graph grid, so the vertices line up with the new rows before the next render
+	 * gets to measure them.
+	 */
+	private applyNarrowWindowLayout(narrow: boolean) {
+		const changed = narrow !== this.renderedNarrowWindow;
+		this.renderedNarrowWindow = narrow;
+		alterClass(document.body, 'narrowWindow', narrow);
+		alterClass(document.body, CLASS_MOBILE_MODE, narrow);
+		document.body.style.setProperty('--git-graph-rowHeight', this.getRowHeight() + 'px');
+		if (changed) this.resetGraphRowGrid();
+	}
+
+	/** Set the graph grid's row pitch to the current layout's row height (until a render measures it). */
+	private resetGraphRowGrid() {
+		const rowHeight = this.getRowHeight();
+		this.config.graph.grid.y = rowHeight;
+		this.config.graph.grid.offsetY = rowHeight / 2;
 	}
 
 	public getNumColumns() {

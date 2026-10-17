@@ -6,7 +6,7 @@
  * before/after measurements (row tops, description x positions, ref pill rects, graph column
  * width, scrollTop). tests/browserRepro/run.mjs drives it and asserts the invariants.
  *
- * Config variants are selected with ?cfg= (default | angular | aligned): the host script reads
+ * Config variants are selected with ?cfg= (default | angular | aligned | mobile): the host script reads
  * location.search before out.min.js loads and adjusts the initial config accordingly, so the
  * graph column width / ref pill placement can be compared across graph settings. */
 import fs from 'node:fs';
@@ -69,6 +69,7 @@ const cfgVariant = new URLSearchParams(location.search).get('cfg') || 'default';
 const cfg = ${JSON.stringify(config)};
 if (cfgVariant === 'angular') cfg.graph.style = 1;
 if (cfgVariant === 'aligned') cfg.referenceLabels.branchLabelsAlignedToGraph = true;
+if (cfgVariant === 'mobile') cfg.mobileAdaptation = true; // the phone layout, below 600px wide
 window.__cfgVariant = cfgVariant;
 window.initialState = { config: cfg, lastActiveRepo: ${JSON.stringify(REPO)}, loadViewTo: null,
 	repos: { ${JSON.stringify(REPO)}: ${JSON.stringify(DEFAULT_REPO_STATE)} }, loadRepoInfoRefreshId: 0, loadCommitsRefreshId: 0,
@@ -432,17 +433,44 @@ document.getElementById('btnRewrite').addEventListener('click', () => runToResul
 document.getElementById('btnFetch').addEventListener('click', () => runToResult('commitPrepend'));
 `;
 
-const html = `<!DOCTYPE html><html><head><link rel="stylesheet" href="/media/out.min.css">
-<style>html,body{margin:0;padding:0}#view{height:100vh}</style></head><body>
+const html = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><link rel="stylesheet" href="/media/out.min.css">
+<style>
+/* The VS Code Dark+ token set a real webview injects: without it every var(--vscode-*) in the
+   stylesheets resolves to nothing, so sheets/menus render transparent (the compiled bundle's own
+   literal fallbacks only kick in once these are absent - here they mirror the real host). */
+:root{
+	--vscode-foreground:#cccccc;
+	--vscode-descriptionForeground:#9d9d9d;
+	--vscode-editor-background:#1e1e1e;
+	--vscode-editor-foreground:#cccccc;
+	--vscode-editorWidget-background:#252526;
+	--vscode-editorWidget-foreground:#cccccc;
+	--vscode-menu-background:#252526;
+	--vscode-menu-foreground:#cccccc;
+	--vscode-menu-selectionBackground:#04395e;
+	--vscode-menu-selectionForeground:#cccccc;
+	--vscode-menu-separatorBackground:#454545;
+	--vscode-textLink-foreground:#3794ff;
+	--vscode-button-background:#0e639c;
+	--vscode-button-foreground:#ffffff;
+	--vscode-focusBorder:#007fd4;
+	--vscode-widget-shadow:rgba(0,0,0,0.36);
+	--vscode-gitDecoration-addedResourceForeground:#81b88b;
+	--vscode-gitDecoration-deletedResourceForeground:#c74e39;
+	--vscode-gitDecoration-modifiedResourceForeground:#e2c08d;
+	--vscode-gitDecoration-renamedResourceForeground:#73c991;
+}
+html,body{margin:0;padding:0;background-color:var(--vscode-editor-background)}#view{height:100vh}
+</style></head><body>
 <div id="view" tabindex="-1">
 	<div id="headerRow">
 		<div id="controls">
 			<span id="repoControl"><span id="repoControlLabel" class="unselectable"></span><div id="repoDropdown" class="dropdown"></div></span>
 			<span id="branchControl"><span id="branchControlLabel" class="unselectable"></span><div id="branchDropdown" class="dropdown"></div></span>
 			<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
+			<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
+			<span id="controlBtns"><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></span>
 		</div>
-		<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
-			<div><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></div>
 		<div id="prStatus" style="display:none"></div>
 		<div id="pinnedControls" style="display:none"></div>
 	</div>

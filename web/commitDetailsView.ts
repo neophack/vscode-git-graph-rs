@@ -556,6 +556,9 @@ function applyLineCounts(view: GitGraphView, msg: GG.ResponseCommitFileCounts) {
 
 	}
 
+	const statElem = document.querySelector('#cdvFilesHeader .cdvmFilesStat');
+	if (statElem !== null) statElem.innerHTML = getMobileFilesStatHtml(expandedCommit.fileChanges, expandedCommit.lineCounts.pending);
+
 	pumpLineCountsChunk(view);
 
 }
@@ -581,7 +584,13 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 	const codeReviewPossible = !expandedCommit.loading && commitOrder.to !== UNCOMMITTED;
 
+	const isMobile = view.isMobileLayout();
+	const mobileActionsPossible = isMobile && !expandedCommit.loading && expandedCommit.compareWithHash === null && expandedCommitLoaded;
 	const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (expandedCommitLoaded && view.commits[view.commitLookup[expandedCommit.commitHash]].parents.length > 0));
+
+
+	// The file view controls: in the toolbar, or in the mobile sheet's "Files" section header
+	const fileViewBtnsHtml = '<button type="button" id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileListViewTitle + '" aria-label="' + strings.fileListViewTitle + '">' + SVG_ICONS.fileList + '</button><button type="button" id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileTreeViewTitle + '" aria-label="' + strings.fileTreeViewTitle + '">' + SVG_ICONS.fileTree + '</button><button type="button" id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="' + strings.collapseFoldersTitle + '" aria-label="' + strings.collapseFoldersTitle + '">' + SVG_ICONS.collapseAll + '</button><button type="button" id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="' + strings.expandFoldersTitle + '" aria-label="' + strings.expandFoldersTitle + '">' + SVG_ICONS.expandAll + '</button>';
 
 
 
@@ -663,45 +672,51 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 				const commitDetails = expandedCommit.commitDetails!;
 
-				const parents = commitDetails.parents.length > 0
+				if (view.isMobileLayout()) {
+					html += renderMobileCommitSummary(view, expandedCommit, commitDetails, textFormatter);
+				} else {
 
-					? commitDetails.parents.map((parent: string) => {
+					const parents = commitDetails.parents.length > 0
 
-						const escapedParent = escapeHtml(parent);
+						? commitDetails.parents.map((parent: string) => {
 
-						return typeof view.commitLookup[parent] === 'number'
+							const escapedParent = escapeHtml(parent);
 
-							? '<span class="' + CLASS_INTERNAL_URL + '" data-type="commit" data-value="' + escapedParent + '" tabindex="-1">' + escapedParent + '</span>'
+							return typeof view.commitLookup[parent] === 'number'
 
-							: escapedParent;
+								? '<span class="' + CLASS_INTERNAL_URL + '" data-type="commit" data-value="' + escapedParent + '" tabindex="-1">' + escapedParent + '</span>'
 
-					}).join(', ')
+								: escapedParent;
 
-					: strings.noneValue;
+						}).join(', ')
 
-				html += '<span class="cdvSummaryTop' + (expandedCommit.avatar !== null ? ' withAvatar' : '') + '"><span class="cdvSummaryTopRow"><span class="cdvSummaryKeyValues">'
+						: strings.noneValue;
 
-					+ strings.cdvCommitLabel + escapeHtml(commitDetails.hash) + '<br>'
+					html += '<span class="cdvSummaryTop' + (expandedCommit.avatar !== null ? ' withAvatar' : '') + '"><span class="cdvSummaryTopRow"><span class="cdvSummaryKeyValues">'
 
-					+ strings.cdvParentsLabel + parents + '<br>'
+						+ strings.cdvCommitLabel + escapeHtml(commitDetails.hash) + '<br>'
 
-					+ strings.cdvAuthorLabel + escapeHtml(commitDetails.author) + (commitDetails.authorEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.authorEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.authorEmail) + '</a>&gt;' : '') + '<br>'
+						+ strings.cdvParentsLabel + parents + '<br>'
 
-					+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvAuthorDateLabel + formatLongDate(commitDetails.authorDate) + '<br>' : '')
+						+ strings.cdvAuthorLabel + escapeHtml(commitDetails.author) + (commitDetails.authorEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.authorEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.authorEmail) + '</a>&gt;' : '') + '<br>'
 
-					+ strings.cdvCommitterLabel + escapeHtml(commitDetails.committer) + (commitDetails.committerEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.committerEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.committerEmail) + '</a>&gt;' : '') + (commitDetails.signature !== null ? generateSignatureHtml(commitDetails.signature) : '') + '<br>'
+						+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvAuthorDateLabel + formatLongDate(commitDetails.authorDate) + '<br>' : '')
 
-					+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvCommitterDateLabel : strings.cdvDateLabel) + formatLongDate(commitDetails.committerDate)
+						+ strings.cdvCommitterLabel + escapeHtml(commitDetails.committer) + (commitDetails.committerEmail !== '' ? ' &lt;<a class="' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(commitDetails.committerEmail) + '" tabindex="-1">' + escapeHtml(commitDetails.committerEmail) + '</a>&gt;' : '') + (commitDetails.signature !== null ? generateSignatureHtml(commitDetails.signature) : '') + '<br>'
 
-					+ '</span>'
+						+ (commitDetails.authorDate !== commitDetails.committerDate ? strings.cdvCommitterDateLabel : strings.cdvDateLabel) + formatLongDate(commitDetails.committerDate)
 
-					+ (expandedCommit.avatar !== null ? '<span class="cdvSummaryAvatar"><img src="' + expandedCommit.avatar + '"></span>' : '')
+						+ '</span>'
 
-					+ '</span></span><br><br>' + renderCommitMessageBody(view, expandedCommit, commitDetails.body, textFormatter);
+						+ (expandedCommit.avatar !== null ? '<span class="cdvSummaryAvatar"><img src="' + expandedCommit.avatar + '"></span>' : '')
+
+						+ '</span></span><br><br>' + renderCommitMessageBody(view, expandedCommit, commitDetails.body, textFormatter);
+
+				}
 
 			} else {
 
-				html += strings.displayingUncommitted;
+				html += mobileNote(view, strings.displayingUncommitted);
 
 			}
 
@@ -709,21 +724,28 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 			// Commit comparison should be shown
 
-			html += formatStr(strings.displayingChangesFromTo, commitOrder.from, commitOrder.to !== UNCOMMITTED ? commitOrder.to : strings.uncommittedChangesLabel);
+			html += mobileNote(view, formatStr(strings.displayingChangesFromTo, commitOrder.from, commitOrder.to !== UNCOMMITTED ? commitOrder.to : strings.uncommittedChangesLabel));
 
 		}
 
-		html += '</div><div id="cdvFiles">' + generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, getFileViewType(view), commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending) + '</div><div id="cdvDivider"></div>';
+		html += '</div>' + (isMobile ? renderMobileFilesHeader(expandedCommit.fileChanges!, expandedCommit.lineCounts.pending, fileViewBtnsHtml) : '') + '<div id="cdvFiles">' + generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, getFileViewType(view), commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending) + '</div><div id="cdvDivider"></div>';
 
 	}
 
 		html += '</div><div id="cdvControls"><button type="button" id="cdvClose" class="cdvControlBtn" title="' + strings.dialogClose + '" aria-label="' + strings.dialogClose + '">' + SVG_ICONS.close + '</button>' +
 
+		// The mobile sheet's toolbar is a title bar: close, the commit's name, then its actions
+		(isMobile ? '<span id="cdvMobileTitle">' + escapeHtml(getMobileCdvTitle(expandedCommit, commitOrder)) + '</span>' : '') +
+
+
 			(codeReviewPossible ? '<button type="button" id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</button>' : '') +
 
-			(!expandedCommit.loading ? '<button type="button" id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileListViewTitle + '" aria-label="' + strings.fileListViewTitle + '">' + SVG_ICONS.fileList + '</button><button type="button" id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + strings.fileTreeViewTitle + '" aria-label="' + strings.fileTreeViewTitle + '">' + SVG_ICONS.fileTree + '</button><button type="button" id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="' + strings.collapseFoldersTitle + '" aria-label="' + strings.collapseFoldersTitle + '">' + SVG_ICONS.collapseAll + '</button><button type="button" id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="' + strings.expandFoldersTitle + '" aria-label="' + strings.expandFoldersTitle + '">' + SVG_ICONS.expandAll + '</button>' : '') +
+			(!expandedCommit.loading && !isMobile ? fileViewBtnsHtml : '') +
 
 		(externalDiffPossible ? '<button type="button" id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</button>' : '') +
+
+		// The mobile layout has no right click: the sheet carries the commit's context menu actions
+		(mobileActionsPossible ? '<button type="button" id="cdvMobileActions" class="cdvControlBtn" title="' + strings.mobileMoreActions + '" aria-label="' + strings.mobileMoreActions + '">' + SVG_ICONS.ellipsis + '</button>' : '') +
 
 		'</div><div class="cdvHeightResize"></div>';
 
@@ -806,6 +828,20 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 		closeCommitDetails(view, true);
 
 	});
+
+	const mobileActionsBtn = document.getElementById('cdvMobileActions');
+	if (mobileActionsBtn !== null) {
+		mobileActionsBtn.addEventListener('click', (e) => {
+			// Open the commit row's own context menu (the table's contextmenu handler builds it), as
+			// the bottom action sheet of the mobile stylesheet. The click must not reach the
+			// document listener that closes any open context menu.
+			e.stopPropagation();
+			const commitElem = view.expandedCommit !== null ? view.expandedCommit.commitElem : null;
+			if (commitElem === null || !commitElem.isConnected) return;
+			const rect = mobileActionsBtn.getBoundingClientRect();
+			commitElem.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+		});
+	}
 
 
 
@@ -1235,7 +1271,9 @@ function cdvUpdateFileState(view: GitGraphView, file: GG.GitFileChange, fileElem
 
 function isCdvDocked(view: GitGraphView) {
 
-	return view.config.commitDetailsView.location === GG.CommitDetailsViewLocation.DockedToBottom;
+	// The mobile layout always docks it: there it is a full-screen sheet over the commit list,
+	// not a panel expanded between two rows of a table a phone screen can barely show
+	return view.config.commitDetailsView.location === GG.CommitDetailsViewLocation.DockedToBottom || view.isMobileLayout();
 
 }
 
@@ -1294,6 +1332,101 @@ function renderCommitMessageBody(view: GitGraphView, expandedCommit: ExpandedCom
 		+ (offerToggle ? '<span id="cdvMarkdownToggle" class="cdvMarkdownToggle" role="button" tabindex="0">' + escapeHtml(showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel) + '</span>' : '');
 }
 
+/**
+ * The commit message as the message block shows it: whole in the wide layout; in the mobile
+ * sheet without its subject, which is the sheet's title there.
+ */
+function getCdvMessageBody(view: GitGraphView, body: string) {
+	if (!view.isMobileLayout()) return body;
+	const newline = body.indexOf('\n');
+	return newline < 0 ? '' : body.substring(newline + 1).replace(/^\s*\n/, '').replace(/\s+$/, '');
+}
+
+/** The mobile sheet's title bar text: the abbreviated commit, or what is being compared. */
+function getMobileCdvTitle(expandedCommit: ExpandedCommit, commitOrder: { from: string, to: string }) {
+	if (expandedCommit.compareWithHash !== null) return abbrevCommit(commitOrder.from) + ' → ' + (commitOrder.to !== UNCOMMITTED ? abbrevCommit(commitOrder.to) : strings.mobileUncommittedTitle);
+	return expandedCommit.commitHash !== UNCOMMITTED ? abbrevCommit(expandedCommit.commitHash) : strings.mobileUncommittedTitle;
+}
+
+/** A sentence standing in for the commit summary (uncommitted changes, a comparison): a card in the mobile sheet. */
+function mobileNote(view: GitGraphView, html: string) {
+	return view.isMobileLayout() ? '<div class="cdvmNote">' + html + '</div>' : html;
+}
+
+/**
+ * The commit summary of the mobile sheet, laid out like a message in a phone app: the subject as
+ * the title, a byline (avatar, author, date), the rest of the message, then the commit's facts as
+ * a grouped list. The parents keep the internal links of the wide layout (tapping one opens it).
+ */
+function renderMobileCommitSummary(view: GitGraphView, expandedCommit: ExpandedCommit, commitDetails: GG.GitCommitDetails, textFormatter: TextFormatter) {
+	const label = (labelHtml: string) => labelHtml.replace(/<[^>]*>/g, '').replace(/\s*[:：]\s*$/, '');
+	const fact = (labelHtml: string, valueHtml: string, className: string = '') => '<div class="cdvmFact"><span class="cdvmFactLabel">' + label(labelHtml) + '</span><span class="cdvmFactValue' + (className !== '' ? ' ' + className : '') + '">' + valueHtml + '</span></div>';
+	const person = (name: string, email: string) => escapeHtml(name) + (email !== '' ? '<a class="cdvmEmail ' + CLASS_EXTERNAL_URL + '" href="mailto:' + escapeHtml(email) + '" tabindex="-1">' + escapeHtml(email) + '</a>' : '');
+
+	const subject = commitDetails.body.split(/\r?\n/)[0];
+	const body = getCdvMessageBody(view, commitDetails.body);
+	const parents = commitDetails.parents.length > 0
+		? commitDetails.parents.map((parent) => {
+			const escapedParent = escapeHtml(parent);
+			return typeof view.commitLookup[parent] === 'number'
+				? '<span class="cdvmChip ' + CLASS_INTERNAL_URL + '" data-type="commit" data-value="' + escapedParent + '" tabindex="-1" title="' + escapedParent + '">' + abbrevCommit(parent) + '</span>'
+				: '<span class="cdvmChip" title="' + escapedParent + '">' + abbrevCommit(parent) + '</span>';
+		}).join('')
+		: strings.noneValue;
+	const sameCommitter = commitDetails.committer === commitDetails.author && commitDetails.committerEmail === commitDetails.authorEmail;
+
+	return '<div class="cdvmHeader">'
+		+ '<div class="cdvmTitle">' + textFormatter.format(subject) + '</div>'
+		+ '<div class="cdvmByline">' + getMobileAvatarHtml(commitDetails.author, expandedCommit.avatar)
+		+ '<span class="cdvmByText"><span class="cdvmAuthor">' + escapeHtml(commitDetails.author) + '</span><span class="cdvmDate" title="' + escapeHtml(formatLongDate(commitDetails.authorDate)) + '">' + formatMediumDate(commitDetails.authorDate) + '</span></span></div>'
+		+ '</div>'
+		+ (body !== '' || (view.config.markdown && hasMarkdown(commitDetails.body)) ? '<div class="cdvmMessage">' + renderCommitMessageBody(view, expandedCommit, body, textFormatter) + '</div>' : '')
+		+ '<div class="cdvmFacts">'
+		+ fact(strings.cdvCommitLabel, escapeHtml(commitDetails.hash), 'cdvmMono')
+		+ fact(strings.cdvParentsLabel, parents)
+		+ fact(strings.cdvAuthorLabel, person(commitDetails.author, commitDetails.authorEmail))
+		+ (!sameCommitter || commitDetails.signature !== null ? fact(strings.cdvCommitterLabel, person(commitDetails.committer, commitDetails.committerEmail) + (commitDetails.signature !== null ? generateSignatureHtml(commitDetails.signature) : '')) : '')
+		+ (commitDetails.authorDate !== commitDetails.committerDate ? fact(strings.cdvCommitterDateLabel, formatMediumDate(commitDetails.committerDate)) : '')
+		+ '</div>';
+}
+
+/** A round avatar: the fetched one, else the author's initials on a colour derived from the name. */
+function getMobileAvatarHtml(name: string, avatar: string | null) {
+	if (avatar !== null) return '<span class="cdvmAvatar"><img src="' + avatar + '"></span>';
+	const words = name.trim().split(/\s+/).filter((w) => w !== '');
+	// A CJK name is written without spaces: its first character stands for it. (Code point ranges
+	// rather than a regex: the minifier would turn a regex's escapes into literal characters,
+	// which break the bundle wherever it is not decoded as UTF-8.)
+	const isCjk = Array.from(name).some((ch) => {
+		const cp = ch.codePointAt(0)!;
+		return (cp >= 0x3040 && cp <= 0x30FF) || (cp >= 0x3400 && cp <= 0x9FFF) || (cp >= 0xAC00 && cp <= 0xD7AF);
+	});
+	const initials = words.length === 0 ? '?'
+		: isCjk ? Array.from(words[0])[0]
+			: words.slice(0, 2).map((w) => Array.from(w)[0]).join('').toUpperCase();
+	let hash = 0;
+	for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+	return '<span class="cdvmAvatar" style="--cdvm-avatar-hue:' + (Math.abs(hash) % 360) + '">' + escapeHtml(initials) + '</span>';
+}
+
+/** The mobile sheet's "Files" section header: how many files changed, the line totals, the file view controls. */
+function renderMobileFilesHeader(fileChanges: ReadonlyArray<GG.GitFileChange>, pendingCounts: ReadonlySet<string> | null, fileViewBtnsHtml: string) {
+	return '<div id="cdvFilesHeader"><span class="cdvmFilesCount">' + (fileChanges.length === 1 ? strings.mobileFileChanged : formatStr(strings.mobileFilesChanged, fileChanges.length.toLocaleString())) + '</span>'
+		+ '<span class="cdvmFilesStat">' + getMobileFilesStatHtml(fileChanges, pendingCounts) + '</span>'
+		+ '<span class="cdvmFileViewBtns">' + fileViewBtnsHtml + '</span></div>';
+}
+
+/** The "+A −D" line totals of the mobile "Files" header: empty until every file's counts have arrived. */
+function getMobileFilesStatHtml(fileChanges: ReadonlyArray<GG.GitFileChange>, pendingCounts: ReadonlySet<string> | null) {
+	if (pendingCounts !== null && pendingCounts.size > 0) return '';
+	let additions = 0, deletions = 0;
+	for (const file of fileChanges) {
+		if (file.additions !== null) additions += file.additions;
+		if (file.deletions !== null) deletions += file.deletions;
+	}
+	return additions + deletions > 0 ? '<span class="cdvmAdd">+' + additions.toLocaleString() + '</span><span class="cdvmDel">\u2212' + deletions.toLocaleString() + '</span>' : '';
+}
+
 /** Flips the Markdown/Plain toggle for the currently open commit, re-rendering only the message body and its toggle control (no full panel re-render, so nothing scrolls or flashes). */
 function toggleCommitMessageMarkdown(view: GitGraphView) {
 	const expandedCommit = view.expandedCommit;
@@ -1312,7 +1445,8 @@ function toggleCommitMessageMarkdown(view: GitGraphView) {
 	const bodyElem = document.getElementById('cdvMessageBody'), toggleElem = document.getElementById('cdvMarkdownToggle');
 	if (bodyElem === null || toggleElem === null) return;
 
-	bodyElem.innerHTML = expandedCommit.showMarkdown ? renderMarkdown(expandedCommit.commitDetails.body) : textFormatter.format(expandedCommit.commitDetails.body);
+	const body = getCdvMessageBody(view, expandedCommit.commitDetails.body);
+	bodyElem.innerHTML = expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body);
 	toggleElem.textContent = expandedCommit.showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel;
 }
 

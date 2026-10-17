@@ -1625,7 +1625,8 @@ export class GitGraphView extends Disposable {
 						<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
 
 					<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
-					<div id="currentBtn"></div>
+					<span id="controlBtns">
+						<div id="currentBtn"></div>
 						<div id="findBtn"></div>
 						<div id="filterBtn"></div>
 						<div id="statisticsBtn"></div>
@@ -1633,6 +1634,7 @@ export class GitGraphView extends Disposable {
 						<div id="settingsBtn"></div>
 						<div id="fetchBtn"></div>
 						<div id="refreshBtn"></div>
+					</span>
 					</div>
 					<div id="pinnedControls" style="display:none">
 						<span id="pinnedRowLabel" class="unselectable pinnedRowLabel"></span>
@@ -1673,7 +1675,7 @@ export class GitGraphView extends Disposable {
 			<head>
 				<meta charset="UTF-8">
 				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(this.panel.webview.cspSource)} 'unsafe-inline'; script-src 'nonce-${nonce}'${automationShimJs !== '' ? " 'unsafe-eval'" : ''}; img-src data: https:;">
-				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 				<link rel="stylesheet" type="text/css" href="${this.getMediaUri('out.min.css')}?v=${getMediaCacheVersion(this.extensionPath)}">
 				<title>Git Graph</title>
 				<style>body{${colorVars}} ${colorParams}</style>

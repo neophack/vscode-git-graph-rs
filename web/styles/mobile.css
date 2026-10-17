@@ -1,0 +1,1415 @@
+/*
+ * Mobile layout (docs/MOBILE-DESIGN.md)
+ *
+ * Active while <body> carries .mobileMode: the git-graph-rs.mobileAdaptation Extension Setting is
+ * enabled and the view is at most 600px wide (decided per render in web/main.ts). Every rule is
+ * scoped under body.mobileMode, so the wide layout is untouched (the few unscoped rules below only
+ * hide the mobile-only elements there).
+ *
+ * The visual language is flat and compact, after iOS / Material 3: no borders where a fill or a
+ * hairline will do, capsule controls, a 52px app bar, 52px two-line rows, grouped "inset" lists,
+ * bottom action sheets. Every colour derives from the VS Code theme variables, so dark, light and
+ * high contrast themes all work. Touch targets stay at least 44px, text inputs at 16px (iOS zooms
+ * smaller ones on focus), pressed states replace hover, and everything fixed to a screen edge
+ * respects the safe area insets.
+ */
+
+/* Mobile-only elements, hidden in the wide layout */
+#mobileMoreBtn, #fastScroller, #cdvFilesHeader, #cdvMobileTitle{
+	display:none;
+}
+
+body.mobileMode{
+	/* The literal fallbacks (the VS Code Dark+ palette) keep every surface solid in an environment
+	   that injects none of the theme variables (e.g. the standalone browser repro page): without
+	   them var() is invalid at computed-value time and the sheets render fully transparent. */
+	--m-fg:var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
+	--m-fg-2:var(--vscode-descriptionForeground, rgba(128,128,128,0.9));
+	--m-bg:var(--vscode-editor-background, #1e1e1e);
+	--m-surface:rgba(128,128,128,0.09);
+	--m-fill:rgba(128,128,128,0.14);
+	--m-pressed:rgba(128,128,128,0.2);
+	--m-sep:rgba(128,128,128,0.24);
+	--m-accent:var(--vscode-textLink-foreground, var(--vscode-focusBorder, #3794ff));
+	--m-accent-fill:var(--vscode-button-background, #0e639c);
+	--m-accent-on:var(--vscode-button-foreground, #fff);
+	--m-add:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+	--m-del:var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+	--m-mod:var(--vscode-gitDecoration-modifiedResourceForeground, #d29922);
+	--m-ren:var(--vscode-gitDecoration-renamedResourceForeground, #58a6ff);
+	--m-sheet:var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526));
+	--m-target:44px;
+	--m-bar:52px;
+	--m-radius:12px;
+	--m-mono:var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);
+	-webkit-tap-highlight-color:transparent;
+	/* A long press opens the view's own action sheet (observeLongPress), not the iOS callout */
+	-webkit-touch-callout:none;
+	-webkit-font-smoothing:antialiased;
+	-webkit-text-size-adjust:100%;
+	text-size-adjust:100%;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode{
+		--m-surface:color-mix(in srgb, var(--m-fg) 6%, var(--m-bg));
+		--m-fill:color-mix(in srgb, var(--m-fg) 10%, transparent);
+		--m-pressed:color-mix(in srgb, var(--m-fg) 14%, transparent);
+		--m-sep:color-mix(in srgb, var(--m-fg) 14%, transparent);
+	}
+}
+body.mobileMode.vscode-high-contrast{
+	--m-sep:var(--vscode-contrastBorder, rgba(128,128,128,0.6));
+}
+body.mobileMode input, body.mobileMode textarea, body.mobileMode select{
+	font-size:16px !important;
+}
+
+
+/* ---------- App bar: one 52px row ----------
+ * [repo ▾] [branch ▾ ..........] (find) (refresh) (⋯)
+ * The other toolbar buttons and "Show Remote Branches" live in the ⋯ overflow sheet
+ * (showMobileOverflowMenu); an active path filter keeps its button in the bar as an indicator.
+ * The bar always sticks to the top and frosts the list scrolling under it. */
+
+body.mobileMode #headerRow{
+	position:sticky;
+	top:0;
+	z-index:12;
+	background-color:var(--m-bg);
+}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) and (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #headerRow, body.mobileMode #controls{
+		background-color:color-mix(in srgb, var(--m-bg) 82%, transparent);
+		-webkit-backdrop-filter:saturate(180%) blur(20px);
+		backdrop-filter:saturate(180%) blur(20px);
+	}
+	body.mobileMode #controls{
+		background-color:transparent;
+		-webkit-backdrop-filter:none;
+		backdrop-filter:none;
+	}
+}
+body.mobileMode #controls{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	box-sizing:border-box;
+	min-height:var(--m-bar);
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+	padding-top:max(4px, env(safe-area-inset-top));
+	border-bottom:0.5px solid var(--m-sep);
+	line-height:normal;
+	text-align:left;
+	white-space:nowrap;
+	font-weight:normal;
+}
+body.mobileMode #repoControl, body.mobileMode #branchControl{
+	display:flex;
+	align-items:center;
+	min-width:0;
+	margin:0;
+}
+body.mobileMode #repoControl{
+	flex:0 1 auto;
+	max-width:38%;
+}
+body.mobileMode #branchControl{
+	flex:1 1 0;
+}
+body.mobileMode #controls.singleRepo #repoControl, body.mobileMode #authorControl, body.mobileMode #showRemoteBranchesControl,
+body.mobileMode #repoControlLabel, body.mobileMode #branchControlLabel{
+	display:none;
+}
+body.mobileMode #repoDropdown, body.mobileMode #branchDropdown{
+	flex:1 1 auto;
+	min-width:0;
+	margin:0;
+}
+body.mobileMode #controls .dropdownCurrentValue{
+	position:relative;
+	width:100% !important;
+	max-width:none !important; /* over the narrow window caps (12vw / 16vw) in main.css */
+	height:36px;
+	line-height:36px;
+	box-sizing:border-box;
+	padding:0 30px 0 34px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:15px;
+	font-weight:600;
+	letter-spacing:-0.01em;
+	transition:background-color 120ms var(--gg-ease, ease-out);
+}
+body.mobileMode #controls .dropdownCurrentValue:active{
+	background-color:var(--m-pressed);
+}
+/* Leading icon (branch / repository) and trailing chevron, both masks in the text colour */
+body.mobileMode #controls .dropdownCurrentValue::before{
+	content:"";
+	position:absolute;
+	left:13px;
+	top:11px;
+	width:14px;
+	height:14px;
+	background-color:var(--m-fg-2);
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+body.mobileMode #repoDropdown .dropdownCurrentValue::before{
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M4 9H3V8h1v1zm0-3H3v1h1V6zm0-2H3v1h1V4zm0-2H3v1h1V2zm8-1v12c0 .55-.45 1-1 1H6v2l-1.5-1.5L3 16v-2H1c-.55 0-1-.45-1-1V1c0-.55.45-1 1-1h10c.55 0 1 .45 1 1zm-1 10H1v2h2v-1h3v1h5v-2zm0-10H2v9h9V1z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M4 9H3V8h1v1zm0-3H3v1h1V6zm0-2H3v1h1V4zm0-2H3v1h1V2zm8-1v12c0 .55-.45 1-1 1H6v2l-1.5-1.5L3 16v-2H1c-.55 0-1-.45-1-1V1c0-.55.45-1 1-1h10c.55 0 1 .45 1 1zm-1 10H1v2h2v-1h3v1h5v-2zm0-10H2v9h9V1z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+body.mobileMode #controls .dropdownCurrentValue::after, body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	top:12px;
+	right:11px;
+	width:12px;
+	height:12px;
+	border:none;
+	background-color:var(--m-fg-2);
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+	transition:transform 160ms var(--gg-ease, ease-out);
+}
+body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
+	border-radius:18px;
+	background-color:var(--m-pressed);
+}
+body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	transform:rotate(180deg);
+}
+
+body.mobileMode #controlBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+body.mobileMode #controlBtns > div{
+	display:none;
+}
+/* main.css turns the fetch button on with "#controls.fetchSupported #fetchBtn" (two ids), which
+   out-ranks the one-id hide rule above: without this counter-rule an absolutely positioned,
+   20px fetch icon drops into the app bar on top of Refresh / ⋯ whenever the repo has remotes.
+   On a phone the fetch action lives in the ⋯ overflow sheet instead. */
+body.mobileMode #controlBtns > #fetchBtn{
+	display:none;
+}
+body.mobileMode #controlBtns > #findBtn, body.mobileMode #controlBtns > #refreshBtn, body.mobileMode #controlBtns > #mobileMoreBtn,
+body.mobileMode #controlBtns > #filterBtn.active{
+	position:relative;
+	top:auto;
+	right:auto;
+	flex:none;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-target);
+	height:var(--m-target);
+	margin:0;
+	border-radius:50%;
+	color:var(--m-fg);
+	cursor:pointer;
+}
+body.mobileMode #controlBtns > div:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.mobileMode #controlBtns svg{
+	position:static;
+	width:19px !important;
+	height:19px !important;
+	fill:var(--m-fg);
+	opacity:0.9;
+}
+body.mobileMode #controlBtns > #filterBtn.active svg{
+	fill:var(--m-accent);
+	opacity:1;
+}
+body.mobileMode #refreshBtn.refreshing svg{
+	width:15px !important;
+}
+body.mobileMode #mobileMoreBtn svg{
+	width:20px !important;
+	height:20px !important;
+}
+
+body.mobileMode #pinnedControls{
+	padding-left:max(12px, env(safe-area-inset-left));
+	padding-right:max(12px, env(safe-area-inset-right));
+}
+
+
+/* ---------- Dropdown menus: a floating card under the app bar ----------
+ * position:fixed with top:auto keeps the menu's static position (directly below the control),
+ * while left/right span the screen; the inline right:0 the dropdown sets is overridden. */
+
+body.mobileMode .dropdownMenu{
+	position:fixed;
+	top:auto;
+	left:max(8px, env(safe-area-inset-left)) !important;
+	right:max(8px, env(safe-area-inset-right)) !important;
+	min-width:0;
+	max-width:none;
+	margin-top:8px;
+	padding:6px 0;
+	border:none;
+	border-radius:14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 12px 40px rgba(0,0,0,0.32), 0 0 0 0.5px var(--m-sep);
+	z-index:46;
+	white-space:normal;
+	font-size:15px;
+	line-height:20px;
+}
+body.mobileMode .dropdown.dropdownOpen .dropdownMenu{
+	box-shadow:0 12px 40px rgba(0,0,0,0.32), 0 0 0 0.5px var(--m-sep);
+	transform-origin:top center;
+	animation:ggMobilePop var(--gg-dur-base, 180ms) var(--gg-ease, ease-out);
+}
+@keyframes ggMobilePop{
+	from{ opacity:0; transform:translateY(-6px) scale(0.98); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode .dropdownFilter{
+	padding:4px 10px 8px;
+}
+body.mobileMode .dropdownFilterInput{
+	height:36px;
+	padding:0 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+}
+body.mobileMode .dropdownOptions{
+	overflow-y:auto;
+	-webkit-overflow-scrolling:touch;
+}
+body.mobileMode .dropdownOption{
+	display:flex;
+	align-items:center;
+	min-height:var(--m-target);
+	box-sizing:border-box;
+	margin:0 6px;
+	padding:10px 12px 10px 38px;
+	border-radius:8px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+body.mobileMode .dropdownOption.selected{
+	background-color:transparent;
+	color:var(--m-accent);
+	font-weight:600;
+}
+body.mobileMode .dropdownOption.selected::before{
+	content:"";
+	position:absolute;
+	left:13px;
+	top:50%;
+	width:14px;
+	height:14px;
+	margin-top:-7px;
+	background-color:currentColor;
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 7.5 5.5 10.5 11.5 3.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2.5 7.5 5.5 10.5 11.5 3.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+body.mobileMode .dropdownOption:hover, body.mobileMode .dropdownOption.highlighted{
+	background-color:transparent;
+	color:inherit;
+}
+body.mobileMode .dropdownOption.selected:hover, body.mobileMode .dropdownOption.selected.highlighted{
+	color:var(--m-accent);
+}
+body.mobileMode .dropdownOption:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode .dropdown.multi .dropdownOption{
+	padding-left:38px;
+}
+body.mobileMode .dropdownOptionMultiSelected{
+	top:50%;
+	left:13px;
+	margin-top:-8px;
+}
+body.mobileMode .dropdownOptionHint{
+	font-size:13px;
+	color:var(--m-fg-2);
+	opacity:1;
+}
+body.mobileMode .dropdownOptions.showInfo .dropdownOption{
+	padding-right:var(--m-target);
+}
+body.mobileMode .dropdownOptionInfo{
+	top:0;
+	right:0;
+	width:var(--m-target);
+	height:100%;
+}
+body.mobileMode .dropdownNoResults{
+	padding:12px 16px;
+	color:var(--m-fg-2);
+}
+
+
+/* ---------- Overflow sheet (⋯): leading icons and a switch ---------- */
+
+body.mobileMode .contextMenu .mobileMenuIcon{
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:22px;
+	margin-right:14px;
+}
+body.mobileMode .contextMenu .mobileMenuIcon svg{
+	width:18px;
+	height:18px;
+	fill:currentColor;
+	opacity:0.85;
+}
+body.mobileMode .contextMenu .mobileMenuLabel{
+	flex:1 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+body.mobileMode .contextMenu .mobileMenuSwitch{
+	position:relative;
+	flex:none;
+	width:44px;
+	height:26px;
+	margin-left:12px;
+	border-radius:13px;
+	background-color:var(--m-fill);
+	transition:background-color 160ms var(--gg-ease, ease-out);
+}
+body.mobileMode .contextMenu .mobileMenuSwitch::after{
+	content:"";
+	position:absolute;
+	left:2px;
+	top:2px;
+	width:22px;
+	height:22px;
+	border-radius:50%;
+	background-color:#fff;
+	box-shadow:0 1px 3px rgba(0,0,0,0.3);
+	transition:transform 160ms var(--gg-ease, ease-out);
+}
+body.mobileMode .contextMenu .mobileMenuSwitch.on{
+	background-color:var(--m-add);
+}
+body.mobileMode .contextMenu .mobileMenuSwitch.on::after{
+	transform:translateX(18px);
+}
+
+
+/* ---------- Commit list: 52px two-line rows ----------
+ * Line 1: subject ............ date   (the date compact: 16:32 / Yesterday / Mon / Oct 9)
+ * Line 2: [refs] author ...... hash
+ * The row height is uniform (web/main.ts MOBILE_ROW_HEIGHT), which windowed rendering requires;
+ * rows are separated by a hairline inset to the text, drawn as a shadow so it takes no height.
+ * The column header row is collapsed to nothing rather than hidden: its graph cell still sets
+ * the graph column's width. */
+
+body.mobileMode #tableColHeaders > th{
+	height:0;
+	padding-top:0 !important;
+	padding-bottom:0 !important;
+	border:none;
+	box-shadow:none;
+	font-size:0;
+	line-height:0;
+	visibility:hidden;
+}
+body.mobileMode .commit > td, body.mobileMode #tableColHeaders > th{
+	border-right:none;
+}
+body.mobileMode #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	padding:0;
+	line-height:normal;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable tr.commit td:nth-child(2){
+	padding:0 max(14px, env(safe-area-inset-right)) 0 4px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #commitTable tr.commit:active td{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #commitTable tr.commit span.description{
+	align-items:baseline;
+	gap:8px;
+	height:20px;
+	line-height:20px;
+}
+body.mobileMode #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:0;
+	font-size:15px;
+	font-weight:500;
+	letter-spacing:-0.01em;
+	color:var(--m-fg);
+}
+body.mobileMode #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.mobileMode #commitTable tr.commit.mute span.description .text, body.mobileMode #commitTable tr.commit.mute .mobileMeta{
+	opacity:0.55;
+}
+body.mobileMode #commitTable tr.commit span.description .commitbody{
+	display:none;
+}
+body.mobileMode #commitTable .commitHeadDot{
+	align-self:center;
+	margin:0 -2px 0 0;
+}
+body.mobileMode #commitTable .pinnedBadge{
+	font-size:12px;
+}
+.mobileMetaDate{
+	flex:none;
+	font-size:12px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+.mobileMeta{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	height:18px;
+	margin-top:4px;
+	font-size:12.5px;
+	line-height:18px;
+	color:var(--m-fg-2);
+	overflow:hidden;
+	white-space:nowrap;
+}
+.mobileRefs{
+	flex:0 1 auto;
+	min-width:0;
+	display:flex;
+	gap:4px;
+	overflow:hidden;
+}
+.mobileMetaAuthor{
+	flex:0 1 auto;
+	min-width:24px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.mobileMetaHash{
+	flex:none;
+	margin-left:auto;
+	padding-left:4px;
+	font-family:var(--m-mono);
+	font-size:11.5px;
+	letter-spacing:0;
+	opacity:0.8;
+}
+/* A tap opens the commit details sheet, which offers the commit's changes */
+body.mobileMode #commitTable .openChangesBtn{
+	display:none !important;
+}
+
+/* Ref chips: flat, tinted with the commit's lane colour */
+body.mobileMode #commitTable .gitRef{
+	--m-ref:var(--git-graph-color, var(--m-accent));
+	display:inline-flex;
+	align-items:center;
+	flex:0 1 auto;
+	min-width:0;
+	max-width:100%;
+	height:18px;
+	margin:0;
+	border:none;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:11px;
+	font-weight:600;
+	line-height:18px;
+	vertical-align:middle;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #commitTable .gitRef{
+		background-color:color-mix(in srgb, var(--m-ref) 20%, transparent);
+		color:color-mix(in srgb, var(--m-ref) 72%, var(--m-fg));
+	}
+	body.mobileMode #commitTable .gitRef.remote{
+		background-color:transparent;
+		box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--m-ref) 45%, transparent);
+	}
+}
+body.mobileMode #commitTable .gitRef.active{
+	background-color:var(--m-ref);
+	color:var(--m-bg);
+}
+body.mobileMode #commitTable .gitRef.tag, body.mobileMode #commitTable .gitRef.stash{
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+}
+body.mobileMode #commitTable .gitRef > svg{
+	flex:none;
+	width:10px;
+	height:10px;
+	padding:0 0 0 5px;
+	background:none;
+	fill:currentColor;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable .gitRefName{
+	min-width:0;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 3px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.mobileMode #commitTable .gitRef.active .gitRefName{
+	font-weight:700;
+}
+body.mobileMode #commitTable .gitRefHeadRemote{
+	flex:none;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 5px;
+	border-left:1px solid currentColor;
+	border-left-color:rgba(128,128,128,0.4);
+	font-style:normal;
+	font-weight:500;
+	opacity:0.8;
+}
+body.mobileMode #commitTable .gitRef .gitRefName:hover, body.mobileMode #commitTable .gitRef .gitRefHeadRemote:hover{
+	background-color:transparent;
+}
+
+/* The graph: slightly heavier lines and dots for a small, dense screen */
+body.mobileMode #commitGraph path.line{
+	stroke-width:2.25;
+}
+body.mobileMode #commitGraph circle:hover{
+	transform:none;
+}
+
+body.mobileMode #loadMoreCommitsBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	height:auto;
+	margin:12px 16px;
+	border:none;
+	border-radius:22px;
+	background-color:var(--m-fill);
+	color:var(--m-accent);
+	font-size:15px;
+	font-weight:600;
+}
+body.mobileMode #footer{
+	padding-bottom:env(safe-area-inset-bottom);
+}
+
+
+/* ---------- Fast scroller (observeFastScroller) ----------
+ * A thumb on the right edge while the list scrolls; dragging it scrubs through the whole history,
+ * with a bubble naming the day and position of the commit at the top of the screen. */
+
+body.mobileMode #fastScroller{
+	display:block;
+	position:fixed;
+	top:0;
+	right:max(2px, env(safe-area-inset-right));
+	width:0;
+	height:0;
+	z-index:14;
+	opacity:0;
+	pointer-events:none;
+	transition:opacity 240ms var(--gg-ease, ease-out);
+}
+body.mobileMode #fastScroller.visible, body.mobileMode #fastScroller.dragging{
+	opacity:1;
+}
+body.mobileMode #fastScroller.visible #fastScrollerThumb{
+	pointer-events:auto;
+}
+body.mobileMode #fastScrollerThumb{
+	position:absolute;
+	top:0;
+	right:0;
+	width:28px;
+	height:44px;
+	touch-action:none;
+	cursor:grab;
+}
+body.mobileMode #fastScrollerThumb::after{
+	content:"";
+	position:absolute;
+	top:4px;
+	right:4px;
+	width:6px;
+	height:36px;
+	border-radius:3px;
+	background-color:var(--m-fg-2);
+	opacity:0.7;
+	transition:width 140ms var(--gg-ease, ease-out), right 140ms var(--gg-ease, ease-out), opacity 140ms;
+}
+body.mobileMode #fastScroller.dragging #fastScrollerThumb::after{
+	width:10px;
+	right:3px;
+	border-radius:5px;
+	background-color:var(--m-accent-fill);
+	opacity:1;
+}
+body.mobileMode #fastScrollerBubble{
+	position:absolute;
+	top:0;
+	right:40px;
+	display:flex;
+	flex-direction:column;
+	align-items:flex-end;
+	padding:8px 14px;
+	border-radius:14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 8px 28px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
+	white-space:nowrap;
+	opacity:0;
+	transition:opacity 140ms var(--gg-ease, ease-out);
+}
+body.mobileMode #fastScroller.dragging #fastScrollerBubble{
+	opacity:1;
+}
+.fastScrollerDate{
+	font-size:17px;
+	font-weight:700;
+	line-height:22px;
+	color:var(--m-fg);
+}
+.fastScrollerPos{
+	font-size:12px;
+	line-height:16px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+
+
+/* ---------- Commit details: a full-screen sheet ----------
+ * isCdvDocked() is true in the mobile layout, so the view is a <div> on <body>. Its inline height
+ * and the #view bottom offset the docked layout sets are overridden. A 52px title bar (close,
+ * the commit, its actions) over one scrolling page: the summary card, the "Files" header with the
+ * file view controls, then the file list. */
+
+body.mobileMode #view{
+	bottom:0 !important;
+}
+body.mobileMode #cdv.docked{
+	top:0;
+	left:0;
+	right:0;
+	bottom:0;
+	height:auto !important;
+	z-index:25;
+	display:flex;
+	flex-direction:column;
+	border-top:none;
+	background-color:var(--m-bg);
+	color:var(--m-fg);
+	font-size:15px;
+	line-height:22px;
+	padding-bottom:env(safe-area-inset-bottom);
+	animation:ggMobileSheetIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggMobileSheetIn{
+	from{ opacity:0.4; transform:translateY(32px); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode #cdv .cdvHeightResize, body.mobileMode #cdvDivider{
+	display:none;
+}
+body.mobileMode #cdvControls{
+	position:sticky;
+	top:0;
+	order:-1;
+	flex:none;
+	width:auto;
+	display:flex;
+	align-items:center;
+	gap:0;
+	min-height:var(--m-bar);
+	box-sizing:border-box;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+	padding-top:max(4px, env(safe-area-inset-top));
+	border-bottom:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	z-index:1;
+}
+body.mobileMode #cdvMobileTitle{
+	display:block;
+	flex:1 1 auto;
+	min-width:0;
+	padding:0 6px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-family:var(--m-mono);
+	font-size:15px;
+	font-weight:600;
+}
+body.mobileMode .cdvControlBtn{
+	position:relative;
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-target);
+	height:var(--m-target);
+	margin:0;
+	border-radius:50%;
+	background:none;
+}
+body.mobileMode .cdvControlBtn svg{
+	position:static;
+	width:18px;
+	height:18px;
+}
+body.mobileMode .cdvControlBtn:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #cdvContent{
+	position:relative;
+	left:auto;
+	right:auto;
+	flex:1 1 auto;
+	min-height:0;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+}
+body.mobileMode #cdvSummary, body.mobileMode #cdvFiles, body.mobileMode #cdvLoading{
+	position:static;
+	width:auto !important;
+	left:auto !important;
+	border-right:none;
+	overflow:visible;
+}
+body.mobileMode #cdvSummary{
+	padding:18px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+	-webkit-user-select:text;
+	user-select:text;
+}
+body.mobileMode #cdvLoading{
+	padding:48px 16px;
+	text-align:center;
+	color:var(--m-fg-2);
+}
+.cdvmTitle{
+	font-size:20px;
+	line-height:26px;
+	font-weight:700;
+	letter-spacing:-0.02em;
+	overflow-wrap:anywhere;
+}
+.cdvmByline{
+	display:flex;
+	align-items:center;
+	gap:10px;
+	margin-top:14px;
+}
+.cdvmAvatar{
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:36px;
+	height:36px;
+	border-radius:50%;
+	overflow:hidden;
+	background-color:hsl(var(--cdvm-avatar-hue, 210), 52%, 46%);
+	color:#fff;
+	font-size:14px;
+	font-weight:700;
+	letter-spacing:0.02em;
+}
+.cdvmAvatar img{
+	width:100%;
+	height:100%;
+	object-fit:cover;
+}
+.cdvmByText{
+	display:flex;
+	flex-direction:column;
+	min-width:0;
+}
+.cdvmAuthor{
+	font-size:15px;
+	line-height:20px;
+	font-weight:600;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.cdvmDate{
+	font-size:13px;
+	line-height:18px;
+	color:var(--m-fg-2);
+}
+.cdvmMessage{
+	margin-top:16px;
+	font-size:15px;
+	line-height:22px;
+	overflow-wrap:anywhere;
+}
+.cdvmMessage #cdvMessageBody{
+	display:block;
+}
+.cdvmFacts, .cdvmNote{
+	margin-top:18px;
+	padding:2px 14px;
+	border-radius:var(--m-radius, 12px);
+	background-color:var(--m-surface);
+	font-size:14px;
+	line-height:20px;
+}
+.cdvmNote{
+	margin-top:0;
+	padding:14px;
+}
+.cdvmFact{
+	display:flex;
+	align-items:baseline;
+	gap:12px;
+	min-height:24px;
+	padding:10px 0;
+}
+.cdvmFact + .cdvmFact{
+	box-shadow:0 -0.5px 0 var(--m-sep);
+}
+.cdvmFactLabel{
+	flex:none;
+	width:84px;
+	color:var(--m-fg-2);
+}
+.cdvmFactValue{
+	flex:1 1 auto;
+	min-width:0;
+	display:flex;
+	flex-wrap:wrap;
+	align-items:baseline;
+	gap:2px 6px;
+	overflow-wrap:anywhere;
+}
+.cdvmMono{
+	display:block;
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	word-break:break-all;
+}
+.cdvmEmail{
+	display:block;
+	flex-basis:100%;
+	font-size:13px;
+	color:var(--m-accent);
+}
+.cdvmChip{
+	display:inline-block;
+	padding:0 8px;
+	border-radius:6px;
+	background-color:var(--m-fill);
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	line-height:22px;
+}
+.cdvmChip.internalUrl, .cdvmChip.internalUrl:hover{
+	color:var(--m-accent);
+	text-decoration:none;
+}
+
+/* "N files changed  +A −D        [list|tree] [⊟][⊞]" */
+body.mobileMode #cdvFilesHeader{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	margin-top:8px;
+	padding:6px max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
+}
+.cdvmFilesCount{
+	flex:0 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:13px;
+	font-weight:700;
+	letter-spacing:0.02em;
+	text-transform:uppercase;
+	color:var(--m-fg-2);
+}
+.cdvmFilesStat{
+	flex:none;
+	display:flex;
+	gap:6px;
+	font-family:var(--m-mono);
+	font-size:12px;
+	font-weight:600;
+}
+.cdvmAdd{ color:var(--m-add); }
+.cdvmDel{ color:var(--m-del); }
+.cdvmFileViewBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+/* List / tree: a segmented control */
+body.mobileMode #cdvFileViewTypeList, body.mobileMode #cdvFileViewTypeTree{
+	width:40px;
+	height:32px;
+	border-radius:0;
+	background-color:var(--m-fill);
+	opacity:1;
+}
+body.mobileMode #cdvFileViewTypeList{
+	border-radius:9px 0 0 9px;
+}
+body.mobileMode #cdvFileViewTypeTree{
+	border-radius:0 9px 9px 0;
+	margin-right:4px;
+}
+body.mobileMode #cdvFileViewTypeList.active, body.mobileMode #cdvFileViewTypeTree.active{
+	background-color:var(--m-accent-fill);
+}
+body.mobileMode #cdvFileViewTypeList.active svg, body.mobileMode #cdvFileViewTypeTree.active svg{
+	fill:var(--m-accent-on);
+}
+body.mobileMode .cdvFolderBtn.hidden{
+	display:none;
+}
+
+/* File rows: [status] name .......... +4 −2 */
+body.mobileMode #cdvFiles{
+	padding:0 0 24px;
+}
+body.mobileMode #cdvFiles ul{
+	padding-left:0;
+}
+body.mobileMode #cdvFiles .fileTreeFolderContents .fileTreeFolderContents{
+	padding-left:18px;
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord, body.mobileMode #cdvFiles .fileTreeFolder, body.mobileMode #cdvFiles .fileTreeRepo{
+	display:flex;
+	align-items:center;
+	min-height:var(--m-target);
+	box-sizing:border-box;
+	padding:0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+	line-height:20px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #cdvFiles .fileTreeFile{
+	display:flex;
+	align-items:center;
+	flex:1 1 auto;
+	min-width:0;
+	line-height:20px;
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord:active, body.mobileMode #cdvFiles .fileTreeFolder:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord.contextMenuActive{
+	background-color:var(--m-fill);
+}
+body.mobileMode #cdvFiles .fileTreeFileIcon{
+	display:none;
+}
+body.mobileMode #cdvFiles .gitFileName{
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:15px;
+	color:var(--m-fg);
+	text-decoration:none;
+}
+body.mobileMode #cdvFiles .gitFileName.D{
+	text-decoration:line-through;
+	text-decoration-color:var(--m-del);
+}
+/* The change type as a tinted letter badge (A M D R U), drawn from the class the name carries */
+body.mobileMode #cdvFiles .gitFileName::before{
+	display:inline-block;
+	width:20px;
+	height:20px;
+	margin-right:10px;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+	font-family:var(--m-mono);
+	font-size:11px;
+	font-weight:700;
+	line-height:20px;
+	text-align:center;
+	vertical-align:top;
+	text-decoration:none;
+}
+body.mobileMode #cdvFiles .gitFileName.A::before{ content:"A"; color:var(--m-add); }
+body.mobileMode #cdvFiles .gitFileName.M::before{ content:"M"; color:var(--m-mod); }
+body.mobileMode #cdvFiles .gitFileName.D::before{ content:"D"; color:var(--m-del); }
+body.mobileMode #cdvFiles .gitFileName.R::before{ content:"R"; color:var(--m-ren); }
+body.mobileMode #cdvFiles .gitFileName.U::before{ content:"U"; color:var(--m-add); }
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #cdvFiles .gitFileName.A::before, body.mobileMode #cdvFiles .gitFileName.U::before{ background-color:color-mix(in srgb, var(--m-add) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.M::before{ background-color:color-mix(in srgb, var(--m-mod) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.D::before{ background-color:color-mix(in srgb, var(--m-del) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.R::before{ background-color:color-mix(in srgb, var(--m-ren) 18%, transparent); }
+}
+body.mobileMode #cdvFiles .fileTreeFile.pendingReview .gitFileName{
+	font-weight:600;
+}
+/* "(+4|-2)" reads as "+4 −2": the parentheses and the bar are text nodes, so the chip's own
+   font size is zeroed and its two counts restore theirs */
+body.mobileMode #cdvFiles .fileTreeFileAddDel{
+	flex:none;
+	margin-left:auto;
+	padding-left:10px;
+	font-size:0;
+	font-family:var(--m-mono);
+	opacity:1;
+}
+body.mobileMode #cdvFiles .fileTreeFileAdd, body.mobileMode #cdvFiles .fileTreeFileDel{
+	font-size:12px;
+	font-weight:600;
+}
+body.mobileMode #cdvFiles .fileTreeFileAdd{ color:var(--m-add); }
+body.mobileMode #cdvFiles .fileTreeFileDel{ color:var(--m-del); margin-left:6px; }
+body.mobileMode #cdvFiles .countsPending{
+	font-size:12px;
+	color:var(--m-fg-2);
+}
+body.mobileMode #cdvFiles .fileTreeFileType{
+	display:none;
+}
+body.mobileMode #cdvFiles #cdvLastFileViewed{
+	flex:none;
+	margin-left:8px;
+	opacity:0.6;
+}
+/* The per-file actions (copy path, view at revision, open) are hover-revealed icons in the wide
+   layout; on a phone the same actions are in the file's long-press sheet */
+body.mobileMode .fileTreeFileAction{
+	display:none !important;
+}
+body.mobileMode #cdvFiles .fileTreeFolder{
+	color:var(--m-fg-2);
+	font-size:14px;
+	font-weight:600;
+}
+body.mobileMode #cdvFiles .fileTreeFolderIcon{
+	display:inline-flex;
+	margin-right:8px;
+	opacity:0.8;
+}
+
+
+/* ---------- Context menus: bottom action sheets ----------
+ * The menu element becomes a full-screen scrim; its items form a floating, rounded sheet at the
+ * bottom (inset 8px from the edges, like iOS). Tapping the scrim closes it (ContextMenu.show).
+ * ::before is the flexible spacer above the sheet. */
+
+body.mobileMode .contextMenu{
+	top:0 !important;
+	left:0 !important;
+	right:0;
+	bottom:0;
+	display:flex;
+	flex-direction:column;
+	padding:0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+	border:none;
+	border-radius:0;
+	background-color:rgba(0,0,0,0.42);
+	box-shadow:none;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	z-index:45;
+	font-size:16px;
+	animation:ggMobileScrimIn 180ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobileScrimIn{
+	from{ background-color:rgba(0,0,0,0); }
+	to{ background-color:rgba(0,0,0,0.42); }
+}
+body.mobileMode .contextMenu::before{
+	content:"";
+	flex:1 0 12vh;
+}
+body.mobileMode .contextMenu li{
+	flex:none;
+	background-color:var(--m-sheet);
+	animation:ggMobileSheetUp 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggMobileSheetUp{
+	from{ transform:translateY(60px); opacity:0.6; }
+	to{ transform:none; opacity:1; }
+}
+body.mobileMode .contextMenu li:first-child{
+	border-radius:14px 14px 0 0;
+	padding-top:4px;
+}
+body.mobileMode .contextMenu li:last-child{
+	border-radius:0 0 14px 14px;
+	padding-bottom:4px;
+}
+body.mobileMode .contextMenu li:first-child:last-child{
+	border-radius:14px;
+}
+body.mobileMode .contextMenu li.contextMenuItem{
+	display:flex;
+	align-items:center;
+	min-height:50px;
+	box-sizing:border-box;
+	padding:12px 18px;
+	line-height:22px;
+	white-space:normal;
+	color:var(--m-fg);
+}
+body.mobileMode .contextMenu.checked li.contextMenuItem{
+	padding-left:46px;
+}
+body.mobileMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
+	left:18px;
+}
+body.mobileMode .contextMenu li.contextMenuItem:active{
+	background-color:var(--m-pressed);
+	color:var(--m-fg);
+}
+body.mobileMode .contextMenu li.contextMenuItem + li.contextMenuItem{
+	box-shadow:inset 0 0.5px 0 var(--m-sep);
+}
+/* One continuous solid sheet: the divider is a same-coloured strip with an inset hairline, NOT a
+   transparent gutter - see-through gaps between the groups read as a missing background */
+body.mobileMode .contextMenu li.contextMenuDivider{
+	height:9px;
+	margin:0;
+	padding:0;
+	border-top:none;
+	background-color:var(--m-sheet);
+	box-shadow:inset 0 0.5px 0 var(--m-sep);
+	opacity:1;
+}
+
+
+/* ---------- Dialogs: centred cards with full-width buttons ---------- */
+
+body.mobileMode .dialog{
+	width:calc(100vw - 32px);
+	max-width:420px;
+	box-sizing:border-box;
+	max-height:calc(100vh - 32px);
+	overflow-y:auto;
+	border:none;
+	border-radius:16px;
+	background-color:var(--m-sheet);
+	box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 0.5px var(--m-sep);
+	font-size:15px;
+	line-height:21px;
+}
+body.mobileMode .dialogContent{
+	max-width:none;
+	padding:20px 16px 16px;
+}
+body.mobileMode .dialogContent > table.dialogForm{
+	display:table;
+	width:100%;
+}
+body.mobileMode .dialogContent > table.dialogForm td{
+	display:block;
+	text-align:left;
+	padding:4px 0;
+}
+body.mobileMode .dialogContent > table.dialogForm input[type=text], body.mobileMode .dialogContent > table.dialogForm textarea{
+	box-sizing:border-box;
+	width:100%;
+	min-height:var(--m-target);
+	padding:10px 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .dialog .roundedBtn{
+	display:block;
+	box-sizing:border-box;
+	width:100%;
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	margin:8px 0 0 0;
+	padding:0 16px;
+	border:none;
+	border-radius:12px;
+	background-color:var(--m-fill);
+	font-size:16px;
+	font-weight:600;
+}
+body.mobileMode .dialog .roundedBtn:first-of-type{
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+body.mobileMode #dialogCloseIcon{
+	top:4px;
+	right:4px;
+	width:var(--m-target);
+	height:var(--m-target);
+}
+body.mobileMode .dialog .dialogFormCheckbox > label, body.mobileMode .dialog .dialogFormRadio > label{
+	display:inline-flex;
+	align-items:center;
+	min-height:var(--m-target);
+}
+body.mobileMode .customSelectCurrent{
+	min-height:var(--m-target);
+	line-height:calc(var(--m-target) - 2px);
+	border-radius:10px;
+}
+body.mobileMode .customSelectOption{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+}
+
+
+/* ---------- Find bar: a search field over the app bar ---------- */
+
+body.mobileMode .findWidget{
+	top:-72px;
+	left:0;
+	right:0;
+	max-width:none;
+	height:auto;
+	min-height:var(--m-bar);
+	box-sizing:border-box;
+	flex-wrap:nowrap;
+	gap:0;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+	padding-top:max(4px, env(safe-area-inset-top));
+	border:none;
+	border-bottom:0.5px solid var(--m-sep);
+	border-radius:0;
+	background-color:var(--m-bg);
+	box-shadow:0 6px 20px rgba(0,0,0,0.18);
+}
+body.mobileMode .findWidget.active{
+	top:0;
+}
+body.mobileMode #findInput{
+	flex:1 1 auto;
+	min-width:0;
+	height:36px;
+	padding:0 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .findWidget button{
+	flex:none;
+	width:40px;
+	height:var(--m-target);
+	border-radius:50%;
+}
+body.mobileMode .findWidget button:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #findPosition{
+	flex:none;
+	padding:0 4px;
+	font-size:12px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+
+
+/* ---------- Full-screen panels: settings, reflog, statistics, worktrees ---------- */
+
+body.mobileMode #settingsWidget, body.mobileMode #reflogWidget, body.mobileMode #statisticsWidget, body.mobileMode #worktreeWidget{
+	top:-110vh;
+	left:0;
+	right:0;
+	width:auto;
+	max-width:none;
+	max-height:100vh;
+	height:100vh;
+	box-sizing:border-box;
+	border:none;
+	border-radius:0;
+	padding-left:max(16px, env(safe-area-inset-left));
+	padding-right:max(16px, env(safe-area-inset-right));
+	padding-bottom:max(16px, env(safe-area-inset-bottom));
+	background-color:var(--m-bg);
+	font-size:15px;
+	line-height:21px;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+}
+body.mobileMode #settingsWidget.active, body.mobileMode #reflogWidget.active, body.mobileMode #statisticsWidget.active, body.mobileMode #worktreeWidget.active{
+	top:0;
+}
+body.mobileMode #settingsClose, body.mobileMode #reflogClose, body.mobileMode #statisticsClose, body.mobileMode #worktreeClose{
+	width:36px;
+	height:36px;
+	top:max(8px, env(safe-area-inset-top));
+	right:max(8px, env(safe-area-inset-right));
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	border-radius:50%;
+	background-color:var(--m-fill);
+}
+body.mobileMode #settingsClose svg, body.mobileMode #reflogClose svg, body.mobileMode #statisticsClose svg, body.mobileMode #worktreeClose svg{
+	position:static;
+}
+body.mobileMode .settingsGlobalCheckbox, body.mobileMode #settingsWidget label{
+	display:inline-flex;
+	align-items:center;
+	min-height:var(--m-target);
+}
+body.mobileMode #settingsWidget .roundedBtn, body.mobileMode #reflogLoadMoreBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	border:none;
+	border-radius:12px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .reflogRow, body.mobileMode .worktreeTable tr{
+	height:var(--m-target);
+}
+
+/* No pointer to hover with: the tooltips get out of the way */
+body.mobileMode .gg-helpTooltipPopup{
+	max-width:calc(100vw - 24px);
+	font-size:14px;
+	line-height:20px;
+}
+
+/* Larger phones and small tablets in portrait: a touch more air */
+@media (min-width:428px){
+	body.mobileMode #commitTable tr.commit span.description .text{
+		font-size:15.5px;
+	}
+	body.mobileMode .cdvmTitle{
+		font-size:21px;
+		line-height:27px;
+	}
+}
+/* The smallest phones (320px): tighter app bar and rows */
+@media (max-width:359px){
+	body.mobileMode #controls{
+		gap:4px;
+		padding-left:max(8px, env(safe-area-inset-left));
+	}
+	body.mobileMode #controlBtns > div{
+		width:40px !important;
+	}
+	body.mobileMode .mobileMetaHash{
+		display:none;
+	}
+	body.mobileMode #commitTable tr.commit td:nth-child(2){
+		padding-right:10px;
+	}
+}

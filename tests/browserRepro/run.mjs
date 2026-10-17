@@ -422,6 +422,55 @@ const handleCounts = await page.evaluate(() => Array.from(document.querySelector
 check(handleCounts.length > 0 && handleCounts.every((n, i) => n === (i === 0 || i === handleCounts.length - 1 ? 1 : 2)), 'resize handles: exactly one pair per header cell after all re-renders', handleCounts);
 
 
+/* ---------------- the mobile layout (?cfg=mobile, viewport below 600px): the app bar keeps only
+ * Find / Refresh / ⋯, and the ⋯ action sheet's items sit on a solid card. Two pinned regressions:
+ * (1) main.css's "#controls.fetchSupported #fetchBtn" (two ids) out-ranked the mobile one-id hide
+ *     rule, dropping an absolutely positioned 20px fetch icon on top of Refresh / ⋯ whenever the
+ *     repo had remotes;
+ * (2) --m-sheet carried no literal fallback, so in an environment without host theme variables
+ *     the sheet items rendered fully transparent (text floating on the scrim). ---------------- */
+{
+	const viewport = page.viewport();
+	await page.setViewport({ width: 390, height: 844 });
+	await load('?cfg=mobile');
+	const mobile = await page.evaluate(() => {
+		/* a repo with remotes: the real webview sets this class on #controls (renderFetchButton) */
+		document.getElementById('controls').classList.add('fetchSupported');
+		const rect = (id) => {
+			const el = document.getElementById(id);
+			if (el === null) return null;
+			const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+			return { display: cs.display, position: cs.position, top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) };
+		};
+		return { mobile: document.body.classList.contains('mobileMode'), find: rect('findBtn'), refresh: rect('refreshBtn'), more: rect('mobileMoreBtn'), fetch: rect('fetchBtn') };
+	});
+	check(mobile.mobile, 'mobile: body carries mobileMode at 390px', mobile.mobile);
+	check(mobile.fetch !== null && mobile.fetch.display === 'none' && mobile.fetch.w === 0, 'mobile: the fetch button stays hidden when the repo has remotes', mobile.fetch);
+	check(mobile.find !== null && mobile.refresh !== null && mobile.more !== null
+		&& mobile.find.display === 'flex' && mobile.refresh.display === 'flex' && mobile.more.display === 'flex'
+		&& mobile.find.w === 44 && mobile.refresh.w === 44 && mobile.more.w === 44
+		&& mobile.find.top === mobile.refresh.top && mobile.refresh.top === mobile.more.top,
+		'mobile: Find / Refresh / ⋯ are uniform 44px targets on one row', { find: mobile.find, refresh: mobile.refresh, more: mobile.more });
+	/* the ⋯ sheet: its items must sit on a solid (non-transparent) card */
+	const sheetBg = await page.evaluate(() => {
+		document.getElementById('mobileMoreBtn').click();
+		const alphaOf = (bg) => { const m = bg.match(/rgba?\(([^)]+)\)/); return m !== null ? parseFloat(m[1].split(',')[3] === undefined ? '1' : m[1].split(',')[3]) : -1; };
+		const li = document.querySelector('.contextMenu li.contextMenuItem');
+		if (li === null) return null;
+		const div = document.querySelector('.contextMenu li.contextMenuDivider');
+		return {
+			bg: getComputedStyle(li).backgroundColor,
+			alpha: alphaOf(getComputedStyle(li).backgroundColor),
+			dividerAlpha: div !== null ? alphaOf(getComputedStyle(div).backgroundColor) : 1,
+			items: document.querySelectorAll('.contextMenu li.contextMenuItem').length
+		};
+	});
+	check(sheetBg !== null && sheetBg.items >= 3 && sheetBg.alpha >= 0.95 && sheetBg.dividerAlpha >= 0.95, 'mobile: the ⋯ sheet items sit on a solid background', sheetBg);
+	await page.evaluate(() => { document.body.click(); }); // close the sheet again
+	await page.setViewport(viewport);
+}
+
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : '\n' + failures + ' CHECK(S) FAILED');
 if (!keep) { await browser.close(); server.close(); }
 process.exit(failures === 0 ? 0 : 1);
