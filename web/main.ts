@@ -87,6 +87,13 @@ class GitGraphView {
 	private readonly rowSignatures = new WeakMap<HTMLElement, string>();
 	/** Which columns the rendered header row was built for (see renderTable). */
 	private renderedHeaderKey: string | null = null;
+	/**
+	 * Whether the last render used the narrow window (mobile) column layout: the `mobileAdaptation`
+	 * Extension Setting hides the Date, Author and Commit columns below NARROW_WINDOW_MAX_WIDTH.
+	 * The resize observer re-renders exactly when a resize crosses that breakpoint.
+	 */
+	private renderedNarrowWindow = false;
+	private static readonly NARROW_WINDOW_MAX_WIDTH = 600;
 	private static readonly VIRTUAL_ROW_BUFFER = 10;
 
 	/**
@@ -1947,6 +1954,11 @@ class GitGraphView {
 		const ctx = this.createRowRenderingContext();
 		const colVisibility = ctx.colVisibility;
 
+		// The narrow window layout is re-evaluated on every render; the resize observer compares
+		// against this record to re-render exactly when a resize crosses the breakpoint
+		this.renderedNarrowWindow = this.isNarrowWindow();
+		alterClass(document.body, 'narrowWindow', this.renderedNarrowWindow);
+
 		const headerHtml = '<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">' + strings.columnGraph + '</th><th class="tableColHeader" data-col="1">' + strings.columnDescription + '</th>' +
 			(colVisibility.date ? '<th class="tableColHeader dateCol" data-col="2">' + strings.columnDate + '</th>' : '') +
 			(colVisibility.author ? '<th class="tableColHeader authorCol" data-col="3">' + strings.columnAuthor + '</th>' : '') +
@@ -2324,6 +2336,11 @@ class GitGraphView {
 
 
 	public getColumnVisibility() {
+		if (this.isNarrowWindow()) {
+			// Narrow window (mobile) layout: the Date, Author and Commit columns are hidden so the
+			// graph and the commit messages fit a phone-width view; the wide layout is unchanged
+			return { date: false, author: false, commit: false };
+		}
 		let colWidths = this.gitRepos[this.currentRepo].columnWidths;
 		if (colWidths !== null) {
 			return { date: colWidths[1] !== COLUMN_HIDDEN, author: colWidths[2] !== COLUMN_HIDDEN, commit: colWidths[3] !== COLUMN_HIDDEN };
@@ -2331,6 +2348,27 @@ class GitGraphView {
 			let defaults = this.config.defaultColumnVisibility;
 			return { date: defaults.date, author: defaults.author, commit: defaults.commit };
 		}
+	}
+
+	/**
+	 * Should the commit table use the narrow window (mobile) layout? Active only while the
+	 * `mobileAdaptation` Extension Setting is enabled and the view is at most
+	 * NARROW_WINDOW_MAX_WIDTH pixels wide. An unmeasured view (width 0: a hidden background tab)
+	 * keeps the wide layout, so the columns don't flash away and back on the next show.
+	 */
+	public isNarrowWindow() {
+		if (!this.config.mobileAdaptation) return false;
+		const width = this.viewElem.clientWidth || document.documentElement.clientWidth;
+		return width > 0 && width <= GitGraphView.NARROW_WINDOW_MAX_WIDTH;
+	}
+
+	/**
+	 * Re-render when a resize crossed the narrow window breakpoint: the Date, Author and Commit
+	 * columns are hidden below it and restored above it. Called by the resize observer, where a
+	 * plain render would never run (ordinary resizes only reflow the graph).
+	 */
+	public updateNarrowWindowLayout() {
+		if (this.isNarrowWindow() !== this.renderedNarrowWindow) this.render();
 	}
 
 	public getNumColumns() {

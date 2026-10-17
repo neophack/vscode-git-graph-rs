@@ -384,6 +384,13 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-graph-rs.mobileAdaptation` Extension Setting.
+	 */
+	get mobileAdaptation() {
+		return !!this.config.get('mobileAdaptation', false);
+	}
+
+	/**
 	 * Get the value of the `git-graph-rs.openNewTabEditorGroup` Extension Setting.
 	 */
 	get openNewTabEditorGroup(): vscode.ViewColumn {

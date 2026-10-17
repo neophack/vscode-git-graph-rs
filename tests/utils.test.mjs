@@ -529,6 +529,16 @@ describe('version requirements', () => {
 describe('BufferedQueue', () => {
 	const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+	/* These tests run on real timers: on a loaded machine (the full suite runs many test files in
+	 * parallel, and build-and-install.sh tests right after a release build) the buffer and
+	 * processing timers can fire tens of milliseconds late, so a FIXED wait would assert before
+	 * the queue settled - "items enqueued while processing are handled in the same run" failed
+	 * exactly that way (its 10ms buffer fired at ~55ms of its 60ms budget). Poll for the settled
+	 * result instead; a genuine regression still fails the assertion after the timeout. */
+	const waitFor = async (condition, timeoutMs = 2000) => {
+		for (let elapsed = 0; !condition() && elapsed < timeoutMs; elapsed += 10) await tick(10);
+	};
+
 	it('buffers items, de-duplicates them, and calls onChanges once when any item changed', async () => {
 		const processed = [];
 		let changes = 0;
@@ -537,7 +547,7 @@ describe('BufferedQueue', () => {
 		queue.enqueue('b');
 		queue.enqueue('a'); // moves 'a' to the back rather than duplicating it
 		queue.enqueue(''); // falsy items must still be processed
-		await tick(60);
+		await waitFor(() => processed.length === 3);
 		assert.deepEqual(processed, ['b', 'a', '']);
 		assert.equal(changes, 1);
 		queue.dispose();
@@ -562,7 +572,7 @@ describe('BufferedQueue', () => {
 			return true;
 		}, () => {}, 10);
 		queue.enqueue(1);
-		await tick(60);
+		await waitFor(() => processed.length === 2);
 		assert.deepEqual(processed, [1, 2]);
 		queue.dispose();
 	});

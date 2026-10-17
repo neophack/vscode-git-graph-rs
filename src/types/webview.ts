@@ -68,6 +68,7 @@ export interface GitGraphViewConfig {
 	readonly loadMoreCommits: number;
 	readonly loadMoreCommitsAutomatically: boolean;
 	readonly markdown: boolean;
+	readonly mobileAdaptation: boolean;
 	readonly mute: MuteCommitsConfig;
 	readonly showBodyInline: boolean;
 

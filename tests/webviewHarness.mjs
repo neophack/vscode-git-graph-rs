@@ -235,7 +235,8 @@ export async function bootView(total, options = {}) {
 		get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT
 	});
 	Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT });
-	Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200 });
+	// configurable so tests can simulate view widths (e.g. the narrow-window mobileAdaptation layout)
+	Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200, configurable: true });
 
 	// jsdom implements neither Element.scroll nor scrollTo (used by the view's scroll-to-commit
 	// paths); scrollTop emulation above already covers what the tests assert

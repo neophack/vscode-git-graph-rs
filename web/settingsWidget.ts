@@ -342,6 +342,7 @@ class SettingsWidget {
 				SettingsWidget.checkbox('settingsCombineBranchLabels', strings.settingsCombineBranchLabels, viewConfig.referenceLabels.combineLocalAndRemoteBranchLabels, null) +
 				SettingsWidget.checkbox('settingsStickyHeader', strings.settingsStickyHeader, viewConfig.stickyHeader, null) +
 				SettingsWidget.checkbox('settingsRenderMarkdown', strings.settingsRenderMarkdown, viewConfig.markdown, null) +
+				SettingsWidget.checkbox('settingsMobileAdaptation', strings.settingsMobileAdaptation, viewConfig.mobileAdaptation, strings.settingsMobileAdaptationInfo) +
 				'</div>';
 
 			globalHtml += '<div class="settingsSection"><h3>' + strings.settingsSectionCommitLoading + '</h3><table>' +
@@ -428,6 +429,7 @@ class SettingsWidget {
 			this.wireGlobalCheckbox('settingsCombineBranchLabels', 'referenceLabels.combineLocalAndRemoteBranchLabels');
 			this.wireGlobalCheckbox('settingsStickyHeader', 'stickyHeader');
 			this.wireGlobalCheckbox('settingsRenderMarkdown', 'markdown');
+			this.wireGlobalCheckbox('settingsMobileAdaptation', 'mobileAdaptation');
 			this.wireGlobalCheckbox('settingsEnableLog', 'enableLog');
 
 			this.wireGlobalNumber('settingsInitialLoad', 'repository.commits.initialLoad', 1, 100000, viewConfig.initialLoadCommits);

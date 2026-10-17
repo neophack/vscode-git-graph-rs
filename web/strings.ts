@@ -369,6 +369,8 @@ const STRINGS_EN = {
 	settingsCombineBranchLabels: 'Combine local & remote branch labels',
 	settingsStickyHeader: 'Sticky header while scrolling',
 	settingsRenderMarkdown: 'Render Markdown in commit messages',
+	settingsMobileAdaptation: 'Narrow window (mobile) adaptation',
+	settingsMobileAdaptationInfo: 'Hides the Date, Author and Commit columns while the view is at most 600 pixels wide, so the graph and the commit messages fit a phone-sized window.',
 
 	/* Global Settings > Commit Loading */
 	settingsSectionCommitLoading: 'Commit Loading',
@@ -1266,6 +1268,8 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	settingsCombineBranchLabels: '合并本地与远程分支标签',
 	settingsStickyHeader: '滚动时固定表头',
 	settingsRenderMarkdown: '在提交信息中渲染 Markdown',
+	settingsMobileAdaptation: '窄窗口（手机端）显示适配',
+	settingsMobileAdaptationInfo: '当视图宽度不超过 600 像素时隐藏“日期”、“作者”和“提交”列，使图形和提交信息适配手机屏幕。',
 
 	/* Global Settings > Commit Loading */
 	settingsSectionCommitLoading: '提交加载',

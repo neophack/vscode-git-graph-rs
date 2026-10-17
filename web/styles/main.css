@@ -1461,6 +1461,20 @@ body.tagLabelsRightAligned .tagsWrapper {
 	}
 }
 
+/* Narrow window (mobile) layout, set on <body> by the rendering code when the
+   mobileAdaptation Extension Setting is enabled and the view crossed its breakpoint: the same
+   toolbar tightening as the 640px media query above, so the controls follow the toggle. The
+   Date, Author and Commit columns are hidden by the rendering, not by CSS. */
+body.narrowWindow .dropdownCurrentValue{
+	max-width:9vw;
+}
+body.narrowWindow #controls.singleRepo .dropdownCurrentValue{
+	max-width:13vw;
+}
+body.narrowWindow #authorControl{
+	display:none;
+}
+
 
 /* Pull Request badges on the commits (the GitHub/GitLab integration of pullRequests.enabled):
    one badge per request on the commit it currently points at, styled like the Gerrit change

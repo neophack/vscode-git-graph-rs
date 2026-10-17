@@ -16,6 +16,10 @@ function observeWindowSizeChanges(view: GitGraphView) {
 
 			resizeRafId = null;
 
+			// A resize that crossed the narrow window (mobileAdaptation) breakpoint changes which
+			// columns are rendered: re-render so the Date/Author/Commit columns appear or disappear
+			view.updateNarrowWindowLayout();
+
 			// The visible row count of a windowed render derives from the view height, so a resize
 			// must recompute the window (otherwise rows below the old window end are missing until
 			// the user scrolls)

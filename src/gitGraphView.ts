@@ -174,6 +174,7 @@ const WRITABLE_GLOBAL_SETTINGS: { readonly [setting: string]: (value: any) => bo
 	'referenceLabels.combineLocalAndRemoteBranchLabels': isBoolean,
 	'stickyHeader': isBoolean,
 	'markdown': isBoolean,
+	'mobileAdaptation': isBoolean,
 
 	/* Commit Loading */
 	'repository.commits.initialLoad': isIntegerInRange(1, 100000),
@@ -1556,6 +1557,7 @@ export class GitGraphView extends Disposable {
 			loadMoreCommits: config.loadMoreCommits,
 			loadMoreCommitsAutomatically: config.loadMoreCommitsAutomatically,
 			markdown: config.markdown,
+			mobileAdaptation: config.mobileAdaptation,
 			mute: config.muteCommits,
 			showBodyInline: config.showCommitBodyInline,
 

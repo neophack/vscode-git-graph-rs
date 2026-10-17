@@ -1117,6 +1117,11 @@
 					"default": 0,
 					"description": "%config.git-graph-rs.maxDepthOfRepoSearch.description%"
 				},
+				"git-graph-rs.mobileAdaptation": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.git-graph-rs.mobileAdaptation.description%"
+				},
 				"git-graph-rs.openNewTabEditorGroup": {
 					"type": "string",
 					"enum": [
