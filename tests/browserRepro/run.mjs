@@ -466,6 +466,36 @@ check(handleCounts.length > 0 && handleCounts.every((n, i) => n === (i === 0 || 
 		};
 	});
 	check(sheetBg !== null && sheetBg.items >= 3 && sheetBg.alpha >= 0.95 && sheetBg.dividerAlpha >= 0.95, 'mobile: the ⋯ sheet items sit on a solid background', sheetBg);
+	/* the panels show/hide via visibility (a `top` transition on these fixed panels could freeze
+	 * at its start value and leave an .active panel stranded off-screen) */
+	const panels = await page.evaluate(() => {
+		document.getElementById('settingsBtn').click();
+		const s = document.getElementById('settingsWidget'), cs = getComputedStyle(s);
+		const settings = { active: s.classList.contains('active'), top: cs.top, vis: cs.visibility };
+		document.getElementById('settingsClose').click();
+		document.getElementById('findBtn').click();
+		const f = document.querySelector('.findWidget'), fc = getComputedStyle(f);
+		const find = { top: fc.top, vis: fc.visibility };
+		document.getElementById('findClose').click();
+		return { settings, find };
+	});
+	check(panels.settings.active === true && panels.settings.top === '0px' && panels.settings.vis === 'visible', 'mobile: the Settings panel opens on screen (no frozen transition)', panels.settings);
+	check(panels.find.top === '0px' && panels.find.vis === 'visible', 'mobile: the Find bar opens over the app bar', panels.find);
+	/* the ⋯ sheet carries the author filter (the app bar has no author dropdown on a phone) */
+	const authorEntry = await page.evaluate(() => {
+		document.getElementById('mobileMoreBtn').click();
+		const item = Array.from(document.querySelectorAll('.contextMenu li.contextMenuItem')).find((li) => li.textContent.trim() === 'Filter by Author');
+		if (item === undefined) return { present: false, boxes: 0 };
+		item.click();
+		const dlg = document.querySelector('.dialog');
+		const boxes = dlg !== null ? dlg.querySelectorAll('input[type=checkbox]').length : 0;
+		if (dlg !== null) {
+			const cancel = Array.from(dlg.querySelectorAll('.roundedBtn')).find((b) => b.textContent.trim() === 'Cancel');
+			if (cancel !== undefined) cancel.click();
+		}
+		return { present: true, boxes: boxes };
+	});
+	check(authorEntry.present && authorEntry.boxes >= 1, 'mobile: the ⋯ sheet offers the author filter dialog', authorEntry);
 	await page.evaluate(() => { document.body.click(); }); // close the sheet again
 	await page.setViewport(viewport);
 }

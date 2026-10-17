@@ -2246,7 +2246,8 @@ class GitGraphView {
 			[
 				{ title: item(SVG_ICONS.current, strings.mobileGoToHead), visible: this.commitHead !== null, onClick: click('currentBtn') },
 				{ title: item(SVG_ICONS.download, this.config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle), visible: this.gitRemotes.length > 0, onClick: click('fetchBtn') },
-				{ title: item(SVG_ICONS.filter, filterLabel), visible: document.getElementById('filterBtn') !== null, onClick: click('filterBtn') }
+				{ title: item(SVG_ICONS.filter, filterLabel), visible: document.getElementById('filterBtn') !== null, onClick: click('filterBtn') },
+				{ title: item(SVG_ICONS.person, strings.mobileFilterAuthors), visible: this.gitConfig !== null && this.gitConfig.authors.length > 0, onClick: () => this.showMobileAuthorFilter() }
 			],
 			[
 				{
@@ -2261,6 +2262,27 @@ class GitGraphView {
 				{ title: item(SVG_ICONS.gear, strings.settingsTitle), visible: true, onClick: click('settingsBtn') }
 			]
 		], false, null, event, this.viewElem, null, 'mobileOverflowMenu');
+	}
+
+	/**
+	 * The mobile ⋯ sheet's author filter: the app bar has no room for the author dropdown, so its
+	 * multi-select is offered as a checkbox dialog that applies the same reload the dropdown does.
+	 */
+	private showMobileAuthorFilter() {
+		const options = this.getAuthorOptions();
+		const selected = new Set(this.currentAuthors !== null ? this.currentAuthors : []);
+		dialog.showForm(strings.mobileFilterAuthors, options.map((option) => ({
+			type: DialogInputType.Checkbox,
+			name: option.name,
+			value: selected.size === 0 ? option.value === SHOW_ALL_BRANCHES : selected.has(option.value)
+		})), strings.dialogApply, (values) => {
+			const chosen = options.filter((_option, i) => <boolean>values[i]).map((option) => option.value);
+			this.currentAuthors = chosen;
+			this.maxCommits = this.config.initialLoadCommits;
+			this.saveState();
+			this.clearCommits();
+			this.requestLoadRepoInfoAndCommits(true, true);
+		}, null);
 	}
 
 	private renderFetchButton() {

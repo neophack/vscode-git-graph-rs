@@ -60,7 +60,7 @@ const history = [];
 for (let i = 0; i < TOTAL; i++) history.push(commit(i));
 
 const hostScript = `
-window.__state = { history: ${JSON.stringify(history)}, head: ${JSON.stringify(history[0].hash)}, uncommitted: null, uncommittedCount: null, pendingCount: null, pipeline: null, pipelineCycle: 0, pipelineCounts: null, servedCommits: false };
+window.__state = { history: ${JSON.stringify(history)}, head: ${JSON.stringify(history[0].hash)}, uncommitted: null, uncommittedCount: null, pendingCount: null, pipeline: null, pipelineCycle: 0, pipelineCounts: null, servedCommits: false, operationState: null };
 const state = window.__state;
 const sent = [];
 window.VSCODE_API = { getState: () => null, setState: () => {}, postMessage: (m) => { sent.push(m); } };
@@ -74,15 +74,15 @@ window.__cfgVariant = cfgVariant;
 window.initialState = { config: cfg, lastActiveRepo: ${JSON.stringify(REPO)}, loadViewTo: null,
 	repos: { ${JSON.stringify(REPO)}: ${JSON.stringify(DEFAULT_REPO_STATE)} }, loadRepoInfoRefreshId: 0, loadCommitsRefreshId: 0,
 	backend: { platform: 'test', engineAvailable: true, engineVersion: 'test', gitCliAvailable: true, capabilities: [] } };
-window.globalState = {}; window.workspaceState = {};
+window.globalState = { alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false }; window.workspaceState = {};
 const dispatch = (message) => { const t0 = performance.now(); window.dispatchEvent(new MessageEvent('message', { data: message })); const dt = performance.now() - t0; if (dt > 500) console.log('SLOW DISPATCH ' + message.command + ' ' + Math.round(dt) + 'ms'); };
 window.__dispatch = dispatch;
 window.__respond = async function () {
 	for (let round = 0; round < 20; round++) {
 		const queue = sent.splice(0);
 		for (const message of queue) {
-			if (message.command === 'loadRepoInfo') {
-				dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } });
+				if (message.command === 'loadRepoInfo') {
+					dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.head, remotes: [], stashes: [], isRepo: true, error: null, operationState: state.operationState || { type: null, conflictedFiles: [], progress: null } });
 			} else if (message.command === 'loadCommits') {
 				/* deep-copy: a synthetic MessageEvent does NOT structured-clone its data, so the
 				 * response's commit objects would alias __state and every mutation the scenarios
@@ -141,6 +141,31 @@ window.__respond = async function () {
 						moreCommitsAvailable: false, onlyFollowFirstParent: false, gerritStates: null, uncommittedPending: false, error: null, uncommittedCount: state.uncommittedCount });
 					state.servedCommits = commits.length > 0;
 				}
+			} else if (message.command === 'loadConfig') {
+				/* the repository config the Settings panel renders (branch remotes, authors, user identity) */
+				dispatch({ command: 'loadConfig', repo: ${JSON.stringify(REPO)}, error: null,
+					config: {
+						branches: { main: { remote: 'origin', pushRemote: null }, 'feature-x': { remote: null, pushRemote: null } },
+						authors: [{ name: 'Author 0', email: 'author0@example.com' }, { name: 'Author 7', email: 'author7@example.com' }],
+						diffTool: null, guiDiffTool: null, pushDefault: 'origin',
+						remotes: [{ name: 'origin', url: 'https://example.com/repo.git', pushUrl: null }],
+						user: { name: { local: null, global: 'Global User' }, email: { local: null, global: 'global@example.com' } }
+					} });
+			} else if (message.command === 'reflog') {
+				/* a page of reflog entries for the requested ref, newest first */
+				const entries = [];
+				for (let i = 0; i < 12; i++) entries.push({
+					hash: ${JSON.stringify(h('c', 40))}, abbrevHash: 'c0040',
+					selector: (message.ref || 'HEAD') + '@{' + i + '}', date: 1700000000 + i * 3600,
+					message: i % 3 === 0 ? 'commit: side ' + i : (i % 3 === 1 ? 'checkout: moving from main to feature-x' : 'pull: Fast-forward'), dangling: i === 11
+				});
+				dispatch({ command: 'reflog', ref: message.ref, error: null, entries: entries, moreAvailable: true });
+			} else if (message.command === 'worktreeList') {
+				dispatch({ command: 'worktreeList', worktrees: [
+					{ path: 'C:\\\\repo', hash: state.head, branch: 'main', detached: false, locked: false, prunable: false, isMain: true },
+					{ path: 'C:\\\\repo-wt', hash: ${JSON.stringify(h('c', 40))}, branch: 'feature-x', detached: false, locked: false, prunable: false, isMain: false },
+					{ path: 'C:\\\\repo-detached', hash: ${JSON.stringify(h('c', 80))}, branch: null, detached: true, locked: true, prunable: false, isMain: false }
+				] });
 			} else if (message.command === 'commitDetails') {
 				/* Answering this is what actually OPENS the Commit Details View, which switches the
 				 * table out of windowed rendering (canVirtualize is false while it is open) - the

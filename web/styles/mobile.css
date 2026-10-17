@@ -238,6 +238,21 @@ body.mobileMode #mobileMoreBtn svg{
 body.mobileMode #pinnedControls{
 	padding-left:max(12px, env(safe-area-inset-left));
 	padding-right:max(12px, env(safe-area-inset-right));
+	padding-top:8px;
+	padding-bottom:8px;
+}
+/* the chips are a touch target: taller rows, bigger text and a wider ✕ than the 11px desktop chips */
+body.mobileMode .pinnedChip{
+	margin:0 3px;
+	padding:4px 10px;
+	font-size:13px;
+	line-height:22px;
+	border-radius:14px;
+}
+body.mobileMode .pinnedChipRemove{
+	margin-left:6px;
+	padding:0 6px;
+	font-size:15px;
 }
 
 
@@ -627,7 +642,9 @@ body.mobileMode #fastScroller{
 	z-index:14;
 	opacity:0;
 	pointer-events:none;
-	transition:opacity 240ms var(--gg-ease, ease-out);
+	/* shown/hidden instantly: an opacity transition on this fixed element can freeze at either
+	   end (seen in a throttled/backgrounded renderer), leaving a stuck or invisible thumb */
+	transition:none;
 }
 body.mobileMode #fastScroller.visible, body.mobileMode #fastScroller.dragging{
 	opacity:1;
@@ -654,7 +671,7 @@ body.mobileMode #fastScrollerThumb::after{
 	border-radius:3px;
 	background-color:var(--m-fg-2);
 	opacity:0.7;
-	transition:width 140ms var(--gg-ease, ease-out), right 140ms var(--gg-ease, ease-out), opacity 140ms;
+	transition:none;
 }
 body.mobileMode #fastScroller.dragging #fastScrollerThumb::after{
 	width:10px;
@@ -676,7 +693,7 @@ body.mobileMode #fastScrollerBubble{
 	box-shadow:0 8px 28px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
 	white-space:nowrap;
 	opacity:0;
-	transition:opacity 140ms var(--gg-ease, ease-out);
+	transition:none;
 }
 body.mobileMode #fastScroller.dragging #fastScrollerBubble{
 	opacity:1;
@@ -1294,9 +1311,14 @@ body.mobileMode .findWidget{
 	border-radius:0;
 	background-color:var(--m-bg);
 	box-shadow:0 6px 20px rgba(0,0,0,0.18);
+	/* same freeze-proof show/hide as the full-screen panels (see there) */
+	visibility:hidden;
+	transition:none;
 }
 body.mobileMode .findWidget.active{
 	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
 }
 body.mobileMode #findInput{
 	flex:1 1 auto;
@@ -1340,15 +1362,27 @@ body.mobileMode #settingsWidget, body.mobileMode #reflogWidget, body.mobileMode 
 	border-radius:0;
 	padding-left:max(16px, env(safe-area-inset-left));
 	padding-right:max(16px, env(safe-area-inset-right));
+	padding-top:max(16px, env(safe-area-inset-top));
 	padding-bottom:max(16px, env(safe-area-inset-bottom));
 	background-color:var(--m-bg);
 	font-size:15px;
 	line-height:21px;
 	overscroll-behavior:contain;
 	-webkit-overflow-scrolling:touch;
+	/* Hidden via visibility, not the animated top: a `top` transition on these fixed panels can
+	   freeze at its start value (observed opening them from the ⋯ sheet after a reload), leaving
+	   the panel stuck off-screen while it carries .active. A keyframed entrance cannot freeze. */
+	visibility:hidden;
+	transition:none;
 }
 body.mobileMode #settingsWidget.active, body.mobileMode #reflogWidget.active, body.mobileMode #statisticsWidget.active, body.mobileMode #worktreeWidget.active{
 	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobilePanelIn{
+	from{ opacity:0; transform:translateY(-14px); }
+	to{ opacity:1; transform:none; }
 }
 body.mobileMode #settingsClose, body.mobileMode #reflogClose, body.mobileMode #statisticsClose, body.mobileMode #worktreeClose{
 	width:36px;
@@ -1369,12 +1403,22 @@ body.mobileMode .settingsGlobalCheckbox, body.mobileMode #settingsWidget label{
 	align-items:center;
 	min-height:var(--m-target);
 }
-body.mobileMode #settingsWidget .roundedBtn, body.mobileMode #reflogLoadMoreBtn{
+body.mobileMode #settingsWidget .roundedBtn, body.mobileMode #reflogLoadMoreBtn, body.mobileMode #worktreeWidget .roundedBtn{
 	min-height:var(--m-target);
 	line-height:var(--m-target);
 	border:none;
 	border-radius:12px;
 	background-color:var(--m-fill);
+}
+body.mobileMode #conflictBanner .roundedBtn{
+	min-height:calc(var(--m-target) - 8px);
+	box-sizing:border-box;
+	padding:0 14px;
+	border:none;
+	border-radius:11px;
+	background-color:var(--m-fill);
+	font-size:14px;
+	font-weight:600;
 }
 body.mobileMode .reflogRow, body.mobileMode .worktreeTable tr{
 	height:var(--m-target);
