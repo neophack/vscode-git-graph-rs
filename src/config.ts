@@ -385,8 +385,26 @@ class Config {
 
 	/**
 	 * Get the value of the `git-graph-rs.mobileAdaptation` Extension Setting.
+	 *
+	 * The unset value defaults per host: Git Graph Studio (uriScheme 'ggs') turns the narrow-window
+	 * phone layout on — its remote phone sessions are the layout's whole audience — while VS Code
+	 * keeps the marketplace default (off). An explicitly set value always wins on every host. The
+	 * activation seeds the studio default into the settings store once (extension.ts), so this
+	 * host-aware fallback only covers the window before that write lands.
 	 */
 	get mobileAdaptation() {
+		// An explicitly set value wins on every host; the unset one defaults per host — Git Graph
+		// Studio (uriScheme 'ggs') on, VS Code off. `inspect` tells a set value from the default;
+		// a configuration object without it (a harness stand-in) answers through `has` instead.
+		let explicit: boolean | undefined;
+		if (typeof this.config.inspect === 'function') {
+			const inspected = this.config.inspect<boolean>('mobileAdaptation');
+			explicit = inspected?.globalValue ?? inspected?.workspaceValue ?? inspected?.workspaceFolderValue;
+		} else if (this.config.has('mobileAdaptation')) {
+			explicit = this.config.get<boolean>('mobileAdaptation');
+		}
+		if (explicit !== undefined) return !!explicit;
+		if (vscode.env.uriScheme === 'ggs') return true;
 		return !!this.config.get('mobileAdaptation', false);
 	}
 

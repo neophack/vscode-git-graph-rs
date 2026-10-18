@@ -29,6 +29,19 @@ export async function activate(context: vscode.ExtensionContext) {
 	logger.setEnabled(getConfig().enableLog);
 	logger.log('Starting Git Graph ...');
 
+	// Git Graph Studio defaults the narrow-window phone layout ON (its remote phone sessions are
+	// the layout's audience), VS Code keeps it off — and the studio's own Settings dialog reads
+	// the store, not this runtime default, so the very first activation under the studio seeds
+	// the default into the store once. Only an UNSET value is seeded: a value the user set —
+	// including an explicit off after resetting the row — is never touched again.
+	if (vscode.env.uriScheme === 'ggs') {
+		const inspected = vscode.workspace.getConfiguration('git-graph-rs').inspect<boolean>('mobileAdaptation');
+		if ((inspected?.globalValue ?? inspected?.workspaceValue ?? inspected?.workspaceFolderValue) === undefined) {
+			await vscode.workspace.getConfiguration('git-graph-rs').update('mobileAdaptation', true, vscode.ConfigurationTarget.Global)
+				.then(() => logger.log('mobileAdaptation: seeded the studio default (enabled) into the global settings'), (reason) => logger.log('mobileAdaptation: seeding the studio default failed: ' + String(reason)));
+		}
+	}
+
 	// No engine binary for this platform is not an error: everything runs over the `git` CLI
 	// backend instead, with the full feature set. Say so once, quietly — the Settings widget's
 	// backend section is where the per-capability split is shown.

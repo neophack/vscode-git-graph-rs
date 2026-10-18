@@ -18,6 +18,9 @@
  */
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import { bootView } from './webviewHarness.mjs';
 
@@ -251,6 +254,21 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 		await h.pump();
 		h.viewElem.dispatchEvent(new h.window.Event('scroll'));
 		assert.ok(!scroller.classList.contains('visible'), 'the wide layout never shows it');
+	});
+
+	it('hides the view\'s native scrollbar in the mobile layout — the fast scroller is the one indicator (no two bars while scrolling)', () => {
+		// jsdom applies no CSS, so the rule is asserted on the stylesheet the packer ships
+		const sheet = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'styles', 'mobile.css'), 'utf8');
+		const viewRule = sheet.match(/body\.mobileMode #view\{[^}]*\}/);
+		assert.ok(viewRule !== null, 'a body.mobileMode #view rule block exists');
+		assert.match(viewRule[0], /scrollbar-width\s*:\s*none/, 'the standard scrollbar is hidden');
+		assert.match(viewRule[0], /-ms-overflow-style\s*:\s*none/, 'the legacy IE/Edge scrollbar is hidden');
+		const webkitRule = sheet.match(/body\.mobileMode #view::-webkit-scrollbar\s*\{[^}]*\}/);
+		assert.ok(webkitRule !== null, 'the WebKit/Chromium pseudo-element rule exists');
+		assert.match(webkitRule[0], /display\s*:\s*none/, 'the WebKit/Chromium scrollbar is hidden');
+		// The hiding is scoped: the wide layout (no body.mobileMode) keeps its native scrollbar
+		const withoutScoped = sheet.replace(/body\.mobileMode #view(\{|::-webkit-scrollbar\s*\{)[^}]*\}/g, '');
+		assert.ok(!/(^|[^.\w-])#view\s*\{[^}]*scrollbar-width/.test(withoutScoped), 'no unscoped #view rule hides the wide layout\'s scrollbar');
 	});
 
 	it('keeps long presses inert in the wide layout', async () => {

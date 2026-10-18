@@ -630,7 +630,21 @@ body.mobileMode #footer{
 
 /* ---------- Fast scroller (observeFastScroller) ----------
  * A thumb on the right edge while the list scrolls; dragging it scrubs through the whole history,
- * with a bubble naming the day and position of the commit at the top of the screen. */
+ * with a bubble naming the day and position of the commit at the top of the screen.
+ *
+ * The fast scroller IS the mobile scroll indicator, so the view's native scrollbar hides while
+ * the mobile layout is rendered: on a phone both appeared side by side while scrolling — the
+ * overlay bar flush to the edge and this thumb a few pixels in — reading as two scrollbars for
+ * one list (the 2026-10-18 report, Git Graph 远程手机模式滚动出现两个滚动条; the wide layout,
+ * where the thumb never exists, keeps the native bar). A list too short for the thumb (under
+ * six screens) simply shows none, the phone norm for directly touched lists. */
+body.mobileMode #view{
+	scrollbar-width:none;
+	-ms-overflow-style:none;
+}
+body.mobileMode #view::-webkit-scrollbar{
+	display:none;
+}
 
 body.mobileMode #fastScroller{
 	display:block;

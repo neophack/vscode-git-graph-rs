@@ -97,7 +97,8 @@ export function createVscodeStub(options = {}) {
 	const makeConfiguration = (section) => ({
 		get: (key, defaultValue) => Object.prototype.hasOwnProperty.call(settings, fullKey(section, key)) ? settings[fullKey(section, key)] : defaultValue,
 		has: (key) => Object.prototype.hasOwnProperty.call(settings, fullKey(section, key)),
-		inspect: () => undefined,
+		// VS Code's inspect always answers an object; an explicitly set value rides as globalValue
+		inspect: (key) => ({ key: fullKey(section, key), globalValue: Object.prototype.hasOwnProperty.call(settings, fullKey(section, key)) ? settings[fullKey(section, key)] : undefined }),
 		update: (key, value) => { record('configuration.update', section, key, value); settings[fullKey(section, key)] = value; return Promise.resolve(); }
 	});
 
@@ -125,6 +126,7 @@ export function createVscodeStub(options = {}) {
 		ProgressLocation: { Notification: 15, Window: 10 },
 		env: {
 			appName: 'Visual Studio Code', language: options.language ?? 'en',
+			uriScheme: options.uriScheme ?? 'vscode',
 			clipboard: { writeText: answer('clipboard.writeText') },
 			openExternal: answer('env.openExternal')
 		},
