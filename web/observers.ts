@@ -366,8 +366,23 @@ function observeViewScroll(view: GitGraphView) {
 
 		const scrollTop = view.viewElem.scrollTop;
 
+		// Track the scroll velocity for the windowed render's direction-aware lead (see
+		// GitGraphView.getScrollLeadRows)
+		view.recordScrollMotion(scrollTop);
+
 		// Windowed rendering: re-render the visible commit rows (and the graph vertices) around the
 		// new scroll position, coalesced into one update per animation frame
+		if (view.viewportOutsideRenderedWindow()) {
+			// A jump already carried the viewport past the rendered rows (a fast fling, a scrollbar
+			// drag): the browser paints the newly exposed region from the DOM as it is, so the rows
+			// must exist NOW - waiting for the next animation frame paints the empty spacers first
+			// (the "unloaded content" flash of a fast scroll)
+			if (virtualRafId !== null) {
+				cancelAnimationFrame(virtualRafId);
+				virtualRafId = null;
+			}
+			view.updateVirtualWindow();
+		}
 		if (virtualRafId !== null) cancelAnimationFrame(virtualRafId);
 		virtualRafId = requestAnimationFrame(() => {
 			virtualRafId = null;

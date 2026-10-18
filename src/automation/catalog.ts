@@ -378,15 +378,20 @@ const SHOW_ALL_RESTORE_STEPS: readonly UiStep[] = [
 ];
 
 /**
- * A UI step that scrolls the commit table down until the row carrying `selector` renders
- * (windowed rendering keeps only the viewport rows in the DOM), then resolves. Starts from the
+ * A UI step that scrolls the commit table down until the row carrying `selector` is VISIBLE IN
+ * THE VIEWPORT, then resolves. Windowed rendering keeps only the viewport rows in the DOM - and
+ * the scroll velocity lead renders rows BELOW the viewport as well, so "rendered" alone can
+ * resolve a step early and the row can drop out of the window again once the lead decays;
+ * requiring visibility keeps the row on screen for the steps that follow. A layout-less host
+ * (jsdom reports every rect as zero) cannot measure visibility: the fallback centres the scroll
+ * on the row's commit index instead, which places it inside the tight window. Starts from the
  * top — a preceding checkout or reveal may have scrolled the view deep — and scales its stride
  * to the table's full scroll height, so any depth within the loaded page is covered in the same
  * bounded number of attempts; gives up after ~50 attempts.
  */
 const scrollUntilVisibleStep = (selector: string): UiStep => ({
 	op: 'eval',
-	expr: '(function(){return new Promise(function(resolve,reject){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));var attempt=0;var step=function(){if(document.querySelector(' + JSON.stringify(selector) + '))return resolve("found");var max=v.scrollHeight-v.clientHeight;var stride=Math.max(20*24,Math.ceil(max/40));if(attempt++>50)return reject(new Error("row never rendered: ' + selector.replace(/"/g, '') + '"));if(max>0){v.scrollTop=Math.min(max,stride*attempt);v.dispatchEvent(new Event("scroll"));}setTimeout(step,120);};setTimeout(step,150);});})()'
+	expr: '(function(){return new Promise(function(resolve,reject){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));var attempt=0;var visible=function(){var el=document.querySelector(' + JSON.stringify(selector) + ');if(el===null)return false;var r=el.getBoundingClientRect();if(r.top===0&&r.bottom===0&&r.left===0&&r.right===0){var tr=el.closest?el.closest("tr"):null;if(tr&&tr.dataset&&/^\\d+$/.test(tr.dataset.id)){var id=parseInt(tr.dataset.id,10);v.scrollTop=Math.max(0,96+id*24-(v.clientHeight||600)/2);v.dispatchEvent(new Event("scroll"));}return true;}return r.bottom>0&&r.top<window.innerHeight;};var step=function(){if(visible())return resolve("found");var max=v.scrollHeight-v.clientHeight;var stride=Math.max(20*24,Math.ceil(max/40));if(attempt++>50)return reject(new Error("row never rendered: ' + selector.replace(/"/g, '') + '"));if(max>0){v.scrollTop=Math.min(max,stride*attempt);v.dispatchEvent(new Event("scroll"));}setTimeout(step,120);};setTimeout(step,150);});})()'
 });
 
 /**

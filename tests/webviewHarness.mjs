@@ -331,7 +331,12 @@ export async function bootView(total, options = {}) {
 	const scrollTo = async (row) => {
 		scrollTopValue = row * ROW_HEIGHT;
 		viewElem.dispatchEvent(new window.Event('scroll'));
-		await new Promise((resolve) => setTimeout(resolve, 60)); // let the rAF-debounced window update run
+		/* Let the rAF-debounced window update run AND the scroll velocity lead decay away
+		 * (VIRTUAL_LEAD_DECAY_MS is 250 in the view, and the lead re-tighten timer fires 60ms
+		 * later): the one-jump scrollTo reads as a fast scroll, and the tests capturing the
+		 * rendered rows right afterwards expect the settled tight window, not the
+		 * motion-extended one. The generous margin absorbs a busy event loop. */
+		await new Promise((resolve) => setTimeout(resolve, 500));
 	};
 
 	await pump();

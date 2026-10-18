@@ -79,6 +79,24 @@ class GitGraphView {
 	 */
 	private renderedRange: { start: number, end: number } | null = null;
 	/**
+	 * The viewport anchor captured just BEFORE a table-collapsing update (a hard refresh, an error
+	 * clearing the view) clears the rendered rows. Collapsing the table collapses the scroll height
+	 * with it, the browser clamps scrollTop to 0, and the anchor the next loadCommits would capture
+	 * live is then "at the very top" - pinning the view there even though the same commit list
+	 * reloads. This pre-collapse anchor is preferred over the live capture when the data renders
+	 * again; its hash lookup drops it naturally when the commits genuinely changed (a repository or
+	 * branch switch), which is exactly when a reset to the top is wanted. NULL => nothing pending.
+	 */
+	private pendingViewportAnchor: { hash: string, offset: number, atTop: boolean } | null = null;
+	/**
+	 * The scroll motion tracker behind the windowed render's velocity lead: the last scroll
+	 * position/time pair and an exponentially smoothed velocity (px per ms, positive downwards).
+	 * Fast scrolling - a wheel fling, a scrollbar drag - moves the viewport further per frame than
+	 * the fixed row buffer covers, and the rows only appear after the main thread re-renders; the
+	 * lead extends the rendered window in the direction of travel so the exposure stays covered.
+	 */
+	private readonly scrollMotion = { lastTop: 0, lastTime: 0, velocity: 0 };
+	/**
 	 * The HTML each rendered row was built from, minus the parts that are patched in place (its
 	 * index, its lane colour, the checked-out marker). A row is rebuilt only when this changes, so
 	 * an update that does not affect a row leaves its DOM node completely alone. Held outside the
@@ -97,6 +115,12 @@ class GitGraphView {
 	/** The two-line commit row of the mobile layout: subject + meta line, above the 48px touch minimum. */
 	private static readonly MOBILE_ROW_HEIGHT = 52;
 	private static readonly VIRTUAL_ROW_BUFFER = 10;
+	/** The velocity lead's cap, in rows (~2 viewports at the default row height). */
+	private static readonly VIRTUAL_ROW_MAX_LEAD = 50;
+	/** The scroll speed (px/ms) at which the velocity lead saturates: 4 px/ms = 4000 px/s. */
+	private static readonly VIRTUAL_LEAD_FULL_SPEED = 4;
+	/** How long (ms) after the last scroll event the lead keeps decaying before it is gone. */
+	private static readonly VIRTUAL_LEAD_DECAY_MS = 250;
 
 	/**
 	 * The scroll position saved before a webview reload, to be re-applied after the repository's
@@ -192,6 +216,9 @@ class GitGraphView {
 		this.showRemoteBranchesElem = <HTMLInputElement>document.getElementById('showRemoteBranchesCheckbox')!;
 		this.showRemoteBranchesElem.addEventListener('change', () => {
 			this.saveRepoStateValue(this.currentRepo, 'showRemoteBranchesV2', this.showRemoteBranchesElem.checked ? GG.BooleanOverride.Enabled : GG.BooleanOverride.Disabled);
+			// The hard refresh clears the table while the commit query stays the same: keep the
+			// reading position (see the refresh button's capture)
+			this.capturePendingViewportAnchor();
 			this.refresh(true);
 		});
 
@@ -201,6 +228,10 @@ class GitGraphView {
 		makeKeyboardActivatable(this.refreshBtnElem);
 		this.refreshBtnElem.addEventListener('click', () => {
 			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
+				// The hard refresh below clears the table (the scroll height collapses with it, and
+				// the browser clamps scrollTop to 0): remember where the user was reading, so the
+				// reloaded same-query list renders back around it instead of resetting to the top
+				this.capturePendingViewportAnchor();
 				// An explicit refresh must also re-query the pull request states: prStatusRepos is a
 				// one-shot cache per repository, so without dropping the entry a request merged since
 				// the view loaded keeps its badge showing "open" until the webview is reloaded.
@@ -392,6 +423,10 @@ class GitGraphView {
 	private loadRepo(repo: string) {
 		this.currentRepo = repo;
 		this.currentRepoLoading = true;
+		// A repository switch/reload wants its own start position (the webview-reload path restores
+		// via restoreScrollTop): a pre-collapse anchor belonging to the previous repository must
+		// not leak into the first render of the new one
+		this.pendingViewportAnchor = null;
 		this.showRemoteBranchesElem.checked = getShowRemoteBranches(this.gitRepos[this.currentRepo].showRemoteBranchesV2);
 		this.maxCommits = this.config.initialLoadCommits;
 		this.gitConfig = null;
@@ -614,8 +649,14 @@ class GitGraphView {
 		// A background refresh reaching this full re-render changes the table's shape under the
 		// user (a commit inserted/removed anywhere, a rebase rewriting mid-history, the Gerrit
 		// states arriving). Anchor the rebuild on the commit the user is looking at, exactly like
-		// every other update path does.
-		const anchor = currentRepoLoading ? null : this.captureViewportAnchor();
+		// every other update path does. A pre-collapse anchor (a hard refresh or an error cleared
+		// the table while the user was scrolled into the history) outranks the live capture: the
+		// collapse already clamped scrollTop to 0, so the live capture would read "at the very
+		// top" and pin the view there once the same commits render again.
+		const anchorFromPending = this.pendingViewportAnchor !== null;
+		const anchor = currentRepoLoading ? null
+			: (anchorFromPending ? this.pendingViewportAnchor : this.captureViewportAnchor());
+		this.pendingViewportAnchor = null; // one shot: consumed here, or dropped with its hash lookup
 		this.currentRepoLoading = false;
 		this.moreCommitsAvailable = moreAvailable;
 		this.onlyFollowFirstParent = onlyFollowFirstParent;
@@ -660,7 +701,11 @@ class GitGraphView {
 		this.gerritStatesDirty = false;
 		// A full render has variable row heights, so its anchor can only be measured now that the
 		// rows are on screen. Windowed rendering already landed exactly, and this is a no-op.
-		if (this.renderedRange === null) this.applyViewportAnchor(anchor);
+		// A pre-collapse anchor additionally could not hold before the render: it was clamped away
+		// by the collapsed scroll height of the cleared table, so it is re-applied now that the
+		// reloaded rows give the view its full height back (absolute, never a delta - applying it
+		// twice cannot accumulate).
+		if (this.renderedRange === null || anchorFromPending) this.applyViewportAnchor(anchor);
 
 		if (currentRepoLoading) {
 			if (this.config.onRepoLoad.scrollToHead && this.commitHead !== null) {
@@ -977,6 +1022,11 @@ class GitGraphView {
 	}
 
 	private displayLoadDataError(message: string, reason: string) {
+		// A transient load failure (e.g. git index contention) clears the table while the user may
+		// be scrolled deep into the history: remember the reading position so the retry renders
+		// back around it - the collapse below already clamps the browser's scrollTop to 0, which
+		// without the captured anchor would pin the reloaded view to the top
+		this.capturePendingViewportAnchor();
 		this.clearCommits();
 		this.currentRepoRefreshState.inProgress = false;
 		this.loadViewTo = null;
@@ -1729,13 +1779,68 @@ class GitGraphView {
 	}
 
 	/**
-	 * Compute the range of commit rows to render (viewport plus a buffer).
+	 * Compute the range of commit rows to render (viewport plus a buffer). The base is exact -
+	 * `getRowTop(0)` is where row 0's top actually sits, sticky column headers included - and the
+	 * buffer is extended in the direction of travel by the scroll velocity lead, so a fast wheel
+	 * fling or scrollbar drag keeps the newly exposed region covered with rendered rows instead of
+	 * showing the spacers until the main thread catches up.
 	 */
 	private computeVisibleRange() {
 		const rowHeight = this.getRowHeight();
-		const start = Math.max(0, Math.floor((this.viewElem.scrollTop - this.getHeaderHeight()) / rowHeight) - GitGraphView.VIRTUAL_ROW_BUFFER);
+		let start = Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / rowHeight) - GitGraphView.VIRTUAL_ROW_BUFFER);
 		const count = Math.ceil(this.viewElem.clientHeight / rowHeight) + 1 + 2 * GitGraphView.VIRTUAL_ROW_BUFFER;
-		return { start: start, end: Math.min(this.commits.length, start + count) };
+		let end = Math.min(this.commits.length, start + count);
+		const lead = this.getScrollLeadRows();
+		if (lead > 0) {
+			if (this.scrollMotion.velocity >= 0) end = Math.min(this.commits.length, end + lead);
+			else start = Math.max(0, start - lead); // scrolling upwards: extend above (end keeps covering the viewport)
+		}
+		return { start: start, end: end };
+	}
+
+	/**
+	 * Record a scroll position from the scroll listener to keep the velocity estimate current.
+	 * Events closer than 8 ms apart are folded into the next one (browsers can fire several scroll
+	 * events per frame); after a pause of 200 ms the estimate restarts from the instantaneous
+	 * value, so a fresh gesture never inherits the previous one's direction.
+	 */
+	public recordScrollMotion(scrollTop: number) {
+		const now = performance.now();
+		const motion = this.scrollMotion;
+		const dt = now - motion.lastTime;
+		if (dt < 8) return;
+		const instantaneous = (scrollTop - motion.lastTop) / dt;
+		motion.velocity = dt > 200 ? instantaneous : motion.velocity * 0.6 + instantaneous * 0.4;
+		motion.lastTop = scrollTop;
+		motion.lastTime = now;
+	}
+
+	/**
+	 * How many rows the rendered window should extend beyond the fixed buffer in the direction of
+	 * travel: proportional to the (decaying) scroll speed, saturating at VIRTUAL_ROW_MAX_LEAD and
+	 * reaching zero VIRTUAL_LEAD_DECAY_MS after the last scroll event - an idle view keeps the
+	 * tight window, so ordinary re-renders stay cheap.
+	 */
+	private getScrollLeadRows() {
+		const idleMs = performance.now() - this.scrollMotion.lastTime;
+		if (idleMs > GitGraphView.VIRTUAL_LEAD_DECAY_MS) return 0;
+		const speed = Math.abs(this.scrollMotion.velocity) * Math.max(0, 1 - idleMs / GitGraphView.VIRTUAL_LEAD_DECAY_MS);
+		return Math.min(GitGraphView.VIRTUAL_ROW_MAX_LEAD, Math.ceil(speed / GitGraphView.VIRTUAL_LEAD_FULL_SPEED * GitGraphView.VIRTUAL_ROW_MAX_LEAD));
+	}
+
+	/**
+	 * Has a scroll jump already carried the viewport outside the rows the windowed render
+	 * currently holds? Re-rendering then cannot wait for the next animation frame: the browser
+	 * paints the newly exposed region from the DOM as it is, and the spacers standing in for the
+	 * unrendered rows are empty - the "blank content while scrolling" of a fast fling or a
+	 * scrollbar drag. The caller re-renders synchronously, inside the scroll event itself.
+	 */
+	public viewportOutsideRenderedWindow() {
+		if (this.renderedRange === null || !this.canVirtualize()) return false;
+		const base = this.getRowTop(0), rowHeight = this.getRowHeight();
+		const firstVisible = Math.floor((this.viewElem.scrollTop - base) / rowHeight);
+		const lastVisible = Math.ceil((this.viewElem.scrollTop + this.viewElem.clientHeight - base) / rowHeight);
+		return firstVisible < this.renderedRange.start || lastVisible > this.renderedRange.end;
 	}
 
 
@@ -1788,6 +1893,19 @@ class GitGraphView {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Capture the current viewport anchor as the pending one, for an update that is about to clear
+	 * the rendered table while the commit query stays the same (the refresh button, the "Show
+	 * Remote Branches" toggle, a load error awaiting retry). The collapse clamps the browser's
+	 * scrollTop to 0, so the anchor the eventual re-render would capture live is "at the very
+	 * top" - this pre-collapse capture is what lets loadCommits put the user back where they were
+	 * reading once the same commits render again. A null capture (nothing measurable) is stored
+	 * as nothing.
+	 */
+	private capturePendingViewportAnchor() {
+		this.pendingViewportAnchor = this.captureViewportAnchor();
 	}
 
 	/**
@@ -1965,6 +2083,23 @@ class GitGraphView {
 		if (range.start === this.renderedRange.start && range.end === this.renderedRange.end) return;
 		this.renderTable();
 		this.renderGraph();
+		if (this.getScrollLeadRows() > 0) this.scheduleLeadRetighten();
+	}
+
+	/** The pending one-shot timer that shrinks the window back once the scroll motion rests. */
+	private leadRetightenTimer: number | null = null;
+
+	/**
+	 * A lead-extended window must not stay extended forever: once the scrolling rests and the
+	 * velocity lead has decayed, re-render the tight window so ordinary updates stay cheap. Each
+	 * lead render re-arms this, so the shrink only ever runs after the motion truly ended.
+	 */
+	private scheduleLeadRetighten() {
+		if (this.leadRetightenTimer !== null) window.clearTimeout(this.leadRetightenTimer);
+		this.leadRetightenTimer = window.setTimeout(() => {
+			this.leadRetightenTimer = null;
+			if (this.renderedRange !== null && this.getScrollLeadRows() === 0) this.updateVirtualWindow();
+		}, GitGraphView.VIRTUAL_LEAD_DECAY_MS + 60);
 	}
 
 	/**
