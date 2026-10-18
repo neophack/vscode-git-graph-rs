@@ -836,10 +836,10 @@ body.mobileMode #cdvLoading{
 	color:var(--m-fg-2);
 }
 .cdvmTitle{
-	font-size:20px;
-	line-height:26px;
+	font-size:17px;
+	line-height:22px;
 	font-weight:700;
-	letter-spacing:-0.02em;
+	letter-spacing:-0.01em;
 	overflow-wrap:anywhere;
 }
 .cdvmByline{
@@ -1451,8 +1451,8 @@ body.mobileMode .gg-helpTooltipPopup{
 		font-size:15.5px;
 	}
 	body.mobileMode .cdvmTitle{
-		font-size:21px;
-		line-height:27px;
+		font-size:18px;
+		line-height:23px;
 	}
 }
 /* The smallest phones (320px): tighter app bar and rows */
