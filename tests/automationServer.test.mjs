@@ -37,7 +37,20 @@ test.before(async () => {
 test.after(async () => {
 	engine?.stop();
 	boot?.dispose();
-	fs.rmSync(repo, { recursive: true, force: true });
+	/* Disposing the panel does not wait for the extension's in-flight git spawns, which can
+	 * still hold the repository's pack files open: on Windows that makes rmSync fail with
+	 * EPERM (the same race the real-pipeline tests retry through). Retry for a while until
+	 * every git child has exited and the files are unlocked. */
+	const deadline = Date.now() + 120000;
+	for (;;) {
+		try {
+			fs.rmSync(repo, { recursive: true, force: true });
+			return;
+		} catch (error) {
+			if (Date.now() >= deadline) throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
 });
 
 test('status reports the loaded view and repository', async () => {
