@@ -2267,7 +2267,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			DISMISS_ERROR_DIALOG_STEP,
 			...SCROLL_TOP_STEPS
 		],
-		request: [{ command: 'deleteTag', repo: '{{repo}}', tagName: 'v1.0.0', deleteOnRemote: null }],
+		request: [{ command: 'deleteTag', repo: '{{repo}}', tagName: '{{annotatedTag}}', deleteOnRemote: null }],
 		expect: { responses: ['deleteTag'] },
 		// The UI path deletes the live {{annotatedTag}} (the entry above documents why); the state
 		// check holds the flow's own target, so the delete must really have removed it.
@@ -2327,7 +2327,7 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'waitForGone', selector: '.dialog', timeoutMs: 10000 },
 			...SCROLL_TOP_STEPS
 		],
-		request: [{ command: 'tagDetails', repo: '{{repo}}', tagName: 'v1.0.0', commitHash: '{{commit}}' }],
+		request: [{ command: 'tagDetails', repo: '{{repo}}', tagName: '{{annotatedTag}}', commitHash: '{{commit}}' }],
 		expect: { responses: ['tagDetails'] }
 	},
 
@@ -2855,7 +2855,10 @@ export const CATALOG: readonly AutomationAction[] = [
 		id: 'settings/gerrit-fetch-refs',
 		title: 'Fetch Gerrit change refs',
 		group: 'settings',
-		mutable: false,
+		// Mutable despite its read-only suite neighbours: the flip's disable direction deletes the
+		// repository's fetched Gerrit change refs (behind a confirmation), which must never run
+		// against a user repository — a failed re-fetch (offline) would leave Gerrit disabled.
+		mutable: true,
 		// The checkbox drives gerritSetFetchRefs (enabling marks the repository's Gerrit data
 		// stale, disabling deletes the fetched change refs behind a confirmation) and the response
 		// reloads the view either way. The flow snapshots the state, flips to the other side
@@ -3486,10 +3489,15 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Open File',
 		group: 'host',
 		mutable: false,
-		// The fixture's tracked files all live under src/module-NNN/; the host resolves the file
-		// against the working tree first, so the path only needs to exist on disk.
-		request: [{ command: 'openFile', repo: '{{repo}}', hash: '{{commit}}', filePath: 'src/module-000/file-00.ts' }],
-		expect: { responses: ['openFile'] }
+		requires: ['file'],
+		// Opens the context commit's file, as the Commit Details View's "Open File" does. The
+		// file need not exist in the working tree at HEAD (the fixture checks it out only on
+		// local-ahead — see cdv/file-open-file), so the refusal is the designed outcome, not a
+		// failure: without allowErrorOn this would false-fail the read suite on any repository
+		// whose context file is absent from the working tree.
+		request: [{ command: 'openFile', repo: '{{repo}}', hash: '{{commit}}', filePath: '{{file}}' }],
+		expect: { responses: ['openFile'] },
+		allowErrorOn: ['openFile']
 	},
 	{
 		id: 'host/open-log-file',

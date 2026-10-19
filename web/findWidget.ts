@@ -160,7 +160,12 @@ class FindWidget {
 	 */
 	public refresh() {
 		if (this.visible) {
-			this.findMatches(this.getCurrentHash(), false);
+			// Clear the existing highlights first: re-rendered tables reuse unchanged row elements
+			// (including the .findMatch spans inside them), so scanning without clearing would nest
+			// a new span inside each old one, which clearMatches (leaf-only) could never undo.
+			const hash = this.getCurrentHash();
+			this.clearMatches();
+			this.findMatches(hash, false);
 		}
 	}
 
@@ -203,7 +208,10 @@ class FindWidget {
 		if (!state.visible) return;
 		this.text = state.text;
 		this.show(false);
-		if (this.text !== '') this.findMatches(state.currentHash, false);
+		// During a webview reload this runs before the repository is loaded (currentRepo is still
+		// unset), so skip matching here — renderTable → refresh() re-runs the search once the
+		// commits have been rendered.
+		if (this.text !== '' && typeof this.view.currentRepo !== 'undefined') this.findMatches(state.currentHash, false);
 	}
 
 	/**

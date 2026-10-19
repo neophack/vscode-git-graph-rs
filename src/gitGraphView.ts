@@ -1694,7 +1694,7 @@ export class GitGraphView extends Disposable {
 	 * @param repo The path of the repository.
 	 * @returns The remote and its pull requests, or NULL when unavailable.
 	 */
-	private async fetchPullRequests(repo: string): Promise<{ name: string, url: string, prs: PullRequestInfo[] } | null> {
+	private async fetchPullRequests(repo: string): Promise<{ name: string, url: string, prs: PullRequestInfo[], complete: boolean } | null> {
 		if (!getConfig().pullRequests.enabled) return null;
 		try {
 			const remotes = parseGitRemoteVerbose(await this.dataSource.gitOutput(['remote', '-v'], repo, (stdout) => stdout));
@@ -1707,9 +1707,9 @@ export class GitGraphView extends Disposable {
 			if (prs === null) {
 				this.logger.log('Pull requests unavailable: the GitHub/GitLab request for ' + remote.url + ' failed');
 			} else {
-				this.logger.log('Pull requests of ' + remote.url + ': ' + prs.length + ' request(s)');
+				this.logger.log('Pull requests of ' + remote.url + ': ' + prs.prs.length + ' request(s)' + (prs.complete ? '' : ' (list truncated by the pagination cap)'));
 			}
-			return { name: remote.name, url: remote.url, prs: prs === null ? [] : prs };
+			return { name: remote.name, url: remote.url, prs: prs === null ? [] : prs.prs, complete: prs === null || prs.complete };
 		} catch (error) {
 			this.logger.log('Pull requests unavailable: ' + (error instanceof Error ? error.message : String(error)));
 			return null;
@@ -1724,12 +1724,12 @@ export class GitGraphView extends Disposable {
 	 * @param repo The path of the repository.
 	 * @param remote The remote whose pull requests were loaded (see fetchPullRequests).
 	 */
-	private async fetchPullRequestHeadRefs(repo: string, remote: { name: string, url: string, prs: PullRequestInfo[] }) {
+	private async fetchPullRequestHeadRefs(repo: string, remote: { name: string, url: string, prs: PullRequestInfo[], complete: boolean }) {
 		try {
 			const refspecs = buildPullRequestHeadRefspecs(remote.name, parseRemoteUrl(remote.url), remote.prs);
 			const existing = await this.dataSource.gitOutput(['for-each-ref', '--format=%(refname)', 'refs/remotes/' + remote.name + '/prs/'], repo, (stdout) => stdout.split('\n').filter((line) => line !== ''));
 			let pruned = 0;
-			for (const ref of findStalePullRequestRefs(existing, remote.name, remote.prs)) {
+			for (const ref of findStalePullRequestRefs(existing, remote.name, remote.prs, remote.complete)) {
 				await this.dataSource.gitOutput(['update-ref', '-d', ref], repo, () => null);
 				pruned++;
 			}

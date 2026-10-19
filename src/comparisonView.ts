@@ -69,7 +69,8 @@ export class CommitComparisonView extends Disposable {
 						diff = null;
 						error = errorMessage instanceof Error ? errorMessage.message : String(errorMessage);
 					}
-					this.panel.webview.postMessage({ command: 'fileDiff', index: msg.index, diff: diff, error: error });
+					// Posted through the shared poster: the tab can be closed while the diff is loading
+					this.hexPost()({ command: 'fileDiff', index: msg.index, diff: diff, error: error });
 				} else if (msg.command === 'viewDiff') {
 					const file = this.fileChanges[msg.index];
 					await viewDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath, file.type);

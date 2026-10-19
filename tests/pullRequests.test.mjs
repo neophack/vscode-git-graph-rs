@@ -242,6 +242,23 @@ describe('findStalePullRequestRefs', () => {
 	it('ignores refs outside the pull request namespace of the remote', () => {
 		assert.deepEqual(findStalePullRequestRefs(['refs/remotes/master/main', 'refs/heads/prs/1'], 'master', parseGithubPulls([githubPull(1, 'open')])), []);
 	});
+
+	it('keeps refs older than a fetch window that was truncated by the page cap', () => {
+		// Newest 100 fetched would be #104 and #103; a merged #2 predates the window and must
+		// survive (its ref is the only pointer to its fork commits in the graph)
+		const prs = parseGithubPulls([
+			githubPull(104, 'newest open'),
+			githubPull(103, 'in-window closed', { state: 'closed' })
+		]);
+		const existing = [
+			'refs/remotes/master/prs/104',
+			'refs/remotes/master/prs/103',
+			'refs/remotes/master/prs/2'
+		];
+		assert.deepEqual(findStalePullRequestRefs(existing, 'master', prs, false), [
+			'refs/remotes/master/prs/103'
+		]);
+	});
 });
 
 describe('fetchJson', () => {
@@ -275,9 +292,21 @@ describe('PullRequestDataSource', () => {
 		const source = new PullRequestDataSource(fetcher);
 		await source.getPullRequests('https://github.com/owner/repo.git');
 		assert.equal(fetcher.calls.length, 1);
-		assert.equal(fetcher.calls[0].url, 'https://api.github.com/repos/owner/repo/pulls?state=all&per_page=100');
+		assert.equal(fetcher.calls[0].url, 'https://api.github.com/repos/owner/repo/pulls?state=all&per_page=100&page=1');
 		assert.equal(fetcher.calls[0].headers['Accept'], 'application/vnd.github+json');
 		assert.ok(fetcher.calls[0].timeoutMs > 0);
+	});
+
+	it('paginates until a short page and reports the list as complete', async () => {
+		const fullPage = [];
+		for (let number = 1; number <= 100; number++) fullPage.push(githubPull(number, 'pr ' + number));
+		const fetcher = recordingFetcher([fullPage, [githubPull(101, 'the tail')]]);
+		const source = new PullRequestDataSource(fetcher);
+		const result = await source.getPullRequests('https://github.com/owner/repo.git');
+		assert.equal(fetcher.calls.length, 2);
+		assert.equal(fetcher.calls[1].url, 'https://api.github.com/repos/owner/repo/pulls?state=all&per_page=100&page=2');
+		assert.equal(result.prs.length, 101);
+		assert.equal(result.complete, true);
 	});
 
 	it('authenticates with GITHUB_TOKEN when it is set', async () => {
@@ -299,7 +328,7 @@ describe('PullRequestDataSource', () => {
 		try {
 			const fetcher = recordingFetcher([[]]);
 			await new PullRequestDataSource(fetcher).getPullRequests('https://gitlab.com/group/sub/repo.git');
-			assert.equal(fetcher.calls[0].url, 'https://gitlab.com/api/v4/projects/group%2Fsub%2Frepo/merge_requests?state=all&per_page=100');
+			assert.equal(fetcher.calls[0].url, 'https://gitlab.com/api/v4/projects/group%2Fsub%2Frepo/merge_requests?state=all&per_page=100&page=1');
 			assert.equal(fetcher.calls[0].headers['PRIVATE-TOKEN'], 'gl-token');
 		} finally {
 			if (previous === undefined) delete process.env.GITLAB_TOKEN;

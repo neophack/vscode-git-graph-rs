@@ -751,8 +751,8 @@ class Graph {
 				// If a child could be found on the same branch as the vertex
 				return Math.max(...children.filter(child => child !== childOnSameBranch).map((child) => child.id));
 			} else {
-				// No child could be found on the same branch as the vertex
-				const childIndexes = children.map((child) => child.id).sort();
+					// No child could be found on the same branch as the vertex
+					const childIndexes = children.map((child) => child.id).sort((a, b) => a - b);
 				return childIndexes[childIndexes.length - 2];
 			}
 		} else if (children.length === 1) {

@@ -6,6 +6,9 @@ import { PullRequestInfo, PullRequestState } from './types';
 /** The timeout of pull request API requests, in milliseconds. */
 const REQUEST_TIMEOUT_MS = 10000;
 
+/** The pull-request list is fetched 100 per page, at most this many pages. */
+const MAX_PAGES = 5;
+
 /** The hosting platforms supported by the pull request integration. */
 export type PullRequestPlatform = 'github' | 'gitlab';
 
@@ -149,15 +152,20 @@ export function buildPullRequestHeadRefspecs(remoteName: string, remote: ParsedR
  * @param existingRefs The existing refs under refs/remotes/<remote>/prs/ (as `refs/remotes/<remote>/prs/<number>`).
  * @param remoteName The name of the Git remote the refs were fetched from.
  * @param prs The pull requests of the remote (as returned by the parse functions).
+ * @param exhaustive Whether `prs` reaches the end of the remote's list. A list truncated by the
+ * pagination cap cannot vouch for requests older than the fetched window — pruning one of those
+ * would delete the only pointer to its (merged) fork commits in the graph, so such refs are kept.
  * @returns The refs to delete.
  */
-export function findStalePullRequestRefs(existingRefs: ReadonlyArray<string>, remoteName: string, prs: ReadonlyArray<PullRequestInfo>): string[] {
+export function findStalePullRequestRefs(existingRefs: ReadonlyArray<string>, remoteName: string, prs: ReadonlyArray<PullRequestInfo>, exhaustive: boolean = true): string[] {
 	const openOrMerged = new Set(prs.filter((pr) => pr.state === 'open' || pr.state === 'draft' || pr.state === 'merged').map((pr) => String(pr.number)));
+	const oldestJudged = exhaustive ? 0 : prs.reduce((oldest, pr) => Math.min(oldest, pr.number), Infinity);
 	const prefix = 'refs/remotes/' + remoteName + '/prs/';
 	const stale: string[] = [];
 	for (const ref of existingRefs) {
 		const number = ref.startsWith(prefix) ? ref.substring(prefix.length) : '';
-		if (number !== '' && !openOrMerged.has(number)) stale.push(ref);
+		if (number === '' || parseInt(number, 10) < oldestJudged) continue;
+		if (!openOrMerged.has(number)) stale.push(ref);
 	}
 	return stale;
 }
@@ -266,9 +274,10 @@ export class PullRequestDataSource {
 	/**
 	 * Get the pull/merge requests of a remote repository.
 	 * @param remoteUrl The URL of the Git remote.
-	 * @returns The pull requests, or NULL if the platform isn't supported or the request failed.
+	 * @returns The pull requests and whether the fetch reached the end of the remote's list, or
+	 * NULL if the platform isn't supported or the request failed.
 	 */
-	public async getPullRequests(remoteUrl: string): Promise<PullRequestInfo[] | null> {
+	public async getPullRequests(remoteUrl: string): Promise<{ prs: PullRequestInfo[], complete: boolean } | null> {
 		const remote = parseRemoteUrl(remoteUrl);
 		if (remote === null) return null;
 		try {
@@ -276,7 +285,7 @@ export class PullRequestDataSource {
 				const token = process.env.GITHUB_TOKEN;
 				const headers: { [name: string]: string } = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'git-graph-rs' };
 				if (token) headers['Authorization'] = 'Bearer ' + token;
-				return parseGithubPulls(await this.fetchJson(remote.apiBase + '/repos/' + remote.owner + '/' + remote.repo + '/pulls?state=all&per_page=100', headers, REQUEST_TIMEOUT_MS));
+				return await this.fetchAllPages(remote.apiBase + '/repos/' + remote.owner + '/' + remote.repo + '/pulls?state=all&per_page=100', headers, parseGithubPulls);
 			}
 			const token = process.env.GITLAB_TOKEN;
 			const headers: { [name: string]: string } = { 'User-Agent': 'git-graph-rs' };
@@ -284,9 +293,29 @@ export class PullRequestDataSource {
 			// state=all like GitHub: a merged or closed request must stay in the list, or the refs
 			// of merged requests would be pruned by findStalePullRequestRefs (which keeps them
 			// deliberately, so their commits stay in the graph)
-			return parseGitlabMergeRequests(await this.fetchJson(remote.apiBase + '/projects/' + encodeURIComponent(remote.repo) + '/merge_requests?state=all&per_page=100', headers, REQUEST_TIMEOUT_MS));
+			return await this.fetchAllPages(remote.apiBase + '/projects/' + encodeURIComponent(remote.repo) + '/merge_requests?state=all&per_page=100', headers, parseGitlabMergeRequests);
 		} catch (_) {
 			return null; // silent degradation (e.g. anonymous access to a private repository, or no network)
+		}
+	}
+
+	/**
+	 * Fetch a pull-request list page by page (both APIs answer newest-first, 100 per page).
+	 * @param url The list URL of its first page (`per_page=100` included).
+	 * @param headers The request headers.
+	 * @param parse The platform's parser for the accumulated raw items.
+	 * @returns The parsed pull requests and whether the fetch reached the list's end — a list cut
+	 * off by the page cap must not drive ref pruning (it would delete refs it never saw).
+	 */
+	private async fetchAllPages(url: string, headers: { [name: string]: string }, parse: (items: ReadonlyArray<unknown>) => PullRequestInfo[]): Promise<{ prs: PullRequestInfo[], complete: boolean }> {
+		// The page cap bounds both the refresh's latency and the API rate limit it costs
+		// (anonymous GitHub allows 60 requests per hour).
+		const items: unknown[] = [];
+		for (let page = 1; ; page++) {
+			const batch = await this.fetchJson(url + '&page=' + page, headers, REQUEST_TIMEOUT_MS);
+			if (!Array.isArray(batch) || batch.length === 0) return { prs: parse(items), complete: true };
+			items.push(...batch);
+			if (batch.length < 100 || page >= MAX_PAGES) return { prs: parse(items), complete: batch.length < 100 };
 		}
 	}
 }

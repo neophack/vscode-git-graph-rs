@@ -38,7 +38,12 @@ export class AskpassManager extends Disposable {
 		this.server = http.createServer((req, res) => this.onRequest(req, res));
 		try {
 			this.server.listen(this.ipcHandlePath);
-			this.server.on('error', () => { });
+			// `listen` fails asynchronously, so this handler (not the try/catch) is what sees a
+			// bind failure — with `enabled` left true, git would be handed an askpass script that
+			// cannot connect and every credential prompt would fail with git's raw error
+			this.server.on('error', () => {
+				this.enabled = false;
+			});
 		} catch (err) {
 			this.enabled = false;
 		}

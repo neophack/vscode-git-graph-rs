@@ -21,10 +21,9 @@ import {
 	isSafeRefName,
 	isSafeStashSelector,
 	isValidCommitHash,
-	quoteShellArg,
 } from './utils/git';
 import { getPathFromUri, pathWithTrailingSlash, realpath } from './utils/paths';
-import { openGitTerminal, resolveSpawnOutput } from './utils/childProcess';
+import { detectTerminalShellKind, openGitTerminal, quoteForShell, resolveSpawnOutput } from './utils/childProcess';
 import { showErrorMessage } from './utils/actions';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -803,6 +802,11 @@ export class DataSource extends Disposable {
 	 * @returns The comparison details.
 	 */
 	public getCommitComparison(repo: string, fromHash: string, toHash: string): Promise<GitCommitComparisonData> {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(
+			['fromHash', fromHash === UNCOMMITTED ? null : fromHash, 'hash'],
+			['toHash', toHash === UNCOMMITTED ? null : toHash, 'hash']
+		);
+		if (unsafeArgs !== null) return Promise.resolve({ fileChanges: [], error: unsafeArgs });
 		return this.backend.compareCommits(repo, fromHash, toHash === UNCOMMITTED ? '' : toHash).then((fileChanges) => {
 			return { fileChanges: fileChanges as unknown as GitFileChange[], error: null };
 		}, (errorMessage) => {
@@ -823,6 +827,11 @@ export class DataSource extends Disposable {
 	 * @returns The counts, keyed by path; a binary file reports null counts.
 	 */
 	public getCommitFileCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<GitCommitFileCountsData> {
+		const unsafeArgs = DataSource.checkUnsafeGitArgs(
+			['from', from, 'hash'],
+			['to', to === UNCOMMITTED ? null : to, 'hash']
+		);
+		if (unsafeArgs !== null) return Promise.resolve({ counts: {}, error: unsafeArgs });
 		return this.backend.getLineCounts(repo, from, to, paths).then((counts) => {
 			return { counts: counts as { [path: string]: GitLineCounts }, error: null };
 		}, (errorMessage) => {
@@ -1636,11 +1645,21 @@ export class DataSource extends Disposable {
 		if (unsafeArgs !== null) return Promise.resolve(unsafeArgs);
 
 		if (interactive) {
-			// The object is safely quoted so that it cannot escape the argument in the shell
-			// command that is sent to the integrated terminal.
+			// The object is safely quoted for the shell of the integrated terminal, so that it
+			// cannot escape the argument in the command sent to it (POSIX single-quote rules
+			// would have allowed a branch containing `&` to inject commands on cmd.exe).
+			let terminalObj: string;
+			if (actionOn === RebaseActionOn.Branch) {
+				const quoted = quoteForShell(obj, detectTerminalShellKind());
+				if (quoted === null) return Promise.resolve(t('unsafeForTerminal', obj));
+				terminalObj = quoted;
+			} else {
+				// A commit hash (validated above) can never contain shell metacharacters
+				terminalObj = obj;
+			}
 			return this.openGitTerminal(
 				repo,
-				'rebase --interactive ' + (autosquash ? '--autosquash ' : '') + (getConfig().signCommits ? '-S ' : '') + (actionOn === RebaseActionOn.Branch ? quoteShellArg(obj) : obj),
+				'rebase --interactive ' + (autosquash ? '--autosquash ' : '') + (getConfig().signCommits ? '-S ' : '') + terminalObj,
 				'Rebase on "' + (actionOn === RebaseActionOn.Branch ? obj : abbrevCommit(obj)) + '"'
 			);
 		} else {
@@ -1923,10 +1942,13 @@ export class DataSource extends Disposable {
 			// over git's message file; when the author changes too, the todo instead gains an `exec` line after
 			// the commit's `pick`, amending it with the new author and message in one step. The author and the
 			// message file path reach that exec line through environment variables only - embedding them in the
-			// todo text would let a name containing `$` or a backtick be interpreted by the exec shell.
+			// todo text would let a name containing `$` or a backtick be interpreted by the exec shell. The
+			// author takes the same file route as the message (a `"` in it would break out of the exec line's
+			// quoting) and is read through a command substitution, whose result is never re-parsed for quotes.
 			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${Date.now()}.js`);
 			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${Date.now()}.js`);
 			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${Date.now()}.txt`);
+			const authorFile = path.join(os.tmpdir(), `gg-amend-author-${Date.now()}.txt`);
 			const node = `"${process.execPath}"`;
 			const extraEnv: { [key: string]: string } = {
 				GIT_SEQUENCE_EDITOR: `${node} "${seqEditorFile}" ${commitHash}`,
@@ -1936,7 +1958,7 @@ export class DataSource extends Disposable {
 				ELECTRON_RUN_AS_NODE: '1'
 			};
 			if (author !== null) {
-				extraEnv.GG_AMEND_AUTHOR = author;
+				extraEnv.GG_AMEND_AUTHOR_FILE = authorFile;
 				extraEnv.GG_AMEND_MESSAGE = messageFile;
 			}
 
@@ -1946,16 +1968,17 @@ export class DataSource extends Disposable {
 				// already written behind in the temp directory.
 				fs.writeFileSync(seqEditorFile, author === null
 					? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
-					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$GG_AMEND_AUTHOR\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
+					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
 				fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
 				fs.writeFileSync(messageFile, message);
+				if (author !== null) fs.writeFileSync(authorFile, author);
 				return await this._spawnGit(rebaseArgs, repo, () => null, false, extraEnv);
 			} catch (errorMessage) {
 				// Restore the repository to the pre-rebase state (and the autostashed working tree)
 				await this._spawnGit(['rebase', '--abort'], repo, () => null, true);
 				return errorMessage as ErrorInfo;
 			} finally {
-				for (const file of [seqEditorFile, msgEditorFile, messageFile]) fs.unlink(file, () => null);
+				for (const file of [seqEditorFile, msgEditorFile, messageFile, authorFile]) fs.unlink(file, () => null);
 			}
 		} catch (error) {
 			return error as ErrorInfo;

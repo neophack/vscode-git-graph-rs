@@ -73,6 +73,11 @@ export interface DialogAutoAnswer {
 }
 
 export class HostBridge {
+	/** The listener currently installed as the host-message tap (a newer subscriber replaces an older one). */
+	private hostMessageListener: ((msg: ResponseMessage) => void) | null = null;
+	/** The listener currently installed for shim results. */
+	private shimResultListener: ((result: unknown) => void) | null = null;
+
 	/** Is a Git Graph view currently open? */
 	public hasView(): boolean {
 		return GitGraphView.currentPanel !== undefined;
@@ -112,18 +117,27 @@ export class HostBridge {
 	 * no view is open yet (messages simply don't flow until one opens).
 	 */
 	public onHostMessage(listener: (msg: ResponseMessage) => void): () => void {
+		this.hostMessageListener = listener;
 		GitGraphView.setAutomationTap(listener);
 		return () => {
-			// Only clear the tap if it is still ours (a newer subscriber would have replaced it).
-			GitGraphView.setAutomationTap(null);
+			// Only clear the tap if it is still ours (a newer subscriber would have replaced it)
+			if (this.hostMessageListener === listener) {
+				this.hostMessageListener = null;
+				GitGraphView.setAutomationTap(null);
+			}
 		};
 	}
 
 	/** Observe shim results posted from the page. Returns the unsubscribe function. */
 	public onShimResult(listener: (result: ShimResult) => void): () => void {
-		GitGraphView.setAutomationShimListener((result) => listener(result as ShimResult));
+		const wrapped = (result: unknown) => listener(result as ShimResult);
+		this.shimResultListener = wrapped;
+		GitGraphView.setAutomationShimListener(wrapped);
 		return () => {
-			GitGraphView.setAutomationShimListener(null);
+			if (this.shimResultListener === wrapped) {
+				this.shimResultListener = null;
+				GitGraphView.setAutomationShimListener(null);
+			}
 		};
 	}
 

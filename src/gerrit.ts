@@ -835,7 +835,7 @@ export class GerritDataSource {
 				results.set(change, null); // meta ref not available locally
 				continue;
 			}
-			const cached = this.getCachedMeta(repo + '|' + metaRef + '|' + hash);
+			const cached = this.getCachedMeta(this.metaCacheKey(repo, metaRef, hash, urlBase));
 			if (cached !== undefined) {
 				results.set(change, cached);
 			} else {
@@ -853,6 +853,15 @@ export class GerritDataSource {
 	}
 
 	/**
+	 * The meta cache key: the meta ref's hash pins the parsed history, and the URL base is part
+	 * of the key because the cached state carries the change's web URL — a base that changed
+	 * mid-session (remote URL edited, previously unset) must not be served the stale entry.
+	 */
+	private metaCacheKey(repo: string, metaRef: string, hash: string, urlBase: string | null) {
+		return repo + '|' + metaRef + '|' + hash + '|' + (urlBase === null ? '' : urlBase);
+	}
+
+	/**
 	 * Parse the NoteDb meta history of a change into its state (cached by the meta ref's hash).
 	 * @param repo The repository.
 	 * @param change The change number.
@@ -861,7 +870,7 @@ export class GerritDataSource {
 	 * @param urlBase The base URL of the Gerrit instance (or NULL).
 	 */
 	private async parseMetaLog(repo: string, change: number, metaRef: string, hash: string, urlBase: string | null) {
-		const cacheKey = repo + '|' + metaRef + '|' + hash;
+		const cacheKey = this.metaCacheKey(repo, metaRef, hash, urlBase);
 		const cached = this.getCachedMeta(cacheKey);
 		if (cached !== undefined) return cached;
 

@@ -123,7 +123,13 @@ describe('general helpers', () => {
 	});
 
 	it('quotes shell arguments and encodes JSON for inline scripts', () => {
-		assert.equal(utils.quoteShellArg("it's"), "'it'\\''s'");
+		assert.equal(utils.quoteForShell("it's", 'posix'), "'it'\\''s'");
+		assert.equal(utils.quoteForShell('a & b; c', 'posix'), "'a & b; c'");
+		assert.equal(utils.quoteForShell('a & b; c', 'cmd'), '"a & b; c"');
+		assert.equal(utils.quoteForShell('a"b', 'cmd'), null);
+		assert.equal(utils.quoteForShell('a%b', 'cmd'), null);
+		assert.equal(utils.quoteForShell('a$b`c"d', 'powershell'), '"a`$b``c`"d"');
+		assert.equal(utils.quoteForShell("it's", 'fish'), "'it\\'s'");
 		assert.equal(utils.encodeJsonForInlineScript('{"a":"</script><!--&\u2028\u2029"}'), '{"a":"\\u003C/script\\u003E\\u003C!--\\u0026\\u2028\\u2029"}');
 	});
 

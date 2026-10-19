@@ -102,8 +102,10 @@ class Config {
 	get customBranchGlobPatterns(): CustomBranchGlobPattern[] {
 		let inPatterns = this.config.get('customBranchGlobPatterns', <any[]>[]);
 		let outPatterns: CustomBranchGlobPattern[] = [];
+		if (!Array.isArray(inPatterns)) return outPatterns;
 		for (let i = 0; i < inPatterns.length; i++) {
-			if (typeof inPatterns[i].name === 'string' && typeof inPatterns[i].glob === 'string') {
+			if (typeof inPatterns[i] === 'object' && inPatterns[i] !== null
+				&& typeof inPatterns[i].name === 'string' && typeof inPatterns[i].glob === 'string') {
 				outPatterns.push({ name: inPatterns[i].name, glob: '--glob=' + inPatterns[i].glob });
 			}
 		}
@@ -116,8 +118,10 @@ class Config {
 	get customEmojiShortcodeMappings(): CustomEmojiShortcodeMapping[] {
 		let inMappings = this.config.get('customEmojiShortcodeMappings', <any[]>[]);
 		let outMappings: CustomEmojiShortcodeMapping[] = [];
+		if (!Array.isArray(inMappings)) return outMappings;
 		for (let i = 0; i < inMappings.length; i++) {
-			if (typeof inMappings[i].shortcode === 'string' && typeof inMappings[i].emoji === 'string') {
+			if (typeof inMappings[i] === 'object' && inMappings[i] !== null
+				&& typeof inMappings[i].shortcode === 'string' && typeof inMappings[i].emoji === 'string') {
 				outMappings.push({ shortcode: inMappings[i].shortcode, emoji: inMappings[i].emoji });
 			}
 		}
@@ -165,7 +169,7 @@ class Config {
 		let providers = this.config.get('customPullRequestProviders', <any[]>[]);
 		return Array.isArray(providers)
 			? providers
-				.filter((provider) => typeof provider.name === 'string' && typeof provider.templateUrl === 'string')
+				.filter((provider) => typeof provider === 'object' && provider !== null && typeof provider.name === 'string' && typeof provider.templateUrl === 'string')
 				.map((provider) => ({ name: provider.name, templateUrl: provider.templateUrl }))
 			: [];
 	}

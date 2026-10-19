@@ -15,7 +15,9 @@ export function abbrevCommit(commitHash: string) {
 	return commitHash.substring(0, 8);
 }
 
-const COMMIT_HASH_REGEX = /^[0-9a-fA-F]{4,40}$/;
+// 4–64 hex characters: full hashes of SHA-1 (40) and SHA-256 (64) repositories, and
+// abbreviations of either.
+const COMMIT_HASH_REGEX = /^[0-9a-fA-F]{4,64}$/;
 
 /**
  * Check whether a commit hash received from an untrusted source (e.g. the webview) is a
@@ -42,15 +44,6 @@ export function isSafeRefName(name: string): boolean {
 	// Reject ASCII control characters (including newlines), and characters disallowed in ref names
 	if (/[\u0000-\u001f\u007f]/.test(name)) return false;
 	return ['..', '@{', '\\', '^', ':', '?', '[', '*'].every((seq) => name.indexOf(seq) === -1);
-}
-
-/**
- * Quote a value so it can be safely embedded as a single-quoted argument in a POSIX shell command.
- * @param value The value to quote.
- * @returns The quoted value.
- */
-export function quoteShellArg(value: string): string {
-	return '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
 }
 
 const STASH_SELECTOR_REGEX = /^refs\/stash@\{\d+\}$/;

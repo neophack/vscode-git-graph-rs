@@ -229,13 +229,16 @@ impl Engine {
         if revision == WORKING_TREE {
             let bytes = std::fs::read(self.repo.root().join(path))
                 .map_err(|e| crate::Error::git(format!("{path}: {e}")))?;
-            let binary = bytes[..bytes.len().min(8000)].contains(&0);
+            // The same contract blob::commit_file honors: a file that is binary OR not valid
+            // UTF-8 comes back with `contents: None` (a lossy decode would show mojibake text
+            // where the committed side of the same bytes reports "binary").
+            let contents = String::from_utf8(bytes).ok();
+            let binary = match &contents {
+                None => true,
+                Some(text) => text.as_bytes()[..text.len().min(8000)].contains(&0),
+            };
             return Ok(CommitFile {
-                contents: if binary {
-                    None
-                } else {
-                    Some(String::from_utf8_lossy(&bytes).into_owned())
-                },
+                contents: if binary { None } else { contents },
                 binary,
             });
         }

@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { bootRealView, createRepo, sleep } from './webviewRealPipelineHarness.mjs';
 
@@ -18,6 +18,10 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const repo = path.join(os.tmpdir(), 'gg-automation-server-test');
 let boot, engine;
+
+// The same compiled module instance server.js reads, so a test-only action pushed here is
+// visible to engine.run (and removed again in the test's finally).
+const { CATALOG } = await import(pathToFileURL(path.join(rootDir, 'out', 'automation', 'catalog.js')).href);
 
 // Minimal logger: the assertions here read engine results, not log lines.
 const silentLogger = { log() { }, logError() { } };
@@ -122,14 +126,31 @@ test('command mode captures the notification a refusal-only command raises (and 
 });
 
 test('an error-bearing expected response FAILS the run (the payload gate)', async () => {
-	// host/open-file requests the hardcoded fixture path 'src/module-000/file-00.ts', which this
-	// harness repository does not contain: the host still answers with the SAME response command
-	// carrying the git error in its payload. "A response arrived" must NOT count as success —
-	// the run has to fail with the host's own error text.
-	const outcome = await engine.run({ id: 'host/open-file', mode: 'request' });
-	assert.equal(outcome.ok, false);
-	assert.ok((outcome.error ?? '').includes('the host reported an error for "openFile"'), outcome.error);
-	assert.ok((outcome.error ?? '').length > 'the host reported an error for "openFile": '.length, 'the failure must carry the host\'s error text');
+	// A response that arrives carrying an error payload must FAIL the run even though the
+	// command itself was expected — "a response arrived" is not success. Driven with a
+	// test-only action (no requires to satisfy, and deliberately no allowErrorOn tolerance)
+	// whose request opens a file the harness repository does not contain: the host answers
+	// with the SAME response command carrying its error, and the run has to fail with the
+	// host's own text. (The catalogued host/open-file lists openFile in allowErrorOn — the
+	// working-tree refusal is a designed outcome there — so it cannot demonstrate the gate.)
+	const probe = {
+		id: 'test/payload-gate-probe',
+		title: 'Payload Gate Probe',
+		group: 'test',
+		mutable: false,
+		request: [{ command: 'openFile', repo: '{{repo}}', hash: '{{commit}}', filePath: 'no/such/file.txt' }],
+		expect: { responses: ['openFile'] }
+	};
+	CATALOG.push(probe);
+	try {
+		const outcome = await engine.run({ id: probe.id, mode: 'request' });
+		assert.equal(outcome.ok, false);
+		assert.ok((outcome.error ?? '').includes('the host reported an error for "openFile"'), outcome.error);
+		assert.ok((outcome.error ?? '').length > 'the host reported an error for "openFile": '.length, 'the failure must carry the host\'s error text');
+	} finally {
+		const index = CATALOG.indexOf(probe);
+		if (index > -1) CATALOG.splice(index, 1);
+	}
 });
 
 test('allowErrorOn accepts the designed refusal without weakening anything else', async () => {

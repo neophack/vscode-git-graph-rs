@@ -61,15 +61,22 @@ export class BufferedQueue<T> extends Disposable {
 	private async run() {
 		this.processing = true;
 		let changes = false;
-		// Process every queued item: the loop is guarded by the queue length (rather than the
-		// truthiness of the shifted item) so that falsy items (e.g. empty strings) aren't skipped
-		while (this.queue.length > 0) {
-			const item = this.queue.shift()!;
-			if (await this.onItem(item)) {
-				changes = true;
+		try {
+			// Process every queued item: the loop is guarded by the queue length (rather than the
+			// truthiness of the shifted item) so that falsy items (e.g. empty strings) aren't skipped
+			while (this.queue.length > 0) {
+				const item = this.queue.shift()!;
+				// A rejected onItem counts as "no change": letting it escape would leave `processing`
+				// set forever, silently dropping every future enqueue
+				try {
+					if (await this.onItem(item)) {
+						changes = true;
+					}
+				} catch (error) { }
 			}
+		} finally {
+			this.processing = false;
 		}
-		this.processing = false;
 		if (changes) this.onChanges();
 	}
 }

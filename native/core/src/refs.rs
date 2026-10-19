@@ -142,7 +142,7 @@ fn read_remote_refs(
     let mut remote_tags_to_peel: Vec<(usize, String)> = Vec::new();
 
     let platform = git.references().git_ctx("Could not read references")?;
-    for reference in platform
+    for mut reference in platform
         .prefixed("refs/remotes/")
         .git_ctx("Could not read remote branches")?
         .filter_map(std::result::Result::ok)
@@ -162,7 +162,18 @@ fn read_remote_refs(
         if !options.show_remote_heads && remote_ref.ends_with("/HEAD") {
             continue;
         }
-        let Some(hash) = direct_target(&reference) else {
+        let hash = match direct_target(&reference) {
+            Some(hash) => Some(hash),
+            None if options.show_remote_heads => {
+                // A symbolic `refs/remotes/<remote>/HEAD` aliases a branch that is listed in its
+                // own right — but the CLI backend lists it too (`git for-each-ref` resolves the
+                // symref), so with "Show Remote Heads" enabled it resolves here to keep the
+                // backends at parity; without the option it was skipped above anyway.
+                reference.peel_to_id().ok().map(|id| id.detach().to_string())
+            }
+            None => None,
+        };
+        let Some(hash) = hash else {
             continue;
         };
 

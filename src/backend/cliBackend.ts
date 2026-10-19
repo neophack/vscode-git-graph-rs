@@ -72,6 +72,9 @@ export class CliBackend implements GitBackend {
 	/** The whole-diff numstat counts of the last counts request, settled in batches. */
 	private numStatCache: { repo: string; base: string; to: string; counts: { [path: string]: GitLineCounts } } | null = null;
 
+	/** The resolved empty tree of each repository, keyed by repo path (its hash is format-dependent). */
+	private readonly emptyTrees = new Map<string, Promise<string>>();
+
 	constructor(private readonly gitPath: string = 'git') {}
 
 	/* ---------- Lifecycle ---------- */
@@ -261,7 +264,7 @@ export class CliBackend implements GitBackend {
 
 	public async getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
 		const details = await this.getCommitDetailsBase(repo, hash);
-		const from = details.parents.length > 0 ? hash + '^' : EMPTY_TREE;
+		const from = details.parents.length > 0 ? hash + '^' : await this.getEmptyTree(repo);
 		details.fileChanges = await this.getFileChanges(repo, from, hash);
 		return details;
 	}
@@ -278,8 +281,9 @@ export class CliBackend implements GitBackend {
 		// commit are listed as added - as `git status` lists them - rather than left out.
 		const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
 			.then((out) => out.trim() !== '', () => false);
+		const base = headExists ? 'HEAD' : await this.getEmptyTree(repo);
 		const [changes, status] = await Promise.all([
-			this.getFileChanges(repo, headExists ? 'HEAD' : EMPTY_TREE, ''),
+			this.getFileChanges(repo, base, ''),
 			this.getStatusFiles(repo)
 		]);
 		return {
@@ -336,7 +340,7 @@ export class CliBackend implements GitBackend {
 		const details = await this.getCommitDetailsBase(repo, hash);
 		details.fileChanges = await this.getFileChanges(repo, stash.baseHash, hash);
 		if (stash.untrackedFilesHash !== null) {
-			const untracked = await this.getFileChanges(repo, EMPTY_TREE, stash.untrackedFilesHash);
+			const untracked = await this.getFileChanges(repo, await this.getEmptyTree(repo), stash.untrackedFilesHash);
 			for (const change of untracked) {
 				if (change.type === GitFileStatus.Added) {
 					details.fileChanges.push({ ...change, type: GitFileStatus.Untracked });
@@ -368,7 +372,7 @@ export class CliBackend implements GitBackend {
 		if (base === null) {
 			// The commit's first parent — or the empty tree for a root commit, whose files then
 			// report as added rather than being unaccounted for.
-			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => EMPTY_TREE);
+			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => this.getEmptyTree(repo));
 		}
 
 		const counts = await this.numStatCounts(repo, base, to);
@@ -517,15 +521,15 @@ export class CliBackend implements GitBackend {
 	 */
 	public async getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
 		// A root commit has no first parent: git diff would fail on `hash^`, so the empty tree —
-		// whose hash is fixed by the object format — stands in as the base, exactly as
-		// `git show <root>` diffs against it. `core.quotepath=false` keeps non-ASCII paths raw in
+		// resolved per repository, since its hash depends on the object format — stands in as the
+		// base, exactly as `git show <root>` diffs against it. `core.quotepath=false` keeps non-ASCII paths raw in
 		// the headers instead of C-quoted octal escapes (a pathspec could not be used instead: it
 		// would exclude the old side of a rename and break its pairing), and the diff.*Prefix
 		// settings pin the `a/` and `b/` header prefixes the sections are matched by, which a
 		// repository's own configuration would otherwise be free to change.
 		const parent = await this.run(['rev-parse', '--verify', '--quiet', `${hash}^`], repo)
 			.then((out) => out.trim())
-			.catch(() => '4b825dc642cb6eb9a060e54bf8d69288fbee4904');
+			.catch(() => this.getEmptyTree(repo));
 		const out = await this.run([
 			'-c', 'core.quotepath=false', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false',
 			'-c', 'diff.srcPrefix=a/', '-c', 'diff.dstPrefix=b/',
@@ -579,14 +583,22 @@ export class CliBackend implements GitBackend {
 		);
 		const summaries: { [hash: string]: GitCommitSummary } = {};
 		for (const record of out.replace(/\x1e\s*$/, '').split('\x1e')) {
-			const parts = record.trim().split('\x1f');
-			if (parts.length === 5) {
-				summaries[parts[0]] = {
-					hash: parts[0],
-					author: parts[1],
-					email: parts[2],
-					date: parseInt(parts[3], 10),
-					message: parts[4].trim()
+			const text = record.trim();
+			// The message is the last field and may itself contain the unit separator, so the
+			// first four separators are located by index instead of splitting on every occurrence
+			// (as getCommitBodies does).
+			const sep1 = text.indexOf('\x1f');
+			const sep2 = sep1 > 0 ? text.indexOf('\x1f', sep1 + 1) : -1;
+			const sep3 = sep2 > 0 ? text.indexOf('\x1f', sep2 + 1) : -1;
+			const sep4 = sep3 > 0 ? text.indexOf('\x1f', sep3 + 1) : -1;
+			if (sep4 > 0) {
+				const hash = text.substring(0, sep1);
+				summaries[hash] = {
+					hash: hash,
+					author: text.substring(sep1 + 1, sep2),
+					email: text.substring(sep2 + 1, sep3),
+					date: parseInt(text.substring(sep3 + 1, sep4), 10),
+					message: text.substring(sep4 + 1).trim()
 				};
 			}
 		}
@@ -1236,6 +1248,30 @@ export class CliBackend implements GitBackend {
 		});
 	}
 
+	/**
+	 * The repository's empty tree, to diff a root commit (or an unborn `HEAD`) against "nothing".
+	 *
+	 * Its hash depends on the repository's object format: the historical constant is SHA-1 only
+	 * and fails to resolve on SHA-256 repositories, so the constant is verified per repository
+	 * (git resolves the empty tree intrinsically — no object needs to exist) and the SHA-256
+	 * constant substituted where it doesn't. Cached per repository: the object format is fixed
+	 * when the repository is created.
+	 */
+	private getEmptyTree(repo: string): Promise<string> {
+		let emptyTree = this.emptyTrees.get(repo);
+		if (emptyTree === undefined) {
+			emptyTree = this.run(['rev-parse', '--verify', '--quiet', EMPTY_TREE + '^{tree}'], repo)
+				.then(() => EMPTY_TREE)
+				.catch(() =>
+					this.run(['rev-parse', '--verify', '--quiet', EMPTY_TREE_SHA256 + '^{tree}'], repo)
+						.then(() => EMPTY_TREE_SHA256)
+						.catch(() => EMPTY_TREE)
+				);
+			this.emptyTrees.set(repo, emptyTree);
+		}
+		return emptyTree;
+	}
+
 	/** Run a signature verification command, retaining GnuPG status output on non-zero exits. */
 	private runRaw(args: ReadonlyArray<string>, cwd: string): Promise<string> {
 		return new Promise((resolve, reject) => {
@@ -1454,8 +1490,11 @@ function mergeStatusFiles(changes: ReadonlyArray<GitFileChange>,
 	return merged;
 }
 
-/** Git's hash for the empty tree, used to diff a root commit against "nothing". */
+/** Git's hash for the empty tree in a SHA-1 repository (the historical constant). */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/** Git's hash for the empty tree in a SHA-256 repository. */
+const EMPTY_TREE_SHA256 = '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321';
 
 function unique(values: ReadonlyArray<string>): string[] {
 	return Array.from(new Set(values));

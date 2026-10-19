@@ -229,7 +229,7 @@ class SettingsWidget {
 					const authorStr = escapeHtml(author.name + ' <' + author.email + '>');
 					repoHtml += '<tr class="lineAbove authorSwitchRow' + (i === activeAuthorIndex ? ' active' : '') + '" data-index="' + i + '" title="' + authorStr + '">' +
 						'<td class="leftWithEllipsis">' + authorStr + '</td>' +
-						'<td class="right">' + (i === activeAuthorIndex ? '<span class="authorCurrentBadge">' + strings.settingsCurrentAuthor + '</span>' : '<span class="authorSwitchSelect" title="' + escapeHtml(authorStr) + '">' + SVG_ICONS.check + '</span>') + '</td></tr>';
+						'<td class="right">' + (i === activeAuthorIndex ? '<span class="authorCurrentBadge">' + strings.settingsCurrentAuthor + '</span>' : '<span class="authorSwitchSelect" title="' + authorStr + '">' + SVG_ICONS.check + '</span>') + '</td></tr>';
 				});
 				repoHtml += '</table>';
 				if (customLocalIdentity) {

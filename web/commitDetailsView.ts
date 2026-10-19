@@ -343,9 +343,11 @@ function initialiseLineCounts(view: GitGraphView) {
 	if (commitOrder.to === UNCOMMITTED) {
 
 		// A comparison against the working tree reports no counts by design, so there is nothing
-		// to settle and no request to make.
+		// to settle and no request to make — pending stays null (counts inactive), which every
+		// scheduler and renderer treats as "no counts exist", instead of an empty set (which the
+		// schedulers would read as "counts active, nothing requested yet" and re-request per file).
 
-		state.pending = new Set<string>();
+		state.pending = null;
 
 		state.queue = [];
 

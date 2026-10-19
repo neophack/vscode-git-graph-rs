@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import { getConfig } from './config';
@@ -334,7 +335,12 @@ export class AvatarManager extends Disposable {
 				this.fetchFromGravatar(avatarRequest); // Fallback to Gravatar
 			});
 			res.on('error', onError);
-		}).on('error', onError);
+		}).on('error', onError)
+			// The timeout option only emits an event — without a listener a stalled connection is
+			// never torn down (and this avatar's queue slot was already consumed)
+			.on('timeout', function (this: http.ClientRequest) {
+				this.destroy(new Error('avatar request timed out'));
+			});
 	}
 
 	/**
@@ -414,7 +420,12 @@ export class AvatarManager extends Disposable {
 				this.fetchFromGravatar(avatarRequest); // Fallback to Gravatar
 			});
 			res.on('error', onError);
-		}).on('error', onError);
+		}).on('error', onError)
+			// The timeout option only emits an event — without a listener a stalled connection is
+			// never torn down (and this avatar's queue slot was already consumed)
+			.on('timeout', function (this: http.ClientRequest) {
+				this.destroy(new Error('avatar request timed out'));
+			});
 	}
 
 	/**
@@ -482,8 +493,13 @@ export class AvatarManager extends Disposable {
 						complete();
 					}
 				});
-				res.on('error', complete);
-			}).on('error', complete);
+				res.on('error', () => complete());
+			}).on('error', () => complete())
+				// The timeout option only emits an event — without a listener the request is never
+				// torn down, and a stalled connection would hold this avatar's queue slot forever
+				.on('timeout', function (this: http.ClientRequest) {
+					this.destroy(new Error('avatar request timed out'));
+				});
 		})).catch(() => null);
 	}
 

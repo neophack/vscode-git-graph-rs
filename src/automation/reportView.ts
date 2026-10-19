@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { SuiteReport } from './suiteRunner';
@@ -164,7 +165,9 @@ export function showAutomationReport(report: SuiteReport): void {
 		const stamp = report.finishedAt.replace(/[:.]/g, '-');
 		const extension = message.format === 'json' ? 'json' : 'html';
 		vscode.window.showSaveDialog({
-			defaultUri: vscode.Uri.file(path.join('git-graph-automation-report-' + stamp + '.' + extension)),
+			// Anchor the dialog to the workspace (or the home directory outside one) — a bare
+			// relative filename would open it at the drive root
+			defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders !== undefined && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0].uri.fsPath : os.homedir(), 'git-graph-automation-report-' + stamp + '.' + extension)),
 			filters: extension === 'json' ? { JSON: ['json'] } : { HTML: ['html'] }
 		}).then((uri) => {
 			if (uri === undefined) return;
