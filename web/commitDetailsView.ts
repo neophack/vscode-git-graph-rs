@@ -1578,6 +1578,11 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 		let commit = view.commits[view.commitLookup[expandedCommit.commitHash]], fromHash: string, toHash: string, fileStatus = file.type;
 
+		// A stash's untracked files are diffed against the stash's untracked-files tree, which
+		// no line counts are ever requested for (Untracked files never carry counts): the
+		// counts-based binary heuristic below can never decide them, so it must not be asked.
+		let isStashUntracked = false;
+
 		if (expandedCommit.compareWithHash !== null) {
 
 			// Commit Comparison
@@ -1588,7 +1593,7 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 
 			toHash = commitOrder.to;
 
-		} else if (commit.stash !== null) {
+		} else if (commit !== undefined && commit.stash !== null) {
 
 			// Stash Commit
 
@@ -1599,6 +1604,8 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 				toHash = commit.stash.untrackedFilesHash!;
 
 				fileStatus = GG.GitFileStatus.Added;
+
+				isStashUntracked = true;
 
 			} else {
 
@@ -1626,7 +1633,10 @@ function makeCdvFileViewInteractive(view: GitGraphView) {
 		// standalone Binary Compare tab instead (the same one the Commit Comparison View uses).
 		// Checked against `fileStatus` (not `file.type`): a stash's untracked file is remapped to
 		// Added above and no longer takes viewDiff's "just open the file" shortcut for Untracked.
-		if (fileIsBinary(file, fileStatus, isFileCountsPending(file, expandedCommit), toHash === UNCOMMITTED)) {
+		// A stash's untracked file skips the heuristic entirely — its counts never settle, so
+		// "counts are null" would misroute every one of them (text files included) into the hex
+		// comparison, which cannot show a text diff.
+		if (!isStashUntracked && fileIsBinary(file, fileStatus, isFileCountsPending(file, expandedCommit), toHash === UNCOMMITTED)) {
 
 			sendMessage({ command: 'viewDiffBinary', repo: view.currentRepo, fromHash: fromHash, toHash: toHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath, type: fileStatus });
 

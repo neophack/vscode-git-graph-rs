@@ -314,8 +314,10 @@ export class CommandManager extends Disposable {
 
 		const remote = getConfig().gerrit.remote;
 		try {
-			const url = await this.dataSource.gitOutput(['push', remote, 'HEAD:refs/for/' + branch], repo, (stdout) => {
-				const match = /(https?:\/\/\S*\/c\/\S*\/\+?\/?\d+)/.exec(stdout.replace(/\r?\n/g, ' '));
+			// git push writes its report (with the change URL) to STDERR, not stdout — resolve
+			// from both streams, so the "Open Change" action is actually offered.
+			const url = await this.dataSource.gitOutputWithStderr(['push', remote, 'HEAD:refs/for/' + branch], repo, (stdout, stderr) => {
+				const match = /(https?:\/\/\S*\/c\/\S*\/\+?\/?\d+)/.exec((stdout + '\n' + stderr).replace(/\r?\n/g, ' '));
 				return match !== null ? match[1] : null;
 			});
 			if (url !== null) {

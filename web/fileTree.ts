@@ -281,6 +281,10 @@ function haveFilesChanged(oldFiles: ReadonlyArray<GG.GitFileChange> | null, newF
 	} else if (oldFiles === null && newFiles === null) {
 		return false;
 	} else {
-		return !arraysEqual(oldFiles!, newFiles!, (a, b) => a.additions === b.additions && a.deletions === b.deletions && a.newFilePath === b.newFilePath && a.oldFilePath === b.oldFilePath && a.type === b.type);
+		// Only the file identities take part: the line counts are served lazily (the host
+		// reports additions/deletions as NULL and the counts settle per file afterwards), so
+		// counting them here would declare every refresh response "changed" — rebuilding the
+		// tree, dropping the user's folder expansion and resetting every settled count.
+		return !arraysEqual(oldFiles!, newFiles!, (a, b) => a.newFilePath === b.newFilePath && a.oldFilePath === b.oldFilePath && a.type === b.type);
 	}
 }

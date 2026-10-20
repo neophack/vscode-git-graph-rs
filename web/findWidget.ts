@@ -40,6 +40,10 @@ class FindWidget {
 		this.inputElem = <HTMLInputElement>document.getElementById('findInput')!;
 		let keyupTimeout: NodeJS.Timeout | null = null;
 		this.inputElem.addEventListener('keyup', (e) => {
+			// The Enter of an IME composition commit also reports keyCode 13 — jumping to the
+			// next match of the PREVIOUS query on the very keystroke that confirms the new one
+			// is wrong; skip it and let the text-change path below handle the new query.
+			if (e.isComposing || e.keyCode === 229) return;
 			if ((e.keyCode ? e.keyCode === 13 : e.key === 'Enter') && this.text !== '') {
 				if (e.shiftKey) {
 					this.prev();
@@ -59,6 +63,11 @@ class FindWidget {
 						this.clearMatches();
 						this.findMatches(this.getCurrentHash(), true);
 						this.openCommitDetailsViewForCurrentMatchIfEnabled();
+						if (this.text === '') {
+							// The query is gone: windowed rendering may resume (a no-op unless a
+							// query had forced the full render)
+							this.view.updateVirtualWindow();
+						}
 					}
 				}, 200);
 			}
@@ -135,6 +144,7 @@ class FindWidget {
 		this.visible = false;
 		this.widgetElem.classList.add(CLASS_TRANSITION);
 		this.widgetElem.classList.remove(CLASS_ACTIVE);
+		const wasSearching = this.isSearching();
 		this.clearMatches();
 		this.text = '';
 		this.matches = [];
@@ -144,6 +154,11 @@ class FindWidget {
 		this.widgetElem.removeAttribute(ATTR_ERROR);
 		this.prevElem.classList.add(CLASS_DISABLED);
 		this.nextElem.classList.add(CLASS_DISABLED);
+		if (wasSearching) {
+			// The query forced a full render: re-render, so windowed rendering can resume (a
+			// no-op when it was never windowed in the first place)
+			this.view.updateVirtualWindow();
+		}
 		this.view.saveState();
 	}
 

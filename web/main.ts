@@ -421,6 +421,11 @@ class GitGraphView {
 	}
 
 	private loadRepo(repo: string) {
+		// Only a switch between known repositories closes the widgets: on the very first load
+		// (no repository yet) the settings widget holds the state restored for this webview
+		// reload — closing it here would undo that restore before the first paint, making the
+		// persisted settings-widget state dead.
+		const switchingRepo = this.currentRepo !== undefined && this.currentRepo !== repo;
 		this.currentRepo = repo;
 		this.currentRepoLoading = true;
 		// A repository switch/reload wants its own start position (the webview-reload path restores
@@ -445,7 +450,7 @@ class GitGraphView {
 		this.renderFetchButton();
 		this.renderFilterButton();
 		closeCommitDetails(this, false);
-		this.settingsWidget.close();
+		if (switchingRepo) this.settingsWidget.close();
 		this.reflogView.close();
 		this.worktreeDialog.close();
 		this.statisticsView.close();
@@ -796,9 +801,13 @@ class GitGraphView {
 			if (this.loadViewTo.findCommitHash) {
 				const commitIndex = this.getCommitId(this.loadViewTo.findCommitHash);
 				if (commitIndex !== null) {
+					// Windowed rendering may not have the row in the DOM at all: scroll first
+					// (which re-renders the window around the target), then resolve the row the
+					// window now holds. Resolving before scrolling silently dropped the jump for
+					// any commit outside the initially rendered window.
+					this.scrollToCommit(this.loadViewTo.findCommitHash, true, true);
 					const commitElem = findCommitElemWithId(commitIndex);
 					if (commitElem !== null) {
-						this.scrollToCommit(this.loadViewTo!.findCommitHash!, true, true);
 						loadCommitDetails(this, commitElem);
 					}
 					this.loadViewTo = null;
@@ -812,6 +821,11 @@ class GitGraphView {
 			} else if (this.loadViewTo.commitDetails && (this.expandedCommit === null || this.expandedCommit.commitHash !== this.loadViewTo.commitDetails.commitHash || this.expandedCommit.compareWithHash !== this.loadViewTo.commitDetails.compareWithHash)) {
 				const commitIndex = this.getCommitId(this.loadViewTo.commitDetails.commitHash);
 				const compareWithIndex = this.loadViewTo.commitDetails.compareWithHash !== null ? this.getCommitId(this.loadViewTo.commitDetails.compareWithHash) : null;
+				// Bring both rows into the rendered window first (as above), then resolve their
+				// elements — under windowed rendering the elements only exist once the window
+				// covers their indices.
+				if (commitIndex !== null) this.scrollToCommit(this.loadViewTo.commitDetails.commitHash, true, true);
+				if (compareWithIndex !== null) this.scrollToCommit(this.loadViewTo.commitDetails.compareWithHash!, false, false);
 				const commitElem = findCommitElemWithId(commitIndex);
 				const compareWithElem = findCommitElemWithId(compareWithIndex);
 
@@ -2072,7 +2086,14 @@ class GitGraphView {
 	 * active and the window actually moved).
 	 */
 	public updateVirtualWindow() {
-		if (this.renderedRange === null) return;
+		if (this.renderedRange === null) {
+			// No windowed render is active — but it may have become ALLOWED again since (e.g.
+			// the find query that forced the full render was just cleared): re-render, which
+			// re-arms windowed rendering when canVirtualize() now holds. Without this, the
+			// whole commit list stays in the DOM until the next data change re-renders it.
+			if (this.canVirtualize()) this.render();
+			return;
+		}
 		if (!this.canVirtualize()) {
 			// Windowed rendering is no longer allowed (e.g. a find query became active): fall back
 			// to a full render, otherwise scrolling would keep swapping the windowed rows in and out

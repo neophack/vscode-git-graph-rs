@@ -33,7 +33,8 @@ export function parseRemoteUrl(url: string): ParsedRemote | null {
 	let host = '', path = '';
 	const httpsMatch = /^https?:\/\/([^\/]+)\/(.+)$/.exec(url.trim());
 	const sshMatch = /^git@([^:]+):(.+)$/.exec(url.trim());
-	const sshUrlMatch = /^ssh:\/\/git@([^\/]+)\/(.+)$/.exec(url.trim());
+	// Any user, any port: `ssh://git@…` and `ssh://deploy@host:2222/…` are both remote forms
+	const sshUrlMatch = /^ssh:\/\/[^\/@]+@([^\/]+)\/(.+)$/.exec(url.trim());
 	if (httpsMatch !== null) {
 		host = httpsMatch[1].toLowerCase();
 		path = httpsMatch[2];
@@ -46,16 +47,20 @@ export function parseRemoteUrl(url: string): ParsedRemote | null {
 	} else {
 		return null;
 	}
+	// The host capture can carry credentials and a port (`https://user:token@github.com:443/…` —
+	// how `git remote -v` reports some checkouts): strip both, or github.com remotes in that
+	// shape would fall through to the GitLab branch and query a bogus API base.
+	const authority = host.replace(/^[^@]*@/, '').replace(/:\d+$/, '');
 	path = path.replace(/\/+$/, '').replace(/\.git$/, '');
 	// Strip Gerrit's authenticated prefix and GitLab's nested groups down to owner/repo
 	// (GitLab projects in subgroups keep their full path for the API, GitHub takes owner/repo)
 	const segments = path.split('/').filter((segment) => segment !== '');
 	if (segments.length < 2) return null;
-	if (host === 'github.com') {
+	if (authority === 'github.com') {
 		return { platform: 'github', apiBase: 'https://api.github.com', owner: segments[0], repo: segments[1] };
 	}
 	// GitLab (gitlab.com or a self-hosted instance): the full project path is url-encoded
-	return { platform: 'gitlab', apiBase: 'https://' + host + '/api/v4', owner: segments[0], repo: segments.join('/') };
+	return { platform: 'gitlab', apiBase: 'https://' + authority + '/api/v4', owner: segments[0], repo: segments.join('/') };
 }
 
 /**
@@ -84,9 +89,13 @@ export function parseGithubPulls(body: any): PullRequestInfo[] {
 }
 
 function githubState(pr: any): PullRequestState {
-	if (pr.draft === true) return 'draft';
+	// Closed/merged is decided BEFORE the draft flag: a draft PR closed without merging keeps
+	// `draft: true` in the API response, and a closed draft must be `closed` — the ref pruning
+	// and head fetching treat drafts as still-active, so misclassifying one keeps its fork
+	// refs around forever.
 	if (pr.merged_at !== null && pr.merged_at !== undefined) return 'merged';
 	if (pr.state === 'closed') return 'closed';
+	if (pr.draft === true) return 'draft';
 	return 'open';
 }
 
@@ -116,9 +125,11 @@ export function parseGitlabMergeRequests(body: any): PullRequestInfo[] {
 }
 
 function gitlabState(mr: any): PullRequestState {
-	if (mr.work_in_progress === true) return 'draft';
+	// Merged/closed before the WIP flag, as in githubState: a closed WIP merge request keeps
+	// `work_in_progress: true`, and closed MRs must not be treated as still-active drafts.
 	if (mr.state === 'merged') return 'merged';
 	if (mr.state === 'closed') return 'closed';
+	if (mr.work_in_progress === true) return 'draft';
 	return 'open';
 }
 

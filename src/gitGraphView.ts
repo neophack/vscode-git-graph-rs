@@ -42,7 +42,7 @@ import { t } from './i18n';
 import { Logger } from './logger';
 import { buildPullRequestHeadRefspecs, findStalePullRequestRefs, parseGitRemoteVerbose, parseRemoteUrl, PullRequestDataSource, selectRemote } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
-import { RepoManager } from './repoManager';
+import { RepoChangeEvent, RepoManager } from './repoManager';
 import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, PullRequestInfo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED } from './utils/git';
 import {
@@ -241,6 +241,47 @@ export function resolveGlobalAuthorAfterSave(authors: ReadonlyArray<CommitAuthor
 		: authors[0];
 }
 
+/**
+ * What may be done to the global Git identity when a non-empty identity list was saved. The
+ * list governs the global author, but only over identities Git Graph wrote itself: an identity
+ * the user configured outside of Git Graph is never silently overwritten - it first asks.
+ * Exported for tests.
+ * @param authors The saved author identities.
+ * @param globalUser The identity currently in the global Git configuration (NULL => not set).
+ * @param owned The identity Git Graph last wrote to the global configuration (NULL when it never did).
+ */
+export function resolveGlobalAuthorWriteAction(authors: ReadonlyArray<CommitAuthor>, globalUser: { name: string | null, email: string | null }, owned: { name: string, email: string } | null): { action: 'none' | 'write' | 'confirmOverwrite', author: CommitAuthor | null } {
+	const author = resolveGlobalAuthorAfterSave(authors, globalUser);
+	if (author === null) return { action: 'none', author: null };
+	if (globalUser.name === null && globalUser.email === null) return { action: 'write', author: author };
+	const ownsCurrent = owned !== null && owned.name === globalUser.name && owned.email === globalUser.email;
+	return { action: ownsCurrent ? 'write' : 'confirmOverwrite', author: author };
+}
+
+/**
+ * What may be done to the global Git identity when the identity list is emptied. Deleting an
+ * identity FROM the list is the act of removing it, so an identity the list held (the widget
+ * seeds the list from the global identity, and users manage their identities through it) is
+ * cleared as part of that act. What must never go silently is an identity that has nothing to
+ * do with the list: one the user configured outside of Git Graph, which never appeared in it,
+ * and which Git Graph did not write either - that one first asks. Exported for tests.
+ * @param globalUser The identity currently in the global Git configuration (NULL => not set).
+ * @param owned The identity Git Graph last wrote to the global configuration (NULL when it never did).
+ * @param previousAuthors The identities the list held before the emptying save.
+ */
+export function resolveGlobalAuthorClearAction(globalUser: { name: string | null, email: string | null } | null, owned: { name: string, email: string } | null, previousAuthors: ReadonlyArray<CommitAuthor>): 'none' | 'clear' | 'confirmClear' {
+	if (globalUser === null || (globalUser.name === null && globalUser.email === null)) return 'none';
+	const governed = previousAuthors.some((author) => author.name === globalUser.name && author.email === globalUser.email);
+	if (governed) return 'clear';
+	const ownsCurrent = owned !== null && owned.name === globalUser.name && owned.email === globalUser.email;
+	return ownsCurrent ? 'clear' : 'confirmClear';
+}
+
+/** Render a global author identity for a confirmation message ("Name <email>"). */
+function formatGlobalAuthor(user: { name: string | null, email: string | null }) {
+	return (user.name ?? '?') + ' <' + (user.email ?? '?') + '>';
+}
+
 /** The cached (unfiltered) Gerrit data of a repository. */
 interface GerritCacheEntry {
 	states: GerritChangeState[];
@@ -276,6 +317,7 @@ export class GitGraphView extends Disposable {
 	private currentRepo: string | null = null;
 	private automationShimJs: string | null | undefined = undefined;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
+	private pendingReposEvent: RepoChangeEvent | null = null; // A repo-set change that arrived while the panel was hidden, replayed on the next show
 
 	private loadRepoInfoRefreshId: number = 0;
 	private loadCommitsRefreshId: number = 0;
@@ -452,7 +494,15 @@ export class GitGraphView extends Disposable {
 			this.panel.onDidChangeViewState(() => {
 				if (this.panel.visible !== this.isPanelVisible) {
 					if (this.panel.visible) {
-						if (this.isGraphViewLoaded && this.loadViewTo === null) {
+						if (this.pendingReposEvent !== null) {
+							// A repository was added or removed while the view was hidden: the
+							// soft refresh below only reloads the current repo's commits, it never
+							// conveys the new (or gone) repo set to the webview — replay the
+							// deferred event now that the view is visible again.
+							const event = this.pendingReposEvent;
+							this.pendingReposEvent = null;
+							this.handleReposChange(event);
+						} else if (this.isGraphViewLoaded && this.loadViewTo === null) {
 							// The webview is already rendered: refresh its data in place instead of
 							// regenerating the HTML, which would reload the page and re-render the
 							// entire graph from scratch (a blank flash on every tab switch). The
@@ -481,14 +531,13 @@ export class GitGraphView extends Disposable {
 
 			// Subscribe to events triggered when a repository is added or deleted from Git Graph
 			repoManager.onDidChangeRepos((event) => {
-				if (!this.panel.visible) return;
-				const loadViewTo = event.loadRepo !== null ? { repo: event.loadRepo } : null;
-				if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
-					this.loadViewTo = loadViewTo;
-					this.update();
-				} else {
-					this.respondLoadRepos(event.repos, loadViewTo);
+				if (!this.panel.visible) {
+					// Only the latest event matters (each carries the full repo set): keep it for
+					// the onDidChangeViewState handler above to replay on the next show.
+					this.pendingReposEvent = event;
+					return;
 				}
+				this.handleReposChange(event);
 			}),
 
 			// Subscribe to events triggered when an avatar is available
@@ -800,12 +849,13 @@ export class GitGraphView extends Disposable {
 					this.dataSource.getAuthorStatistics(msg.repo),
 					this.dataSource.getActivityHeatmap(msg.repo)
 				]);
-				this.sendMessage({ command: 'repoStatistics', authors: authors, activity: activity });
+				this.sendMessage({ command: 'repoStatistics', repo: msg.repo, authors: authors, activity: activity });
 				break;
 			}
 			case 'worktreeList':
 				this.sendMessage({
 					command: 'worktreeList',
+					repo: msg.repo,
 					worktrees: await this.dataSource.getWorktrees(msg.repo)
 				});
 				break;
@@ -831,6 +881,7 @@ export class GitGraphView extends Disposable {
 				const reflog = await this.dataSource.getReflog(msg.repo, msg.ref, msg.limit);
 				this.sendMessage({
 					command: 'reflog',
+					repo: msg.repo,
 					ref: msg.ref,
 					entries: reflog.entries,
 					moreAvailable: reflog.moreAvailable,
@@ -1168,7 +1219,7 @@ export class GitGraphView extends Disposable {
 					command: 'setGlobalSetting',
 					setting: msg.setting,
 					authorConfigTouched: msg.setting === 'commitAuthors',
-					error: await this.setGlobalSetting(msg.setting, msg.value)
+					error: await this.setGlobalSetting(msg.setting, msg.value, msg.previousValue)
 				});
 				break;
 			}
@@ -1770,9 +1821,12 @@ export class GitGraphView extends Disposable {
 	 * with the new value (the settings page is restored from the persisted webview state).
 	 * @param setting The key of the setting, relative to the `git-graph-rs` section.
 	 * @param value The new value of the setting.
+	 * @param previousValue What the widget last rendered for the setting; for 'commitAuthors'
+	 * this is the list the user saw and edited, and the authoritative answer to "which identities
+	 * did the list govern" (the host's own configuration read can lag the editor's write).
 	 * @returns The ErrorInfo of the failure (NULL => saved successfully).
 	 */
-	private async setGlobalSetting(setting: string, value: any): Promise<ErrorInfo> {
+	private async setGlobalSetting(setting: string, value: any, previousValue?: any): Promise<ErrorInfo> {
 		const isValid = Object.prototype.hasOwnProperty.call(WRITABLE_GLOBAL_SETTINGS, setting)
 			? WRITABLE_GLOBAL_SETTINGS[setting]
 			: null;
@@ -1783,6 +1837,13 @@ export class GitGraphView extends Disposable {
 		if (!isValid(value)) {
 			return t('settingValueInvalid', setting);
 		}
+		// The identities the list held before this save: emptying the list only clears a global
+		// identity the list governed (the deleted identity itself) or one Git Graph wrote - a
+		// foreign identity that never appeared in the list is confirmed first. The widget's
+		// rendered list is the source of truth; the host's configuration read is the fallback.
+		const previousAuthors = setting === 'commitAuthors'
+			? (Array.isArray(previousValue) ? previousValue : getConfig().commitAuthors)
+			: [];
 		try {
 			await vscode.workspace.getConfiguration('git-graph-rs').update(setting, value, vscode.ConfigurationTarget.Global);
 		} catch (error) {
@@ -1801,7 +1862,7 @@ export class GitGraphView extends Disposable {
 			if (value.length > 0) {
 				await this.applyDefaultGlobalAuthor(this.currentRepo, value);
 			} else {
-				await this.clearGlobalAuthor(this.currentRepo);
+				await this.clearGlobalAuthor(this.currentRepo, previousAuthors);
 			}
 		}
 		return null;
@@ -1812,19 +1873,34 @@ export class GitGraphView extends Disposable {
 	 * configuration matches none of the configured identities, so repositories following the
 	 * global configuration always have a well-defined author. The user can change the global
 	 * author at any time in the Author Identities list (the check button materialises it the
-	 * same way). Failures are logged and ignored: the list itself was saved successfully.
+	 * same way). Only an identity Git Graph wrote itself (or an unset configuration) is
+	 * replaced without asking; a foreign identity the user configured outside of Git Graph is
+	 * confirmed before it is overwritten - the extension must not quietly rewrite config it
+	 * does not own. Failures are logged and ignored: the list itself was saved successfully.
 	 * @param repo The path of the repository open in the view (the working directory of the Git invocation).
 	 * @param authors The saved author identities.
 	 */
 	private async applyDefaultGlobalAuthor(repo: string, authors: ReadonlyArray<{ name: string, email: string }>) {
 		const global = await this.dataSource.getGlobalUserDetails(repo).catch(() => null);
 		if (global === null) return;
-		const author = resolveGlobalAuthorAfterSave(authors, global);
-		if (author === null) return;
+		const decision = resolveGlobalAuthorWriteAction(authors, global, this.extensionState.getGlobalAuthorWritten());
+		if (decision.action === 'none' || decision.author === null) return;
+		const author = decision.author;
+		if (decision.action === 'confirmOverwrite') {
+			const overwrite = await vscode.window.showInformationMessage(
+				t('globalAuthorTakeOverConfirm', formatGlobalAuthor(global), formatGlobalAuthor(author)),
+				{ modal: true },
+				t('globalAuthorTakeOverButton', formatGlobalAuthor(author))
+			);
+			if (overwrite !== t('globalAuthorTakeOverButton', formatGlobalAuthor(author))) return; // the existing identity stays
+		}
 		const nameError = await this.dataSource.setConfigValue(repo, GitConfigKey.UserName, author.name, GitConfigLocation.Global);
 		const emailError = await this.dataSource.setConfigValue(repo, GitConfigKey.UserEmail, author.email, GitConfigLocation.Global);
 		if (nameError !== null || emailError !== null) {
 			this.logger.log('Defaulting the global author to the first author identity failed: ' + (nameError ?? emailError));
+		} else {
+			// The write succeeded: the identity is now Git Graph's own to manage (and to undo)
+			this.extensionState.setGlobalAuthorWritten({ name: author.name, email: author.email });
 		}
 		// The global Git configuration changed, which the repository's `.git/config` watcher
 		// cannot see: drop the cached config data so the next load reflects it
@@ -1840,16 +1916,36 @@ export class GitGraphView extends Disposable {
 	 * from the operating system account: a commit without user.name/user.email dies with Git's
 	 * "Please tell me who you are" instead of recording an invented author. The guard is left
 	 * in place when an identity is later re-added - with an identity configured it is inert.
-	 * Failures are logged and ignored: the list itself was saved successfully.
+	 *
+	 * Only an identity the list governed (held it before the emptying save) or one Git Graph
+	 * wrote itself (tracked in the extension state) is cleared as a side effect of emptying
+	 * the list; a foreign identity that never appeared in the list is confirmed before it is
+	 * removed - and when it is kept, nothing is written at all. Failures are logged and
+	 * ignored: the list itself was saved successfully.
 	 * @param repo The path of the repository open in the view (the working directory of the Git invocation).
+	 * @param previousAuthors The identities the list held before it was emptied.
 	 */
-	private async clearGlobalAuthor(repo: string) {
+	private async clearGlobalAuthor(repo: string, previousAuthors: ReadonlyArray<{ name: string, email: string }>) {
 		const global = await this.dataSource.getGlobalUserDetails(repo).catch(() => null);
+		const decision = resolveGlobalAuthorClearAction(global, this.extensionState.getGlobalAuthorWritten(), previousAuthors);
+		// A decision other than 'none' implies an identity is configured (resolveGlobalAuthorClearAction
+		// answers 'none' for an unset configuration), but the compiler cannot see through it: narrow here.
+		if (decision === 'none' || global === null) return;
+		if (decision === 'confirmClear') {
+			const remove = await vscode.window.showInformationMessage(
+				t('globalAuthorRemoveConfirm', formatGlobalAuthor(global)),
+				{ modal: true },
+				t('globalAuthorRemoveButton', formatGlobalAuthor(global))
+			);
+			if (remove !== t('globalAuthorRemoveButton', formatGlobalAuthor(global))) return; // the foreign identity stays
+		}
 		const guardError = await this.dataSource.setConfigValue(repo, GitConfigKey.UseConfigOnly, 'true', GitConfigLocation.Global);
 		const nameError = global !== null && global.name !== null ? await this.dataSource.unsetConfigValue(repo, GitConfigKey.UserName, GitConfigLocation.Global) : null;
 		const emailError = global !== null && global.email !== null ? await this.dataSource.unsetConfigValue(repo, GitConfigKey.UserEmail, GitConfigLocation.Global) : null;
 		if (guardError !== null || nameError !== null || emailError !== null) {
 			this.logger.log('Clearing the global author after the identity list was emptied failed: ' + (guardError ?? nameError ?? emailError));
+		} else {
+			this.extensionState.setGlobalAuthorWritten(null);
 		}
 		// The global Git configuration changed, which the repository's `.git/config` watcher
 		// cannot see: drop the cached config data so the next load reflects it
@@ -2141,6 +2237,7 @@ export class GitGraphView extends Disposable {
 			// displayed instantly and works offline
 			cache = await this.buildLocalGerritEntry(repo, fetchLimit);
 			if (cache !== null) this.gerritCache.set(repo, cache);
+			else this.gerritCache.delete(repo); // a hard rebuild that found no local change refs: the old entry (if any) refers to now-dead refs, and serving it again would make the next load fail on them
 		}
 		if (this.gerritStaleRepos.has(repo) || cache === null || cache.fetchLimit !== fetchLimit) {
 			// Reuse a fetch that is already in progress for this repository
@@ -2462,6 +2559,21 @@ export class GitGraphView extends Disposable {
 			lastActiveRepo: this.extensionState.getLastActiveRepo(),
 			loadViewTo: loadViewTo
 		});
+	}
+
+	/**
+	 * Apply a repository-set change to the loaded view: reload the page when the change crosses
+	 * the empty/non-empty boundary, otherwise hand the new repo set to the webview in place.
+	 * @param event The repository-set change.
+	 */
+	private handleReposChange(event: RepoChangeEvent) {
+		const loadViewTo = event.loadRepo !== null ? { repo: event.loadRepo } : null;
+		if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
+			this.loadViewTo = loadViewTo;
+			this.update();
+		} else {
+			this.respondLoadRepos(event.repos, loadViewTo);
+		}
 	}
 }
 

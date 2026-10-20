@@ -132,9 +132,12 @@ export class CliBackend implements GitBackend {
 			// `LogOptions.deferRemoteRefs`): the log walks the local branches only, and the refs
 			// scan leaves `refs/remotes/` alone.
 			if (options.deferRemoteRefs) options = { ...options, showRemoteBranches: false };
-			// The log, the refs and the working-tree scan are independent, so all three processes
-			// are started before any of them is awaited.
-			const logPromise = this.getLog(repo, options);
+			// The stashes are read once and shared: the log needs them first (their bases are walk
+			// tips, so a stash hanging off a commit that no branch/tag/remote reaches still
+			// renders — the engine adds the same tips, see graph.rs, keeping the backends in
+			// parity), and the splice below reuses the same list.
+			const stashesPromise = this.getStashes(repo).catch(() => [] as GitStash[]);
+			const logPromise = stashesPromise.then((stashes) => this.getLog(repo, options, stashes.map((stash) => stash.baseHash)));
 			const refsPromise = this.readRefs(repo, {
 				showRemoteBranches: options.showRemoteBranches ?? true,
 				showRemoteHeads: options.showRemoteHeads ?? false,
@@ -149,8 +152,7 @@ export class CliBackend implements GitBackend {
 				/* re-thrown below if it is actually needed */
 			});
 
-			const [records, refs] = await Promise.all([logPromise, refsPromise]);
-			const stashes = await this.getStashes(repo).catch(() => [] as GitStash[]);
+			const [records, refs, stashes] = await Promise.all([logPromise, refsPromise, stashesPromise]);
 
 			let commits = records;
 			const moreCommitsAvailable = commits.length > options.maxCommits;
@@ -931,7 +933,7 @@ export class CliBackend implements GitBackend {
 
 	/* ---------- Internals ---------- */
 
-	private async getLog(repo: string, options: LogOptions): Promise<LogRecord[]> {
+	private async getLog(repo: string, options: LogOptions, stashBaseTips: ReadonlyArray<string> = []): Promise<LogRecord[]> {
 		const order = options.commitOrdering ?? 'date';
 		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
 		// One extra commit, so that the caller can tell whether the page was truncated.
@@ -968,10 +970,18 @@ export class CliBackend implements GitBackend {
 			if (options.showRemoteBranches ?? true) {
 				// Gerrit change refs are excluded wholesale: a Gerrit repository can hold tens of
 				// thousands of them, and the ones that belong in the graph are added explicitly.
-				args.push('--exclude=*/changes/*', '--remotes');
+				args.push('--exclude=*/changes/*');
+				// Hidden remotes are excluded from the walk itself, as the engine does (it drops
+				// their refs before resolving the walk's tips): their commits must not appear in
+				// the graph unlabeled — the two backends have to draw the same commit set.
+				for (const remote of options.hideRemotes ?? []) args.push(`--exclude=${remote}/*`);
+				args.push('--remotes');
 			}
 			args.push('HEAD');
 		}
+		// Stashes hang off commits that may not be reachable from any of the refs above, so their
+		// bases are walk tips too (a tip that no longer resolves is skipped via --ignore-missing).
+		for (const tip of stashBaseTips) args.push(tip);
 		for (const ref of options.gerritRefs ?? []) args.push(ref);
 
 		const paths = (options.filterPaths ?? []).filter((path) => path !== '');
@@ -1231,7 +1241,11 @@ export class CliBackend implements GitBackend {
 		return new Promise((resolve, reject) => {
 			execFile(
 				this.gitPath,
-				args as string[],
+				// i18n.logOutputEncoding is pinned so commit metadata (subjects, bodies, author
+				// names, reflog messages) always arrives as UTF-8 for the `utf8` decode below,
+				// whatever the repository's `i18n.commitEncoding` says — matching the engine,
+				// which reads the objects directly. Commands that never re-encode ignore it.
+				['-c', 'i18n.logOutputEncoding=UTF-8', ...args] as string[],
 				{ cwd, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
 				(error, stdout, stderr) => {
 					if (error) {

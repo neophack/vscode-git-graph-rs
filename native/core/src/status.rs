@@ -337,10 +337,11 @@ pub fn scm_changes(repo: &Repo) -> Result<Vec<ScmChange>> {
         .collect())
 }
 
-/// Is anything uncommitted at all?
+/// Is anything in the TRACKED files uncommitted?
 ///
 /// Cheaper than [`count_changes`] when only the yes/no answer is wanted, because it stops at the
-/// first finding.
+/// first finding. Untracked files do NOT count as dirty here (gix's `is_dirty` ignores them): a
+/// caller that must see untracked-only repositories as dirty needs [`count_changes`] instead.
 pub fn is_dirty(repo: &Repo) -> Result<bool> {
     let git = repo.borrow();
     git.is_dirty()

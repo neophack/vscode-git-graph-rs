@@ -12,12 +12,19 @@ import { GgEvent } from './utils/event';
 const AVATAR_STORAGE_FOLDER = '/avatars';
 const AVATAR_CACHE = 'avatarCache';
 const CODE_REVIEWS = 'codeReviews';
+const GLOBAL_AUTHOR_WRITTEN = 'globalAuthorWritten';
 const GLOBAL_VIEW_STATE = 'globalViewState';
 const IGNORED_REPOS = 'ignoredRepos';
 const LAST_ACTIVE_REPO = 'lastActiveRepo';
 const LAST_KNOWN_GIT_PATH = 'lastKnownGitPath';
 const REPO_STATES = 'repoStates';
 const WORKSPACE_VIEW_STATE = 'workspaceViewState';
+
+/** The author identity of the global Git configuration that this extension wrote. */
+export interface WrittenGlobalAuthor {
+	name: string;
+	email: string;
+}
 
 export const DEFAULT_REPO_STATE: GitRepoState = {
 	pinnedBranches: [],
@@ -255,6 +262,31 @@ export class ExtensionState extends Disposable {
 	 */
 	private setLastKnownGitPath(path: string) {
 		this.updateGlobalState(LAST_KNOWN_GIT_PATH, path);
+	}
+
+
+	/* Written Global Author */
+
+	/**
+	 * Get the author identity of the global Git configuration that Git Graph last wrote itself
+	 * (NULL when Git Graph never wrote it, or the one it wrote was since cleared). The machine's
+	 * global Git configuration is machine-wide, so the record lives in the global state.
+	 * @returns The identity Git Graph wrote, or NULL.
+	 */
+	public getGlobalAuthorWritten(): WrittenGlobalAuthor | null {
+		const written = this.globalState.get<WrittenGlobalAuthor | null>(GLOBAL_AUTHOR_WRITTEN, null);
+		return written !== null && typeof written.name === 'string' && typeof written.email === 'string' ? written : null;
+	}
+
+	/**
+	 * Record the author identity Git Graph wrote to the global Git configuration (or NULL, when
+	 * the identity it wrote was removed again). This is what lets the Author Identities feature
+	 * undo its own writes while never silently rewriting or deleting an identity the user
+	 * configured outside of Git Graph.
+	 * @param identity The identity Git Graph wrote, or NULL.
+	 */
+	public setGlobalAuthorWritten(identity: WrittenGlobalAuthor | null) {
+		return this.updateGlobalState(GLOBAL_AUTHOR_WRITTEN, identity);
 	}
 
 

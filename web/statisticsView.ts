@@ -51,7 +51,11 @@ class StatisticsView {
 	}
 
 	public processResponse(msg: GG.ResponseRepoStatistics) {
-		if (!this.isOpen) return;
+		// A response for another repository is stale: the host serves requests concurrently, so
+		// a slow answer for the previous repo can arrive after the switch — it must not replace
+		// this (re-opened) view's data. A response without the repo echo (a mismatched build)
+		// is accepted, like the conflict banner treats its omitted fields.
+		if (!this.isOpen || (msg.repo !== undefined && msg.repo !== this.view.currentRepo)) return;
 		this.render(msg.authors, msg.activity);
 	}
 

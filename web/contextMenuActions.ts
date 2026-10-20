@@ -775,7 +775,6 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 	const isSelectedInBranchesDropdown = view.branchDropdown.isSelected(prefixedRefName);
 
 	return [[
-
 		{
 
 			title: strings.menuCheckoutBranch + ELLIPSIS,
@@ -964,17 +963,20 @@ function getRemoteBranchContextMenuActions(view: GitGraphView, remote: string, t
 
 	], [
 
-		{
+	{
 
-			title: view.getPinnedBranches().includes(branchName) ? strings.unpinBranch : strings.pinBranch,
+		// Pins are stored under the branches-dropdown value (what a pinned chip selects), which
+		// for a remote branch is its `remotes/<remote>/<branch>` form — pinning the bare short
+		// name would silently filter to a LOCAL branch of the same name on click, or do nothing.
+		title: view.getPinnedBranches().includes(prefixedRefName) ? strings.unpinBranch : strings.pinBranch,
 
-			visible: true,
+		visible: true,
 
-			onClick: () => view.togglePinBranch(branchName)
+		onClick: () => view.togglePinBranch(prefixedRefName)
 
-		}
+	}
 
-	]];
+]];
 
 }
 

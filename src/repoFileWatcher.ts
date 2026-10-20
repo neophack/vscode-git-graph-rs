@@ -177,6 +177,14 @@ export class RepoFileWatcher {
 		}
 		this.refreshTimeout = setTimeout(() => {
 			this.refreshTimeout = null;
+			if (this.muteCount > 0) {
+				// A mute window opened after this refresh was scheduled (e.g. a Git action started
+				// inside the debounce window): firing now would read the repository mid-action.
+				// Defer the callback past the window, like an event arriving inside it — the
+				// accumulated classification is kept for the rescheduled refresh.
+				this.pendingRefreshWhileMuted = true;
+				return;
+			}
 			const commitsAffected = this.pendingCommitsAffected;
 			this.pendingCommitsAffected = false;
 			this.repoChangeCallback(commitsAffected);

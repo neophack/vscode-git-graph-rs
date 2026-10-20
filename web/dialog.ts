@@ -112,6 +112,7 @@ class Dialog {
 	 */
 	public showConfirmation(message: string, actionName: string, actioned: () => void, target: DialogTarget | null) {
 		this.show(DialogType.Form, message, actionName, strings.dialogCancel, () => {
+			if (this.elem === null) return; // already closed: a re-activation of the fading dialog's button must not run the action again
 			this.close();
 			actioned();
 		}, null, target);
@@ -128,9 +129,11 @@ class Dialog {
 	 */
 	public showTwoButtons(message: string, buttonLabel1: string, buttonAction1: () => void, buttonLabel2: string, buttonAction2: () => void, target: DialogTarget | null) {
 		this.show(DialogType.Form, message, buttonLabel1, buttonLabel2, () => {
+			if (this.elem === null) return; // already closed (see showConfirmation)
 			this.close();
 			buttonAction1();
 		}, () => {
+			if (this.elem === null) return;
 			this.close();
 			buttonAction2();
 		}, target);
@@ -283,7 +286,7 @@ class Dialog {
 		if (textRefInput > -1) {
 			let dialogInput = <HTMLInputElement>document.getElementById('dialogInput' + textRefInput), dialogAction = document.getElementById('dialogAction')!;
 			if (dialogInput.value === '') this.elem!.classList.add(CLASS_DIALOG_NO_INPUT);
-			dialogInput.addEventListener('keyup', () => {
+			const validateRefInput = () => {
 				if (this.elem === null) return;
 				if (initialState.config.dialogDefaults.general.referenceInputSpaceSubstitution !== null) {
 					const selectionStart = dialogInput.selectionStart, selectionEnd = dialogInput.selectionEnd;
@@ -307,7 +310,13 @@ class Dialog {
 						dialogAction.removeAttribute('aria-label');
 					}
 				}
-			});
+			};
+			// 'input' catches a value pasted with the mouse (keyup never fires for it) and 'keyup'
+			// keeps parity with the keyboard-driven flow; both run the same validation. It also
+			// runs once now, so an invalid pre-filled default is flagged from the start.
+			dialogInput.addEventListener('input', validateRefInput);
+			dialogInput.addEventListener('keyup', validateRefInput);
+			validateRefInput();
 		}
 
 		if (inputs.length > 0 && (inputs[0].type === DialogInputType.Text || inputs[0].type === DialogInputType.TextRef)) {
@@ -446,6 +455,10 @@ class Dialog {
 		eventOverlay.remove();
 		if (this.elem !== null) {
 			const elem = this.elem;
+			// The buttons stay in the DOM for the closing fade: take focus off them, so a
+			// Space/Enter pressed right after the click cannot re-activate the old handler
+			// (keyboard activation bypasses the fade's pointer-events: none).
+			if (document.activeElement instanceof HTMLElement && elem.contains(document.activeElement)) document.activeElement.blur();
 			elem.classList.add('closing');
 			window.setTimeout(() => elem.remove(), 180);
 			this.elem = null;

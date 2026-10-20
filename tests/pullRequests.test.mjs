@@ -78,6 +78,20 @@ describe('parseRemoteUrl', () => {
 		});
 	});
 
+	it('strips embedded credentials and a port from the host', () => {
+		// `git remote -v` reports authenticated checkouts (Actions/Codespaces) with the token in
+		// the URL: without stripping, a github.com remote would fall through to the GitLab branch.
+		assert.deepEqual(parseRemoteUrl('https://x-access-token:ghp_x@github.com/owner/repo.git'), {
+			platform: 'github', apiBase: 'https://api.github.com', owner: 'owner', repo: 'repo'
+		});
+		assert.deepEqual(parseRemoteUrl('https://github.com:443/owner/repo'), {
+			platform: 'github', apiBase: 'https://api.github.com', owner: 'owner', repo: 'repo'
+		});
+		assert.deepEqual(parseRemoteUrl('ssh://deploy@gitlab.example.com:2222/team/repo.git'), {
+			platform: 'gitlab', apiBase: 'https://gitlab.example.com/api/v4', owner: 'team', repo: 'team/repo'
+		});
+	});
+
 	it('rejects unsupported and malformed remote URLs', () => {
 		assert.equal(parseRemoteUrl('/some/local/path'), null);
 		assert.equal(parseRemoteUrl('https://example.com/repo'), null); // no owner segment
@@ -154,6 +168,15 @@ describe('parseGithubPulls', () => {
 			githubPull(3, 'c', { state: 'closed' })
 		]);
 		assert.deepEqual(pulls.map((pull) => pull.state), ['draft', 'merged', 'closed']);
+	});
+
+	it('maps a closed draft to closed, not draft', () => {
+		// A draft PR closed without merging keeps draft:true in the API response; it must not
+		// stay "active" (its refs would never be pruned and its head refetched forever).
+		const pulls = parseGithubPulls([githubPull(1, 'a', { draft: true, state: 'closed' })]);
+		assert.deepEqual(pulls.map((pull) => pull.state), ['closed']);
+		const mrs = parseGitlabMergeRequests([gitlabMr(1, 'a', { work_in_progress: true, state: 'closed' })]);
+		assert.deepEqual(mrs.map((mr) => mr.state), ['closed']);
 	});
 
 	it('skips invalid entries and non-array bodies', () => {

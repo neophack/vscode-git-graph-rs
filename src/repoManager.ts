@@ -456,9 +456,13 @@ export class RepoManager extends Disposable {
 	 * @param state The state.
 	 */
 	public setRepoState(repo: string, state: GitRepoState) {
+		// The message can arrive for a repository this host no longer knows (removed from disk or
+		// the workspace, or ignored, while the webview still had it loaded): assigning would
+		// silently re-add it — persisted, resurrecting an ignored/deleted repo, and writing a
+		// pin file into a path that may not exist. State for an unknown repo is dropped.
+		if (!this.isKnownRepo(repo)) return;
 		// The state (and its pinned arrays) arrive deserialized over postMessage, so compare by value
-		const pinsChanged = !this.isKnownRepo(repo)
-			|| !pinsEqual(this.repos[repo], state);
+		const pinsChanged = !pinsEqual(this.repos[repo], state);
 		this.repos[repo] = state;
 		this.extensionState.saveRepos(this.repos);
 		if (pinsChanged) {
@@ -608,6 +612,11 @@ export class RepoManager extends Disposable {
 	 * @param path The path of the directory.
 	 */
 	private startWatchingFolder(path: string) {
+		// A watcher for this folder may already exist (e.g. the folder was added while the
+		// startup scan that ends in startWatchingFolders was still running): replacing the map
+		// entry would orphan the previous watcher, whose handlers keep firing for the rest of
+		// the session — every event in the folder processed twice.
+		if (this.folderWatchers[path] !== undefined) return;
 		const watcher = vscode.workspace.createFileSystemWatcher(path + '/**');
 		watcher.onDidCreate(this.onWatcherCreate.bind(this));
 		watcher.onDidChange(this.onWatcherChange.bind(this));

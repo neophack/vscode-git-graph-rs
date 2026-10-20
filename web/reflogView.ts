@@ -88,7 +88,12 @@ class ReflogView {
 	}
 
 	public processResponse(msg: GG.ResponseReflog) {
-		if (!this.isOpen || msg.ref !== this.ref) return;
+		// A response for another repository is stale: the host serves requests concurrently, so
+		// a slow answer for the previous repo can arrive after the switch (and after this widget
+		// was re-opened for the current one) — rendering it would offer the other repo's hashes.
+		// A response without the repo echo (a mismatched build) is accepted, like the conflict
+		// banner treats its omitted fields.
+		if (!this.isOpen || (msg.repo !== undefined && msg.repo !== this.view.currentRepo) || msg.ref !== this.ref) return;
 		if (msg.error !== null) {
 			this.contentElem.innerHTML = '<div class="reflogError">' + escapeHtml(msg.error) + '</div>';
 			return;

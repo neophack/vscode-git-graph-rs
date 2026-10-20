@@ -1331,15 +1331,20 @@ function makeTableResizable(view: GitGraphView) {
 
 				let colWidth = col !== 1 ? columnWidths[col] : cols[1].clientWidth - COLUMN_LEFT_RIGHT_PADDING;
 
+				// The right neighbour is the next VISIBLE column: when every column to the right
+				// is hidden, the scan must stop at the end of the table — running past it made
+				// columnWidths[nextCol] (and cols[colIndex + 1]) undefined, throwing on every
+				// mousemove and writing a NaN into the widths. With no neighbour to shrink, the
+				// drag only clamps the dragged column to its minimum.
 				let nextCol = col + 1;
 
-				while (columnWidths[nextCol] === COLUMN_HIDDEN) nextCol++;
+				while (nextCol < columnWidths.length && columnWidths[nextCol] === COLUMN_HIDDEN) nextCol++;
 
-
+				const hasRightNeighbour = nextCol < columnWidths.length;
 
 				if (colWidth + mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = -colWidth + COLUMN_MIN_WIDTH;
 
-				if (columnWidths[nextCol] - mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = columnWidths[nextCol] - COLUMN_MIN_WIDTH;
+				if (hasRightNeighbour && columnWidths[nextCol] - mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = columnWidths[nextCol] - COLUMN_MIN_WIDTH;
 
 				if (col !== 1) {
 
@@ -1349,9 +1354,13 @@ function makeTableResizable(view: GitGraphView) {
 
 				}
 
-				columnWidths[nextCol] -= mouseDeltaX;
+				if (hasRightNeighbour) {
 
-				cols[colIndex + 1].style.width = columnWidths[nextCol] + 'px';
+					columnWidths[nextCol] -= mouseDeltaX;
+
+					cols[colIndex + 1].style.width = columnWidths[nextCol] + 'px';
+
+				}
 
 			}
 

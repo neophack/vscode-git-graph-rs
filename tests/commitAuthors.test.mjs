@@ -63,7 +63,7 @@ process.env.GIT_CONFIG_GLOBAL = globalConfigFile;
 process.env.GIT_CONFIG_NOSYSTEM = '1';
 
 const { getConfig } = await import('../out/config.js');
-const { isCommitAuthors, resolveGlobalAuthorAfterSave } = await import('../out/gitGraphView.js');
+const { isCommitAuthors, resolveGlobalAuthorAfterSave, resolveGlobalAuthorWriteAction, resolveGlobalAuthorClearAction } = await import('../out/gitGraphView.js');
 const { DataSource } = await import('../out/dataSource.js');
 
 /* The local Git config keys of the user identity (the values of dataSource's GitConfigKey). */
@@ -238,6 +238,54 @@ describe('resolveGlobalAuthorAfterSave', () => {
 
 	it('writes nothing for an empty identity list', () => {
 		assert.equal(resolveGlobalAuthorAfterSave([], { name: null, email: null }), null);
+	});
+});
+
+describe('resolveGlobalAuthorWriteAction', () => {
+	it('writes silently when the global configuration holds no identity', () => {
+		assert.deepEqual(resolveGlobalAuthorWriteAction([AUTHOR_A], { name: null, email: null }, null), { action: 'write', author: AUTHOR_A });
+	});
+
+	it('writes silently when the current global identity is the one Git Graph wrote', () => {
+		assert.deepEqual(resolveGlobalAuthorWriteAction([AUTHOR_B], { name: AUTHOR_A.name, email: AUTHOR_A.email }, AUTHOR_A), { action: 'write', author: AUTHOR_B });
+	});
+
+	it('asks before overwriting an identity Git Graph did not write', () => {
+		assert.deepEqual(resolveGlobalAuthorWriteAction([AUTHOR_B], { name: GLOBAL_IDENTITY.name, email: GLOBAL_IDENTITY.email }, null), { action: 'confirmOverwrite', author: AUTHOR_B });
+		// A record of having written some OTHER identity does not own this one either
+		assert.deepEqual(resolveGlobalAuthorWriteAction([AUTHOR_B], { name: GLOBAL_IDENTITY.name, email: GLOBAL_IDENTITY.email }, AUTHOR_A), { action: 'confirmOverwrite', author: AUTHOR_B });
+	});
+
+	it('writes nothing when the global identity already matches the list', () => {
+		assert.deepEqual(resolveGlobalAuthorWriteAction([AUTHOR_A], { name: AUTHOR_A.name, email: AUTHOR_A.email }, null), { action: 'none', author: null });
+	});
+
+	it('writes nothing for an empty list', () => {
+		assert.deepEqual(resolveGlobalAuthorWriteAction([], { name: AUTHOR_A.name, email: AUTHOR_A.email }, AUTHOR_A), { action: 'none', author: null });
+	});
+});
+
+describe('resolveGlobalAuthorClearAction', () => {
+	it('clears silently when the identity the list held is deleted (the act of deleting it)', () => {
+		// The widget seeds the list from the global identity, and users manage their identities
+		// through it: deleting the last one IS the removal, foreign-written or not
+		assert.equal(resolveGlobalAuthorClearAction({ name: GLOBAL_IDENTITY.name, email: GLOBAL_IDENTITY.email }, null, [GLOBAL_IDENTITY]), 'clear');
+	});
+
+	it('clears silently when the current global identity is the one Git Graph wrote', () => {
+		assert.equal(resolveGlobalAuthorClearAction({ name: AUTHOR_A.name, email: AUTHOR_A.email }, AUTHOR_A, []), 'clear');
+	});
+
+	it('asks before removing an identity that was neither in the list nor written by Git Graph', () => {
+		// A machine-global identity that has nothing to do with the emptied list must not go
+		// silently: the user may manage unrelated project identities in the list
+		assert.equal(resolveGlobalAuthorClearAction({ name: GLOBAL_IDENTITY.name, email: GLOBAL_IDENTITY.email }, null, []), 'confirmClear');
+		assert.equal(resolveGlobalAuthorClearAction({ name: GLOBAL_IDENTITY.name, email: GLOBAL_IDENTITY.email }, AUTHOR_A, [AUTHOR_B]), 'confirmClear');
+	});
+
+	it('does nothing when the global configuration holds no identity', () => {
+		assert.equal(resolveGlobalAuthorClearAction({ name: null, email: null }, null, []), 'none');
+		assert.equal(resolveGlobalAuthorClearAction(null, AUTHOR_A, []), 'none');
 	});
 });
 

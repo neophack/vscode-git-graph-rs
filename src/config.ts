@@ -311,9 +311,13 @@ class Config {
 	 */
 	get graph(): GraphConfig {
 		const colours = this.config.get<string[]>('graph.colours', []);
+		const validColours = Array.isArray(colours) ? colours.filter((v) => v.match(/^\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgb[a]?\s*\(\d{1,3},\s*\d{1,3},\s*\d{1,3}\))\s*$/) !== null) : [];
 		return {
-			colours: Array.isArray(colours) && colours.length > 0
-				? colours.filter((v) => v.match(/^\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgb[a]?\s*\(\d{1,3},\s*\d{1,3},\s*\d{1,3}\))\s*$/) !== null)
+			// An array whose every entry is invalid must fall back to the defaults too: an empty
+			// palette would leave the webview computing `colours[n % 0]` — every graph line
+			// rendered undefined-coloured.
+			colours: validColours.length > 0
+				? validColours
 				: ['#0085d9', '#d9008f', '#00d90a', '#d98500', '#a300d9', '#ff0000', '#00d9cc', '#e138e8', '#85d900', '#dc5b23', '#6f24d6', '#ffcc00'],
 			style: this.config.get<string>('graph.style', 'rounded') === 'angular'
 				? GraphStyle.Angular

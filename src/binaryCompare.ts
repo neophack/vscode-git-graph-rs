@@ -232,10 +232,12 @@ export function binaryCompareScript(): string {
 	const HEXCOPY_TOOLARGE_TPL = '${t('compareHexCopyTooLarge', '{0}')}';
 	const HEX_OLD_LABEL = '${t('compareImageCaptionOld')}';
 	const HEX_NEW_LABEL = '${t('compareImageCaptionNew')}';
-	/* The largest selection Copy reads at once, in cells (one cell is one byte on one side): a
-	   clipboard payload, not a file dump - past this, Copy is refused with a reminder rather than
-	   fetching an unbounded number of rows one request at a time. */
-	const HEX_COPY_LIMIT = 10 * 1024 * 1024;
+	/* The row cache keeps at most this many rows (see the eviction in the hexRows handler).
+	   Copy reads through that same cache, so a selection is only guaranteed copyable while
+	   every one of its rows fits in it beside the viewport's own rows: the Copy limit derives
+	   from the capacity (with a margin for the viewport) rather than promising sizes the cache
+	   would evict halfway through the fetch. */
+	const HEX_ROW_CACHE_MAX = 6000;
 	function bcEscapeHtml(str) {
 		return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
@@ -659,7 +661,7 @@ export function binaryCompareScript(): string {
 	async function hexCopySelection(format, side, pane) {
 		if (!hexHasSelection()) return;
 		const start = hexSelStart(), end = hexSelEnd();
-		if (end - start + 1 > HEX_COPY_LIMIT) {
+		if (end - start + 1 > (HEX_ROW_CACHE_MAX - 1024) * hexBytesPerRow) {
 			hexSetCopyStatus(HEXCOPY_TOOLARGE_TPL.replace('{0}', (end - start + 1).toLocaleString()));
 			return;
 		}
@@ -1343,7 +1345,14 @@ export function binaryCompareScript(): string {
 				applyHexMap(msg.sections, msg.totalRows, msg.layoutVersion);
 			} else {
 				// The section map can overtake the scan's completion message; its count wins then.
-				if (hexSections === null) hexTotalRows = msg.totalRows;
+				if (hexSections === null) {
+					hexTotalRows = msg.totalRows;
+					// Adopt the provisional layout's version too: the host bumped it when the
+					// session initialised, and rows fetched under it would otherwise be discarded
+					// as stale (the client is still on 0), re-requesting them in a loop for as
+					// long as the background scan runs.
+					hexLayoutVersion = msg.layoutVersion;
+				}
 				renderHexViewport();
 			}
 			return true;
@@ -1369,7 +1378,7 @@ export function binaryCompareScript(): string {
 				if (hexEls !== null) hexEls.status.innerHTML = bcEscapeHtml(msg.error);
 			} else if (msg.layoutVersion === hexLayoutVersion) {
 				for (let i = 0; i < msg.rows.length; i++) hexRows.set(msg.start + i, msg.rows[i]);
-				while (hexRows.size > 6000) {
+				while (hexRows.size > HEX_ROW_CACHE_MAX) {
 					const oldest = hexRows.keys().next();
 					if (oldest.done) break;
 					hexRows.delete(oldest.value);

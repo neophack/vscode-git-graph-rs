@@ -363,6 +363,9 @@ function formatShortDate(unixTimestamp: number) {
 		formatted = dateStr;
 	} else {
 		let diff = Math.round((new Date()).getTime() / 1000) - unixTimestamp, unit;
+		// A commit dated in the future (author date set forward, a rebase preserving it, or clock
+		// skew between machines) must not render as a negative "seconds ago": clamp it to now.
+		if (diff < 0) diff = 0;
 		if (diff < 60) {
 			unit = 'second';
 		} else if (diff < 3600) {

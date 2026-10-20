@@ -59,6 +59,15 @@ function createDoubles() {
 			if (value instanceof Error) throw value.message;
 			return resolve(value);
 		},
+		gitOutputWithStderr: async (args, _repo, resolve) => {
+			const key = args.join(' ');
+			if (!gitOutputs.has(key)) throw new Error('unexpected git ' + key);
+			const value = gitOutputs.get(key);
+			if (value instanceof Error) throw value.message;
+			// The mock stores one blob; hand it to the resolver as both streams, like the real
+			// data source hands the spawned process's two streams over.
+			return resolve(value, '');
+		},
 		runGitCommand: async (args) => { dataSource.commands.push(args); return dataSource.runGitCommandError ?? null; },
 		searchHistory: async (_repo, query) => { if (dataSource.searchError) throw new Error('x'); return dataSource.searchResults.filter(() => query !== ''); },
 		getCommitSubject: async (_repo, hash) => dataSource.subjects[hash] ?? null,

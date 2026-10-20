@@ -55,6 +55,39 @@ fn collects_label_footers_into_votes() {
 }
 
 #[test]
+fn reads_a_header_only_vote_without_a_label_footer() {
+    // The canonical NoteDb shape of a modern vote: "Patch Set N: Label±V" with NO space before
+    // the value and no `Label:` footer at all — the header is then the only evidence of the
+    // vote, and a miss degrades the record to a comment (silently dropping every badge).
+    let parsed = parse_meta_commit(&record(
+        "Reviewer",
+        1_600_000_150,
+        "Patch Set 2: Code-Review+2\n\nPatch-set: 2\nCommit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+    ))
+    .expect("a vote record is a review event");
+    assert_eq!(parsed.event.kind, "vote");
+    let labels = parsed.event.labels.as_ref().expect("the votes are carried");
+    assert_eq!(labels.len(), 1);
+    assert_eq!(labels[0].name, "Code-Review");
+    assert_eq!(labels[0].value, 2);
+}
+
+#[test]
+fn classifies_restore_ready_for_review_as_ready() {
+    // "Restore Ready for Review" readies the change in the same record that restores it: the
+    // plain "Restore" fallback must not swallow it and leave the change stuck as WIP.
+    let parsed = parse_meta_commit(&record(
+        "Dev",
+        1_600_000_300,
+        "Restore Ready for Review\n\nPatch-set: 2\n",
+    ))
+    .expect("a restore-ready record is a review event");
+    assert_eq!(parsed.event.kind, "ready");
+    assert_eq!(parsed.wip, Some(false));
+    assert_eq!(parsed.status, Some("new"));
+}
+
+#[test]
 fn resolves_the_submitter_of_a_merge_from_the_body() {
     let parsed = parse_meta_commit(&record(
         "Gerrit User 1000018",

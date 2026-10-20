@@ -223,6 +223,13 @@ export class NativeBackend implements GitBackend {
 	}
 
 	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
+		// Custom Branch Glob Patterns (`--glob=…`) cannot reach the engine's walk: its tip
+		// resolution skips what it cannot resolve, so a glob-only selection would come back as an
+		// empty graph without any error (count_commits_before declines the same request). Decline
+		// here instead, so the fallback routes the load to the git CLI, which serves it.
+		if (options.branches?.some((branch) => branch.startsWith('--glob='))) {
+			return Promise.reject(new GitBackendError('Unsupported', 'Custom branch glob patterns (--glob=) require the git CLI backend'));
+		}
 		// Unlike getRepoInfo/getRefs above, this payload isn't merged onto DEFAULT_REF_OPTIONS, so
 		// an omitted showRemoteBranches would otherwise fall back to the engine's bare `false`
 		// (via serde's derived default) instead of the CLI backend's `?? true` — the two backends

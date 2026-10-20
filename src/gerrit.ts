@@ -290,15 +290,19 @@ export function parseMetaCommit(record: MetaCommitRecord): ParsedMetaCommit | nu
 	} else if (/^Abandoned$/.test(header) || result.status === 'abandoned') {
 		event.type = 'abandoned';
 		result.status = 'abandoned';
-	} else if (/Restore(d| Ready for Review)?$/.test(header) || /^Restored$/.test(header) || (result.status === 'new' && /^Unabor/.test(header))) {
+	} else if (/Restore Ready for Review|^Remove WIP|^Ready for review change/.test(header)) {
+		// "Restore Ready for Review" readies the change in the same record that restores it, so
+		// it must be classified BEFORE the plain "Restore" fallback — that branch's regex also
+		// matches this header and would leave `wip` stuck at true, hiding the ready change.
+		event.type = 'ready';
+		result.wip = false;
+		if (/^Restore/.test(header)) result.status = 'new';
+	} else if (/Restore(d)?$/.test(header) || /^Restored$/.test(header) || (result.status === 'new' && /^Unabor/.test(header))) {
 		event.type = 'restored';
 		result.status = 'new';
 	} else if (result.wip === true) {
 		// A WIP transition carried only by the footer of an otherwise generic record
 		event.type = 'wip';
-	} else if (/Restore Ready for Review|^Remove WIP|^Ready for review change/.test(header)) {
-		event.type = 'ready';
-		result.wip = false;
 	} else if (/^Rebase/.test(header) || /^Patch Set \d+: Rebase/.test(header) || /^Uploaded patch set/.test(header)) {
 		event.type = 'patchset';
 	} else if (header === '' && lines.every((line) => /^[A-Za-z-]+:/.test(line.trim()))) {
@@ -790,12 +794,15 @@ export class GerritDataSource {
 	}
 
 	/**
-	 * Resolve the hooks directory of a repository (<git-dir>/hooks).
+	 * Resolve the hooks directory of a repository.
 	 * @returns The absolute hooks directory path, or NULL if it couldn't be determined.
 	 */
 	private async getHooksDir(repo: string): Promise<string | null> {
-		// git rev-parse --git-dir may return a path relative to the repository
-		return this.git.gitOutput(['rev-parse', '--git-dir'], repo, (stdout) => path.resolve(repo, stdout.trim(), 'hooks')).catch(() => null);
+		// `git rev-parse --git-path hooks` resolves where git will actually execute hooks from:
+		// `core.hooksPath` when set, else the COMMON dir's hooks — `<git-dir>/hooks` alone points
+		// into a linked worktree's private directory and misses both (the returned path may be
+		// relative to the repository).
+		return this.git.gitOutput(['rev-parse', '--git-path', 'hooks'], repo, (stdout) => path.resolve(repo, stdout.trim())).catch(() => null);
 	}
 
 	/**

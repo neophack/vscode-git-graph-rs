@@ -521,6 +521,7 @@ export interface RequestRepoStatistics extends RepoRequest {
 }
 export interface ResponseRepoStatistics extends BaseMessage {
 	readonly command: 'repoStatistics';
+	readonly repo: string;
 	readonly authors: ReadonlyArray<GitAuthorStat>;
 	readonly activity: ReadonlyArray<GitActivityCell>;
 }
@@ -530,6 +531,7 @@ export interface RequestWorktreeList extends RepoRequest {
 }
 export interface ResponseWorktreeList extends BaseMessage {
 	readonly command: 'worktreeList';
+	readonly repo: string;
 	readonly worktrees: ReadonlyArray<GitWorktree>;
 }
 
@@ -566,6 +568,7 @@ export interface RequestReflog extends RepoRequest {
 }
 export interface ResponseReflog extends ResponseWithErrorInfo {
 	readonly command: 'reflog';
+	readonly repo: string;
 	readonly ref: string;
 	readonly entries: ReadonlyArray<GitReflogEntry>;
 	readonly moreAvailable: boolean;
@@ -993,6 +996,11 @@ export interface RequestSetGlobalSetting extends BaseMessage {
 	/** The key of the setting, relative to the `git-graph-rs` section (e.g. "graph.style"). */
 	readonly setting: string;
 	readonly value: GlobalSettingValue;
+	/** What the widget last rendered for this setting, when it differs in kind from a plain
+	 * read of the host's configuration (the host's read can lag the editor's write behind).
+	 * Saving 'commitAuthors' judges its global-Git-configuration side effects against THIS
+	 * list: the identities the user saw and edited are the ones the list governs. */
+	readonly previousValue?: GlobalSettingValue;
 }
 export interface ResponseSetGlobalSetting extends ResponseWithErrorInfo {
 	readonly command: 'setGlobalSetting';

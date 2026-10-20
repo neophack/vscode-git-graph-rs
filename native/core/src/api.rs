@@ -261,7 +261,8 @@ impl Engine {
         crate::status::scm_changes(&self.repo)
     }
 
-    /// Whether anything is uncommitted (a cheaper question than [`Engine::status`]).
+    /// Whether anything in the tracked files is uncommitted (a cheaper question than
+    /// [`Engine::status`]; untracked files do not count — see [`crate::status::is_dirty`]).
     pub fn is_dirty(&self) -> Result<bool> {
         crate::status::is_dirty(&self.repo)
     }

@@ -774,8 +774,11 @@ export class DataSource extends Disposable {
 	 * @returns The stash details.
 	 */
 	public getStashDetails(repo: string, commitHash: string, stash: GitCommitStash): Promise<GitCommitDetailsData> {
-		return this.backend.getStashDetails(repo, commitHash, { selector: stash.selector, baseHash: stash.baseHash, untrackedFilesHash: stash.untrackedFilesHash }).then((details) => {
-			return { commitDetails: details as unknown as GitCommitDetails, error: null };
+		return this.backend.getStashDetails(repo, commitHash, { selector: stash.selector, baseHash: stash.baseHash, untrackedFilesHash: stash.untrackedFilesHash }).then(async (details) => {
+			// A signed stash (`git stash push -S`) reports "Cannot be checked" from the engine:
+			// verify it through the CLI exactly like getCommitDetails does, instead of showing
+			// the placeholder status forever.
+			return { commitDetails: await this.verifyCommitSignature(repo, details as unknown as GitCommitDetails), error: null };
 		}, (errorMessage) => {
 			return { commitDetails: null, error: errorMessage };
 		});
@@ -2421,6 +2424,18 @@ export class DataSource extends Disposable {
 	 */
 	public gitOutput<T>(args: string[], repo: string, resolveValue: { (stdout: string): T }) {
 		return this._spawnGit(args, repo, (stdout) => resolveValue(stdout.toString()));
+	}
+
+	/**
+	 * Spawn Git, with the return value resolved from the command's combined `stdout` and `stderr`
+	 * as strings. `git push` writes its human-readable report — including a Gerrit change URL —
+	 * to `stderr`, so callers that mine it for a URL need both streams.
+	 * @param args The arguments to pass to Git.
+	 * @param repo The repository to run the command in.
+	 * @param resolveValue A callback invoked to resolve the data from `stdout` and `stderr`.
+	 */
+	public gitOutputWithStderr<T>(args: string[], repo: string, resolveValue: { (stdout: string, stderr: string): T }) {
+		return this._spawnGit(args, repo, (stdout, stderr) => resolveValue(stdout.toString(), stderr));
 	}
 
 	/**

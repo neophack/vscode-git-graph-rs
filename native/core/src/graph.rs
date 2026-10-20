@@ -31,7 +31,12 @@ pub fn repo_info(
     ref_options: &RefReadOptions,
     show_stashes: bool,
 ) -> Result<GitRepoInfo> {
-    let snapshot = read_refs(repo, ref_options).unwrap_or_default();
+    // A failed ref scan (unreadable refs directory, corrupt packed-refs) must not masquerade as
+    // an empty repository: it is propagated, so the backend layer falls back to the git CLI,
+    // which fails the same way and surfaces a real error. Benign absences stay non-fatal — an
+    // unborn HEAD resolves to nothing inside `read_refs`, and a missing stash is a legitimate
+    // "no stashes" below.
+    let snapshot = read_refs(repo, ref_options)?;
     let stashes = if show_stashes {
         read_stashes(repo).unwrap_or_default()
     } else {
@@ -88,7 +93,8 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         hide_remotes: options.hide_remotes.clone(),
         show_change_refs: options.gerrit_show_change_refs,
     };
-    let snapshot = read_refs(repo, &ref_options).unwrap_or_default();
+    // A failed ref scan is propagated (see `repo_info`), not served as an empty graph.
+    let snapshot = read_refs(repo, &ref_options)?;
     let stashes = read_stashes(repo).unwrap_or_default();
 
     let tips = resolve_tips(repo, options, &snapshot.ref_data, &stashes)?;

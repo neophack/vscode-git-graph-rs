@@ -22,23 +22,28 @@ class ConflictBanner {
 	 * @param state The operation state from the last `loadRepoInfo` response.
 	 */
 	public update(state: GG.GitOperationState) {
-		// A response from an older/mismatched build (or a test double) may omit this field entirely.
-		this.type = state ? state.type : null;
+		// A response from an older/mismatched build (or a test double) may omit any of these
+		// fields entirely — default them before reading, the same version-skew case the guard
+		// below already anticipates for `state` itself.
+		const type = state != null ? (state.type ?? null) : null;
+		const progress = state != null && state.progress != null ? state.progress : null;
+		const conflictedFiles = state != null && state.conflictedFiles != null ? state.conflictedFiles : [];
+		this.type = type;
 
-		if (state === undefined || state === null || state.type === null) {
+		if (type === null) {
 			this.elem.style.display = 'none';
 			this.elem.innerHTML = '';
 			return;
 		}
 
-		const title = this.titleFor(state.type) + (state.progress !== null
-			? ' (' + formatStr(strings.conflictBannerRebaseProgress, state.progress.step.toString(), state.progress.total.toString()) + ')'
+		const title = this.titleFor(type) + (progress !== null
+			? ' (' + formatStr(strings.conflictBannerRebaseProgress, progress.step.toString(), progress.total.toString()) + ')'
 			: '');
 
 		let html = '<span class="conflictBannerIcon">' + SVG_ICONS.alert + '</span>';
 		html += '<span class="conflictBannerTitle">' + escapeHtml(title) + '</span>';
-		if (state.conflictedFiles.length > 0) {
-			html += '<span class="conflictBannerFiles"><b>' + escapeHtml(strings.conflictBannerFilesLabel) + '</b> ' + state.conflictedFiles.map((file) => escapeHtml(file)).join(', ') + '</span>';
+		if (conflictedFiles.length > 0) {
+			html += '<span class="conflictBannerFiles"><b>' + escapeHtml(strings.conflictBannerFilesLabel) + '</b> ' + conflictedFiles.map((file) => escapeHtml(file)).join(', ') + '</span>';
 		}
 		html += '<div id="conflictBannerContinueBtn" class="roundedBtn" role="button" tabindex="0">' + escapeHtml(strings.conflictBannerContinue) + '</div>';
 		html += '<div id="conflictBannerAbortBtn" class="roundedBtn" role="button" tabindex="0">' + escapeHtml(strings.conflictBannerAbort) + '</div>';

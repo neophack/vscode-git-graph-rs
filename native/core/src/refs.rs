@@ -169,7 +169,10 @@ fn read_remote_refs(
                 // own right — but the CLI backend lists it too (`git for-each-ref` resolves the
                 // symref), so with "Show Remote Heads" enabled it resolves here to keep the
                 // backends at parity; without the option it was skipped above anyway.
-                reference.peel_to_id().ok().map(|id| id.detach().to_string())
+                reference
+                    .peel_to_id()
+                    .ok()
+                    .map(|id| id.detach().to_string())
             }
             None => None,
         };

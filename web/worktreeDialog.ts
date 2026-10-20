@@ -60,7 +60,11 @@ class WorktreeDialog {
 	}
 
 	public processListResponse(msg: GG.ResponseWorktreeList) {
-		if (!this.isOpen) return;
+		// A response for another repository is stale: the host serves requests concurrently, so
+		// a slow answer for the previous repo can arrive after the switch — it must not replace
+		// this (re-opened) dialog's list. A response without the repo echo (a mismatched build)
+		// is accepted, like the conflict banner treats its omitted fields.
+		if (!this.isOpen || (msg.repo !== undefined && msg.repo !== this.view.currentRepo)) return;
 		this.worktrees = msg.worktrees;
 		this.render();
 	}
@@ -122,10 +126,15 @@ class WorktreeDialog {
 		const branchOptions = view.gitBranches
 			.filter((b) => !b.startsWith('remotes/'))
 			.map((b) => ({ name: b + (checkedOutBranches.has(b) ? ' ' + strings.worktreeAlreadyCheckedOut : ''), value: b }));
+		// Default to a branch git will actually accept: an already-checked-out branch cannot be
+		// checked out in a NEW worktree (git refuses), so defaulting to the current branch made
+		// the dialog's own default submission fail every time. A branch that is checked out is
+		// still selectable explicitly — as the start point of a new branch.
+		const defaultStartPoint = (branchOptions.find((option) => !checkedOutBranches.has(option.value)) ?? branchOptions[0] ?? { value: '' }).value;
 
 		dialog.showForm(strings.worktreeAddTitle, [
 			{ type: DialogInputType.Text, name: strings.worktreePathLabel, default: '', placeholder: strings.worktreePathPlaceholder },
-			{ type: DialogInputType.Select, name: strings.worktreeStartPointLabel, options: branchOptions, default: view.gitBranchHead !== null ? view.gitBranchHead : (branchOptions.length > 0 ? branchOptions[0].value : '') },
+			{ type: DialogInputType.Select, name: strings.worktreeStartPointLabel, options: branchOptions, default: defaultStartPoint },
 			{ type: DialogInputType.Text, name: strings.worktreeNewBranchLabel, default: '', placeholder: strings.worktreeNewBranchPlaceholder, info: strings.worktreeNewBranchInfo }
 		], strings.worktreeAddTitle, (values) => {
 			const path = (<string>values[0]).trim(), startPoint = <string>values[1], newBranch = (<string>values[2]).trim();

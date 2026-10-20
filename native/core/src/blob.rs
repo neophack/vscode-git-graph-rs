@@ -91,6 +91,15 @@ pub fn index_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
         .entry_by_path(file_path.as_bytes().into())
         .ok_or_else(|| Error::not_found(format!("'{file_path}' is not in the index")))?;
 
+    // A staged submodule is a gitlink, not a blob: report it the way git diffs it, instead of
+    // failing with "Could not read the blob" for a path that IS in the index.
+    if entry.mode.is_submodule() {
+        return Ok(CommitFile {
+            contents: Some(format!("Subproject commit {}\n", entry.id)),
+            binary: false,
+        });
+    }
+
     let data = git
         .find_blob(entry.id)
         .git_ctx("Could not read the blob")?
@@ -251,6 +260,12 @@ fn blob_at(git: &gix::Repository, tree: &gix::Tree<'_>, path: &str) -> Result<Op
                 .to_vec();
             Ok(Some(data))
         }
+        // A submodule (gitlink) has no blob to read: git diffs it as one line naming the
+        // pointed-at commit, so a content read answers with that same line instead of
+        // reporting the path as missing (the same line the diff paths render — see entry_data).
+        Some(entry) if entry.mode().is_commit() => Ok(Some(
+            format!("Subproject commit {}\n", entry.id()).into_bytes(),
+        )),
         _ => Ok(None),
     }
 }

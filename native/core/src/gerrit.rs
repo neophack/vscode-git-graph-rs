@@ -259,6 +259,15 @@ pub fn parse_meta_commit(record: &MetaCommitRecord) -> Option<ParsedMetaCommit> 
     } else if regex_abandoned().is_match(header) || parsed.status == Some("abandoned") {
         parsed.event.kind = "abandoned".to_string();
         parsed.status = Some("abandoned");
+    } else if regex_ready().is_match(header) {
+        // "Restore Ready for Review" readies the change in the same record that restores it, so
+        // it must be classified BEFORE the plain "Restore" fallback — that branch's regex also
+        // matches this header and would leave `wip` stuck at true, hiding the ready change.
+        parsed.event.kind = "ready".to_string();
+        parsed.wip = Some(false);
+        if regex_restore_prefix().is_match(header) {
+            parsed.status = Some("new");
+        }
     } else if regex_restored().is_match(header)
         || regex_restored_exact().is_match(header)
         || (parsed.status == Some("new") && regex_unabor().is_match(header))
@@ -268,9 +277,6 @@ pub fn parse_meta_commit(record: &MetaCommitRecord) -> Option<ParsedMetaCommit> 
     } else if parsed.wip == Some(true) {
         // A WIP transition carried only by the footer of an otherwise generic record
         parsed.event.kind = "wip".to_string();
-    } else if regex_ready().is_match(header) {
-        parsed.event.kind = "ready".to_string();
-        parsed.wip = Some(false);
     } else if regex_rebase().is_match(header)
         || regex_patch_set_rebase().is_match(header)
         || regex_uploaded_any().is_match(header)
@@ -457,7 +463,10 @@ grammar_regex!(
 );
 grammar_regex!(
     regex_header_vote,
-    r"^Patch Set \d+:.*?\b([A-Za-z][A-Za-z0-9-]*)\s+([+-]\d)\b"
+    // `\s*` (not `\s+`): Gerrit writes the canonical header vote with NO space —
+    // "Patch Set 2: Code-Review+2" — and a miss here degrades the record to a comment, so
+    // every modern vote would silently vanish from the badges. Mirrors src/gerrit.ts.
+    r"^Patch Set \d+:.*?\b([A-Za-z][A-Za-z0-9-]*)\s*([+-]\d)\b"
 );
 grammar_regex!(regex_create_change, r"^Create change");
 grammar_regex!(
@@ -470,9 +479,10 @@ grammar_regex!(
     r"^Change has been successfully (merged|cherry-picked|pushed)"
 );
 grammar_regex!(regex_abandoned, r"^Abandoned$");
-grammar_regex!(regex_restored, r"Restore(d| Ready for Review)?$");
+grammar_regex!(regex_restored, r"Restore(d)?$");
 grammar_regex!(regex_restored_exact, r"^Restored$");
 grammar_regex!(regex_unabor, r"^Unabor");
+grammar_regex!(regex_restore_prefix, r"^Restore");
 grammar_regex!(
     regex_ready,
     r"Restore Ready for Review|^Remove WIP|^Ready for review change"

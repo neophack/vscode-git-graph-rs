@@ -993,9 +993,11 @@ class SettingsWidget {
 	 * Save a Global Setting, and display the "Saving Setting" action running state while it is saved.
 	 * @param setting The key of the setting, relative to the `git-graph-rs` section.
 	 * @param value The new value of the setting.
+	 * @param previousValue What the widget last rendered for the setting, when the host needs
+	 * what the user saw rather than its own (possibly lagging) configuration read.
 	 */
-	private saveGlobalSetting(setting: string, value: GG.GlobalSettingValue) {
-		runAction({ command: 'setGlobalSetting', setting: setting, value: value }, strings.settingsSavingSetting);
+	private saveGlobalSetting(setting: string, value: GG.GlobalSettingValue, previousValue?: GG.GlobalSettingValue) {
+		runAction({ command: 'setGlobalSetting', setting: setting, value: value, previousValue: previousValue }, strings.settingsSavingSetting);
 	}
 
 	/**
@@ -1120,7 +1122,10 @@ class SettingsWidget {
 	 * empty name or email) are reported through the save action's response dialog.
 	 */
 	private saveCommitAuthors(authors: GG.CommitAuthor[]) {
-		this.saveGlobalSetting('commitAuthors', authors);
+		// The list the widget rendered is what the global-author side effects of the save are
+		// judged against on the host: deleting the last identity clears the global author it
+		// held, even when the host's own configuration read has not caught up with the editor.
+		this.saveGlobalSetting('commitAuthors', authors, this.getCommitAuthors());
 	}
 
 	/**
