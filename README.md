@@ -27,14 +27,12 @@ Bug reports, feature requests and questions go to
 
 ## Git Graph Studio
 
-The engine in `native/core` is not confined to this extension: it is linked in-process into
-[Git Graph Studio](https://github.com/neophack/git-graph-studio), a standalone desktop
-application (Tauri 2 + TypeScript + Rust) that hosts it inside a VS Code-class workbench —
-a File Explorer with git status decoration, Source Control, a tabbed editor suite with
-split groups, an integrated terminal, a VSIX / `.ggx` extension platform and a CAN trace
-analyzer — with the Git Graph view served by this extension's webview, unchanged, behind an
-`acquireVsCodeApi` shim. Every repository read in the app crosses the same engine; writes go
-through the `git` CLI, as they do here.
+The engine in `native/core` also powers
+[Git Graph Studio](https://github.com/neophack/git-graph-studio), a standalone desktop app
+(Tauri 2 + TypeScript + Rust) shaped like a small VS Code — file explorer, source control,
+editor, terminal, extensions — whose Git Graph view is served by this extension's webview,
+unchanged. Reads cross the same engine; writes go through the `git` CLI, as they do here.
+It installs a `ggs` command, like VS Code's `code`.
 
 ## What this fork adds
 

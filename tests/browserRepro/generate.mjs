@@ -143,7 +143,7 @@ window.__respond = async function () {
 				}
 			} else if (message.command === 'loadConfig') {
 				/* the repository config the Settings panel renders (branch remotes, authors, user identity) */
-				dispatch({ command: 'loadConfig', repo: ${JSON.stringify(REPO)}, error: null,
+				dispatch({ command: 'loadConfig', repo: ${JSON.stringify(REPO)}, refreshId: message.refreshId, error: null,
 					config: {
 						branches: { main: { remote: 'origin', pushRemote: null }, 'feature-x': { remote: null, pushRemote: null } },
 						authors: [{ name: 'Author 0', email: 'author0@example.com' }, { name: 'Author 7', email: 'author7@example.com' }],

@@ -211,6 +211,7 @@ export async function bootView(total, options = {}) {
 		repos: repos,
 		loadRepoInfoRefreshId: 0,
 		loadCommitsRefreshId: 0,
+		loadConfigRefreshId: 0,
 		backend: { platform: 'test', engineAvailable: true, engineVersion: 'test', gitCliAvailable: true, capabilities: [] }
 	};
 	window.globalState = { ...DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE };

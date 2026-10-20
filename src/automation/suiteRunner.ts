@@ -357,7 +357,19 @@ async function reloadViewAfterGeneration(server: AutomationServer): Promise<void
 		+ 'var cb=document.getElementById("settingsClose");'
 		+ 'if(cb!==null)cb.click();'
 		+ 'return resolve("config reloaded");}'
-		+ 'if(++n>250)return reject(new Error("the generated repository config never loaded"));'
+		+ 'if(++n>250){'
+		+ 'var opts=document.querySelectorAll("#authorDropdown .dropdownOption").length;'
+		+ 'var loading=w!==null&&w.className.split(/\\s+/).indexOf("loading")!==-1;'
+		+ 'var hasOrigin=w!==null&&w.innerHTML.indexOf(">origin<")!==-1;'
+		+ 'return reject(new Error("the generated repository config never loaded'
+		// The page state at the moment the wait gave up: whether the widget opened at all, a
+		// config request still in flight, how many options the dropdown holds, and whether the
+		// rendered settings content knows the generated remote (fresh config) or not (the
+		// pre-generation config is still what the page holds).
+		+ ' [widget "+(active?"open":"closed")'
+		+ '+(loading?", config request in flight":", idle")'
+		+ '+"; author dropdown options: "+opts'
+		+ '+"; settings show remote origin: "+(hasOrigin?"yes":"no")+"]"));}'
 		+ 'setTimeout(t,100);};t();});})()';
 	for (const [what, expr] of [['view reload', refreshExpr], ['config reload', configExpr]] as const) {
 		const outcome = await server.eval({ expr });
@@ -564,7 +576,19 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 			// The view still shows the repository as it loaded it (empty), and loadRepos skips a
 			// repository it is already showing - drive the view's own controls to reload it onto
 			// the generated history instead of racing the 5 s background change poll.
-			await reloadViewAfterGeneration(server);
+			try {
+				await reloadViewAfterGeneration(server);
+			} catch (error) {
+				// One bounded retry. Nothing ever re-requests the repository config once the page
+				// is up, so a read that raced the generation (a warm handle or a cached promise
+				// still serving the pre-generation state - the exact hazard the close above
+				// guards against) would fail the whole run on a state nothing re-reads. Drop the
+				// handle and drive the reload once more; a real failure throws again, loudly.
+				options.logger.logError('post-generation reload failed once - retrying: '
+					+ (error instanceof Error ? error.message : String(error)));
+				bridge.closeRepository(repo);
+				await reloadViewAfterGeneration(server);
+			}
 		}
 		// The fixture's submodule is the catalog's second known repository (`anotherRepo`, the
 		// Repos dropdown). Seeding (or the previous run's final reseed) materialised it; a repo

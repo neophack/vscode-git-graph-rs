@@ -12,6 +12,7 @@ export interface GitGraphViewInitialState {
 	readonly repos: GitRepoSet;
 	readonly loadRepoInfoRefreshId: number;
 	readonly loadCommitsRefreshId: number;
+	readonly loadConfigRefreshId: number;
 	/** Which backend serves each area of the extension on this platform. */
 	readonly backend: BackendReport;
 }

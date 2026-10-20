@@ -27,6 +27,7 @@ class GitGraphView {
 		hard: boolean;
 		loadRepoInfoRefreshId: number;
 		loadCommitsRefreshId: number;
+		loadConfigRefreshId: number;
 		repoInfoChanges: boolean;
 		configChanges: boolean;
 		requestingRepoInfo: boolean;
@@ -175,6 +176,7 @@ class GitGraphView {
 			hard: true,
 			loadRepoInfoRefreshId: initialState.loadRepoInfoRefreshId,
 			loadCommitsRefreshId: initialState.loadCommitsRefreshId,
+			loadConfigRefreshId: initialState.loadConfigRefreshId,
 			repoInfoChanges: false,
 			configChanges: false,
 			requestingRepoInfo: false,
@@ -1023,6 +1025,12 @@ class GitGraphView {
 
 	public processLoadConfig(msg: GG.ResponseLoadConfig) {
 		if (this.currentRepo === msg.repo) {
+			// A response superseded by a newer loadConfig request must not apply: two requests can
+			// be in flight at once (the settings widget's open and a load cycle's own reload), and
+			// the older read — served from a pre-change snapshot — landing after the newer one
+			// would otherwise overwrite the fresh configuration with stale data (the author
+			// dropdown would go back to "All Authors" and nothing would ever re-request).
+			if (this.currentRepoRefreshState.loadConfigRefreshId !== msg.refreshId) return;
 			this.currentRepoRefreshState.requestingConfig = false;
 			if (msg.config !== null) {
 				this.gitConfig = msg.config;
@@ -1285,7 +1293,7 @@ class GitGraphView {
 
 	public requestLoadConfig() {
 		this.currentRepoRefreshState.requestingConfig = true;
-		sendMessage({ command: 'loadConfig', repo: this.currentRepo, remotes: this.gitRemotes });
+		sendMessage({ command: 'loadConfig', repo: this.currentRepo, refreshId: ++this.currentRepoRefreshState.loadConfigRefreshId, remotes: this.gitRemotes });
 		this.settingsWidget.refresh();
 	}
 

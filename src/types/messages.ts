@@ -480,11 +480,13 @@ export interface ResponseCountCommitsBefore {
 
 export interface RequestLoadConfig extends RepoRequest {
 	readonly command: 'loadConfig';
+	readonly refreshId: number;
 	readonly remotes: ReadonlyArray<string>;
 }
 export interface ResponseLoadConfig extends ResponseWithErrorInfo {
 	readonly command: 'loadConfig';
 	readonly repo: string;
+	readonly refreshId: number;
 	readonly config: GitRepoConfig | null;
 }
 

@@ -321,6 +321,7 @@ export class GitGraphView extends Disposable {
 
 	private loadRepoInfoRefreshId: number = 0;
 	private loadCommitsRefreshId: number = 0;
+	private loadConfigRefreshId: number = 0;
 
 	/**
 	 * Whether the webview is currently RENDERING a commit list (set once a `loadCommits` response
@@ -1228,9 +1229,15 @@ export class GitGraphView extends Disposable {
 				break;
 			}
 			case 'loadConfig':
+				// The id rides the response back: the webview drops a response whose request was
+				// superseded by a newer one, so a slow pre-change read can never overwrite the
+				// fresh configuration a later request already applied (the loadRepoInfo/loadCommits
+				// responses carry the same guard).
+				this.loadConfigRefreshId = msg.refreshId;
 				this.sendMessage({
 					command: 'loadConfig',
 					repo: msg.repo,
+					refreshId: msg.refreshId,
 					...await this.dataSource.getConfig(msg.repo, msg.remotes)
 				});
 				break;
@@ -1645,6 +1652,7 @@ export class GitGraphView extends Disposable {
 			repos: this.repoManager.getRepos(),
 			loadRepoInfoRefreshId: this.loadRepoInfoRefreshId,
 			loadCommitsRefreshId: this.loadCommitsRefreshId,
+			loadConfigRefreshId: this.loadConfigRefreshId,
 			backend: describeCapabilities({ gitCliAvailable: !this.dataSource.isGitExecutableUnknown() })
 		};
 		this.lastSentInterfaceLanguage = initialState.config.interfaceLanguage;
