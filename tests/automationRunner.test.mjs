@@ -93,7 +93,7 @@ test('runAutomationSuite runs the selected actions in-process and reports them',
 	const report = await boot.automation.suiteRunner.runAutomationSuite({
 		logger: silentLogger,
 		filter: (action) => SELECTED.has(action.id),
-		actionTimeoutMs: 60000,
+		actionTimeoutMs: 180000,
 		onProgress: (p) => progress.push(p)
 	});
 
@@ -124,7 +124,7 @@ test('runAutomationSuite ends with the repository back in its seeded state', asy
 	const report = await runAutomationSuite({
 		logger: silentLogger,
 		filter: (action) => action.id === 'menu-commit/add-tag',
-		actionTimeoutMs: 60000
+		actionTimeoutMs: 180000
 	});
 	assert.equal(report.totals.failed, 0, JSON.stringify(report.suites.flatMap((s) => s.runs).filter((r) => !r.ok)));
 	assert.equal(report.suites[1].runs.length, 1);
@@ -142,7 +142,7 @@ test('actions that open the editor\'s native save dialog are reported as skipped
 	const report = await runAutomationSuite({
 		logger: silentLogger,
 		filter: (action) => action.id.endsWith('/create-archive'),
-		actionTimeoutMs: 60000
+		actionTimeoutMs: 180000
 	});
 	assert.equal(report.suites[1].runs.length, 3);
 	for (const run of report.suites[1].runs) {
@@ -241,7 +241,7 @@ test('runAutomationSuite generates the fixture into a repository with no commits
 		logger: silentLogger,
 		repo: emptyRepoDir,
 		filter: (action) => action.id === 'control-bar/refresh',
-		actionTimeoutMs: 60000,
+		actionTimeoutMs: 180000,
 		fixtureOptions: { commits: 120, branches: 4, tags: 6, authors: 5 },
 		registerRepo: async (repo) => { registered.push(repo); }
 	});

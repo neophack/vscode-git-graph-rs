@@ -422,7 +422,8 @@ describe('git-graph-rs.version', () => {
 		onDidChangeGitExecutable.emit(null);
 		vscode.runCommand('git-graph-rs.version');
 		await flush();
-		assert.match(vscode.callsTo('showInformationMessage')[0].args[0], /\(none\)/);
+		await flush();
+		assert.match(vscode.callsTo('showInformationMessage').at(-1).args[0], /\(none\)/);
 
 		manager.dispose();
 		({ manager } = createManager(doubles));

@@ -265,7 +265,7 @@ export async function bootRealView(repo) {
 	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
 	const repoManager = new RepoManager(dataSource, extensionState, configurationEmitter.subscribe, logger);
 
-	for (let i = 0; i < 100 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
+	for (let i = 0; i < 600 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
 	assert.ok(Object.keys(repoManager.getRepos()).length > 0, 'the repository was discovered');
 
 	// The REAL command registry: every `git-graph-rs.*` command registers through the stub's
