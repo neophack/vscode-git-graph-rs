@@ -443,6 +443,25 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Re-attach a Git Graph View to a Webview Panel that outlived the Extension Host (restarted
+	 * manually, or after an extension install / update). Without this the tab stays open but
+	 * nothing on the extension side answers its messages, so it hangs until it is closed and reopened.
+	 * @param panel The revived Webview Panel handed over by VS Code.
+	 */
+	public static restore(panel: vscode.WebviewPanel, extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger) {
+		if (GitGraphView.currentPanel) {
+			// A view is already open: a second one can't share the singleton state.
+			panel.dispose();
+			return;
+		}
+		panel.webview.options = {
+			enableScripts: true,
+			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
+		};
+		GitGraphView.currentPanel = new GitGraphView(extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, null, panel.viewColumn, panel);
+	}
+
+	/**
 	 * Creates a Git Graph View.
 	 * @param extensionPath The absolute file path of the directory containing the extension.
 	 * @param dataSource The Git Graph DataSource instance.
@@ -453,7 +472,7 @@ export class GitGraphView extends Disposable {
 	 * @param loadViewTo What to load the view to.
 	 * @param column The column the view should be loaded in.
 	 */
-	private constructor(extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo, column: vscode.ViewColumn | undefined) {
+	private constructor(extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo, column: vscode.ViewColumn | undefined, existingPanel?: vscode.WebviewPanel) {
 		super();
 		this.extensionPath = extensionPath;
 		this.avatarManager = avatarManager;
@@ -464,7 +483,7 @@ export class GitGraphView extends Disposable {
 		this.loadViewTo = loadViewTo;
 
 		const config = getConfig();
-		this.panel = vscode.window.createWebviewPanel('git-graph-rs', 'Git Graph RS', column || vscode.ViewColumn.One, {
+		this.panel = existingPanel || vscode.window.createWebviewPanel('git-graph-rs', 'Git Graph RS', column || vscode.ViewColumn.One, {
 			enableScripts: true,
 			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))],
 			retainContextWhenHidden: config.retainContextWhenHidden

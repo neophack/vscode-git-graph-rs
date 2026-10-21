@@ -7,6 +7,7 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
+import { GitGraphView } from './gitGraphView';
 import { t } from './i18n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
@@ -87,6 +88,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
+		vscode.window.registerWebviewPanelSerializer('git-graph-rs', {
+			deserializeWebviewPanel: async (panel: vscode.WebviewPanel) => {
+				GitGraphView.restore(panel, context.extensionPath, dataSource, extensionState, avatarManager, repoManager, logger);
+			}
+		}),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
 				logger.setEnabled(getConfig().enableLog);

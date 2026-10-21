@@ -30,6 +30,7 @@
 		"onCommand:git-graph-rs.filterByFile",
 		"onCommand:git-graph-rs.version",
 		"onCommand:git-graph-rs.searchCommits",
+		"onWebviewPanel:git-graph-rs",
 		"workspaceContains:.git"
 	],
 	"main": "./out/extension.js",
