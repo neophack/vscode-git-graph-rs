@@ -32,6 +32,11 @@ test.before(async () => {
 	await sleep(500); // let the initial page load settle
 	engine = new boot.automation.AutomationServer({ logger: silentLogger, bridge: new boot.automation.HostBridge(), version: 'test' });
 	engine.start();
+	// Under a loaded full-suite run the repo can take much longer than the fixed settle above.
+	const loadDeadline = Date.now() + 60000;
+	while ((!engine.status().viewLoaded || engine.status().currentRepo === null) && Date.now() < loadDeadline) {
+		await sleep(100);
+	}
 });
 
 test.after(async () => {
