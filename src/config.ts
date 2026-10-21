@@ -407,7 +407,8 @@ class Config {
 		let explicit: boolean | undefined;
 		if (typeof this.config.inspect === 'function') {
 			const inspected = this.config.inspect<boolean>('mobileAdaptation');
-			explicit = inspected?.globalValue ?? inspected?.workspaceValue ?? inspected?.workspaceFolderValue;
+			// VS Code's own precedence: the most specific scope wins
+			explicit = inspected?.workspaceFolderValue ?? inspected?.workspaceValue ?? inspected?.globalValue;
 		} else if (this.config.has('mobileAdaptation')) {
 			explicit = this.config.get<boolean>('mobileAdaptation');
 		}

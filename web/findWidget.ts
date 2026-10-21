@@ -250,7 +250,9 @@ class FindWidget {
 		this.position = -1;
 
 		if (this.text !== '') {
-			let colVisibility = this.view.getColumnVisibility(), findPattern: RegExp | null, findGlobalPattern: RegExp | null;
+			// The mobile layout drops the Author and Commit columns, but its two-line rows still show
+			// the author and the abbreviated hash under the subject: both stay searchable there
+			let colVisibility = this.view.isMobileLayout() ? { date: false, author: true, commit: true } : this.view.getColumnVisibility(), findPattern: RegExp | null, findGlobalPattern: RegExp | null;
 			const regexText = workspaceState.findIsRegex ? this.text : this.text.replace(/[\\\[\](){}|.*+?^$]/g, '\\$&'), flags = 'u' + (workspaceState.findIsCaseSensitive ? '' : 'i');
 			try {
 				findPattern = new RegExp(regexText, flags);

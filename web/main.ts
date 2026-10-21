@@ -1915,11 +1915,13 @@ class GitGraphView {
 	 * Remote Branches" toggle, a load error awaiting retry). The collapse clamps the browser's
 	 * scrollTop to 0, so the anchor the eventual re-render would capture live is "at the very
 	 * top" - this pre-collapse capture is what lets loadCommits put the user back where they were
-	 * reading once the same commits render again. A null capture (nothing measurable) is stored
-	 * as nothing.
+	 * reading once the same commits render again. A null capture (nothing measurable) keeps the
+	 * anchor already pending: a hard refresh that fails to load reaches displayLoadDataError with
+	 * the table already cleared, and must not overwrite the refresh's own capture with nothing.
 	 */
 	private capturePendingViewportAnchor() {
-		this.pendingViewportAnchor = this.captureViewportAnchor();
+		const anchor = this.captureViewportAnchor();
+		if (anchor !== null) this.pendingViewportAnchor = anchor;
 	}
 
 	/**
@@ -2432,8 +2434,11 @@ class GitGraphView {
 			name: option.name,
 			value: selected.size === 0 ? option.value === SHOW_ALL_BRANCHES : selected.has(option.value)
 		})), strings.dialogApply, (values) => {
+			// The same rules as the dropdown's multi-select: "All Authors" is exclusive (dropped once
+			// any author is checked), and checking nothing means all authors
 			const chosen = options.filter((_option, i) => <boolean>values[i]).map((option) => option.value);
-			this.currentAuthors = chosen;
+			const authors = chosen.filter((value) => value !== SHOW_ALL_BRANCHES);
+			this.currentAuthors = authors.length > 0 ? authors : [SHOW_ALL_BRANCHES];
 			this.maxCommits = this.config.initialLoadCommits;
 			this.saveState();
 			this.clearCommits();

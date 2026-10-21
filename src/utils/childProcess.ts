@@ -79,8 +79,9 @@ export function quoteForShell(value: string, kind: ShellKind): string | null {
 			return /["%]/.test(value) ? null : '"' + value + '"';
 		case 'powershell':
 			// Inside double quotes PowerShell expands `$…`, executes `$(…)` and honours backtick
-			// escapes; each of those, and the quote itself, is neutralised with a backtick.
-			return '"' + value.replace(/[`$"]/g, '`$&') + '"';
+			// escapes; each of those, and the quote itself, is neutralised with a backtick. PowerShell
+			// also ends a double-quoted string at the typographic quotes “ ” „, which ref names may contain.
+			return '"' + value.replace(/[`$"“”„]/g, '`$&') + '"';
 		case 'fish':
 			// Inside single quotes fish treats `\'` as an escaped quote (POSIX shells would not).
 			return '\'' + value.replace(/'/g, '\\\'') + '\'';

@@ -1760,7 +1760,9 @@ export class GitGraphView extends Disposable {
 			} else {
 				this.logger.log('Pull requests of ' + remote.url + ': ' + prs.prs.length + ' request(s)' + (prs.complete ? '' : ' (list truncated by the pagination cap)'));
 			}
-			return { name: remote.name, url: remote.url, prs: prs === null ? [] : prs.prs, complete: prs === null || prs.complete };
+			// A failed request knows nothing about the remote's list: it must not be reported as
+			// complete, or the empty list would prune every fetched pull request ref
+			return { name: remote.name, url: remote.url, prs: prs === null ? [] : prs.prs, complete: prs !== null && prs.complete };
 		} catch (error) {
 			this.logger.log('Pull requests unavailable: ' + (error instanceof Error ? error.message : String(error)));
 			return null;

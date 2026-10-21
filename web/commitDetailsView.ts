@@ -467,9 +467,13 @@ function collectVisiblePendingPaths(view: GitGraphView): string[] {
 
 	const filesElem = document.getElementById('cdvFiles');
 
-	if (filesElem === null) return [];
+	const scrollElem = document.getElementById(getCdvFilesScrollElemId(view));
 
-	const visible = filesElem.getBoundingClientRect();
+	if (filesElem === null || scrollElem === null) return [];
+
+	// The viewport is the file list's scroll container: #cdvFiles itself, or in the mobile sheet
+	// #cdvContent (#cdvFiles is unclipped there, so its own rect would count every file as visible)
+	const visible = scrollElem.getBoundingClientRect();
 
 	const paths: string[] = [];
 
@@ -877,7 +881,7 @@ function renderCommitDetailsView(view: GitGraphView, refresh: boolean) {
 
 
 
-		observeElemScroll('cdvFiles', expandedCommit.scrollTop.fileView, (scrollTop) => {
+		observeElemScroll(getCdvFilesScrollElemId(view), expandedCommit.scrollTop.fileView, (scrollTop) => {
 
 			if (view.expandedCommit === null) return;
 
@@ -1342,6 +1346,16 @@ function getCdvMessageBody(view: GitGraphView, body: string) {
 	if (!view.isMobileLayout()) return body;
 	const newline = body.indexOf('\n');
 	return newline < 0 ? '' : body.substring(newline + 1).replace(/^\s*\n/, '').replace(/\s+$/, '');
+}
+
+/**
+ * The element the file list scrolls in: #cdvFiles in the wide layout; in the mobile sheet the
+ * whole #cdvContent scrolls (summary and files together), and #cdvFiles never does. Its scroll
+ * position is kept in `scrollTop.fileView`, so a re-render (every background refresh rebuilds the
+ * sheet) restores it instead of jumping back to the top.
+ */
+function getCdvFilesScrollElemId(view: GitGraphView) {
+	return view.isMobileLayout() ? 'cdvContent' : 'cdvFiles';
 }
 
 /** The mobile sheet's title bar text: the abbreviated commit, or what is being compared. */
