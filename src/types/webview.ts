@@ -15,6 +15,17 @@ export interface GitGraphViewInitialState {
 	readonly loadConfigRefreshId: number;
 	/** Which backend serves each area of the extension on this platform. */
 	readonly backend: BackendReport;
+	/** The view state to reopen on, when this page replaces one left behind by an Extension Host restart (see GitGraphViewSnapshot). */
+	readonly restoredSnapshot: GitGraphViewSnapshot | null;
+}
+
+/**
+ * The webview's own view state (repository, path filter, scroll position, widgets), mirrored to
+ * the extension so the page replacing a tab left behind by an Extension Host restart reopens where
+ * the old page was - with freshly loaded data. Opaque to the extension: only the webview reads it.
+ */
+export interface GitGraphViewSnapshot {
+	readonly [key: string]: unknown;
 }
 
 /* Backend capability report */

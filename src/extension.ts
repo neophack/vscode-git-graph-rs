@@ -93,6 +93,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				GitGraphView.restore(panel, context.extensionPath, dataSource, extensionState, avatarManager, repoManager, logger);
 			}
 		}),
+		GitGraphView.watchForOrphanedTabs(context.extensionPath, dataSource, extensionState, avatarManager, repoManager, logger),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
 				logger.setEnabled(getConfig().enableLog);

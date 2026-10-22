@@ -7,7 +7,7 @@ import type {
 import type { PullRequestConfig, PullRequestInfo } from './pullRequest';
 import type { CodeReview, GitRepoSet, GitRepoState } from './repoState';
 import type {
-	CommitAuthor, CommitOrdering, GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewWorkspaceState,
+	CommitAuthor, CommitOrdering, GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState,
 	LoadGitGraphViewTo, TagType
 } from './webview';
 
@@ -872,6 +872,11 @@ export interface RequestSetRepoState extends RepoRequest {
 	readonly state: GitRepoState;
 }
 
+export interface RequestSetViewSnapshot extends BaseMessage {
+	readonly command: 'setViewSnapshot';
+	readonly snapshot: GitGraphViewSnapshot;
+}
+
 export interface RequestSetWorkspaceViewState extends BaseMessage {
 	readonly command: 'setWorkspaceViewState';
 	readonly state: GitGraphViewWorkspaceState;
@@ -1081,6 +1086,7 @@ export type RequestMessage =
 	| RequestRevertCommit
 	| RequestSetGlobalViewState
 	| RequestSetRepoState
+	| RequestSetViewSnapshot
 	| RequestSetWorkspaceViewState
 	| RequestShowErrorDialog
 	| RequestStartCodeReview

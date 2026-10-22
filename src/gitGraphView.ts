@@ -43,7 +43,7 @@ import { Logger } from './logger';
 import { buildPullRequestHeadRefspecs, findStalePullRequestRefs, parseGitRemoteVerbose, parseRemoteUrl, PullRequestDataSource, selectRemote } from './pullRequests';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoChangeEvent, RepoManager } from './repoManager';
-import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, PullRequestInfo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { CommitAuthor, ErrorInfo, GerritChangeState, LossWarning, GerritStatusFilter, GitConfigLocation, GitGraphViewConfig, GitGraphViewInitialState, GitGraphViewSnapshot, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, PullRequestInfo, RequestGerritSetFetchRefs, RequestLoadCommits, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNCOMMITTED } from './utils/git';
 import {
 	archive,
@@ -317,6 +317,7 @@ export class GitGraphView extends Disposable {
 	private currentRepo: string | null = null;
 	private automationShimJs: string | null | undefined = undefined;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
+	private restoredSnapshot: GitGraphViewSnapshot | null = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
 	private pendingReposEvent: RepoChangeEvent | null = null; // A repo-set change that arrived while the panel was hidden, replayed on the next show
 
 	private loadRepoInfoRefreshId: number = 0;
@@ -354,6 +355,14 @@ export class GitGraphView extends Disposable {
 	 * an existing branch changes no name, so a name-only signature would never notice it.
 	 */
 	private static readonly BACKGROUND_POLL_INTERVAL_MS = 5000;
+	/** How long a Git Graph tab may be shown without a live view before it is treated as left behind by an Extension Host restart. */
+	private static readonly ORPHANED_TAB_GRACE_MS = 1500;
+	/**
+	 * How long after activation no Git Graph tab is treated as left behind: on a window reload VS Code
+	 * only hands the restored tab to the serializer once activation has finished, and on a busy
+	 * startup that round trip can outlast ORPHANED_TAB_GRACE_MS.
+	 */
+	private static readonly ORPHANED_TAB_STARTUP_GRACE_MS = 5000;
 	private backgroundRefreshTimer: NodeJS.Timeout | null = null;
 	/** The last repository signature the background poll observed (NULL => record a baseline first). */
 	private lastRepoSignature: string | null = null;
@@ -443,9 +452,9 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
-	 * Re-attach a Git Graph View to a Webview Panel that outlived the Extension Host (restarted
-	 * manually, or after an extension install / update). Without this the tab stays open but
-	 * nothing on the extension side answers its messages, so it hangs until it is closed and reopened.
+	 * Re-attach a Git Graph View to a Webview Panel VS Code revives through the serializer (a
+	 * window reload restoring the open Git Graph tab). An Extension Host restart doesn't go through
+	 * here: see watchForOrphanedTabs.
 	 * @param panel The revived Webview Panel handed over by VS Code.
 	 */
 	public static restore(panel: vscode.WebviewPanel, extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger) {
@@ -462,6 +471,96 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Replace the Git Graph tabs an Extension Host restart (manual, or after an extension install /
+	 * update) leaves behind. VS Code keeps such a tab open with its old page but never hands it to
+	 * the serializer (only a window reload does), so nothing on the extension side answers its
+	 * messages and it sits on "Loading..." forever. A Git Graph tab that is shown while no live
+	 * view backs it gets a fresh view opened NEXT to it and only then the dead tab closed, so the
+	 * replacement takes over the dead tab's position in the tab bar (the same order claude-code's
+	 * lost-tab replacement uses) instead of the tab visibly closing and a new one appearing at the
+	 * end of the bar.
+	 * @param extensionPath The absolute file path of the directory containing the extension.
+	 * @param dataSource The Git Graph DataSource instance.
+	 * @param extensionState The Git Graph ExtensionState instance.
+	 * @param avatarManager The Git Graph AvatarManager instance.
+	 * @param repoManager The Git Graph RepoManager instance.
+	 * @param logger The Git Graph Logger instance.
+	 * @returns A disposable that stops watching.
+	 */
+	public static watchForOrphanedTabs(extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger): vscode.Disposable {
+		const tabGroups = (vscode.window as any).tabGroups;
+		if (tabGroups === undefined || typeof tabGroups.onDidChangeTabs !== 'function') {
+			return { dispose: () => { } }; // The Tab API is unavailable (VS Code < 1.67)
+		}
+		const isGitGraphTab = (tab: any) => tab !== undefined && tab.input !== undefined && typeof tab.input.viewType === 'string'
+			&& (tab.input.viewType === 'git-graph-rs' || tab.input.viewType.endsWith('-git-graph-rs'));
+
+		let timer: NodeJS.Timeout | null = null;
+		// The live view's own tab, remembered while its panel is shown: a hidden panel can still be its
+		// group's active tab (maximized panel, hidden editor area), so visibility alone can't tell it
+		// apart from a dead tab
+		let liveTab: any = null;
+		const check = async () => {
+			timer = null;
+			const groups = tabGroups.all as any[];
+			const current = GitGraphView.currentPanel;
+			if (current !== undefined && current.panel.visible) {
+				const liveGroup = groups.find((group) => group.viewColumn === current.panel.viewColumn);
+				if (liveGroup !== undefined && isGitGraphTab(liveGroup.activeTab)) liveTab = liveGroup.activeTab;
+			}
+			const numGitGraphTabs = groups.reduce((num, group) => num + (group.tabs as any[]).filter(isGitGraphTab).length, 0);
+
+			for (const group of groups) {
+				const tab = group.activeTab;
+				if (!isGitGraphTab(tab)) continue;
+				const view = GitGraphView.currentPanel;
+
+				if (view !== undefined) {
+					// The live view's own tab, or the only Git Graph tab there is (which then must be it)
+					if (tab === liveTab || numGitGraphTabs <= 1) continue;
+					// Another live view already exists elsewhere: the dead tab was only a duplicate.
+					// Close it — the live view stays where it is, nothing is reopened in its place.
+					logger.log('Closing a duplicate Git Graph tab left behind by an Extension Host restart');
+					try {
+						await tabGroups.close(tab, true);
+					} catch (_) { /* the tab is already gone */ }
+					continue;
+				}
+
+				// The tab was left behind by an Extension Host restart. Open the replacement FIRST,
+				// while the dead tab still holds its place in the tab bar, and close the dead tab
+				// LAST: the new panel opens beside its group's active editor — the dead tab — and
+				// slides into its index as it closes, so the tab bar reads as one tab refreshing
+				// in place rather than a tab closing and a new one appearing elsewhere.
+				// Reopen where the old page was (repository, path filter, scroll position, widgets),
+				// with every bit of data loaded afresh from this Extension Host
+				logger.log('Refreshing a Git Graph tab left behind by an Extension Host restart in place');
+				GitGraphView.currentPanel = new GitGraphView(extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, null, { viewColumn: group.viewColumn, preserveFocus: !group.isActive }, undefined, extensionState.getViewSnapshot());
+				try {
+					await tabGroups.close(tab, true);
+				} catch (_) { /* the dead tab is already gone: the replacement is up either way */ }
+			}
+		};
+		// Debounced: a tab is only judged once it has been shown for a while, so a tab VS Code is
+		// reviving through the serializer (window reload, or a background tab shown for the first
+		// time) is attached to its live view first and left alone. Tab events during startup can't
+		// cut the startup grace short.
+		const startupGraceEnd = Date.now() + GitGraphView.ORPHANED_TAB_STARTUP_GRACE_MS;
+		const schedule = () => {
+			if (timer !== null) clearTimeout(timer);
+			timer = setTimeout(() => void check(), Math.max(GitGraphView.ORPHANED_TAB_GRACE_MS, startupGraceEnd - Date.now()));
+		};
+		schedule();
+		const subscription = tabGroups.onDidChangeTabs(schedule);
+		return {
+			dispose: () => {
+				subscription.dispose();
+				if (timer !== null) clearTimeout(timer);
+			}
+		};
+	}
+
+	/**
 	 * Creates a Git Graph View.
 	 * @param extensionPath The absolute file path of the directory containing the extension.
 	 * @param dataSource The Git Graph DataSource instance.
@@ -471,8 +570,10 @@ export class GitGraphView extends Disposable {
 	 * @param logger The Git Graph Logger instance.
 	 * @param loadViewTo What to load the view to.
 	 * @param column The column the view should be loaded in.
+	 * @param existingPanel A revived Webview Panel to attach to, instead of creating a new one.
+	 * @param restoredSnapshot The view state the page should reopen on (see GitGraphViewSnapshot).
 	 */
-	private constructor(extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo, column: vscode.ViewColumn | undefined, existingPanel?: vscode.WebviewPanel) {
+	private constructor(extensionPath: string, dataSource: DataSource, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo, column: vscode.ViewColumn | { viewColumn: vscode.ViewColumn, preserveFocus: boolean } | undefined, existingPanel?: vscode.WebviewPanel, restoredSnapshot: GitGraphViewSnapshot | null = null) {
 		super();
 		this.extensionPath = extensionPath;
 		this.avatarManager = avatarManager;
@@ -481,6 +582,7 @@ export class GitGraphView extends Disposable {
 		this.repoManager = repoManager;
 		this.logger = logger;
 		this.loadViewTo = loadViewTo;
+		this.restoredSnapshot = restoredSnapshot;
 
 		const config = getConfig();
 		this.panel = existingPanel || vscode.window.createWebviewPanel('git-graph-rs', 'Git Graph RS', column || vscode.ViewColumn.One, {
@@ -1463,6 +1565,9 @@ export class GitGraphView extends Disposable {
 			case 'setRepoState':
 				this.repoManager.setRepoState(msg.repo, msg.state);
 				break;
+			case 'setViewSnapshot':
+				this.extensionState.setViewSnapshot(msg.snapshot);
+				break;
 			case 'setWorkspaceViewState':
 				this.sendMessage({
 					command: 'setWorkspaceViewState',
@@ -1672,7 +1777,8 @@ export class GitGraphView extends Disposable {
 			loadRepoInfoRefreshId: this.loadRepoInfoRefreshId,
 			loadCommitsRefreshId: this.loadCommitsRefreshId,
 			loadConfigRefreshId: this.loadConfigRefreshId,
-			backend: describeCapabilities({ gitCliAvailable: !this.dataSource.isGitExecutableUnknown() })
+			backend: describeCapabilities({ gitCliAvailable: !this.dataSource.isGitExecutableUnknown() }),
+			restoredSnapshot: this.restoredSnapshot
 		};
 		this.lastSentInterfaceLanguage = initialState.config.interfaceLanguage;
 		const globalState = this.extensionState.getGlobalViewState();
@@ -1747,6 +1853,7 @@ export class GitGraphView extends Disposable {
 		this.isGraphViewLoaded =
 			numRepos > 0 && (!this.dataSource.isGitExecutableUnknown() || hasEngineForPlatform(this.extensionPath));
 		this.loadViewTo = null;
+		this.restoredSnapshot = null;
 
 		return `<!DOCTYPE html>
 		<html lang="en">

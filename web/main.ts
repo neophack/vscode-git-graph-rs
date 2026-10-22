@@ -129,6 +129,8 @@ class GitGraphView {
 	 * it immediately would be clamped to 0). NULL => no scroll position is pending restoration.
 	 */
 	private restoreScrollTop: number | null = null;
+	/** The pending (debounced) report of the view state to the extension (see saveState). */
+	private viewSnapshotTimer: number | null = null;
 
 	/** The repositories whose pull requests were already requested (one request per repository). */
 	private prStatusRepos: Set<string> = new Set();
@@ -1377,6 +1379,25 @@ class GitGraphView {
 			commitPathFilter: this.commitPathFilter,
 			compareSourceHash: this.compareSourceHash
 		});
+
+		// Mirror the part of the state a page reload restores to the extension: an Extension Host
+		// restart leaves this page behind unreachable, and the page replacing it reopens on this
+		// snapshot. Debounced - the state is saved on every scroll.
+		if (this.viewSnapshotTimer !== null) window.clearTimeout(this.viewSnapshotTimer);
+		this.viewSnapshotTimer = window.setTimeout(() => {
+			this.viewSnapshotTimer = null;
+			sendMessage({
+				command: 'setViewSnapshot',
+				snapshot: {
+					currentRepo: this.currentRepo,
+					scrollTop: this.scrollTop,
+					findWidget: this.findWidget.getState(),
+					settingsWidget: this.settingsWidget.getState(),
+					commitPathFilter: this.commitPathFilter,
+					compareSourceHash: this.compareSourceHash
+				}
+			});
+		}, 1000);
 	}
 
 	public saveRepoState() {
@@ -2852,7 +2873,9 @@ window.addEventListener('load', () => {
 	const viewElem = document.getElementById('view');
 	if (viewElem === null) return;
 
-	const gitGraph = new GitGraphView(viewElem, VSCODE_API.getState());
+	// A page replacing one left behind by an Extension Host restart has no state of its own yet:
+	// it reopens on the snapshot the old page reported (only the fields a reload restores)
+	const gitGraph = new GitGraphView(viewElem, VSCODE_API.getState() || initialState.restoredSnapshot as WebViewState | null);
 	const imageResizer = new ImageResizer();
 
 	/* Command Processing */

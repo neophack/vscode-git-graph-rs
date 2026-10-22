@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { Avatar, AvatarCache } from './avatarManager';
 import { getConfig } from './config';
 import { t } from './i18n';
-import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from './types';
+import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from './types';
 import { GitExecutable } from './utils/findGit';
 import { getPathFromStr } from './utils/paths';
 import { Disposable } from './utils/disposable';
@@ -18,6 +18,7 @@ const IGNORED_REPOS = 'ignoredRepos';
 const LAST_ACTIVE_REPO = 'lastActiveRepo';
 const LAST_KNOWN_GIT_PATH = 'lastKnownGitPath';
 const REPO_STATES = 'repoStates';
+const VIEW_SNAPSHOT = 'viewSnapshot';
 const WORKSPACE_VIEW_STATE = 'workspaceViewState';
 
 /** The author identity of the global Git configuration that this extension wrote. */
@@ -205,6 +206,25 @@ export class ExtensionState extends Disposable {
 	 */
 	public setWorkspaceViewState(state: GitGraphViewWorkspaceState) {
 		return this.updateWorkspaceState(WORKSPACE_VIEW_STATE, state);
+	}
+
+
+	/* View Snapshot */
+
+	/**
+	 * Get the last view state the Git Graph View's page reported in the current workspace.
+	 * @returns The snapshot, or NULL if none was reported yet.
+	 */
+	public getViewSnapshot() {
+		return this.workspaceState.get<GitGraphViewSnapshot | null>(VIEW_SNAPSHOT, null);
+	}
+
+	/**
+	 * Set the last view state the Git Graph View's page reported in the current workspace.
+	 * @param snapshot The snapshot.
+	 */
+	public setViewSnapshot(snapshot: GitGraphViewSnapshot) {
+		this.updateWorkspaceState(VIEW_SNAPSHOT, snapshot);
 	}
 
 
