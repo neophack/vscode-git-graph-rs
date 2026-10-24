@@ -9,6 +9,7 @@ tests/**
 target/**
 node_modules/**
 out/**/*.ts
+dist/**/*.map
 native/core/**
 native/node/src/**
 native/node/build.rs
@@ -21,6 +22,7 @@ Cargo.lock
 *.automation-bak
 **/*.held-*
 tsconfig.json
+vitest.config.ts
 jest.config.js
 GAPS.md
 .editorconfig
