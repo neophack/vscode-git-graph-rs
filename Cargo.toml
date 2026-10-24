@@ -9,7 +9,7 @@ rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
-gix = { version = "0.87", default-features = false }
+gix = { version = "0.90", default-features = false }
 regex = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

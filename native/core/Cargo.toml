@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-gix = { version = "0.87", default-features = false, features = [
+gix = { version = "0.90", default-features = false, features = [
     "revision",
     "blob-diff",
     "status",

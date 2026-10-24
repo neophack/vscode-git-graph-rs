@@ -225,7 +225,7 @@ fn collect_changes(
         if let Some(record) = classify(&change) {
             collected.push(record);
         }
-        Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()))
     });
     outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
 
@@ -304,15 +304,15 @@ pub fn line_counts(
         // drops the directory-level tree rewrites, which must never settle a folder path here
         // even if one is asked for.
         if classify(&change).is_none() {
-            return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
+            return Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()));
         }
         if !wanted.contains(change.location().to_str_lossy().as_ref()) {
-            return Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()));
+            return Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()));
         }
         let counts =
             gitlink_line_counts(&change).unwrap_or_else(|| blob_line_counts(&change, &mut cache));
         counted.insert(change.location().to_string(), counts);
-        Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()))
     });
     outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
 
