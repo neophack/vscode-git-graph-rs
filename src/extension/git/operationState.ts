@@ -1,0 +1,84 @@
+/**
+ * Rebase / merge / cherry-pick / revert state detection, ported from `DataSource.getOperationState`
+ * (`src/dataSource.ts`): which operation is in progress (read off the state files in the Git
+ * directory), a rebase's step counter, and the still-unresolved files.
+ *
+ * The environment (`exists`, `readIntFile`, `runText`) is injected, so the exact legacy sequence
+ * — including the precedence of the state files and which failure resolves to "no operation in
+ * progress" — is unit-testable without a repository.
+ */
+
+import * as path from 'path';
+
+import { GitOperationState, GitOperationType } from '../../types/git';
+
+/** The environment the detection runs against; the real one is `fs` plus a Git text runner. */
+export interface OperationStateEnv {
+	/** Whether a path exists (`fs.existsSync`). */
+	readonly exists: (file: string) => boolean;
+	/** Read a file holding one integer, or null when it is missing or not a plain integer. */
+	readonly readIntFile: (file: string) => number | null;
+	/** Run a Git read, resolving its stdout; rejecting when it fails. */
+	readonly runText: (argv: ReadonlyArray<string>) => Promise<string>;
+}
+
+/** The argv of the Git-directory probe. */
+export function gitDirArgv(): ReadonlyArray<string> {
+	return ['rev-parse', '--git-dir'];
+}
+
+/** The argv of the unresolved-conflicts probe. */
+export function conflictedFilesArgv(): ReadonlyArray<string> {
+	return ['diff', '--name-only', '--diff-filter=U'];
+}
+
+/** Resolve the Git directory the way the legacy code did: absolute as-is, else repo-relative. */
+export function resolveGitDir(repo: string, gitDirOutput: string): string {
+	return path.isAbsolute(gitDirOutput) ? gitDirOutput : path.join(repo, gitDirOutput);
+}
+
+/**
+ * Detect the in-progress operation of a repository. Never rejects: any failure resolves to "no
+ * operation in progress", since a transient failure must not break the load this rides along with.
+ */
+export async function detectOperationState(repo: string, env: OperationStateEnv): Promise<GitOperationState> {
+	const none: GitOperationState = { type: null, conflictedFiles: [], progress: null };
+	try {
+		const gitDirOutput = await env.runText(gitDirArgv());
+		const gitDir = resolveGitDir(repo, gitDirOutput.trim());
+
+		let type: GitOperationType | null = null;
+		let progress: { step: number, total: number } | null = null;
+		if (env.exists(path.join(gitDir, 'rebase-merge'))) {
+			type = GitOperationType.Rebase;
+			progress = readRebaseProgress(path.join(gitDir, 'rebase-merge', 'msgnum'), path.join(gitDir, 'rebase-merge', 'end'), env);
+		} else if (env.exists(path.join(gitDir, 'rebase-apply'))) {
+			type = GitOperationType.Rebase;
+			progress = readRebaseProgress(path.join(gitDir, 'rebase-apply', 'next'), path.join(gitDir, 'rebase-apply', 'last'), env);
+		} else if (env.exists(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
+			type = GitOperationType.CherryPick;
+		} else if (env.exists(path.join(gitDir, 'REVERT_HEAD'))) {
+			type = GitOperationType.Revert;
+		} else if (env.exists(path.join(gitDir, 'MERGE_HEAD'))) {
+			type = GitOperationType.Merge;
+		}
+
+		if (type === null) return none;
+
+		const conflictedFiles = await env.runText(conflictedFilesArgv())
+			.then((stdout) => stdout.split(/\r\n|\r|\n/).filter((line) => line !== ''))
+			.catch(() => [] as string[]);
+
+		return { type, conflictedFiles, progress };
+	} catch (_) {
+		return none;
+	}
+}
+
+/**
+ * Read a rebase's step counter out of two single-integer marker files in its state directory.
+ */
+export function readRebaseProgress(stepFile: string, totalFile: string, env: Pick<OperationStateEnv, 'readIntFile'>): { step: number, total: number } | null {
+	const step = env.readIntFile(stepFile), total = env.readIntFile(totalFile);
+	return step !== null && total !== null ? { step, total } : null;
+}
