@@ -1,10 +1,11 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
+import { binaryCompareCss, binaryCompareScript, createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { BinaryCompareView } from './binaryCompareView';
 import { DataSource } from './dataSource';
 import { HexDiffSession } from './hexDiff';
 import { t } from './i18n';
+import { ComparisonRequest, ComparisonResponse } from './shared/protocol/comparison';
 import { GitFileChange } from './types';
 import { UNCOMMITTED, abbrevCommit } from './utils/git';
 import { encodeJsonForInlineScript, getNonce } from './utils/format';
@@ -58,7 +59,7 @@ export class CommitComparisonView extends Disposable {
 				CommitComparisonView.openViews.delete(key);
 				this.dispose();
 			}),
-			this.panel.webview.onDidReceiveMessage(async (msg: any) => {
+			this.panel.webview.onDidReceiveMessage(async (msg: ComparisonRequest) => {
 				if (this.isDisposed()) return;
 				if (msg.command === 'getFileDiff') {
 					const file = this.fileChanges[msg.index];
@@ -141,8 +142,10 @@ export class CommitComparisonView extends Disposable {
 		return this.dataSource.countCommitsBefore(this.repo, [tip], this.fromHash, false, false);
 	}
 
-	/** A poster for the shared binary-compare responders that checks the panel's lifetime. */
-	private hexPost(): BinaryComparePost {
+	/** A poster for the shared binary-compare responders that checks the panel's lifetime.
+	 *  Accepts every response of this view's protocol, which includes all the binary-compare
+	 *  responses the shared responders post. */
+	private hexPost(): (message: ComparisonResponse) => void {
 		return (message) => {
 			if (!this.isDisposed()) void this.panel.webview.postMessage(message);
 		};

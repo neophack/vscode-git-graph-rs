@@ -1,19 +1,20 @@
 import { DataSource } from './dataSource';
 import { HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
 import { t } from './i18n';
+import { BinaryCompareResponse } from './shared/protocol/binaryCompare';
 import { GitFileChange } from './types';
 import { UNCOMMITTED } from './utils/git';
 import { copyToClipboard } from './utils/actions';
 
 /**
  * Everything the two binary comparison surfaces share: the Commit Comparison View's embedded
- * diff area, and the standalone Binary Compare tab. The styles and the client script below are
- * injected into both pages verbatim; the responders drive a HexDiffSession over the same
- * `hexInfo` / `hexMap` / `hexRows` / `imageData` messages from either page.
+ * diff area, and the standalone Binary Compare tab. The host-side responders below drive a
+ * HexDiffSession over the `hexInfo` / `hexMap` / `hexRows` / `imageData` messages of
+ * shared/protocol/binaryCompare, which either page's frontend consumes.
  */
 
 /** A page's way of posting a message back to its webview. */
-export type BinaryComparePost = (message: object) => void;
+export type BinaryComparePost = (message: BinaryCompareResponse) => void;
 
 /** The section layout flattened for the webview: [oldStart, oldLength, newStart, newLength, equal?] repeated. */
 export function flatSections(sections: ReadonlyArray<HexSection> | null): number[] | null {

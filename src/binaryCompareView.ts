@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, isImageChange, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { DataSource } from './dataSource';
 import { t } from './i18n';
+import { BinaryCompareRequest } from './shared/protocol/binaryCompare';
 import { GitFileChange } from './types';
 import { UNCOMMITTED, abbrevCommit } from './utils/git';
 import { getNonce } from './utils/format';
@@ -53,7 +54,7 @@ export class BinaryCompareView extends Disposable {
 				BinaryCompareView.openViews.delete(key);
 				this.dispose();
 			}),
-			this.panel.webview.onDidReceiveMessage(async (msg: any) => {
+			this.panel.webview.onDidReceiveMessage(async (msg: BinaryCompareRequest) => {
 				if (this.isDisposed()) return;
 				if (msg.command === 'getHexInfo') {
 					await respondHexInfo(this.session, 0, msg.bytesPerRow, this.post());
