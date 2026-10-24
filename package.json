@@ -59,8 +59,13 @@
 	},
 	"c8": {
 		"all": true,
-		"include": ["out/**"],
-		"reporter": ["text", "lcov"],
+		"include": [
+			"out/**"
+		],
+		"reporter": [
+			"text",
+			"lcov"
+		],
 		"report-dir": "coverage",
 		"exclude": [
 			"coverage/**",
@@ -87,7 +92,8 @@
 		"jsdom": "^29.1.1",
 		"markdown-it": "^12.3.2",
 		"sharp": "^0.35.3",
-		"typescript": "^5.4.0"
+		"typescript": "^5.4.0",
+		"vitest": "^3.2.7"
 	},
 	"contributes": {
 		"commands": [
