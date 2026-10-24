@@ -8,19 +8,18 @@
  *
  * It is a faithful port of how the original extension read a repository, down to the record
  * separator, because its output is what the engine is checked against.
+ *
+ * The readers themselves live in `src/extension/git/read/cli/`, split by theme; this module is the
+ * assembly point that keeps the public shape `dataSource.ts` and the tests were built against: one
+ * class, one constructor, the same method signatures — and byte-identical output, arguments and
+ * error strings, which the Reader contract suite locks.
  */
 
-import { execFile } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-
 import { GitBackend } from './api';
-import { parseGitSignatureOutput } from './signatures';
 import {
 	GitActivityCell,
 	GitAuthor,
 	GitAuthorStat,
-	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
 	GitCommitFile,
@@ -28,54 +27,63 @@ import {
 	GitCommitSummary,
 	GitConfigSnapshot,
 	GitFileChange,
-	GitFileStatus,
 	GitHistoryMatch,
 	GitLineCounts,
-	GitRef,
 	GitRefData,
-	GitRemoteConfig,
 	GitRepoInfo,
-	GitSignatureStatus,
+	GitSignature,
 	GitStash,
 	GitTagDetails,
-	GitTagRef,
 	LogOptions,
-	UNCOMMITTED
+	RefReadOptions
 } from './types';
 
-/**
- * A separator that cannot appear in a commit message, author name or path.
- *
- * The original extension uses this exact string; keeping it identical means the two
- * implementations parse the same output the same way.
- */
-/** One commit of the `git log` output, before the refs, stashes and the working tree are attached. */
-interface LogRecord {
-	hash: string;
-	parents: string[];
-	author: string;
-	email: string;
-	date: number;
-	message: string;
-}
-
-const SEPARATOR = 'XX7Nal-YARtTpjCikii9nJxER19D6diSyk-AWkPb';
-
-const EOL = /\r\n|\r|\n/;
-
-/** How much output a single `git` call may produce before it is treated as runaway. */
-const MAX_BUFFER = 100 * 1024 * 1024;
+import { getConfig, getConfigList, getRemoteUrl } from '../extension/git/read/cli/config';
+import {
+	compareCommits,
+	getCommitDetails,
+	getCommitSignature,
+	getStashDetails,
+	getUncommittedDetails
+} from '../extension/git/read/cli/details';
+import {
+	getCommitBodies,
+	getCommitFile,
+	getCommitFileDiff,
+	getCommitSubject,
+	getCommitSummaries,
+	getNewPathOfRenamedFile,
+	getSubmodules,
+	repoRoot,
+	searchHistory
+} from '../extension/git/read/cli/files';
+import { getCommits, getUncommittedChangeCount } from '../extension/git/read/cli/log';
+import { GitCli } from '../extension/git/read/cli/process';
+import {
+	currentBranchName,
+	getCurrentBranchUpstream,
+	getRemotes,
+	getRepoInfo,
+	getRefs,
+	getStashes
+} from '../extension/git/read/cli/refs';
+import {
+	countCommitsBefore,
+	getActivityHeatmap,
+	getAuthors,
+	getAuthorStatistics,
+	getLineCounts
+} from '../extension/git/read/cli/stats';
+import { getTagDetails, getTagSignature } from '../extension/git/read/cli/tags';
 
 export class CliBackend implements GitBackend {
 	public readonly name = 'git-cli';
 
-	/** The whole-diff numstat counts of the last counts request, settled in batches. */
-	private numStatCache: { repo: string; base: string; to: string; counts: { [path: string]: GitLineCounts } } | null = null;
+	private readonly cli: GitCli;
 
-	/** The resolved empty tree of each repository, keyed by repo path (its hash is format-dependent). */
-	private readonly emptyTrees = new Map<string, Promise<string>>();
-
-	constructor(private readonly gitPath: string = 'git') {}
+	constructor(gitPath: string = 'git') {
+		this.cli = new GitCli(gitPath);
+	}
 
 	/* ---------- Lifecycle ---------- */
 
@@ -83,9 +91,8 @@ export class CliBackend implements GitBackend {
 	 * There is no handle to open: every call spawns its own process. The path is still resolved,
 	 * so that the caller gets the same "which repository did I land in" answer either way.
 	 */
-	public async openRepository(path: string): Promise<string> {
-		const root = await this.run(['rev-parse', '--show-toplevel'], path);
-		return root.trim();
+	public openRepository(path: string): Promise<string> {
+		return repoRoot(this.cli, path);
 	}
 
 	public closeRepository(): void {
@@ -98,1430 +105,148 @@ export class CliBackend implements GitBackend {
 
 	/* ---------- Reads ---------- */
 
-	public async getRepoInfo(repo: string, options = {}): Promise<GitRepoInfo> {
-		const opts = { showRemoteBranches: true, showStashes: true, ...options };
-		try {
-			const [refs, remotes, stashes] = await Promise.all([
-				this.readRefs(repo, opts),
-				this.getRemotes(repo),
-				opts.showStashes ? this.getStashes(repo) : Promise.resolve([] as GitStash[])
-			]);
-			return {
-				branches: refs.branches,
-				head: refs.branchHead,
-				remotes,
-				stashes,
-				tags: refs.tagNames,
-				error: null
-			};
-		} catch (error) {
-			return {
-				branches: [],
-				head: null,
-				remotes: [],
-				stashes: [],
-				tags: [],
-				error: message(error)
-			};
-		}
+	public getRepoInfo(repo: string, options?: RefReadOptions): Promise<GitRepoInfo> {
+		return getRepoInfo(this.cli, repo, options);
 	}
 
-	public async getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
-		try {
-			// A deferred load skips the remote-tracking refs, exactly as the engine does (see
-			// `LogOptions.deferRemoteRefs`): the log walks the local branches only, and the refs
-			// scan leaves `refs/remotes/` alone.
-			if (options.deferRemoteRefs) options = { ...options, showRemoteBranches: false };
-			// The stashes are read once and shared: the log needs them first (their bases are walk
-			// tips, so a stash hanging off a commit that no branch/tag/remote reaches still
-			// renders — the engine adds the same tips, see graph.rs, keeping the backends in
-			// parity), and the splice below reuses the same list.
-			const stashesPromise = this.getStashes(repo).catch(() => [] as GitStash[]);
-			const logPromise = stashesPromise.then((stashes) => this.getLog(repo, options, stashes.map((stash) => stash.baseHash)));
-			const refsPromise = this.readRefs(repo, {
-				showRemoteBranches: options.showRemoteBranches ?? true,
-				showRemoteHeads: options.showRemoteHeads ?? false,
-				hideRemotes: options.hideRemotes ?? [],
-				showChangeRefs: options.gerritShowChangeRefs ?? false
-			});
-			const countPromise =
-				options.showUncommittedChanges && !options.deferUncommittedChanges
-					? this.getUncommittedChangeCount(repo, options.showUntrackedFiles ?? false)
-					: null;
-			countPromise?.catch(() => {
-				/* re-thrown below if it is actually needed */
-			});
-
-			const [records, refs, stashes] = await Promise.all([logPromise, refsPromise, stashesPromise]);
-
-			let commits = records;
-			const moreCommitsAvailable = commits.length > options.maxCommits;
-			if (moreCommitsAvailable) commits = commits.slice(0, options.maxCommits);
-			await this.pinGerritChangeCommits(repo, commits, options.gerritRefs ?? []);
-
-			const nodes = commits.map((record) => ({
-				...record,
-				heads: [] as string[],
-				tags: [] as { name: string; annotated: boolean }[],
-				remotes: [] as { name: string; remote: string | null }[],
-				stash: null as GitCommitStash | null
-			}));
-
-			/* The "Uncommitted Changes" row, above HEAD */
-			const head = refs.refData.head;
-			if (head !== null && countPromise !== null && nodes.some((node) => node.hash === head)) {
-				const count = await countPromise;
-				if (count > 0) {
-					nodes.unshift({
-						hash: UNCOMMITTED,
-						parents: [head],
-						author: '*',
-						email: '',
-						date: Math.round(Date.now() / 1000),
-						message: `Uncommitted Changes (${count})`,
-						heads: [],
-						tags: [],
-						remotes: [],
-						stash: null
-					});
-				}
-			}
-
-			const lookup = new Map<string, number>();
-			nodes.forEach((node, index) => lookup.set(node.hash, index));
-
-			/* Stashes */
-			const toInsert: { index: number; stash: GitStash }[] = [];
-			for (const stash of stashes) {
-				const own = lookup.get(stash.hash);
-				const base = lookup.get(stash.baseHash);
-				if (own !== undefined) {
-					nodes[own].stash = {
-						selector: stash.selector,
-						baseHash: stash.baseHash,
-						untrackedFilesHash: stash.untrackedFilesHash
-					};
-				} else if (base !== undefined) {
-					toInsert.push({ index: base, stash });
-				}
-			}
-			toInsert.sort((a, b) => (a.index !== b.index ? a.index - b.index : b.stash.date - a.stash.date));
-			for (let i = toInsert.length - 1; i >= 0; i--) {
-				const { index, stash } = toInsert[i];
-				nodes.splice(index, 0, {
-					hash: stash.hash,
-					parents: [stash.baseHash],
-					author: stash.author,
-					email: stash.email,
-					date: stash.date,
-					message: stash.message,
-					heads: [],
-					tags: [],
-					remotes: [],
-					stash: {
-						selector: stash.selector,
-						baseHash: stash.baseHash,
-						untrackedFilesHash: stash.untrackedFilesHash
-					}
-				});
-			}
-			lookup.clear();
-			nodes.forEach((node, index) => lookup.set(node.hash, index));
-
-			/* Ref labels */
-			for (const ref of refs.refData.heads) {
-				const index = lookup.get(ref.hash);
-				if (index !== undefined) nodes[index].heads.push(ref.name);
-			}
-			if (options.showTags ?? true) {
-				for (const tag of refs.refData.tags) {
-					const index = lookup.get(tag.hash);
-					if (index !== undefined) nodes[index].tags.push({ name: tag.name, annotated: tag.annotated });
-				}
-			}
-			for (const ref of refs.refData.remotes) {
-				const index = lookup.get(ref.hash);
-				if (index === undefined) continue;
-				const owner = (options.remotes ?? []).find((remote) => ref.name.startsWith(remote + '/'));
-				nodes[index].remotes.push({ name: ref.name, remote: owner ?? null });
-			}
-
-			return {
-				commits: nodes,
-				head,
-				tags: unique(refs.refData.tags.map((tag) => tag.name)),
-				branches: refs.branches,
-				moreCommitsAvailable,
-				error: null
-			};
-		} catch (error) {
-			return { commits: [], head: null, tags: [], moreCommitsAvailable: false, error: message(error) };
-		}
+	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
+		return getCommits(this.cli, repo, options);
 	}
 
-	public async getRefs(repo: string, options = {}): Promise<GitRefData> {
-		const snapshot = await this.readRefs(repo, { showRemoteBranches: true, ...options });
-		return snapshot.refData;
+	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
+		return getRefs(this.cli, repo, options);
 	}
 
-	public async getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
-		const details = await this.getCommitDetailsBase(repo, hash);
-		const from = details.parents.length > 0 ? hash + '^' : await this.getEmptyTree(repo);
-		details.fileChanges = await this.getFileChanges(repo, from, hash);
-		return details;
+	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
+		return getCommitDetails(this.cli, repo, hash);
 	}
 
-	public async getCommitSignature(repo: string, hash: string) {
-		return parseGitSignatureOutput(await this.runRaw(['verify-commit', '--raw', hash], repo));
+	public getCommitSignature(repo: string, hash: string): Promise<GitSignature | null> {
+		return getCommitSignature(this.cli, repo, hash);
 	}
 
-	public async getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
-		// `git diff HEAD` sees neither untracked files nor files deleted from the working tree, so
-		// the status scan is layered on top of it — as the original extension does. An unborn HEAD
-		// (a fresh repository, or an orphan branch) has no commit to diff against: the working
-		// tree is diffed against the empty tree instead, so the files already staged for the first
-		// commit are listed as added - as `git status` lists them - rather than left out.
-		const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
-			.then((out) => out.trim() !== '', () => false);
-		const base = headExists ? 'HEAD' : await this.getEmptyTree(repo);
-		const [changes, status] = await Promise.all([
-			this.getFileChanges(repo, base, ''),
-			this.getStatusFiles(repo)
-		]);
-		return {
-			hash: UNCOMMITTED,
-			parents: [],
-			author: '',
-			authorEmail: '',
-			authorDate: 0,
-			committer: '',
-			committerEmail: '',
-			committerDate: 0,
-			signature: null,
-			body: '',
-			fileChanges: mergeStatusFiles(changes, status)
-		};
+	public getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
+		return getUncommittedDetails(this.cli, repo);
 	}
 
-	/**
-	 * The untracked and deleted files of the working tree.
-	 *
-	 * `git status -z` terminates each entry with a NUL, and a rename spends two entries (the new
-	 * path then the old one), which is why the cursor advances by two for `R` and `C`.
-	 */
-	private async getStatusFiles(repo: string): Promise<{ deleted: string[]; untracked: string[]; unmerged: string[] }> {
-		const out = await this.run(
-			['status', '-s', '--untracked-files=all', '--porcelain', '-z'],
-			repo
-		);
-		const entries = out.split('\u0000');
-		const status = { deleted: [] as string[], untracked: [] as string[], unmerged: [] as string[] };
-		for (let i = 0; i < entries.length && entries[i] !== ''; ) {
-			if (entries[i].length < 4) break;
-			const path = entries[i].slice(3);
-			const staged = entries[i][0];
-			const unstaged = entries[i][1];
-			// In an unmerged pair (`UD`, `DU`, `AU`, …) a `D` says which side of the merge deleted
-			// the file, which is still in the working tree; only `DD` (both deleted) is gone.
-			const unmerged = staged === 'U' || unstaged === 'U' || (staged === 'A' && unstaged === 'A') || (staged === 'D' && unstaged === 'D');
-
-			if ((staged === 'D' || unstaged === 'D') && (!unmerged || staged === unstaged)) status.deleted.push(path);
-			else if (unmerged) status.unmerged.push(path);
-			else if (staged === '?' || unstaged === '?') status.untracked.push(path);
-
-			i += staged === 'R' || unstaged === 'R' || staged === 'C' || unstaged === 'C' ? 2 : 1;
-		}
-		return status;
-	}
-
-	public async getStashDetails(
+	public getStashDetails(
 		repo: string,
 		hash: string,
 		stash: GitCommitStash
 	): Promise<GitCommitDetails> {
-		const details = await this.getCommitDetailsBase(repo, hash);
-		details.fileChanges = await this.getFileChanges(repo, stash.baseHash, hash);
-		if (stash.untrackedFilesHash !== null) {
-			const untracked = await this.getFileChanges(repo, await this.getEmptyTree(repo), stash.untrackedFilesHash);
-			for (const change of untracked) {
-				if (change.type === GitFileStatus.Added) {
-					details.fileChanges.push({ ...change, type: GitFileStatus.Untracked });
-				}
-			}
-		}
-		return details;
+		return getStashDetails(this.cli, repo, hash, stash);
 	}
 
-	public async compareCommits(repo: string, from: string, to: string): Promise<GitFileChange[]> {
-		const againstWorktree = to === UNCOMMITTED || to === '';
-		const changes = await this.getFileChanges(repo, from, againstWorktree ? '' : to);
-		// Comparing against the working tree means the untracked and deleted files count too.
-		return againstWorktree ? mergeStatusFiles(changes, await this.getStatusFiles(repo)) : changes;
+	public compareCommits(repo: string, from: string, to: string): Promise<GitFileChange[]> {
+		return compareCommits(this.cli, repo, from, to);
 	}
 
-	/**
-	 * The `+N/-M` line counts of the given paths, as `git diff --numstat` reports them — the
-	 * deferred second half of a details load, settled a viewport at a time.
-	 *
-	 * The counts cannot be limited to the asked-for paths by a pathspec: a rename's old path would
-	 * fall outside the limit, so the pair would never be made and a moved file would count as a
-	 * wholesale addition. The whole diff is counted instead — the cost the original extension paid
-	 * on every details load — and kept for the batches that follow, which settle from memory.
-	 */
-	public async getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }> {
-		if (paths.length === 0) return {};
-		let base = from;
-		if (base === null) {
-			// The commit's first parent — or the empty tree for a root commit, whose files then
-			// report as added rather than being unaccounted for.
-			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => this.getEmptyTree(repo));
-		}
-
-		const counts = await this.numStatCounts(repo, base, to);
-		const wanted: { [path: string]: GitLineCounts } = {};
-		for (let i = 0; i < paths.length; i++) {
-			const counted = counts[paths[i]];
-			if (typeof counted !== 'undefined') wanted[paths[i]] = counted;
-		}
-		return wanted;
+	public getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }> {
+		return getLineCounts(this.cli, repo, from, to, paths);
 	}
 
-	/**
-	 * The numstat counts of a whole diff, keyed by each file's new path. Cached for the last
-	 * (repo, base, to): the callers settle one commit's file list in batches, and a diff between
-	 * two fixed revisions cannot change under the cache.
-	 */
-	private async numStatCounts(repo: string, base: string, to: string): Promise<{ [path: string]: GitLineCounts }> {
-		if (this.numStatCache !== null && this.numStatCache.repo === repo && this.numStatCache.base === base && this.numStatCache.to === to) {
-			return this.numStatCache.counts;
-		}
-
-		const numStat = await this.run(['diff', '--numstat', '--find-renames', '-z', base, to], repo);
-		const counts: { [path: string]: GitLineCounts } = {};
-
-		const fields = numStat.split('\0');
-		for (let i = 0; i < fields.length && fields[i] !== ''; ) {
-			const parts = fields[i].split('\t');
-			if (parts.length !== 3) break;
-			// A rename's numstat record has an empty path, followed by the two paths as separate
-			// NUL-terminated fields; the new path (the last one) is what the counts are keyed by.
-			const path = parts[2] !== '' ? parts[2] : fields[i + 2];
-			const additions = parseInt(parts[0], 10);
-			const deletions = parseInt(parts[1], 10);
-			counts[path] = {
-				// A binary file reports a dash, which parses to NaN and is reported as "unknown".
-				additions: Number.isNaN(additions) ? null : additions,
-				deletions: Number.isNaN(deletions) ? null : deletions
-			};
-			i += parts[2] !== '' ? 1 : 3;
-		}
-
-		this.numStatCache = { repo, base, to, counts };
-		return counts;
+	public getUncommittedChangeCount(repo: string, includeUntracked: boolean): Promise<number> {
+		return getUncommittedChangeCount(this.cli, repo, includeUntracked);
 	}
 
-	public async getUncommittedChangeCount(repo: string, includeUntracked: boolean): Promise<number> {
-		const out = await this.run(
-			['status', '--porcelain', `--untracked-files=${includeUntracked ? 'all' : 'no'}`],
-			repo
-		);
-		return out.split(EOL).filter((line) => line !== '').length;
+	public getStashes(repo: string): Promise<GitStash[]> {
+		return getStashes(this.cli, repo);
 	}
 
-	public async getStashes(repo: string): Promise<GitStash[]> {
-		const format = ['%H', '%P', '%gD', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
-		const out = await this.run(['reflog', `--format=${format}`, 'refs/stash', '--'], repo).catch(
-			() => ''
-		);
-		const stashes: GitStash[] = [];
-		for (const line of out.split(EOL)) {
-			const fields = line.split(SEPARATOR);
-			if (fields.length !== 7 || fields[1] === '') continue;
-			const parents = fields[1].split(' ');
-			stashes.push({
-				hash: fields[0],
-				baseHash: parents[0],
-				untrackedFilesHash: parents.length === 3 ? parents[2] : null,
-				selector: fields[2],
-				author: fields[3],
-				email: fields[4],
-				date: parseInt(fields[5], 10),
-				message: fields[6]
-			});
-		}
-		return stashes;
+	public getConfig(repo: string): Promise<GitConfigSnapshot> {
+		return getConfig(this.cli, repo);
 	}
 
-	/* ---------- Configuration & file contents ---------- */
-
-	/**
-	 * The configuration values the view consumes, read with a single `git config -l -z`.
-	 *
-	 * The `-z` output is `key\nvalue\0` per entry, which cannot be confused by embedded newlines in
-	 * values. Later entries win, matching how Git resolves repeated keys.
-	 */
-	public async getConfig(repo: string): Promise<GitConfigSnapshot> {
-		const [configOut, remotes] = await Promise.all([this.run(['config', '-l', '-z'], repo), this.getRemotes(repo)]);
-		const values = new Map<string, string>();
-		for (const entry of configOut.replace(/\u0000$/, '').split('\u0000')) {
-			const separator = entry.indexOf('\n');
-			if (separator === -1) continue;
-			values.set(entry.slice(0, separator), entry.slice(separator + 1));
-		}
-		const get = (key: string): string | null => values.get(key) ?? null;
-
-		const remoteConfigs: GitRemoteConfig[] = remotes.map((name) => ({
-			name,
-			url: get(`remote.${name}.url`),
-			pushUrl: get(`remote.${name}.pushurl`)
-		}));
-		return {
-			remotes: remoteConfigs,
-			userName: get('user.name'),
-			userEmail: get('user.email'),
-			pushDefault: get('remote.pushdefault'),
-			diffTool: get('diff.tool'),
-			diffGuiTool: get('diff.guitool')
-		};
+	public getCommitFile(repo: string, hash: string, file: string): Promise<GitCommitFile> {
+		return getCommitFile(this.cli, repo, hash, file);
 	}
 
-	/**
-	 * The contents of one file at one revision, via `git show --textconv` — the same command the
-	 * original extension used. A NUL byte in the first 8000 bytes marks the file as binary, and the
-	 * contents are then omitted.
-	 */
-	public async getCommitFile(repo: string, hash: string, file: string): Promise<GitCommitFile> {
-		const stdout = await new Promise<Buffer>((resolve, reject) => {
-			execFile(
-				this.gitPath,
-				['show', '--textconv', `${hash}:${file}`],
-				{ cwd: repo, maxBuffer: MAX_BUFFER, encoding: 'buffer' },
-				(error, stdout, stderr) => {
-					if (error) {
-						const text = (stderr || stdout || error.message).toString().trim();
-						const kind = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'Unsupported' : 'Git';
-						reject(new GitBackendError(kind, text));
-					} else {
-						resolve(stdout);
-					}
-				}
-			);
-		});
-		const binary = stdout.subarray(0, 8000).includes(0);
-		return {
-			contents: binary ? null : stdout.toString('utf8'),
-			binary
-		};
+	public getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
+		return getCommitFileDiff(this.cli, repo, hash, file);
 	}
 
-	/**
-	 * The unified diff of one file in one commit (against its first parent).
-	 *
-	 * The diff of the whole commit is filtered down to the file, rather than passed as a pathspec,
-	 * so that a rename is shown as a rename (the way the engine reports it) instead of as a new
-	 * file with an unrelated deletion.
-	 */
-	public async getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
-		// A root commit has no first parent: git diff would fail on `hash^`, so the empty tree —
-		// resolved per repository, since its hash depends on the object format — stands in as the
-		// base, exactly as `git show <root>` diffs against it. `core.quotepath=false` keeps non-ASCII paths raw in
-		// the headers instead of C-quoted octal escapes (a pathspec could not be used instead: it
-		// would exclude the old side of a rename and break its pairing), and the diff.*Prefix
-		// settings pin the `a/` and `b/` header prefixes the sections are matched by, which a
-		// repository's own configuration would otherwise be free to change.
-		const parent = await this.run(['rev-parse', '--verify', '--quiet', `${hash}^`], repo)
-			.then((out) => out.trim())
-			.catch(() => this.getEmptyTree(repo));
-		const out = await this.run([
-			'-c', 'core.quotepath=false', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false',
-			'-c', 'diff.srcPrefix=a/', '-c', 'diff.dstPrefix=b/',
-			'diff', '--no-color', '--find-renames', parent, hash
-		], repo);
-		return out
-			.split(/(?=^diff --git )/m)
-			.filter((section) => diffSectionNewPath(section) === file)
-			.join('')
-			.replace(/\n$/m, '');
+	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
+		return getCommitBodies(this.cli, repo, hashes);
 	}
 
-	/* ---------- On-demand reads ---------- */
-
-	/** The full commit message of each of the given commits, keyed by hash. */
-	public async getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
-		// With no hashes there is nothing to ask for — and `git log --no-walk` with no revisions
-		// would silently default to HEAD, answering a question nobody asked.
-		if (hashes.length === 0) return {};
-		const out = await this.run(
-			['-c', 'log.showSignature=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...hashes],
-			repo
-		);
-		const bodies: { [hash: string]: string } = {};
-		for (let record of out.split('\x1e')) {
-			record = record.replace(/^\n/, ''); // git terminates each formatted entry with a newline
-			const sep = record.indexOf('\x1f');
-			if (sep <= 0) continue;
-			bodies[record.substring(0, sep)] = record.substring(sep + 1).replace(/\n$/, '');
-		}
-		return bodies;
+	public getCommitSubject(repo: string, hash: string): Promise<string> {
+		return getCommitSubject(this.cli, repo, hash);
 	}
 
-	/** The subject of one commit, whitespace-normalised as the extension has always shown it. */
-	public async getCommitSubject(repo: string, hash: string): Promise<string> {
-		const out = await this.run(
-			['-c', 'log.showSignature=false', 'log', '--format=%s', '-n', '1', hash, '--'],
-			repo
-		);
-		return out.trim().replace(/\s+/g, ' ');
-	}
-
-	/** The summary of each of the given commits, keyed by hash. */
-	public async getCommitSummaries(
+	public getCommitSummaries(
 		repo: string,
 		hashes: ReadonlyArray<string>
 	): Promise<{ [hash: string]: GitCommitSummary }> {
-		const out = await this.run(
-			['show', '--quiet', '--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B%x1e', ...hashes],
-			repo
-		);
-		const summaries: { [hash: string]: GitCommitSummary } = {};
-		for (const record of out.replace(/\x1e\s*$/, '').split('\x1e')) {
-			const text = record.trim();
-			// The message is the last field and may itself contain the unit separator, so the
-			// first four separators are located by index instead of splitting on every occurrence
-			// (as getCommitBodies does).
-			const sep1 = text.indexOf('\x1f');
-			const sep2 = sep1 > 0 ? text.indexOf('\x1f', sep1 + 1) : -1;
-			const sep3 = sep2 > 0 ? text.indexOf('\x1f', sep2 + 1) : -1;
-			const sep4 = sep3 > 0 ? text.indexOf('\x1f', sep3 + 1) : -1;
-			if (sep4 > 0) {
-				const hash = text.substring(0, sep1);
-				summaries[hash] = {
-					hash: hash,
-					author: text.substring(sep1 + 1, sep2),
-					email: text.substring(sep2 + 1, sep3),
-					date: parseInt(text.substring(sep3 + 1, sep4), 10),
-					message: text.substring(sep4 + 1).trim()
-				};
-			}
-		}
-		return summaries;
+		return getCommitSummaries(this.cli, repo, hashes);
 	}
 
-	/** The commits whose message matches a pattern, newest first. */
-	public async searchHistory(repo: string, query: string): Promise<GitHistoryMatch[]> {
-		// The unit separator (\x1f) is used instead of `|` so that hashes, author names and
-		// subjects containing `|` don't shift the fields.
-		const out = await this.run(
-			['log', '--all', '-E', '-i', `--grep=${query}`, '--format=%H%x1f%an%x1f%at%x1f%s', '--max-count=100'],
-			repo
-		);
-		const text = out.replace(/\n$/, '');
-		if (text === '') return [];
-		return text.split('\n').map((line) => {
-			const parts = line.split('\x1f');
-			return {
-				hash: parts[0],
-				author: parts[1],
-				date: parseInt(parts[2], 10),
-				message: parts.slice(3).join('|')
-			};
-		});
+	public searchHistory(repo: string, query: string): Promise<GitHistoryMatch[]> {
+		return searchHistory(this.cli, repo, query);
 	}
 
-	/** A tag in full, read from the ref as `for-each-ref` reports it. */
-	public async getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
-		const ref = `refs/tags/${tagName}`;
-		const format = [
-			'%(objectname)',
-			'%(taggername)',
-			'%(taggeremail)',
-			'%(taggerdate:unix)',
-			'%(contents:signature)',
-			'%(contents)'
-		].join(SEPARATOR);
-		const out = await this.run(['for-each-ref', ref, `--format=${format}`], repo);
-		const data = out.split(SEPARATOR);
-		if (data.length < 6 || data[0] === '') {
-			throw new GitBackendError('NotFound', `Could not find the tag ${tagName}`);
-		}
-		const signed = data[4] !== '';
-		const taggerDate = parseInt(data[3], 10);
-		const signature = signed
-			? (await this.getTagSignature(repo, tagName)) ?? {
-				key: '',
-				signer: '',
-				status: GitSignatureStatus.CannotBeChecked
-			}
-			: null;
-		return {
-			hash: data[0],
-			taggerName: data[1],
-			taggerEmail: data[2].substring(data[2].startsWith('<') ? 1 : 0, data[2].length - (data[2].endsWith('>') ? 1 : 0)),
-			// A lightweight tag has no tagger date to parse; the epoch stands in where the
-			// original's parse produced nothing.
-			taggerDate: Number.isNaN(taggerDate) ? 0 : taggerDate,
-			message: removeTrailingBlankLines(
-				data
-					.slice(5)
-					.join(SEPARATOR)
-					.replace(data[4], '')
-					.split(EOL)
-			).join('\n'),
-			signature
-		};
+	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
+		return getTagDetails(this.cli, repo, tagName);
 	}
 
-	public async getTagSignature(repo: string, tagName: string) {
-		return parseGitSignatureOutput(
-			await this.runRaw(['verify-tag', '--raw', `refs/tags/${tagName}`], repo)
-		);
+	public getTagSignature(repo: string, tagName: string): Promise<GitSignature | null> {
+		return getTagSignature(this.cli, repo, tagName);
 	}
 
-	/** The fetch URL of a remote, or NULL when it is not configured. */
-	public async getRemoteUrl(repo: string, remote: string): Promise<string | null> {
-		try {
-			const out = await this.run(['config', '--get', `remote.${remote}.url`], repo);
-			return out.split(EOL)[0];
-		} catch {
-			// `git config --get` exits non-zero when the key is unset: that is the answer, not a failure.
-			return null;
-		}
+	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
+		return getRemoteUrl(this.cli, repo, remote);
 	}
 
-	/** Where a file was renamed to between a commit and the working tree, or NULL. */
-	public async getNewPathOfRenamedFile(
+	public getNewPathOfRenamedFile(
 		repo: string,
 		commitHash: string,
 		oldFilePath: string
 	): Promise<string | null> {
-		const out = await this.run(
-			['diff', '--name-status', '--find-renames', '--diff-filter=R', '-z', commitHash],
-			repo
-		);
-		const fields = out.split('\0');
-		for (let i = 0; i < fields.length && fields[i] !== ''; ) {
-			const type = fields[i][0];
-			if (type === GitFileStatus.Renamed) {
-				if (fields[i + 1] === oldFilePath) return fields[i + 2];
-				i += 3;
-			} else if (
-				type === GitFileStatus.Added ||
-				type === GitFileStatus.Modified ||
-				type === GitFileStatus.Deleted
-			) {
-				i += 2;
-			} else {
-				break;
-			}
-		}
-		return null;
+		return getNewPathOfRenamedFile(this.cli, repo, commitHash, oldFilePath);
 	}
 
-	/** The roots of the repository's initialised submodules. */
 	public getSubmodules(repo: string): Promise<string[]> {
-		return new Promise<string[]>((resolve) => {
-			fs.readFile(path.join(repo, '.gitmodules'), { encoding: 'utf8' }, async (err, data) => {
-				const submodules: string[] = [];
-				if (!err) {
-					const lines = data.split(/\r\n|\r|\n/);
-					let inSubmoduleSection = false;
-					const section = /^\s*\[.*\]\s*$/,
-						submodule = /^\s*\[submodule "([^"]+)"\]\s*$/,
-						pathProp = /^\s*path\s+=\s+(.*)$/;
-
-					for (const line of lines) {
-						if (line.match(section) !== null) {
-							inSubmoduleSection = line.match(submodule) !== null;
-							continue;
-						}
-						const match = inSubmoduleSection ? line.match(pathProp) : null;
-						if (match === null) continue;
-
-						// A submodule that was never initialised has no repository below its path;
-						// resolving the path's root drops it, as `rev-parse` fails there.
-						try {
-							const root = await this.run(
-								['rev-parse', '--show-toplevel'],
-								path.join(repo, match[1].trim())
-							);
-							const normalised = path.normalize(root.trim());
-							if (!submodules.includes(normalised)) submodules.push(normalised);
-						} catch {
-							/* not initialised (or no longer present): nothing to list */
-						}
-					}
-				}
-				resolve(submodules);
-			});
-		});
+		return getSubmodules(this.cli, repo);
 	}
 
-	/** The upstream of the checked-out branch, or NULL when there is none. */
-	public async getCurrentBranchUpstream(repo: string): Promise<string | null> {
-		try {
-			const out = await this.run(
-				['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
-				repo
-			);
-			return out.trim() || null;
-		} catch {
-			return null;
-		}
+	public getCurrentBranchUpstream(repo: string): Promise<string | null> {
+		return getCurrentBranchUpstream(this.cli, repo);
 	}
 
-	/** How many commits are reachable from the given refs but not from `hash`. */
-	public async countCommitsBefore(
+	public countCommitsBefore(
 		repo: string,
 		branches: ReadonlyArray<string> | null,
 		hash: string,
 		showRemoteBranches: boolean,
 		includeCommitsMentionedByReflogs: boolean
 	): Promise<number> {
-		const args = ['rev-list', '--count'];
-		if (branches !== null) {
-			args.push(...branches);
-		} else {
-			args.push('--branches', '--tags');
-			if (showRemoteBranches) args.push('--remotes');
-			if (includeCommitsMentionedByReflogs) args.push('--reflog');
-			// HEAD is only a tip when it resolves: on an orphan branch it names no commit, and
-			// passing it would fail the whole count (the engine skips it the same way).
-			const headExists = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'], repo)
-				.then((out) => out.trim() !== '', () => false);
-			if (headExists) args.push('HEAD');
-		}
-		args.push(`^${hash}`);
-		const out = await this.run(args, repo);
-		const count = parseInt(out.trim(), 10);
-		if (Number.isNaN(count)) {
-			throw new GitBackendError('Git', `Could not count the commits before ${hash}`);
-		}
-		return count;
+		return countCommitsBefore(this.cli, repo, branches, hash, showRemoteBranches, includeCommitsMentionedByReflogs);
 	}
 
-	/** The root of the repository containing a path. */
-	public async repoRoot(path: string): Promise<string> {
-		const out = await this.run(['rev-parse', '--show-toplevel'], path);
-		return out.trim();
+	public repoRoot(path: string): Promise<string> {
+		return repoRoot(this.cli, path);
 	}
 
-	/** The names of the repository's remotes. */
-	public async getRemotes(repo: string): Promise<string[]> {
-		const out = await this.run(['remote'], repo);
-		return out.split(EOL).filter((line) => line !== '');
+	public getRemotes(repo: string): Promise<string[]> {
+		return getRemotes(this.cli, repo);
 	}
 
-	/**
-	 * The distinct commit authors of the current branch's history: counted per (name, email)
-	 * spelling over HEAD's history, de-duplicated by name (the most-prolific spelling first, then
-	 * sorted by name) — the same reduce the engine performs. `git shortlog` is deliberately not
-	 * used: it applies `.mailmap` by default, which would disagree with both the engine and the
-	 * author names the commit rows themselves display.
-	 */
-	public async getAuthors(repo: string): Promise<GitAuthor[]> {
-		const out = await this.run(['log', '--format=%an%x1f%ae', 'HEAD'], repo);
-		const counts = new Map<string, { name: string; email: string; count: number }>();
-		for (const line of out.split(EOL)) {
-			const separator = line.indexOf('\x1f');
-			if (line === '' || separator === -1) continue;
-			const name = line.slice(0, separator), email = line.slice(separator + 1);
-			const entry = counts.get(name + '\x00' + email);
-			if (entry === undefined) counts.set(name + '\x00' + email, { name, email, count: 1 });
-			else entry.count++;
-		}
-		const ordered = [...counts.values()].sort(
-			(a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : a.email < b.email ? -1 : 1)
-		);
-		const seen = new Set<string>();
-		const authors: GitAuthor[] = [];
-		for (const entry of ordered) {
-			if (seen.has(entry.name)) continue;
-			seen.add(entry.name);
-			authors.push({ name: entry.name, email: entry.email });
-		}
-		// The list itself is sorted by name; the count ordering only decided which spelling of a
-		// repeated name wins.
-		authors.sort((a, b) => (a.name > b.name ? 1 : -1));
-		return authors;
+	public getAuthors(repo: string): Promise<GitAuthor[]> {
+		return getAuthors(this.cli, repo);
 	}
 
-	/** Commit counts per author, across all refs (branches, tags, remote-tracking, the stash), merge commits excluded. */
-	public async getAuthorStatistics(repo: string): Promise<GitAuthorStat[]> {
-		let lines: string[];
-		try {
-			lines = (await this.run(['shortlog', '-sne', '--all', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
-		} catch (_) {
-			return [];
-		}
-
-		const stats: GitAuthorStat[] = [];
-		for (const line of lines) {
-			const match = line.match(/^\s*(\d+)\s+(.+?)\s+<(.*?)>$/);
-			if (match !== null) {
-				stats.push({ commits: parseInt(match[1], 10), name: match[2], email: match[3] });
-			}
-		}
-		return stats;
+	public getAuthorStatistics(repo: string): Promise<GitAuthorStat[]> {
+		return getAuthorStatistics(this.cli, repo);
 	}
 
-	/**
-	 * The commit-activity heatmap of a repository, binned by the author's local weekday and hour
-	 * (i.e. `%aI`'s own UTC offset, not the machine running Git Graph's timezone).
-	 */
-	public async getActivityHeatmap(repo: string): Promise<GitActivityCell[]> {
-		let lines: string[];
-		try {
-			lines = (await this.run(['log', '--all', '--format=%aI', '--no-merges'], repo)).split(EOL).filter((line) => line !== '');
-		} catch (_) {
-			return [];
-		}
-
-		const counts = new Map<string, number>();
-		for (const line of lines) {
-			// %aI is strict ISO 8601 (author date), e.g. 2026-05-02T10:00:00+09:00. The weekday is
-			// deliberately computed from ONLY the Y/M/D digits (as a UTC midnight), not by parsing
-			// the full string with its offset into a real Date: `new Date(iso)` would convert to
-			// the *local* time of the machine running Git Graph, shifting the weekday/hour near
-			// midnight for an author in a different timezone than whoever is viewing the graph.
-			const match = line.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})/);
-			if (match === null) continue;
-			const weekday = new Date(Date.UTC(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))).getUTCDay();
-			const hour = parseInt(match[4], 10);
-			const key = weekday + '-' + hour;
-			counts.set(key, (counts.get(key) || 0) + 1);
-		}
-
-		const cells: GitActivityCell[] = [];
-		counts.forEach((count, key) => {
-			const [weekday, hour] = key.split('-').map((n) => parseInt(n, 10));
-			cells.push({ weekday, hour, count });
-		});
-		return cells;
+	public getActivityHeatmap(repo: string): Promise<GitActivityCell[]> {
+		return getActivityHeatmap(this.cli, repo);
 	}
 
-	/** The config entries of one location, last value per key. */
-	public async getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
-		const out = await this.run(
-			['--no-pager', 'config', '--list', '-z', '--includes', `--${location}`],
-			repo
-		).catch((error) => {
-			const message = String(error instanceof Error ? error.message : error).toLowerCase();
-			if (message.startsWith('fatal: unable to read config file') && message.endsWith('no such file or directory')) {
-				return '';
-			}
-			throw error;
-		});
-		const configs: { [key: string]: string } = {};
-		const pairs = out.split('\0');
-		for (let i = 0; i < pairs.length - 1; i++) {
-			const lines = pairs[i].split(EOL);
-			const key = lines.shift()!;
-			configs[key] = lines.join('\n');
-		}
-		return configs;
+	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
+		return getConfigList(this.cli, repo, location);
 	}
 
-	/** The checked-out branch's short name, or NULL when HEAD is detached. */
-	public async currentBranchName(repo: string): Promise<string | null> {
-		try {
-			const out = await this.run(['symbolic-ref', '--short', 'HEAD'], repo);
-			return out.trim() || null;
-		} catch {
-			return null;
-		}
+	public currentBranchName(repo: string): Promise<string | null> {
+		return currentBranchName(this.cli, repo);
 	}
-
-	/* ---------- Internals ---------- */
-
-	private async getLog(repo: string, options: LogOptions, stashBaseTips: ReadonlyArray<string> = []): Promise<LogRecord[]> {
-		const order = options.commitOrdering ?? 'date';
-		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
-		// One extra commit, so that the caller can tell whether the page was truncated.
-		const args = [
-			'-c',
-			'log.showSignature=false',
-			'log',
-			`--max-count=${options.maxCommits + 1}`,
-			`--format=${format}`,
-			`--${order}-order`,
-			'-z',
-			// A tip that does not resolve is skipped, as the engine skips it: `HEAD` on an orphan
-			// branch (no commit yet, other branches still there) or a stale branch name from the
-			// view's saved state would otherwise fail the whole log with "bad revision".
-			'--ignore-missing'
-		];
-		// `log.mailmap` (and not `--use-mailmap`, whose availability varies) maps %an/%ae through
-		// the work tree's `.mailmap`, matching the engine's decline of the same request.
-		if (options.useMailmap) args.splice(1, 0, '-c', 'log.mailmap=true');
-		if (options.onlyFollowFirstParent) args.push('--first-parent');
-		const authors = options.authors ?? [];
-		// --fixed-strings so an author name with regex metacharacters (e.g. "dependabot[bot]")
-		// still matches literally, and --regexp-ignore-case to mirror the native engine's
-		// case-insensitive comparison (see log.rs's matches_author).
-		if (authors.length > 0) args.push('--regexp-ignore-case', '--fixed-strings');
-		for (const author of authors) args.push(`--author=${author} <`);
-
-		if (options.branches) {
-			args.push(...options.branches);
-		} else {
-			args.push('--branches');
-			if (options.showTags && options.showCommitsOnlyReferencedByTags) args.push('--tags');
-			if (options.includeCommitsMentionedByReflogs) args.push('--reflog');
-			if (options.showRemoteBranches ?? true) {
-				// Gerrit change refs are excluded wholesale: a Gerrit repository can hold tens of
-				// thousands of them, and the ones that belong in the graph are added explicitly.
-				args.push('--exclude=*/changes/*');
-				// Hidden remotes are excluded from the walk itself, as the engine does (it drops
-				// their refs before resolving the walk's tips): their commits must not appear in
-				// the graph unlabeled — the two backends have to draw the same commit set.
-				for (const remote of options.hideRemotes ?? []) args.push(`--exclude=${remote}/*`);
-				args.push('--remotes');
-			}
-			args.push('HEAD');
-		}
-		// Stashes hang off commits that may not be reachable from any of the refs above, so their
-		// bases are walk tips too (a tip that no longer resolves is skipped via --ignore-missing).
-		for (const tip of stashBaseTips) args.push(tip);
-		for (const ref of options.gerritRefs ?? []) args.push(ref);
-
-		const paths = (options.filterPaths ?? []).filter((path) => path !== '');
-		if (paths.length > 0) args.push('--full-history', '--simplify-merges');
-		args.push('--', ...paths);
-
-		const out = await this.run(args, repo);
-		const records: LogRecord[] = [];
-		for (const record of out.replace(/\0$/, '').split('\0')) {
-			const fields = record.split(SEPARATOR);
-			if (fields.length < 6) continue;
-			records.push({
-				hash: fields[0],
-				parents: fields[1] ? fields[1].split(' ') : [],
-				author: fields[2],
-				email: fields[3],
-				date: parseInt(fields[4], 10),
-				message: fields.slice(5).join(SEPARATOR)
-			});
-		}
-		return records;
-	}
-
-	/**
-	 * Keep the commits of the injected Gerrit change refs on the page, exactly as the engine does
-	 * (see `log::pin_commits`): the log keeps the newest `maxCommits` commits only, so a change
-	 * whose patchset is older than the page's last commit would lose its row — and with it the
-	 * badge the fetch limit promised. Each missing patchset commit is read and inserted at its
-	 * date position (below every newer commit, above every older one). A ref that does not
-	 * resolve is skipped rather than failing the load.
-	 */
-	private async pinGerritChangeCommits(repo: string, commits: LogRecord[], gerritRefs: ReadonlyArray<string>) {
-		if (gerritRefs.length === 0) return;
-		const present = new Set(commits.map((commit) => commit.hash));
-		const missing: string[] = [];
-		for (const ref of gerritRefs) {
-			const hash = await this.run(['rev-parse', '--verify', '--quiet', ref + '^{commit}'], repo).then((out) => out.trim()).catch(() => '');
-			if (hash !== '' && !present.has(hash)) {
-				present.add(hash);
-				missing.push(hash);
-			}
-		}
-		if (missing.length === 0) return;
-		const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
-		const out = await this.run(['-c', 'log.showSignature=false', 'log', '--no-walk=unsorted', `--format=${format}`, '-z', ...missing], repo);
-		for (const record of out.replace(/\0$/, '').split('\0')) {
-			const fields = record.split(SEPARATOR);
-			if (fields.length < 6) continue;
-			const pinned: LogRecord = {
-				hash: fields[0],
-				parents: fields[1] ? fields[1].split(' ') : [],
-				author: fields[2],
-				email: fields[3],
-				date: parseInt(fields[4], 10),
-				message: fields.slice(5).join(SEPARATOR)
-			};
-			let position = commits.findIndex((commit) => commit.date < pinned.date);
-			if (position === -1) position = commits.length;
-			commits.splice(position, 0, pinned);
-		}
-	}
-
-	/**
-	 * Read every ref the view needs.
-	 *
-	 * The calls are split the way the original extension split them, and for the same reason:
-	 * `show-ref -d` peels, which costs an object lookup per ref and is only affordable over the
-	 * local branches and tags; `for-each-ref` over `refs/remotes/` does not peel, which is what
-	 * makes the one unavoidably broad scan cheap. A remote tag (fetched by "track remote tags")
-	 * is rare enough that it gets its own narrow peel: without it, an annotated remote tag's
-	 * `%(objectname)` is the tag object's hash rather than the commit it points to, so it would
-	 * never attach to any commit in the graph.
-	 */
-	private async readRefs(
-		repo: string,
-		options: {
-			showRemoteBranches?: boolean;
-			showRemoteHeads?: boolean;
-			hideRemotes?: ReadonlyArray<string>;
-			showChangeRefs?: boolean;
-		}
-	) {
-		const [local, remote, remoteTagPeels, branchHead] = await Promise.all([
-			this.run(['show-ref', '--heads', '--tags', '-d', '--head'], repo).catch(() => ''),
-			options.showRemoteBranches ?? true
-				? this.run(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/remotes/'], repo).catch(
-						() => ''
-					)
-				: Promise.resolve(''),
-			options.showRemoteBranches ?? true
-				? this.run(
-						['for-each-ref', '--format=%(objectname) %(*objectname) %(refname)', 'refs/remotes/**/tags/*'],
-						repo
-					).catch(() => '')
-				: Promise.resolve(''),
-			this.run(['symbolic-ref', '-q', '--short', 'HEAD'], repo)
-				.then((out) => out.trim() || null)
-				.catch(() => null)
-		]);
-
-		// refname -> the commit hash an annotated remote tag peels to; absent for lightweight tags.
-		const remoteAnnotatedTags = new Map<string, string>();
-		for (const line of remoteTagPeels.split(EOL)) {
-			const firstSpace = line.indexOf(' ');
-			if (firstSpace === -1) continue;
-			const rest = line.slice(firstSpace + 1);
-			const secondSpace = rest.indexOf(' ');
-			if (secondSpace === -1) continue;
-			const peeled = rest.slice(0, secondSpace);
-			if (peeled !== '') remoteAnnotatedTags.set(rest.slice(secondSpace + 1), peeled);
-		}
-
-		const refData: { head: string | null; heads: GitRef[]; tags: GitTagRef[]; remotes: GitRef[] } = {
-			head: null,
-			heads: [],
-			tags: [],
-			remotes: []
-		};
-		const branches: string[] = [];
-		const tagNames: string[] = [];
-
-		for (const line of local.split(EOL)) {
-			const separator = line.indexOf(' ');
-			if (separator === -1) continue;
-			const hash = line.slice(0, separator);
-			const ref = line.slice(separator + 1);
-
-			if (ref.startsWith('refs/heads/')) {
-				const name = ref.slice(11);
-				refData.heads.push({ hash, name });
-				branches.push(name);
-			} else if (ref.startsWith('refs/tags/')) {
-				const annotated = ref.endsWith('^{}');
-				const name = annotated ? ref.slice(10, -3) : ref.slice(10);
-				refData.tags.push({ hash, name, annotated });
-				if (!annotated) tagNames.push(name);
-			} else if (ref === 'HEAD') {
-				refData.head = hash;
-			}
-		}
-
-		const hidden = (options.hideRemotes ?? []).map((name) => `refs/remotes/${name}/`);
-		for (const line of remote.split(EOL)) {
-			const separator = line.indexOf(' ');
-			if (separator === -1) continue;
-			const hash = line.slice(0, separator);
-			const ref = line.slice(separator + 1);
-			if (!ref.startsWith('refs/remotes/')) continue;
-			if (hidden.some((prefix) => ref.startsWith(prefix))) continue;
-			if (!options.showRemoteHeads && ref.endsWith('/HEAD')) continue;
-
-			const name = ref.slice(13);
-			// Only `tags/` directly below the remote's name marks a tag (see refs.rs): a branch
-			// pushed as `feature/tags/cleanup` also carries a `/tags/` further down.
-			const slash = name.indexOf('/');
-			const tagsIndex = slash > -1 && name.startsWith('tags/', slash + 1) ? slash : -1;
-			if (tagsIndex > -1) {
-				const peeledHash = remoteAnnotatedTags.get(ref);
-				refData.tags.push({
-					hash: peeledHash ?? hash,
-					name: name.slice(0, tagsIndex) + '/' + name.slice(tagsIndex + 6),
-					annotated: peeledHash !== undefined
-				});
-			} else if (name.includes('/changes/')) {
-				// Never offered as branches, however they are displayed.
-				if (options.showChangeRefs && !name.endsWith('/meta')) refData.remotes.push({ hash, name });
-			} else {
-				refData.remotes.push({ hash, name });
-				branches.push('remotes/' + name);
-			}
-		}
-
-		/* The checked-out branch is listed first, as `git branch` lists it */
-		if (branchHead !== null) {
-			const index = branches.indexOf(branchHead);
-			if (index > 0) branches.splice(index, 1);
-			if (index !== 0) branches.unshift(branchHead);
-		}
-
-		return { refData, branches, branchHead, tagNames: tagNames.sort() };
-	}
-
-	private async getCommitDetailsBase(repo: string, hash: string) {
-		const format = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ce', '%ct', '%B'].join(SEPARATOR);
-		const [out, signature] = await Promise.all([
-			this.run(['-c', 'log.showSignature=false', 'show', '--quiet', hash, `--format=${format}`], repo),
-			this.getCommitSignature(repo, hash)
-		]);
-		const fields = out.split(SEPARATOR);
-		if (fields.length < 9) {
-			throw new GitBackendError('NotFound', `Could not read the commit ${hash}`);
-		}
-		return {
-			hash: fields[0],
-			parents: fields[1] !== '' ? fields[1].split(' ') : [],
-			author: fields[2],
-			authorEmail: fields[3],
-			authorDate: parseInt(fields[4], 10),
-			committer: fields[5],
-			committerEmail: fields[6],
-			committerDate: parseInt(fields[7], 10),
-			signature,
-			body: fields.slice(8).join(SEPARATOR).trim(),
-			fileChanges: [] as GitFileChange[]
-		};
-	}
-
-	/**
-	 * The file list between two revisions — the statuses only, from `--name-status`.
-	 *
-	 * The line counts used to be merged in from a second `--numstat` run here; they are the
-	 * expensive half of a details load (every file costs two blob reads), so they are now answered
-	 * separately, for the paths the view asks about, by [`getLineCounts`].
-	 */
-	private async getFileChanges(repo: string, from: string, to: string): Promise<GitFileChange[]> {
-		const base = ['diff', '--name-status', '--find-renames', '--diff-filter=AMDR', '-z', from];
-		if (to !== '') base.push(to);
-		const nameStatus = await this.run(base, repo);
-
-		const changes: GitFileChange[] = [];
-
-		const statusFields = nameStatus.split('\0');
-		for (let i = 0; i < statusFields.length && statusFields[i] !== ''; ) {
-			const type = statusFields[i][0] as GitFileStatus;
-			if (type === GitFileStatus.Renamed) {
-				changes.push({
-					oldFilePath: statusFields[i + 1],
-					newFilePath: statusFields[i + 2],
-					type,
-					additions: null,
-					deletions: null
-				});
-				i += 3;
-			} else if (
-				type === GitFileStatus.Added ||
-				type === GitFileStatus.Modified ||
-				type === GitFileStatus.Deleted
-			) {
-				changes.push({
-					oldFilePath: statusFields[i + 1],
-					newFilePath: statusFields[i + 1],
-					type,
-					additions: null,
-					deletions: null
-				});
-				i += 2;
-			} else {
-				break;
-			}
-		}
-
-		return changes;
-	}
-
-	/** Run one `git` process and return its stdout. */
-	private run(args: ReadonlyArray<string>, cwd: string): Promise<string> {
-		return new Promise((resolve, reject) => {
-			execFile(
-				this.gitPath,
-				// i18n.logOutputEncoding is pinned so commit metadata (subjects, bodies, author
-				// names, reflog messages) always arrives as UTF-8 for the `utf8` decode below,
-				// whatever the repository's `i18n.commitEncoding` says — matching the engine,
-				// which reads the objects directly. Commands that never re-encode ignore it.
-				['-c', 'i18n.logOutputEncoding=UTF-8', ...args] as string[],
-				{ cwd, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
-				(error, stdout, stderr) => {
-					if (error) {
-						const text = (stderr || stdout || error.message).trim();
-						// A missing `git` is the one failure worth distinguishing: it means this
-						// backend cannot answer anything, not that this call failed.
-						const kind = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'Unsupported' : 'Git';
-						reject(new GitBackendError(kind, text));
-					} else {
-						resolve(stdout);
-					}
-				}
-			);
-		});
-	}
-
-	/**
-	 * The repository's empty tree, to diff a root commit (or an unborn `HEAD`) against "nothing".
-	 *
-	 * Its hash depends on the repository's object format: the historical constant is SHA-1 only
-	 * and fails to resolve on SHA-256 repositories, so the constant is verified per repository
-	 * (git resolves the empty tree intrinsically — no object needs to exist) and the SHA-256
-	 * constant substituted where it doesn't. Cached per repository: the object format is fixed
-	 * when the repository is created.
-	 */
-	private getEmptyTree(repo: string): Promise<string> {
-		let emptyTree = this.emptyTrees.get(repo);
-		if (emptyTree === undefined) {
-			emptyTree = this.run(['rev-parse', '--verify', '--quiet', EMPTY_TREE + '^{tree}'], repo)
-				.then(() => EMPTY_TREE)
-				.catch(() =>
-					this.run(['rev-parse', '--verify', '--quiet', EMPTY_TREE_SHA256 + '^{tree}'], repo)
-						.then(() => EMPTY_TREE_SHA256)
-						.catch(() => EMPTY_TREE)
-				);
-			this.emptyTrees.set(repo, emptyTree);
-		}
-		return emptyTree;
-	}
-
-	/** Run a signature verification command, retaining GnuPG status output on non-zero exits. */
-	private runRaw(args: ReadonlyArray<string>, cwd: string): Promise<string> {
-		return new Promise((resolve, reject) => {
-			execFile(
-				this.gitPath,
-				args as string[],
-				{ cwd, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
-				(error, stdout, stderr) => {
-					if (error) {
-						const code = (error as NodeJS.ErrnoException).code;
-						if (code === 'ENOENT') {
-							reject(new GitBackendError('Unsupported', `Git executable not found: ${this.gitPath}`));
-							return;
-						}
-						if (typeof code !== 'number') {
-							reject(new GitBackendError('Git', (stderr || stdout || error.message).trim()));
-							return;
-						}
-					}
-					resolve(stdout + stderr);
-				}
-			);
-		});
-	}
-}
-
-/**
- * Layer the untracked and deleted files of the working tree onto a diff.
- *
- * A file deleted in the working tree but still in the index shows as deleted rather than
- * unchanged, and untracked files are appended — neither is visible to `git diff`.
- */
-/**
- * The new path of one `diff --git` section: the file the section belongs to, matched exactly so
- * that a file whose name is a prefix of another's cannot catch its section.
- *
- * Git C-quotes a path containing quotes, backslashes or control characters (spaces and, with
- * `core.quotepath=false`, non-ASCII stay raw), and quotes each side of the header on its own — so
- * a header carries any of the four combinations of quoted and raw sides. A raw path may itself
- * contain " b/", which leaves the header line genuinely ambiguous (`a/x b/y b/x b/y` is one file
- * named `x b/y`, not the file `y`); the extended header lines below it name the sides one per
- * line, so they resolve what the header alone cannot.
- */
-function diffSectionNewPath(section: string): string | null {
-	const end = section.indexOf('\n');
-	const candidates = diffHeaderPaths(end === -1 ? section : section.substring(0, end));
-	if (candidates.length === 1) return candidates[0].newPath;
-	if (candidates.length === 0) return null;
-	const named = diffSectionNamedNewPath(section);
-	if (named !== null) return named;
-	// Nothing named the sides (a mode-only change of an ambiguous path): the split that gives both
-	// sides the same name is the one Git itself prefers when re-reading its own headers.
-	const same = candidates.find((candidate) => candidate.oldPath === candidate.newPath);
-	return (same !== undefined ? same : candidates[0]).newPath;
-}
-
-/** Every way the two sides of a `diff --git` header line can be split (see {@link diffSectionNewPath}). */
-function diffHeaderPaths(header: string): { oldPath: string; newPath: string }[] {
-	const prefix = 'diff --git ';
-	if (!header.startsWith(prefix)) return [];
-	const body = header.substring(prefix.length);
-	const paths: { oldPath: string; newPath: string }[] = [];
-	if (body.charAt(0) === '"') {
-		// A quoted old side ends at its own closing quote, so the split isn't ambiguous
-		const closing = diffClosingQuote(body);
-		if (closing === -1 || body.charAt(closing + 1) !== ' ') return [];
-		const oldPath = diffSidePath(body.substring(0, closing + 1), 'a/');
-		const newPath = diffSidePath(body.substring(closing + 2), 'b/');
-		return oldPath !== null && newPath !== null ? [{ oldPath: oldPath, newPath: newPath }] : [];
-	}
-	for (let space = body.indexOf(' '); space !== -1; space = body.indexOf(' ', space + 1)) {
-		const oldPath = diffSidePath(body.substring(0, space), 'a/');
-		const newPath = diffSidePath(body.substring(space + 1), 'b/');
-		if (oldPath !== null && newPath !== null) paths.push({ oldPath: oldPath, newPath: newPath });
-	}
-	return paths;
-}
-
-/**
- * The new path as named by the extended header lines of a section (`rename to` / `copy to`, or the
- * `+++` line), each of which carries one path that runs to the end of its line.
- * @returns The path, or NULL if no line named it.
- */
-function diffSectionNamedNewPath(section: string): string | null {
-	const lines = section.split('\n');
-	let oldPath: string | null = null;
-	for (let i = 1; i < lines.length; i++) {
-		const line = lines[i];
-		if (line.startsWith('@@')) break; // the hunks: every extended header line is above them
-		if (line.startsWith('rename to ')) return diffNamedPath(line.substring(10));
-		if (line.startsWith('copy to ')) return diffNamedPath(line.substring(8));
-		if (line.startsWith('--- ')) {
-			oldPath = diffSidePath(diffTrimTerminator(line.substring(4)), 'a/');
-		} else if (line.startsWith('+++ ')) {
-			// `+++ /dev/null` — the file was deleted, so both sides of the header name it
-			const newPath = diffSidePath(diffTrimTerminator(line.substring(4)), 'b/');
-			return newPath !== null ? newPath : oldPath;
-		}
-	}
-	return null;
-}
-
-/**
- * Strip the tab Git terminates a raw `---`/`+++` path with when the path contains a space (so
- * that the end of the path is still findable). A path containing a tab is C-quoted instead — a
- * tab is a control character — so a trailing tab on a raw path is always Git's terminator.
- */
-function diffTrimTerminator(side: string): string {
-	return side.charAt(0) !== '"' && side.endsWith('\t') ? side.substring(0, side.length - 1) : side;
-}
-
-/** One `a/`- or `b/`-prefixed side of a header or `---`/`+++` line, unquoted. NULL => not that side. */
-function diffSidePath(side: string, prefix: string): string | null {
-	if (side.charAt(0) === '"') {
-		if (diffClosingQuote(side) !== side.length - 1) return null;
-		const path = unquoteCPath(side.substring(1, side.length - 1));
-		return path.startsWith(prefix) ? path.substring(prefix.length) : null;
-	}
-	// Git quotes every path containing a quote, a backslash or a control character, so a raw
-	// side that contains one is not a path at all — it is a mis-split of an ambiguous header
-	if (/["\\\x00-\x1f\x7f]/.test(side)) return null;
-	return side.startsWith(prefix) ? side.substring(prefix.length) : null;
-}
-
-/** One unprefixed path naming a whole line (`rename to <path>`), unquoted. */
-function diffNamedPath(text: string): string | null {
-	if (text.charAt(0) !== '"') return text;
-	return diffClosingQuote(text) === text.length - 1 ? unquoteCPath(text.substring(1, text.length - 1)) : null;
-}
-
-/** The index of the quote closing the one opened at index 0 of `text` (-1 => unterminated). */
-function diffClosingQuote(text: string): number {
-	for (let i = 1; i < text.length; i++) {
-		const char = text.charAt(i);
-		if (char === '\\') i++;
-		else if (char === '"') return i;
-	}
-	return -1;
-}
-
-const C_ESCAPES: { [escape: string]: string } = {
-	'a': '\x07', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v', '\\': '\\', '"': '"'
-};
-
-/**
- * Undo Git's C-quoting of a path (the contents of the quotes, prefix included).
- *
- * Octal escapes are the individual bytes of one UTF-8 sequence, so consecutive ones are decoded
- * together rather than each becoming its own character.
- */
-function unquoteCPath(quoted: string): string {
-	const parts = quoted.match(/\\(?:[0-7]{1,3}|[\s\S])|[^\\]+/g);
-	if (parts === null) return quoted;
-	let out = '';
-	let bytes: number[] = [];
-	const flush = () => {
-		if (bytes.length > 0) {
-			out += Buffer.from(bytes).toString('utf8');
-			bytes = [];
-		}
-	};
-	for (const part of parts) {
-		if (part.charAt(0) !== '\\') {
-			flush();
-			out += part;
-		} else if (/^\\[0-7]{1,3}$/.test(part)) {
-			bytes.push(parseInt(part.substring(1), 8) & 0xff);
-		} else {
-			flush();
-			const escape = part.substring(1);
-			out += typeof C_ESCAPES[escape] === 'string' ? C_ESCAPES[escape] : escape;
-		}
-	}
-	flush();
-	return out;
-}
-
-function mergeStatusFiles(changes: ReadonlyArray<GitFileChange>,
-	status: { deleted: ReadonlyArray<string>; untracked: ReadonlyArray<string>; unmerged: ReadonlyArray<string> }
-): GitFileChange[] {
-	const merged = [...changes];
-	// A conflicted file still in the working tree (`UD` when the other side deleted it) can be
-	// identical to HEAD, so `git diff` leaves it out; it is listed as modified, as `git status`
-	// counts it and the engine lists it, rather than vanishing mid-merge.
-	for (const path of status.unmerged) {
-		if (!merged.some((change) => change.newFilePath === path)) {
-			merged.push({ oldFilePath: path, newFilePath: path, type: GitFileStatus.Modified, additions: null, deletions: null });
-		}
-	}
-	for (const path of status.deleted) {
-		// The source of a rename the diff already paired (`git status` lists it as deleted when
-		// `status.renames` is off) is accounted for by that rename record.
-		if (merged.some((change) => change.type === GitFileStatus.Renamed && change.oldFilePath === path)) continue;
-		const index = merged.findIndex((change) => change.newFilePath === path);
-		if (index !== -1) {
-			merged[index] = { ...merged[index], type: GitFileStatus.Deleted };
-		} else {
-			merged.push({
-				oldFilePath: path,
-				newFilePath: path,
-				type: GitFileStatus.Deleted,
-				additions: null,
-				deletions: null
-			});
-		}
-	}
-	for (const path of status.untracked) {
-		merged.push({
-			oldFilePath: path,
-			newFilePath: path,
-			type: GitFileStatus.Untracked,
-			additions: null,
-			deletions: null
-		});
-	}
-	return merged;
-}
-
-/** Git's hash for the empty tree in a SHA-1 repository (the historical constant). */
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
-
-/** Git's hash for the empty tree in a SHA-256 repository. */
-const EMPTY_TREE_SHA256 = '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321';
-
-function unique(values: ReadonlyArray<string>): string[] {
-	return Array.from(new Set(values));
-}
-
-/** Remove the trailing blank lines of a message before showing it, as the original did. */
-function removeTrailingBlankLines(lines: string[]): string[] {
-	while (lines.length > 0 && lines[lines.length - 1] === '') {
-		lines.pop();
-	}
-	return lines;
-}
-
-function message(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
