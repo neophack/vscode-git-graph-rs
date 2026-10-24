@@ -1,0 +1,46 @@
+/* Loader */
+
+#loadingHeader{
+	text-align:center;
+	line-height:32px;
+}
+#loadingHeader svg{
+	display:inline-block;
+	vertical-align:middle;
+	fill:var(--vscode-editor-foreground);
+	margin-right:10px;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+@keyframes loadingIconAnimation{
+	0%{ transform:rotate(0deg); opacity:0.7; }
+	25%{ opacity:1; }
+	50%{ opacity:0.7; }
+	75%{ opacity:1; }
+	100%{ transform:rotate(360deg); opacity:0.7; }
+}
+
+/* Skeleton placeholder rows shown under the loading header on the initial load */
+.skeletonRows{
+	padding:20px 24px;
+	max-width:640px;
+	margin:0 auto;
+}
+.skeletonRow{
+	height:14px;
+	margin:12px 0;
+	border-radius:4px;
+	background:linear-gradient(90deg, rgba(128,128,128,0.08) 25%, rgba(128,128,128,0.18) 50%, rgba(128,128,128,0.08) 75%);
+	background-size:200% 100%;
+	animation:skeletonShimmer 1.4s var(--gg-ease-in-out) infinite;
+}
+.skeletonRow:nth-child(2n){
+	width:82%;
+}
+.skeletonRow:nth-child(3n){
+	width:64%;
+	margin-left:12%;
+}
+@keyframes skeletonShimmer{
+	0%{ background-position:200% 0; }
+	100%{ background-position:-200% 0; }
+}

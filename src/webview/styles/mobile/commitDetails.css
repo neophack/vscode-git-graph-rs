@@ -1,0 +1,414 @@
+/* ---------- Commit details: a full-screen sheet ----------
+ * isCdvDocked() is true in the mobile layout, so the view is a <div> on <body>. Its inline height
+ * and the #view bottom offset the docked layout sets are overridden. A 52px title bar (close,
+ * the commit, its actions) over one scrolling page: the summary card, the "Files" header with the
+ * file view controls, then the file list. */
+
+body.mobileMode #view{
+	bottom:0 !important;
+}
+body.mobileMode #cdv.docked{
+	top:0;
+	left:0;
+	right:0;
+	bottom:0;
+	height:auto !important;
+	z-index:25;
+	display:flex;
+	flex-direction:column;
+	border-top:none;
+	background-color:var(--m-bg);
+	color:var(--m-fg);
+	font-size:15px;
+	line-height:22px;
+	padding-bottom:env(safe-area-inset-bottom);
+	animation:ggMobileSheetIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggMobileSheetIn{
+	from{ opacity:0.4; transform:translateY(32px); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode #cdv .cdvHeightResize, body.mobileMode #cdvDivider{
+	display:none;
+}
+body.mobileMode #cdvControls{
+	position:sticky;
+	top:0;
+	order:-1;
+	flex:none;
+	width:auto;
+	display:flex;
+	align-items:center;
+	gap:0;
+	min-height:var(--m-bar);
+	box-sizing:border-box;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+	padding-top:max(4px, env(safe-area-inset-top));
+	border-bottom:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	z-index:1;
+}
+body.mobileMode #cdvMobileTitle{
+	display:block;
+	flex:1 1 auto;
+	min-width:0;
+	padding:0 6px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-family:var(--m-mono);
+	font-size:15px;
+	font-weight:600;
+}
+body.mobileMode .cdvControlBtn{
+	position:relative;
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-target);
+	height:var(--m-target);
+	margin:0;
+	border-radius:50%;
+	background:none;
+}
+body.mobileMode .cdvControlBtn svg{
+	position:static;
+	width:18px;
+	height:18px;
+}
+body.mobileMode .cdvControlBtn:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #cdvContent{
+	position:relative;
+	left:auto;
+	right:auto;
+	flex:1 1 auto;
+	min-height:0;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+}
+body.mobileMode #cdvSummary, body.mobileMode #cdvFiles, body.mobileMode #cdvLoading{
+	position:static;
+	width:auto !important;
+	left:auto !important;
+	border-right:none;
+	overflow:visible;
+}
+body.mobileMode #cdvSummary{
+	padding:18px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+	-webkit-user-select:text;
+	user-select:text;
+}
+body.mobileMode #cdvLoading{
+	padding:48px 16px;
+	text-align:center;
+	color:var(--m-fg-2);
+}
+.cdvmTitle{
+	font-size:17px;
+	line-height:22px;
+	font-weight:700;
+	letter-spacing:-0.01em;
+	overflow-wrap:anywhere;
+}
+.cdvmByline{
+	display:flex;
+	align-items:center;
+	gap:10px;
+	margin-top:14px;
+}
+.cdvmAvatar{
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:36px;
+	height:36px;
+	border-radius:50%;
+	overflow:hidden;
+	background-color:hsl(var(--cdvm-avatar-hue, 210), 52%, 46%);
+	color:#fff;
+	font-size:14px;
+	font-weight:700;
+	letter-spacing:0.02em;
+}
+.cdvmAvatar img{
+	width:100%;
+	height:100%;
+	object-fit:cover;
+}
+.cdvmByText{
+	display:flex;
+	flex-direction:column;
+	min-width:0;
+}
+.cdvmAuthor{
+	font-size:15px;
+	line-height:20px;
+	font-weight:600;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.cdvmDate{
+	font-size:13px;
+	line-height:18px;
+	color:var(--m-fg-2);
+}
+.cdvmMessage{
+	margin-top:16px;
+	font-size:15px;
+	line-height:22px;
+	overflow-wrap:anywhere;
+}
+.cdvmMessage #cdvMessageBody{
+	display:block;
+}
+.cdvmFacts, .cdvmNote{
+	margin-top:18px;
+	padding:2px 14px;
+	border-radius:var(--m-radius, 12px);
+	background-color:var(--m-surface);
+	font-size:14px;
+	line-height:20px;
+}
+.cdvmNote{
+	margin-top:0;
+	padding:14px;
+}
+.cdvmFact{
+	display:flex;
+	align-items:baseline;
+	gap:12px;
+	min-height:24px;
+	padding:10px 0;
+}
+.cdvmFact + .cdvmFact{
+	box-shadow:0 -0.5px 0 var(--m-sep);
+}
+.cdvmFactLabel{
+	flex:none;
+	width:84px;
+	color:var(--m-fg-2);
+}
+.cdvmFactValue{
+	flex:1 1 auto;
+	min-width:0;
+	display:flex;
+	flex-wrap:wrap;
+	align-items:baseline;
+	gap:2px 6px;
+	overflow-wrap:anywhere;
+}
+.cdvmMono{
+	display:block;
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	word-break:break-all;
+}
+.cdvmEmail{
+	display:block;
+	flex-basis:100%;
+	font-size:13px;
+	color:var(--m-accent);
+}
+.cdvmChip{
+	display:inline-block;
+	padding:0 8px;
+	border-radius:6px;
+	background-color:var(--m-fill);
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	line-height:22px;
+}
+.cdvmChip.internalUrl, .cdvmChip.internalUrl:hover{
+	color:var(--m-accent);
+	text-decoration:none;
+}
+
+/* "N files changed  +A −D        [list|tree] [⊟][⊞]" */
+body.mobileMode #cdvFilesHeader{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	margin-top:8px;
+	padding:6px max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
+}
+.cdvmFilesCount{
+	flex:0 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:13px;
+	font-weight:700;
+	letter-spacing:0.02em;
+	text-transform:uppercase;
+	color:var(--m-fg-2);
+}
+.cdvmFilesStat{
+	flex:none;
+	display:flex;
+	gap:6px;
+	font-family:var(--m-mono);
+	font-size:12px;
+	font-weight:600;
+}
+.cdvmAdd{ color:var(--m-add); }
+.cdvmDel{ color:var(--m-del); }
+.cdvmFileViewBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+/* List / tree: a segmented control */
+body.mobileMode #cdvFileViewTypeList, body.mobileMode #cdvFileViewTypeTree{
+	width:40px;
+	height:32px;
+	border-radius:0;
+	background-color:var(--m-fill);
+	opacity:1;
+}
+body.mobileMode #cdvFileViewTypeList{
+	border-radius:9px 0 0 9px;
+}
+body.mobileMode #cdvFileViewTypeTree{
+	border-radius:0 9px 9px 0;
+	margin-right:4px;
+}
+body.mobileMode #cdvFileViewTypeList.active, body.mobileMode #cdvFileViewTypeTree.active{
+	background-color:var(--m-accent-fill);
+}
+body.mobileMode #cdvFileViewTypeList.active svg, body.mobileMode #cdvFileViewTypeTree.active svg{
+	fill:var(--m-accent-on);
+}
+body.mobileMode .cdvFolderBtn.hidden{
+	display:none;
+}
+
+/* File rows: [status] name .......... +4 −2 */
+body.mobileMode #cdvFiles{
+	padding:0 0 24px;
+}
+body.mobileMode #cdvFiles ul{
+	padding-left:0;
+}
+body.mobileMode #cdvFiles .fileTreeFolderContents .fileTreeFolderContents{
+	padding-left:18px;
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord, body.mobileMode #cdvFiles .fileTreeFolder, body.mobileMode #cdvFiles .fileTreeRepo{
+	display:flex;
+	align-items:center;
+	min-height:var(--m-target);
+	box-sizing:border-box;
+	padding:0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+	line-height:20px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #cdvFiles .fileTreeFile{
+	display:flex;
+	align-items:center;
+	flex:1 1 auto;
+	min-width:0;
+	line-height:20px;
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord:active, body.mobileMode #cdvFiles .fileTreeFolder:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #cdvFiles .fileTreeFileRecord.contextMenuActive{
+	background-color:var(--m-fill);
+}
+body.mobileMode #cdvFiles .fileTreeFileIcon{
+	display:none;
+}
+body.mobileMode #cdvFiles .gitFileName{
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:15px;
+	color:var(--m-fg);
+	text-decoration:none;
+}
+body.mobileMode #cdvFiles .gitFileName.D{
+	text-decoration:line-through;
+	text-decoration-color:var(--m-del);
+}
+/* The change type as a tinted letter badge (A M D R U), drawn from the class the name carries */
+body.mobileMode #cdvFiles .gitFileName::before{
+	display:inline-block;
+	width:20px;
+	height:20px;
+	margin-right:10px;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+	font-family:var(--m-mono);
+	font-size:11px;
+	font-weight:700;
+	line-height:20px;
+	text-align:center;
+	vertical-align:top;
+	text-decoration:none;
+}
+body.mobileMode #cdvFiles .gitFileName.A::before{ content:"A"; color:var(--m-add); }
+body.mobileMode #cdvFiles .gitFileName.M::before{ content:"M"; color:var(--m-mod); }
+body.mobileMode #cdvFiles .gitFileName.D::before{ content:"D"; color:var(--m-del); }
+body.mobileMode #cdvFiles .gitFileName.R::before{ content:"R"; color:var(--m-ren); }
+body.mobileMode #cdvFiles .gitFileName.U::before{ content:"U"; color:var(--m-add); }
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #cdvFiles .gitFileName.A::before, body.mobileMode #cdvFiles .gitFileName.U::before{ background-color:color-mix(in srgb, var(--m-add) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.M::before{ background-color:color-mix(in srgb, var(--m-mod) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.D::before{ background-color:color-mix(in srgb, var(--m-del) 18%, transparent); }
+	body.mobileMode #cdvFiles .gitFileName.R::before{ background-color:color-mix(in srgb, var(--m-ren) 18%, transparent); }
+}
+body.mobileMode #cdvFiles .fileTreeFile.pendingReview .gitFileName{
+	font-weight:600;
+}
+/* "(+4|-2)" reads as "+4 −2": the parentheses and the bar are text nodes, so the chip's own
+   font size is zeroed and its two counts restore theirs */
+body.mobileMode #cdvFiles .fileTreeFileAddDel{
+	flex:none;
+	margin-left:auto;
+	padding-left:10px;
+	font-size:0;
+	font-family:var(--m-mono);
+	opacity:1;
+}
+body.mobileMode #cdvFiles .fileTreeFileAdd, body.mobileMode #cdvFiles .fileTreeFileDel{
+	font-size:12px;
+	font-weight:600;
+}
+body.mobileMode #cdvFiles .fileTreeFileAdd{ color:var(--m-add); }
+body.mobileMode #cdvFiles .fileTreeFileDel{ color:var(--m-del); margin-left:6px; }
+body.mobileMode #cdvFiles .countsPending{
+	font-size:12px;
+	color:var(--m-fg-2);
+}
+body.mobileMode #cdvFiles .fileTreeFileType{
+	display:none;
+}
+body.mobileMode #cdvFiles #cdvLastFileViewed{
+	flex:none;
+	margin-left:8px;
+	opacity:0.6;
+}
+/* The per-file actions (copy path, view at revision, open) are hover-revealed icons in the wide
+   layout; on a phone the same actions are in the file's long-press sheet */
+body.mobileMode .fileTreeFileAction{
+	display:none !important;
+}
+body.mobileMode #cdvFiles .fileTreeFolder{
+	color:var(--m-fg-2);
+	font-size:14px;
+	font-weight:600;
+}
+body.mobileMode #cdvFiles .fileTreeFolderIcon{
+	display:inline-flex;
+	margin-right:8px;
+	opacity:0.8;
+}

@@ -5,7 +5,6 @@ resources/notification/*.svg
 .github/**
 scripts/**
 src/**
-web/**
 tests/**
 target/**
 node_modules/**

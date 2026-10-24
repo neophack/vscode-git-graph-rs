@@ -1,0 +1,26 @@
+/* Design tokens: shared motion & elevation language (Ant-Design-Pro inspired).
+ * Animations only use transform/opacity so they run on the compositor. */
+
+:root{
+	--gg-ease:cubic-bezier(0.215, 0.61, 0.355, 1);
+	--gg-ease-in-out:cubic-bezier(0.645, 0.045, 0.355, 1);
+	--gg-dur-fast:120ms;
+	--gg-dur-base:180ms;
+	--gg-dur-modal:220ms;
+	--gg-shadow-1:0 1px 4px 1px var(--vscode-widget-shadow);
+	--gg-shadow-2:0 3px 10px 2px var(--vscode-widget-shadow);
+	--gg-shadow-3:0 0 30px 5px var(--vscode-widget-shadow);
+}
+
+@keyframes ggFadeIn{
+	from{ opacity:0; transform:translateY(-4px); }
+	to{ opacity:1; transform:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+	*, *::before, *::after{
+		animation-duration:0.01ms !important;
+		animation-iteration-count:1 !important;
+		transition-duration:0.01ms !important;
+	}
+}

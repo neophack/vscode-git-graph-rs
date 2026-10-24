@@ -257,8 +257,8 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 	});
 
 	it('hides the view\'s native scrollbar in the mobile layout — the fast scroller is the one indicator (no two bars while scrolling)', () => {
-		// jsdom applies no CSS, so the rule is asserted on the stylesheet the packer ships
-		const sheet = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'styles', 'mobile.css'), 'utf8');
+		// jsdom applies no CSS, so the rule is asserted on the stylesheet the build ships
+		const sheet = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'media', 'out.min.css'), 'utf8');
 		const viewRule = sheet.match(/body\.mobileMode #view\{[^}]*\}/);
 		assert.ok(viewRule !== null, 'a body.mobileMode #view rule block exists');
 		assert.match(viewRule[0], /scrollbar-width\s*:\s*none/, 'the standard scrollbar is hidden');

@@ -80,7 +80,7 @@ describe('the session-log analyser', () => {
 });
 
 describe('the i18n parity checker', () => {
-	/** Run the checker in a working directory of its own (it reads web/strings.ts and src/i18n.ts from cwd). */
+	/** Run the checker in a working directory of its own (it reads the webview string tables and src/i18n.ts from cwd). */
 	function runChecker(cwd) {
 		return spawnSync(process.execPath, [path.join(root, 'scripts', 'check-i18n-parity.cjs')], {
 			encoding: 'utf8', cwd: cwd
@@ -98,20 +98,20 @@ describe('the i18n parity checker', () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-parity-'));
 		try {
 			// Entries are tab-indented single-quoted lines, the only shape the extractor reads.
-			fs.mkdirSync(path.join(dir, 'web'));
-			fs.mkdirSync(path.join(dir, 'src'));
-			fs.writeFileSync(path.join(dir, 'web', 'strings.ts'), [
-				'const STRINGS_EN = {',
+			const i18nDir = path.join(dir, 'src', 'webview', 'common', 'i18n');
+			fs.mkdirSync(i18nDir, { recursive: true });
+			fs.writeFileSync(path.join(i18nDir, 'en.ts'), [
+				'export const STRINGS_EN = {',
 				"\taa: 'x {0} {1}',",
 				"\tbb: 'y'",
 				'};',
-				'type WebviewStrings = typeof STRINGS_EN;',
-				'const STRINGS_ZH_CN = {',
+				'export type WebviewStrings = typeof STRINGS_EN;'
+			].join('\n'));
+			fs.writeFileSync(path.join(i18nDir, 'zh-cn.ts'), [
+				'export const STRINGS_ZH_CN: WebviewStrings = {',
 				"\taa: 'x {0}',",
 				"\tcc: 'z'",
-				'};',
-				'// The currently active string dictionary',
-				'let strings = STRINGS_EN;'
+				'};'
 			].join('\n'));
 			fs.writeFileSync(path.join(dir, 'src', 'i18n.ts'), [
 				'const EN = {',

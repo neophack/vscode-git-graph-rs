@@ -1,0 +1,40 @@
+/* The webview stylesheet. The import order is the cascade order: the base styles, then the
+ * widgets, then the mobile layout (every rule scoped under body.mobileMode, so it overrides the
+ * wide layout), then the overlay widgets. Bundled into media/out.min.css by scripts/build/webview.mjs. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./graph.css";
+@import "./commitTable.css";
+@import "./commitDetails.css";
+@import "./fileTree.css";
+@import "./commitEmphasis.css";
+@import "./refLabels.css";
+@import "./loader.css";
+@import "./controlBar.css";
+@import "./inputs.css";
+@import "./pinnedRow.css";
+@import "./commitRow.css";
+@import "./responsive.css";
+@import "./badges.css";
+@import "./gerrit.css";
+@import "./conflictBanner.css";
+@import "./contextMenu.css";
+@import "./dialog.css";
+@import "./dropdown.css";
+@import "./findWidget.css";
+@import "./mobile/base.css";
+@import "./mobile/appBar.css";
+@import "./mobile/dropdown.css";
+@import "./mobile/overflowSheet.css";
+@import "./mobile/commitList.css";
+@import "./mobile/fastScroller.css";
+@import "./mobile/commitDetails.css";
+@import "./mobile/contextMenu.css";
+@import "./mobile/dialog.css";
+@import "./mobile/findWidget.css";
+@import "./mobile/panels.css";
+@import "./reflogView.css";
+@import "./settingsWidget.css";
+@import "./statisticsView.css";
+@import "./worktreeDialog.css";

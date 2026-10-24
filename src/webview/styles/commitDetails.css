@@ -1,0 +1,335 @@
+/* Commit Details View */
+
+#cdv.inline{
+	vertical-align:top;
+}
+#cdv.inline, #cdv.docked{
+	animation:ggFadeIn var(--gg-dur-base) var(--gg-ease);
+}
+#cdv.inline td{
+	background-color:rgba(128,128,128,0.1);
+	position:relative;
+	font-size:13px;
+	line-height:18px;
+	white-space:normal;
+}
+#cdv.docked{
+	display:block;
+	position:fixed;
+	left:0;
+	right:0;
+	bottom:0;
+	background-color:rgba(128,128,128,0.1);
+	font-size:13px;
+	line-height:18px;
+	white-space:normal;
+	cursor:default;
+}
+#cdvContent{
+	position:absolute;
+	left:0;
+	right:32px;
+}
+
+#cdvControls{
+	position:absolute;
+	right:0;
+	width:32px;
+}
+
+.cdvControlBtn{
+	position:relative;
+	box-sizing:border-box;
+	margin:4px;
+	width:24px;
+	height:24px;
+	padding:0;
+	border:0;
+	background:transparent;
+	color:inherit;
+	cursor:pointer;
+}
+.cdvControlBtn:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+.cdvControlBtn.active{
+	background-color:rgba(128,128,128,0.25);
+}
+.cdvControlBtn.active:hover{
+	background-color:rgba(128,128,128,0.35);
+}
+.cdvFolderBtn.hidden{
+	display:none;
+}
+
+#cdvCodeReview{
+	border-radius:4px;
+}
+
+#cdvFileViewTypeTree{
+	border-radius:4px 4px 0 0;
+	margin-bottom:0;
+}
+#cdvFileViewTypeList{
+	border-radius:0 0 4px 4px;
+	margin-top:0;
+}
+.cdvFileViewTypeBtn{
+	background-color:rgba(128,128,128,0.125);
+}
+
+#cdvExternalDiff{
+	display:none;
+}
+#cdvExternalDiff.enabled{
+	display:block;
+}
+
+.cdvControlBtn svg{
+	position:absolute;
+	width:20px;
+	height:20px;
+	left:2px;
+	top:2px;
+	fill:var(--vscode-editor-foreground);
+	fill-opacity:0.6;
+}
+.cdvControlBtn:hover svg, .cdvControlBtn.active svg{
+	fill-opacity:0.75;
+}
+.cdvControlBtn.active:hover svg{
+	fill-opacity:0.9;
+}
+
+#cdvSummary, #cdvFiles, #cdvLoading{
+	position:absolute;
+	top:0;
+	bottom:0;
+	box-sizing:border-box;
+	border-right:1px solid rgba(128,128,128,0.2);
+	overflow-x:hidden;
+	overflow-y:auto;
+}
+#cdvDivider{
+	position:absolute;
+	left:50%;
+	width:6px;
+	cursor:col-resize;
+}
+#cdvSummary{
+	left:0;
+	width:50%;
+	padding:10px;
+	text-overflow:ellipsis;
+	-webkit-user-select:text;
+	user-select:text;
+}
+
+.cdvSummaryTop{
+	display:inline-table;
+	width:100%;
+}
+.cdvSummaryTopRow{
+	display:table-row;
+}
+.cdvSummaryKeyValues, .cdvSummaryAvatar{
+	display:table-cell;
+	vertical-align:top;
+}
+.cdvSummaryKeyValues{
+	max-width:0px;
+	overflow-x:hidden;
+	text-overflow:ellipsis;
+}
+.cdvSummaryTop.withAvatar .cdvSummaryKeyValues{
+	padding-right:10px;
+}
+.cdvSummaryAvatar{
+	width:54px;
+}
+.cdvSummaryAvatar > img{
+	width:54px;
+	border-radius:4px;
+}
+
+.cdvMarkdownToggle{
+	display:inline-block;
+	margin-left:8px;
+	padding:0 6px;
+	border-radius:8px;
+	font-size:11px;
+	line-height:16px;
+	vertical-align:middle;
+	cursor:pointer;
+	background-color:rgba(128,128,128,0.15);
+	color:var(--vscode-textLink-foreground);
+}
+.cdvMarkdownToggle:hover, .cdvMarkdownToggle:focus-visible{
+	background-color:rgba(128,128,128,0.3);
+}
+
+#cdvMessageBody h1, #cdvMessageBody h2, #cdvMessageBody h3, #cdvMessageBody h4, #cdvMessageBody h5, #cdvMessageBody h6{
+	margin:8px 0 4px 0;
+	font-weight:600;
+	line-height:1.3;
+}
+#cdvMessageBody h1{ font-size:1.4em; }
+#cdvMessageBody h2{ font-size:1.25em; }
+#cdvMessageBody h3{ font-size:1.1em; }
+#cdvMessageBody h4, #cdvMessageBody h5, #cdvMessageBody h6{ font-size:1em; }
+#cdvMessageBody p{
+	margin:4px 0;
+}
+#cdvMessageBody ul, #cdvMessageBody ol{
+	margin:4px 0;
+	padding-left:22px;
+}
+#cdvMessageBody blockquote{
+	margin:4px 0;
+	padding:2px 10px;
+	border-left:3px solid rgba(128,128,128,0.5);
+	opacity:0.85;
+}
+#cdvMessageBody pre{
+	margin:6px 0;
+	padding:6px 8px;
+	border-radius:4px;
+	background-color:rgba(128,128,128,0.12);
+	overflow-x:auto;
+}
+#cdvMessageBody code{
+	padding:1px 4px;
+	border-radius:3px;
+	background-color:rgba(128,128,128,0.15);
+	font-family:var(--vscode-editor-font-family, monospace);
+	font-size:0.95em;
+}
+#cdvMessageBody pre code{
+	padding:0;
+	background-color:transparent;
+}
+#cdvMessageBody table{
+	margin:6px 0;
+	border-collapse:collapse;
+}
+#cdvMessageBody th, #cdvMessageBody td{
+	padding:3px 8px;
+	border:1px solid rgba(128,128,128,0.4);
+}
+#cdvMessageBody img{
+	max-width:100%;
+}
+#cdvMessageBody hr{
+	margin:8px 0;
+	border:none;
+	border-top:1px solid rgba(128,128,128,0.4);
+}
+
+.signatureInfo{
+	cursor:help;
+	margin-left:4px;
+	vertical-align:middle;
+	line-height:13px;
+}
+.signatureInfo svg{
+	vertical-align:0 !important;
+}
+.signatureInfo.G svg, .signatureInfo.X svg{
+	fill:var(--vscode-charts-green, #009028);
+	opacity:0.9;
+}
+.signatureInfo.U svg, .signatureInfo.Y svg, .signatureInfo.R svg, .signatureInfo.E svg{
+	fill:var(--vscode-editorWarning-foreground, #f09000);
+	opacity:1;
+}
+.signatureInfo.B svg{
+	fill:var(--vscode-charts-red, #e00000);
+	opacity:0.8;
+}
+
+#cdvFiles{
+	left:50%;
+	right:0;
+	padding:4px 8px 8px 0;
+	-webkit-user-select:none;
+	user-select:none;
+}
+#cdvFiles ul{
+	list-style-type:none;
+	-webkit-margin-before:0;
+	-webkit-margin-after:0;
+	-webkit-margin-start:0px;
+	-webkit-margin-end:0px;
+	-webkit-padding-start:25px;
+	margin:0;
+	padding:0 0 0 25px;
+}
+#cdvFiles > ul{
+	-webkit-padding-start:10px;
+	padding:0 0 0 10px;
+}
+#cdvFiles li{
+	margin-top:4px;
+	white-space:nowrap;
+	text-overflow:ellipsis;
+	overflow-x:hidden;
+}
+
+#cdvLoading{
+	left:0;
+	right:0;
+	padding:10px;
+	-webkit-user-select:none;
+	user-select:none;
+	text-align:center;
+	line-height:24px;
+	text-overflow:ellipsis;
+}
+#cdvLoading svg{
+	display:inline-block;
+	width:15px !important;
+	height:20px !important;
+	margin-top:2px;
+	margin-right:8px;
+	vertical-align:middle;
+	fill:var(--vscode-editor-foreground);
+	animation:loadingIconAnimation 2s linear infinite;
+}
+
+.cdvHeightResize{
+	position:absolute;
+	left:0;
+	right:0;
+	height:6px;
+	cursor:row-resize;
+}
+
+#cdv.inline #cdvContent, #cdv.inline #cdvControls{
+	top:0;
+	bottom:2px;
+}
+#cdv.inline #cdvContent{
+	border-left:1px solid rgba(128,128,128,0.2);
+}
+#cdv.inline #cdvDivider{
+	top:0;
+	bottom:6px;
+}
+#cdv.inline .cdvHeightResize{
+	bottom:0;
+	border-bottom:2px solid rgba(128,128,128,0.2);
+}
+
+#cdv.docked #cdvContent, #cdv.docked #cdvControls{
+	top:2px;
+	bottom:0;
+}
+#cdv.docked #cdvDivider{
+	top:6px;
+	bottom:0;
+}
+#cdv.docked .cdvHeightResize{
+	top:0;
+	border-top:2px solid rgba(128,128,128,0.2);
+}

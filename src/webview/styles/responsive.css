@@ -1,0 +1,27 @@
+/* Narrow views: keep the control rows usable when the view is too narrow to fit every control */
+@media screen and (max-width: 640px) {
+	.dropdownCurrentValue{
+		max-width:9vw;
+	}
+	#controls.singleRepo .dropdownCurrentValue{
+		max-width:13vw;
+	}
+	/* Hide the Authors filter dropdown so that the "Show Remote Branches" checkbox is not covered by the right-aligned buttons */
+	#authorControl{
+		display:none;
+	}
+}
+
+/* Narrow window (mobile) layout, set on <body> by the rendering code when the
+   mobileAdaptation Extension Setting is enabled and the view crossed its breakpoint: the same
+   toolbar tightening as the 640px media query above, so the controls follow the toggle. The
+   Date, Author and Commit columns are hidden by the rendering, not by CSS. */
+body.narrowWindow .dropdownCurrentValue{
+	max-width:9vw;
+}
+body.narrowWindow #controls.singleRepo .dropdownCurrentValue{
+	max-width:13vw;
+}
+body.narrowWindow #authorControl{
+	display:none;
+}

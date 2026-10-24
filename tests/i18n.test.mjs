@@ -168,7 +168,7 @@ describe('the round-trip literals of the sources', () => {
 
 	it('passes complete placeholders only (a literal like \'{1\' once baked itself into pages)', () => {
 		const malformed = [];
-		for (const file of [...collect(path.join(root, 'src')), ...collect(path.join(root, 'web'))]) {
+		for (const file of [...collect(path.join(root, 'src')), ...collect(path.join(root, 'src', 'webview'))]) {
 			const source = fs.readFileSync(file, 'utf8');
 			for (const match of source.matchAll(/'\{\d+'/g)) {
 				malformed.push(`${path.relative(root, file)}: ${match[0]}`);

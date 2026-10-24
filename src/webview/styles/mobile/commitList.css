@@ -1,0 +1,206 @@
+/* ---------- Commit list: 52px two-line rows ----------
+ * Line 1: subject ............ date   (the date compact: 16:32 / Yesterday / Mon / Oct 9)
+ * Line 2: [refs] author ...... hash
+ * The row height is uniform (web/main.ts MOBILE_ROW_HEIGHT), which windowed rendering requires;
+ * rows are separated by a hairline inset to the text, drawn as a shadow so it takes no height.
+ * The column header row is collapsed to nothing rather than hidden: its graph cell still sets
+ * the graph column's width. */
+
+body.mobileMode #tableColHeaders > th{
+	height:0;
+	padding-top:0 !important;
+	padding-bottom:0 !important;
+	border:none;
+	box-shadow:none;
+	font-size:0;
+	line-height:0;
+	visibility:hidden;
+}
+body.mobileMode .commit > td, body.mobileMode #tableColHeaders > th{
+	border-right:none;
+}
+body.mobileMode #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	padding:0;
+	line-height:normal;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable tr.commit td:nth-child(2){
+	padding:0 max(14px, env(safe-area-inset-right)) 0 4px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #commitTable tr.commit:active td{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #commitTable tr.commit span.description{
+	align-items:baseline;
+	gap:8px;
+	height:20px;
+	line-height:20px;
+}
+body.mobileMode #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:0;
+	font-size:15px;
+	font-weight:500;
+	letter-spacing:-0.01em;
+	color:var(--m-fg);
+}
+body.mobileMode #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.mobileMode #commitTable tr.commit.mute span.description .text, body.mobileMode #commitTable tr.commit.mute .mobileMeta{
+	opacity:0.55;
+}
+body.mobileMode #commitTable tr.commit span.description .commitbody{
+	display:none;
+}
+body.mobileMode #commitTable .commitHeadDot{
+	align-self:center;
+	margin:0 -2px 0 0;
+}
+body.mobileMode #commitTable .pinnedBadge{
+	font-size:12px;
+}
+.mobileMetaDate{
+	flex:none;
+	font-size:12px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+.mobileMeta{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	height:18px;
+	margin-top:4px;
+	font-size:12.5px;
+	line-height:18px;
+	color:var(--m-fg-2);
+	overflow:hidden;
+	white-space:nowrap;
+}
+.mobileRefs{
+	flex:0 1 auto;
+	min-width:0;
+	display:flex;
+	gap:4px;
+	overflow:hidden;
+}
+.mobileMetaAuthor{
+	flex:0 1 auto;
+	min-width:24px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.mobileMetaHash{
+	flex:none;
+	margin-left:auto;
+	padding-left:4px;
+	font-family:var(--m-mono);
+	font-size:11.5px;
+	letter-spacing:0;
+	opacity:0.8;
+}
+/* A tap opens the commit details sheet, which offers the commit's changes */
+body.mobileMode #commitTable .openChangesBtn{
+	display:none !important;
+}
+
+/* Ref chips: flat, tinted with the commit's lane colour */
+body.mobileMode #commitTable .gitRef{
+	--m-ref:var(--git-graph-color, var(--m-accent));
+	display:inline-flex;
+	align-items:center;
+	flex:0 1 auto;
+	min-width:0;
+	max-width:100%;
+	height:18px;
+	margin:0;
+	border:none;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:11px;
+	font-weight:600;
+	line-height:18px;
+	vertical-align:middle;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #commitTable .gitRef{
+		background-color:color-mix(in srgb, var(--m-ref) 20%, transparent);
+		color:color-mix(in srgb, var(--m-ref) 72%, var(--m-fg));
+	}
+	body.mobileMode #commitTable .gitRef.remote{
+		background-color:transparent;
+		box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--m-ref) 45%, transparent);
+	}
+}
+body.mobileMode #commitTable .gitRef.active{
+	background-color:var(--m-ref);
+	color:var(--m-bg);
+}
+body.mobileMode #commitTable .gitRef.tag, body.mobileMode #commitTable .gitRef.stash{
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+}
+body.mobileMode #commitTable .gitRef > svg{
+	flex:none;
+	width:10px;
+	height:10px;
+	padding:0 0 0 5px;
+	background:none;
+	fill:currentColor;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable .gitRefName{
+	min-width:0;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 3px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.mobileMode #commitTable .gitRef.active .gitRefName{
+	font-weight:700;
+}
+body.mobileMode #commitTable .gitRefHeadRemote{
+	flex:none;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 5px;
+	border-left:1px solid currentColor;
+	border-left-color:rgba(128,128,128,0.4);
+	font-style:normal;
+	font-weight:500;
+	opacity:0.8;
+}
+body.mobileMode #commitTable .gitRef .gitRefName:hover, body.mobileMode #commitTable .gitRef .gitRefHeadRemote:hover{
+	background-color:transparent;
+}
+
+/* The graph: slightly heavier lines and dots for a small, dense screen */
+body.mobileMode #commitGraph path.line{
+	stroke-width:2.25;
+}
+body.mobileMode #commitGraph circle:hover{
+	transform:none;
+}
+
+body.mobileMode #loadMoreCommitsBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	height:auto;
+	margin:12px 16px;
+	border:none;
+	border-radius:22px;
+	background-color:var(--m-fill);
+	color:var(--m-accent);
+	font-size:15px;
+	font-weight:600;
+}
+body.mobileMode #footer{
+	padding-bottom:env(safe-area-inset-bottom);
+}

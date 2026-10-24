@@ -1,0 +1,65 @@
+/*
+ * Mobile layout (docs/MOBILE-DESIGN.md)
+ *
+ * Active while <body> carries .mobileMode: the git-graph-rs.mobileAdaptation Extension Setting is
+ * enabled and the view is at most 600px wide (decided per render in web/main.ts). Every rule is
+ * scoped under body.mobileMode, so the wide layout is untouched (the few unscoped rules below only
+ * hide the mobile-only elements there).
+ *
+ * The visual language is flat and compact, after iOS / Material 3: no borders where a fill or a
+ * hairline will do, capsule controls, a 52px app bar, 52px two-line rows, grouped "inset" lists,
+ * bottom action sheets. Every colour derives from the VS Code theme variables, so dark, light and
+ * high contrast themes all work. Touch targets stay at least 44px, text inputs at 16px (iOS zooms
+ * smaller ones on focus), pressed states replace hover, and everything fixed to a screen edge
+ * respects the safe area insets.
+ */
+
+/* Mobile-only elements, hidden in the wide layout */
+#mobileMoreBtn, #fastScroller, #cdvFilesHeader, #cdvMobileTitle{
+	display:none;
+}
+
+body.mobileMode{
+	/* The literal fallbacks (the VS Code Dark+ palette) keep every surface solid in an environment
+	   that injects none of the theme variables (e.g. the standalone browser repro page): without
+	   them var() is invalid at computed-value time and the sheets render fully transparent. */
+	--m-fg:var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
+	--m-fg-2:var(--vscode-descriptionForeground, rgba(128,128,128,0.9));
+	--m-bg:var(--vscode-editor-background, #1e1e1e);
+	--m-surface:rgba(128,128,128,0.09);
+	--m-fill:rgba(128,128,128,0.14);
+	--m-pressed:rgba(128,128,128,0.2);
+	--m-sep:rgba(128,128,128,0.24);
+	--m-accent:var(--vscode-textLink-foreground, var(--vscode-focusBorder, #3794ff));
+	--m-accent-fill:var(--vscode-button-background, #0e639c);
+	--m-accent-on:var(--vscode-button-foreground, #fff);
+	--m-add:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+	--m-del:var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+	--m-mod:var(--vscode-gitDecoration-modifiedResourceForeground, #d29922);
+	--m-ren:var(--vscode-gitDecoration-renamedResourceForeground, #58a6ff);
+	--m-sheet:var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526));
+	--m-target:44px;
+	--m-bar:52px;
+	--m-radius:12px;
+	--m-mono:var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);
+	-webkit-tap-highlight-color:transparent;
+	/* A long press opens the view's own action sheet (observeLongPress), not the iOS callout */
+	-webkit-touch-callout:none;
+	-webkit-font-smoothing:antialiased;
+	-webkit-text-size-adjust:100%;
+	text-size-adjust:100%;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode{
+		--m-surface:color-mix(in srgb, var(--m-fg) 6%, var(--m-bg));
+		--m-fill:color-mix(in srgb, var(--m-fg) 10%, transparent);
+		--m-pressed:color-mix(in srgb, var(--m-fg) 14%, transparent);
+		--m-sep:color-mix(in srgb, var(--m-fg) 14%, transparent);
+	}
+}
+body.mobileMode.vscode-high-contrast{
+	--m-sep:var(--vscode-contrastBorder, rgba(128,128,128,0.6));
+}
+body.mobileMode input, body.mobileMode textarea, body.mobileMode select{
+	font-size:16px !important;
+}

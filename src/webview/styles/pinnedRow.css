@@ -1,0 +1,60 @@
+/* The Pinned row: lists the pinned branches and commits as chips (click to jump, ✕ to unpin) */
+#pinnedControls{
+	display:none;
+	position: relative;
+	left:0;
+	right:0;
+	top:0;
+	white-space:nowrap;
+	overflow-x:auto;
+	overflow-y:hidden;
+	padding:2px 0;
+	background-color: var(--vscode-editor-background);
+	border-bottom:1px solid rgba(128,128,128,0.35);
+	line-height:24px;
+	text-align:center;
+	font-weight:700;
+	font-size:12px;
+	-webkit-user-select:none;
+	user-select:none;
+}
+
+.pinnedRowLabel {
+	margin: 0 10px 0 4px;
+}
+
+.pinnedChip {
+	display:inline-block;
+	margin:0 2px;
+	padding:0 6px;
+	font-size:11px;
+	font-weight:400;
+	line-height:18px;
+	border:1px solid var(--vscode-panel-border, #444);
+	border-radius:9px;
+	cursor:pointer;
+	-webkit-user-select:none;
+	user-select:none;
+	vertical-align:middle;
+}
+
+.pinnedChip:hover {
+	border-color:var(--vscode-button-background);
+}
+
+.pinnedChip b {
+	font-weight:600;
+}
+
+.pinnedChipRemove {
+	margin-left:4px;
+	padding:0 2px;
+	font-size:12px;
+	font-weight:700;
+	border-radius:50%;
+	vertical-align:middle;
+}
+
+.pinnedChipRemove:hover {
+	color:var(--vscode-errorForeground, #bb4b4b);
+}

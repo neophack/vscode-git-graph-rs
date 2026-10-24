@@ -1,0 +1,129 @@
+/* Buttons */
+
+#loadMoreCommitsBtn, #rescanForReposBtn{
+	height:28px;
+	margin:10px auto;
+	border-radius:14px;
+	line-height:28px;
+}
+#loadMoreCommitsBtn{
+	width:180px;
+}
+#rescanForReposBtn{
+	width:350px;
+}
+
+.roundedBtn{
+	display:block;
+	background-color:rgba(128,128,128,0.1);
+	border:1px solid rgba(128,128,128,0.5);
+	font-size:13px;
+	text-align:center;
+	cursor:pointer;
+	transition:background-color var(--gg-dur-fast) var(--gg-ease), transform 80ms var(--gg-ease);
+}
+.roundedBtn:hover{
+	background-color:rgba(128,128,128,0.2);
+}
+.roundedBtn:active{
+	transform:scale(0.97);
+}
+.roundedBtn:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+
+a, span.internalUrl{
+	color:var(--vscode-textLink-foreground);
+	cursor:pointer;
+	text-decoration:underline;
+}
+a:hover, span.internalUrl:hover {
+	color:var(--vscode-textLink-activeForeground);
+}
+a:focus, span.internalUrl:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:-1px;
+	-webkit-user-select:none;
+	user-select:none;
+}
+
+
+/* Checkboxes & Radio Inputs */
+
+input[type=checkbox], input[type=radio]{
+	position:absolute;
+	width:0;
+	height:0;
+	opacity:0;
+}
+
+.customCheckbox, .customRadio{
+	display:inline-block;
+	background-color:rgba(128,128,128,0.1);
+	border:1px solid rgba(128,128,128,0.5);
+	vertical-align:middle;
+}
+
+label:hover > .customCheckbox, label:hover > .customRadio{
+	background-color:rgba(128,128,128,0.2);
+}
+
+.customCheckbox:after, .customRadio:after{
+	content:"";
+	display:none;
+}
+
+
+/* Checkboxes */
+
+.customCheckbox{
+	width:15px;
+	height:15px;
+	border-radius:3px;
+	margin-top:-2px;
+}
+
+label > input[type=checkbox]:checked ~ .customCheckbox:after{
+	position:relative;
+	display:block;
+	left:5px;
+	top:2px;
+	width:3px;
+	height:7px;
+	border:solid var(--vscode-editor-foreground);
+	border-width:0 2px 2px 0;
+	transform:rotate(45deg);
+}
+
+
+/* Radio Inputs */
+
+.customRadio{
+	width:13px;
+	height:13px;
+	border-radius:7.5px;
+	margin-top:-1px;
+}
+
+label > input[type=radio]:checked ~ .customRadio:after{
+	position:relative;
+	display:block;
+	left:4px;
+	top:4px;
+	width:5px;
+	height:5px;
+	background-color:var(--vscode-editor-foreground);
+	border-radius:2.5px;
+}
+
+
+/* General */
+
+#commitGraph, #commitTable th, #commitTable td, .gitRef, #loadingHeader, .unselectable, .roundedBtn, #controls label{
+	-webkit-user-select:none;
+	user-select:none;
+}
+body.tagLabelsRightAligned .tagsWrapper {
+	margin-left: auto;
+}

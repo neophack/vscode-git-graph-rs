@@ -1,0 +1,44 @@
+/* Pull Request badges on the commits (the GitHub/GitLab integration of pullRequests.enabled):
+   one badge per request on the commit it currently points at, styled like the Gerrit change
+   badge - the request number plus a status chip coloured by its state. Clicking the badge opens
+   the details dialog (which reuses the Gerrit dialog's gg-* styles). */
+.gitRef.pr svg{
+	fill:currentColor;
+}
+
+.gitRef.pr .gg-status{
+	margin:2px 4px 2px 0;
+	font-size:9px;
+	opacity:0.85;
+}
+
+.gitRef.pr .gg-status.open{ color:var(--vscode-charts-green, #2da44e); }
+.gitRef.pr .gg-status.merged{ color:var(--vscode-charts-purple, #a371f7); }
+.gitRef.pr .gg-status.abandoned{ color:var(--gg-rejected, #bb4b4b); }
+.gitRef.pr .gg-status.wip{ color:var(--vscode-descriptionForeground, #888); }
+
+.pr-dialog .gg-pill.open{ color:var(--vscode-charts-green, #2da44e); border-color:var(--vscode-charts-green, #2da44e); }
+
+/* The Gerrit score boxes colour their value like the background (dark text on a coloured chip,
+   added by the cr2/v1/... classes): the pull request details reuse the boxes for plain text,
+   without any chip class - restore a readable foreground and normal weight. */
+.pr-dialog .gg-score-value{
+	min-width:0;
+	color:var(--vscode-foreground);
+	background-color:transparent;
+	font-weight:normal;
+	text-align:left;
+}
+.pr-dialog .gg-pill.merged{ color:var(--vscode-charts-purple, #a371f7); border-color:var(--vscode-charts-purple, #a371f7); }
+/* The remaining states of the dialog's status pill, coloured like the badge's status chip
+   (without these, draft and closed requests would show an uncoloured neutral pill) */
+.pr-dialog .gg-pill.wip{ color:var(--vscode-descriptionForeground, #888); border-color:var(--vscode-descriptionForeground, #888); }
+.pr-dialog .gg-pill.abandoned{ color:var(--gg-rejected, #bb4b4b); border-color:var(--gg-rejected, #bb4b4b); }
+.pr-dialog .pr-body{
+	white-space:pre-wrap;
+	font-size:12px;
+	max-height:220px;
+	overflow-y:auto;
+	-webkit-user-select:text;
+	user-select:text;
+}

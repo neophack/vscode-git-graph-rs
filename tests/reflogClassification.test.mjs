@@ -1,5 +1,5 @@
 /**
- * web/reflogView.ts's `classifyReflogAction` colour-codes each Reflog Widget row purely by
+ * src/webview/graph/widgets/reflogView.ts's `classifyReflogAction` colour-codes each Reflog Widget row purely by
  * string-matching the reflog message Git itself produces (no extra `git` call) - the leading
  * action verb, plus any `(sub-action)` in parentheses. This pins the mapping against the actual
  * message shapes `git reflog` produces for the operations users care most about distinguishing
@@ -15,12 +15,14 @@ import { describe, it } from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const source = fs.readFileSync(path.join(root, 'web', 'reflogView.ts'), 'utf8');
-const { code } = esbuild.transformSync(source, { loader: 'ts' });
-// new Function: web/reflogView.ts declares `class ReflogView` alongside the free function this
-// test targets, but a class declaration has no side effects until instantiated - only
-// `classifyReflogAction` is ever called here.
-const { classifyReflogAction } = new Function(code + '\nreturn { classifyReflogAction };')();
+// Bundle the real module for node; importing it is side-effect free (the widget is only built when instantiated).
+const bundled = esbuild.buildSync({
+	entryPoints: [path.join(root, 'src', 'webview', 'graph', 'widgets', 'reflogView.ts')],
+	bundle: true, write: false, format: 'cjs', platform: 'node', target: 'node18'
+}).outputFiles[0].text;
+const loaded = { exports: {} };
+new Function('module', 'exports', bundled)(loaded, loaded.exports);
+const { classifyReflogAction } = loaded.exports;
 
 describe('classifyReflogAction', () => {
 	it('classifies an amend as reflogEdit, even though the leading verb is "commit"', () => {

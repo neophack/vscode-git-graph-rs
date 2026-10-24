@@ -1,0 +1,181 @@
+/* Controls */
+
+/*
+ * The header bar wrapper. The header row (#controls) lives inside it, so that
+ * when the header is sticky the two rows always scroll together as a single bar and can never
+ * overlap each other.
+ */
+#headerRow{
+	position:relative;
+	background-color: var(--vscode-editor-background);
+}
+#headerRow.sticky {
+	position:sticky;
+	top:0;
+	z-index:12;
+}
+
+#controls{
+	display:block;
+	position: relative;
+	left:0;
+	right:0;
+	top:0;
+	white-space:nowrap;
+	padding:4px 174px 4px 0;
+	background-color: var(--vscode-editor-background);
+	border-bottom:1px solid rgba(128,128,128,0.5);
+	line-height:32px;
+	text-align:center;
+	font-weight:700;
+	font-size:13px;
+	-webkit-user-select:none;
+	user-select:none;
+}
+
+#repoControl, #branchControl, #showRemoteBranchesControl{
+	display:inline-block;
+	white-space:nowrap;
+	margin:0 10px;
+}
+#repoDropdown, #branchDropdown, #authorDropdown{
+	margin-left:3px;
+}
+#showRemoteBranchesControl > .customCheckbox{
+	margin-right:6px;
+}
+
+.dropdownCurrentValue{
+	max-width:12vw;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	vertical-align:bottom;
+}
+#controls.singleRepo #repoControl{
+	display:none;
+}
+#controls.singleRepo .dropdownCurrentValue{
+	max-width:16vw;
+}
+
+#currentBtn, #findBtn, #filterBtn, #statisticsBtn, #terminalBtn, #settingsBtn, #fetchBtn, #refreshBtn{
+	position:absolute;
+	top:50%;
+	width:20px;
+	height:20px;
+	margin-top:-10px;
+	cursor:pointer;
+	-webkit-user-select:none;
+	user-select:none;
+	border-radius:4px;
+	transition:transform 80ms var(--gg-ease);
+}
+#currentBtn:active, #findBtn:active, #filterBtn:active, #statisticsBtn:active, #terminalBtn:active, #settingsBtn:active, #fetchBtn:active{
+	transform:scale(0.88);
+}
+#currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #statisticsBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:2px;
+}
+#currentBtn{
+	right:172px;
+}
+#findBtn{
+	right:145px;
+}
+#filterBtn{
+	right:118px;
+}
+#statisticsBtn{
+	right:91px;
+}
+#terminalBtn{
+	right:64px;
+}
+#settingsBtn{
+	right:37px;
+}
+#fetchBtn{
+	display:none;
+	right:37px;
+}
+#refreshBtn{
+	right:10px;
+}
+#refreshBtn.refreshing{
+	cursor:default;
+}
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg, #refreshBtn svg{
+	position:absolute;
+	fill:var(--vscode-editor-foreground);
+	opacity:0.8;
+	stroke:var(--vscode-editor-foreground);
+	stroke-opacity:0.5;
+	stroke-width:0;
+}
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg{
+	stroke-width:0.5px;
+}
+#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #statisticsBtn:hover svg, #terminalBtn:hover svg, #settingsBtn:hover svg, #fetchBtn:hover svg, #refreshBtn:hover svg{
+	opacity:1;
+	stroke-width:0.5px;
+}
+#currentBtn:hover svg, #findBtn:hover svg, #filterBtn:hover svg, #statisticsBtn:hover svg, #terminalBtn:hover svg{
+	stroke-width:1px;
+}
+#currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg{
+	left:1px;
+	top:1px;
+	width:18px !important;
+	height:18px !important;
+}
+#filterBtn.active svg{
+	opacity:1;
+	fill:var(--vscode-textLink-foreground, var(--vscode-editor-foreground));
+}
+#refreshBtn svg{
+	left:2px;
+	top:2px;
+	width:16px !important;
+	height:16px !important;
+}
+#refreshBtn.refreshing svg{
+	left:3.25px;
+	top:2px;
+	width:13.5px !important;
+	height:18px !important;
+	animation:loadingIconAnimation 2s linear infinite;
+}
+
+#controls.fetchSupported{
+	padding-right:201px;
+}
+#controls.fetchSupported #currentBtn{
+	right:199px;
+}
+#controls.fetchSupported #findBtn{
+	right:172px;
+}
+#controls.fetchSupported #filterBtn{
+	right:145px;
+}
+#controls.fetchSupported #statisticsBtn{
+	right:118px;
+}
+#controls.fetchSupported #terminalBtn{
+	right:91px;
+}
+#controls.fetchSupported #settingsBtn{
+	right:64px;
+}
+#controls.fetchSupported #fetchBtn{
+	display:block;
+}
+
+#controls input:focus{
+	outline:none;
+}
+#controls label{
+	cursor:pointer;
+}

@@ -1,0 +1,30 @@
+{
+	// The Git Graph webview front end (REFACTOR-PLAN §3.4 / Phase 5): ES modules bundled by
+	// scripts/build/webview.mjs into the media/out.min.{js,css} the extension host serves.
+	// The runtime floor is VS Code 1.38 = Chromium 69, which implements ES2018: the sources are
+	// written against ES2018 (target/lib below), and the build gates reject newer syntax both in
+	// these sources and in the emitted bundle.
+	"compilerOptions": {
+		"lib": [
+			"es2018",
+			"dom"
+		],
+		"module": "esnext",
+		"moduleResolution": "node",
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitAny": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"strict": true,
+		"target": "es2018",
+		"useDefineForClassFields": false,
+		"types": [],
+		"skipLibCheck": true,
+		"noEmit": true,
+		"isolatedModules": true
+	},
+	"include": [
+		"**/*.ts"
+	]
+}

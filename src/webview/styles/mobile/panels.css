@@ -1,0 +1,110 @@
+/* ---------- Full-screen panels: settings, reflog, statistics, worktrees ---------- */
+
+body.mobileMode #settingsWidget, body.mobileMode #reflogWidget, body.mobileMode #statisticsWidget, body.mobileMode #worktreeWidget{
+	top:-110vh;
+	left:0;
+	right:0;
+	width:auto;
+	max-width:none;
+	max-height:100vh;
+	height:100vh;
+	box-sizing:border-box;
+	border:none;
+	border-radius:0;
+	padding-left:max(16px, env(safe-area-inset-left));
+	padding-right:max(16px, env(safe-area-inset-right));
+	padding-top:max(16px, env(safe-area-inset-top));
+	padding-bottom:max(16px, env(safe-area-inset-bottom));
+	background-color:var(--m-bg);
+	font-size:15px;
+	line-height:21px;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+	/* Hidden via visibility, not the animated top: a `top` transition on these fixed panels can
+	   freeze at its start value (observed opening them from the ⋯ sheet after a reload), leaving
+	   the panel stuck off-screen while it carries .active. A keyframed entrance cannot freeze. */
+	visibility:hidden;
+	transition:none;
+}
+body.mobileMode #settingsWidget.active, body.mobileMode #reflogWidget.active, body.mobileMode #statisticsWidget.active, body.mobileMode #worktreeWidget.active{
+	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobilePanelIn{
+	from{ opacity:0; transform:translateY(-14px); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode #settingsClose, body.mobileMode #reflogClose, body.mobileMode #statisticsClose, body.mobileMode #worktreeClose{
+	width:36px;
+	height:36px;
+	top:max(8px, env(safe-area-inset-top));
+	right:max(8px, env(safe-area-inset-right));
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	border-radius:50%;
+	background-color:var(--m-fill);
+}
+body.mobileMode #settingsClose svg, body.mobileMode #reflogClose svg, body.mobileMode #statisticsClose svg, body.mobileMode #worktreeClose svg{
+	position:static;
+}
+body.mobileMode .settingsGlobalCheckbox, body.mobileMode #settingsWidget label{
+	display:inline-flex;
+	align-items:center;
+	min-height:var(--m-target);
+}
+body.mobileMode #settingsWidget .roundedBtn, body.mobileMode #reflogLoadMoreBtn, body.mobileMode #worktreeWidget .roundedBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	border:none;
+	border-radius:12px;
+	background-color:var(--m-fill);
+}
+body.mobileMode #conflictBanner .roundedBtn{
+	min-height:calc(var(--m-target) - 8px);
+	box-sizing:border-box;
+	padding:0 14px;
+	border:none;
+	border-radius:11px;
+	background-color:var(--m-fill);
+	font-size:14px;
+	font-weight:600;
+}
+body.mobileMode .reflogRow, body.mobileMode .worktreeTable tr{
+	height:var(--m-target);
+}
+
+/* No pointer to hover with: the tooltips get out of the way */
+body.mobileMode .gg-helpTooltipPopup{
+	max-width:calc(100vw - 24px);
+	font-size:14px;
+	line-height:20px;
+}
+
+/* Larger phones and small tablets in portrait: a touch more air */
+@media (min-width:428px){
+	body.mobileMode #commitTable tr.commit span.description .text{
+		font-size:15.5px;
+	}
+	body.mobileMode .cdvmTitle{
+		font-size:18px;
+		line-height:23px;
+	}
+}
+/* The smallest phones (320px): tighter app bar and rows */
+@media (max-width:359px){
+	body.mobileMode #controls{
+		gap:4px;
+		padding-left:max(8px, env(safe-area-inset-left));
+	}
+	body.mobileMode #controlBtns > div{
+		width:40px !important;
+	}
+	body.mobileMode .mobileMetaHash{
+		display:none;
+	}
+	body.mobileMode #commitTable tr.commit td:nth-child(2){
+		padding-right:10px;
+	}
+}

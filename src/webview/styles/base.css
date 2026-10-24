@@ -1,0 +1,75 @@
+/* Body */
+
+body{
+	display:block;
+	position:fixed;
+	top:0;
+	left:0;
+	right:0;
+	bottom:0;
+	margin:0;
+	padding:0;
+}
+body.unableToLoad{
+	margin:0 20px;
+}
+body.unableToLoad h2, body.unableToLoad h3, body.unableToLoad p{
+	text-align:center;
+}
+
+body #view{
+	display:block;
+	position:fixed;
+	top:0;
+	left:0;
+	right:0;
+	bottom:0;
+	background-color:var(--vscode-editor-background);
+	overflow-x:hidden;
+	overflow-y:auto;
+	/* The view manages its own scroll position across re-renders (anchoring the commit that sits
+	 * at the top of the viewport): Chromium's native scroll anchoring would adjust scrollTop a
+	 * second time after those explicit adjustments - on top of our compensation - visibly jumping
+	 * the rows the user is looking at. */
+	overflow-anchor:none;
+}
+body #view:focus{
+	outline:none;
+}
+
+body.selection-background-color-exists ::-moz-selection{
+	background-color: var(--vscode-selection-background);
+}
+body.selection-background-color-exists ::selection{
+	background-color: var(--vscode-selection-background);
+}
+
+code{
+	line-height:1;
+}
+
+
+/* Content */
+
+#content{
+	position:relative;
+}
+
+
+/* Overlays */
+
+#eventCaptureElem{
+	display:block;
+	position:fixed;
+	left:0;
+	right:0;
+	top:0;
+	bottom:0;
+	z-index:40;
+}
+#eventCaptureElem.rowResize{
+	cursor:row-resize;
+}
+#eventCaptureElem.colResize{
+	cursor:col-resize;
+}

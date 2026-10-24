@@ -1,0 +1,31 @@
+/* Conflict Banner: shown while a merge/rebase/cherry-pick/revert is left in progress */
+#conflictBanner{
+	display:none;
+	align-items:center;
+	flex-wrap:wrap;
+	gap:8px 12px;
+	padding:6px 12px;
+	background-color:var(--vscode-inputValidation-warningBackground, rgba(255,196,0,0.1));
+	border-bottom:1px solid var(--vscode-inputValidation-warningBorder, rgba(255,196,0,0.5));
+	color:var(--vscode-inputValidation-warningForeground, inherit);
+	font-size:13px;
+}
+.conflictBannerIcon{
+	display:flex;
+	flex-shrink:0;
+	fill:currentColor;
+}
+.conflictBannerTitle{
+	font-weight:600;
+	flex-shrink:0;
+}
+.conflictBannerFiles{
+	flex:1 1 auto;
+	min-width:0;
+	overflow-wrap:break-word;
+}
+#conflictBanner .roundedBtn{
+	flex-shrink:0;
+	padding:3px 12px;
+	border-radius:3px;
+}

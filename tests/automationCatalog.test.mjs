@@ -24,6 +24,15 @@ function sourceFiles(...relative) {
 	});
 }
 
+/** Every .ts source of the webview (src/webview), as repo-relative paths. */
+function webviewSources() {
+	const walk = (dir) => fs.readdirSync(path.join(rootDir, dir), { withFileTypes: true }).flatMap((entry) => {
+		const rel = dir + '/' + entry.name;
+		return entry.isDirectory() ? walk(rel) : (entry.name.endsWith('.ts') ? [rel] : []);
+	});
+	return walk('src/webview');
+}
+
 /** Every command literal declared in the message types (requests and responses). */
 function extractProtocolCommands() {
 	const [{ text }] = sourceFiles('src/types/messages.ts');
@@ -36,22 +45,18 @@ function extractProtocolCommands() {
 
 /** The ids the webview DOM is known to carry (programmatic assignment + inline HTML). */
 function extractDomIds() {
-	const files = sourceFiles(
-		'web/main.ts', 'web/commitDetailsView.ts', 'web/settingsWidget.ts', 'web/findWidget.ts',
-		'web/reflogView.ts', 'web/worktreeDialog.ts', 'web/statisticsView.ts', 'web/dialog.ts',
-		'web/contextMenu.ts', 'web/dropdown.ts', 'src/gitGraphView.ts', 'web/observers.ts'
-	);
+	const files = sourceFiles(...webviewSources(), 'src/gitGraphView.ts');
 	const ids = new Set();
 	for (const { text } of files) {
 		for (const re of [/\bgetElementById\('([^']+)'\)/g, /\bid = '([^']+)'/g, /\bid="([^"]+)"/g, /\bid='([^']+)'/g]) {
 			let match;
 			while ((match = re.exec(text)) !== null) ids.add(match[1]);
 		}
-		// SettingsWidget.checkbox('x', ...) renders the native input with the composed id
+		// checkbox('x', ...) renders the native input with the composed id
 		// 'xCheckbox' (main.css hides it and draws the .customCheckbox sibling), so both the
 		// label id and the composed input id are DOM ids a selector may target.
 		let checkboxMatch;
-		const checkboxRe = /\bSettingsWidget\.checkbox\('([^']+)'/g;
+		const checkboxRe = /\bcheckbox\('([^']+)'/g;
 		while ((checkboxMatch = checkboxRe.exec(text)) !== null) {
 			ids.add(checkboxMatch[1]);
 			ids.add(checkboxMatch[1] + 'Checkbox');
@@ -193,13 +198,10 @@ test('command-mode entries execute commands the extension actually contributes',
 
 test('exact-text steps stay in sync with the shipped interface languages', () => {
 	// The shim matches menu items and expected text exactly, so the catalog carries one candidate
-	// per interface language (bi(en, zh)). Every candidate must literally appear in web/strings.ts
+	// per interface language (bi(en, zh)). Every candidate must literally appear in the webview string tables
 	// (as a whole value, a substring of a format template, or without the render-time ellipsis) —
 	// otherwise the entry silently stops matching under that language.
-	const [{ text }] = sourceFiles('web/strings.ts');
-	const zhStart = text.indexOf('const STRINGS_ZH_CN');
-	assert.ok(zhStart > 0, 'web/strings.ts must declare STRINGS_ZH_CN');
-	const enBlock = text.slice(0, zhStart), zhBlock = text.slice(zhStart);
+	const [{ text: enBlock }, { text: zhBlock }] = sourceFiles('src/webview/common/i18n/en.ts', 'src/webview/common/i18n/zh-cn.ts');
 
 	const candidates = [];
 	for (const action of CATALOG) {
@@ -217,7 +219,7 @@ test('exact-text steps stay in sync with the shipped interface languages', () =>
 			if (/^\{\{[a-zA-Z][a-zA-Z0-9]*\}\}$/.test(text)) continue;
 			const bare = text.replace(/…$/, '').replace(/\.\.\.$/, '');
 			const present = [text, bare].some((form) => enBlock.includes(form) || zhBlock.includes(form));
-			assert.ok(present, id + ': exact-text candidate ' + JSON.stringify(text) + ' matches nothing in web/strings.ts');
+			assert.ok(present, id + ': exact-text candidate ' + JSON.stringify(text) + ' matches nothing in the webview string tables');
 		}
 	}
 });

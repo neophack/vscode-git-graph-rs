@@ -1,5 +1,5 @@
 /**
- * web/markdownRenderer.ts renders a commit message's Markdown to an HTML string for the Commit
+ * src/webview/graph/text/markdown.ts renders a commit message's Markdown to an HTML string for the Commit
  * Details View, assigned via `innerHTML`. Unlike most content this webview renders, a commit
  * message is attacker-controllable text (anyone who can push a commit controls what every viewer
  * of this repository sees rendered here) - so beyond rendering fidelity, the token-based walk's
@@ -29,21 +29,18 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // recognised as a distinct token type in the first place.
 const markdownit = new MarkdownIt({ html: false, linkify: false, breaks: true });
 
-// Mirrors web/utils.ts's escapeHtml (HTML_ESCAPES / HTML_ESCAPER_REGEX) exactly. Duplicated
-// rather than evaluated from utils.ts itself, which calls `acquireVsCodeApi()` at module scope
-// and pulls in a large amount of unrelated webview-global state.
-const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#x27;', '/': '&#x2F;' };
-const escapeHtml = (str) => str.replace(/[&<>"'/]/g, (match) => HTML_ESCAPES[match]);
-const CLASS_EXTERNAL_URL = 'externalUrl';
-
-const source = fs.readFileSync(path.join(root, 'web', 'markdownRenderer.ts'), 'utf8');
-const { code } = esbuild.transformSync(source, { loader: 'ts' });
-// new Function (not eval): web/markdownRenderer.ts is not a module (no import/export - every
-// web/*.ts file is designed to be concatenated into one script, see package-web.js), so its
-// functions are pulled out by name once, in one execution, rather than depending on strict-mode
-// module-eval scoping rules.
-const load = new Function('escapeHtml', 'CLASS_EXTERNAL_URL', 'markdownit', code + '\nreturn { hasMarkdown, renderMarkdown };');
-const { hasMarkdown, renderMarkdown } = load(escapeHtml, CLASS_EXTERNAL_URL, markdownit);
+// The real module, bundled for node. It reads the markdown-it instance from the page global that
+// media/vendor/markdown-it.min.js provides in the webview, so the same construction is installed here.
+globalThis.markdownit = markdownit;
+const bundled = esbuild.buildSync({
+	entryPoints: [path.join(root, 'src', 'webview', 'graph', 'text', 'markdown.ts')],
+	bundle: true, write: false, format: 'cjs', platform: 'node', target: 'node18'
+}).outputFiles[0].text;
+const loaded = { exports: {} };
+new Function('module', 'exports', bundled)(loaded, loaded.exports);
+const hasMarkdown = loaded.exports.hasMarkdown;
+// The renderer returns trusted markup (SafeHtml); these tests compare its string form.
+const renderMarkdown = (text) => String(loaded.exports.renderMarkdown(text));
 
 describe('hasMarkdown', () => {
 	it('is false for a typical plain-text commit message', () => {
