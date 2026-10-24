@@ -5,7 +5,10 @@
 body.mobileMode .dropdownMenu{
 	position:fixed;
 	top:auto;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	left:8px !important;
 	left:max(8px, env(safe-area-inset-left)) !important;
+	right:8px !important;
 	right:max(8px, env(safe-area-inset-right)) !important;
 	min-width:0;
 	max-width:none;

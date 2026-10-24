@@ -84,6 +84,11 @@
 .reflogRow{
 	cursor:pointer;
 }
+/* Chromium 69 fallback: :focus-visible (Chrome 86) is an invalid pseudo-class there, which drops
+   the whole rule below - this duplicate keeps the hover feedback on 69, a no-op on newer browsers */
+.reflogRow:hover{
+	background-color:rgba(128,128,128,0.15);
+}
 .reflogRow:hover, .reflogRow:focus-visible{
 	background-color:rgba(128,128,128,0.15);
 }

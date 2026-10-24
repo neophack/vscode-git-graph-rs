@@ -21,6 +21,9 @@
 .gg-helpTooltipPopup{
 	position:fixed;
 	z-index:50;
+	/* Chromium 69 fallback: still bounds the tooltip to the viewport (helpTooltip.ts clamps its
+	   position to it); only the 360px cap is lost as enhancement */
+	max-width:calc(100vw - 16px);
 	max-width:min(360px, calc(100vw - 16px));
 	padding:4px 7px;
 	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));

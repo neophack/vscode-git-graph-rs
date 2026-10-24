@@ -62,6 +62,8 @@
 	overflow-x:hidden;
 	margin-top:-1px;
 	white-space:nowrap;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	min-width:240px;
 	min-width:max(240px, 100%);
 	max-width:60vw;
 }

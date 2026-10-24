@@ -28,6 +28,8 @@ body.mobileMode #controls{
 	gap:6px;
 	box-sizing:border-box;
 	min-height:var(--m-bar);
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:4px 4px 4px 12px;
 	padding:4px max(4px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
 	padding-top:max(4px, env(safe-area-inset-top));
 	border-bottom:0.5px solid var(--m-sep);
@@ -169,6 +171,9 @@ body.mobileMode #mobileMoreBtn svg{
 }
 
 body.mobileMode #pinnedControls{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding-left:12px;
+	padding-right:12px;
 	padding-left:max(12px, env(safe-area-inset-left));
 	padding-right:max(12px, env(safe-area-inset-right));
 	padding-top:8px;

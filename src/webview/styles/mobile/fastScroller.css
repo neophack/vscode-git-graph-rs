@@ -20,6 +20,8 @@ body.mobileMode #fastScroller{
 	display:block;
 	position:fixed;
 	top:0;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	right:2px;
 	right:max(2px, env(safe-area-inset-right));
 	width:0;
 	height:0;
