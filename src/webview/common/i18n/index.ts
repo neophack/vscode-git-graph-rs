@@ -1,20 +1,27 @@
 /**
  * The webview's interface language: the active string table and the substitution helper.
  *
- * The tables (en.ts, zh-cn.ts) are plain data. The keys listed in MARKUP_KEYS hold markup
- * templates (bold names, line breaks, ...); every other key holds text. The two are exposed
- * separately so the compiler keeps them apart: `strings` carries the text entries (escaped when
- * interpolated into markup), `markup` the markup entries as SafeHtml - a markup entry can never be
- * used as text by accident, and text can never be inserted unescaped.
+ * The tables themselves live in the shared dictionary (src/shared/i18n, re-exported below) so
+ * the extension host and the webview localise from one source (REFACTOR-PLAN task 6.3); this
+ * module keeps what is webview-specific — the markup split and the live language switch.
+ *
+ * The keys listed in MARKUP_KEYS hold markup templates (bold names, line breaks, ...); every
+ * other key holds text. The two are exposed separately so the compiler keeps them apart:
+ * `strings` carries the text entries (escaped when interpolated into markup), `markup` the markup
+ * entries as SafeHtml - a markup entry can never be used as text by accident, and text can never
+ * be inserted unescaped.
  *
  * `setInterfaceLanguage` (called at start-up with the `git-graph-rs.interfaceLanguage` setting
  * forwarded by the extension host) switches both. `strings` and `markup` are live bindings, so
  * every importer reads the active table.
  */
 
+export * from '../../../shared/i18n';
+
 import { escapeHtml, isSafeHtml, raw, SafeHtml } from '../html';
-import { STRINGS_EN, WebviewStrings } from './en';
-import { STRINGS_ZH_CN } from './zh-cn';
+import { STRINGS_EN, WebviewStrings } from '../../../shared/i18n';
+import { STRINGS_ZH_CN } from '../../../shared/i18n';
+import { substitutePlaceholders } from '../../../shared/i18n';
 
 /** The entries of the string tables that are markup templates. */
 export const MARKUP_KEYS = [
@@ -89,8 +96,8 @@ export function setInterfaceLanguage(lang: string) {
 }
 
 /**
- * Substitute the {0}, {1}, ... placeholders of a template. A markup template produces markup, its
- * text arguments escaped; a text template produces text.
+ * Substitute the {0}, {1}, ... placeholders of a template (shared/i18n/format.ts). A markup
+ * template produces markup, its text arguments escaped; a text template produces text.
  * @param template The template.
  * @param args The values to substitute.
  */
@@ -103,7 +110,7 @@ export function formatStr(template: string | SafeHtml, ...args: Array<string | S
 			return isSafeHtml(arg) ? arg.html : typeof arg === 'string' ? escapeHtml(arg).html : match;
 		}));
 	}
-	return template.replace(/\{(\d+)\}/g, (match, index) => typeof args[index] === 'string' ? <string>args[index] : match);
+	return substitutePlaceholders(template, args);
 }
 
 /** The "…" that marks a menu item or button opening a dialog. */

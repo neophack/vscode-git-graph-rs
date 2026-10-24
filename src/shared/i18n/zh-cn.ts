@@ -1,11 +1,11 @@
 /**
- * The Simplified Chinese string table of the webview: the same keys as en.ts (a missing or extra
- * key is a type error).
+ * The Simplified Chinese string table: exactly the keys of en.ts — the `satisfies` check below
+ * makes a missing or extra key, or an entry of the wrong shape, a compile-time error.
  */
 
 import type { WebviewStrings } from './en';
 
-export const STRINGS_ZH_CN: WebviewStrings = {
+export const STRINGS_ZH_CN = {
 	/* Toolbar & header */
 	repoLabel: '仓库：',
 	branchesLabel: '分支：',
@@ -910,4 +910,4 @@ export const STRINGS_ZH_CN: WebviewStrings = {
 	creatingSquashCommit: '正在创建压缩提交...',
 	autosquashRebaseCheckbox: '自动压缩提交',
 	autosquashRebaseInfo: '将 fixup!/squash! 提交折叠到其目标提交中（--autosquash）。仅在同时启用"在新终端中启动交互式变基"时生效。'
-};
+} satisfies WebviewStrings;

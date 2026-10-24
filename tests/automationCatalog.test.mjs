@@ -201,7 +201,7 @@ test('exact-text steps stay in sync with the shipped interface languages', () =>
 	// per interface language (bi(en, zh)). Every candidate must literally appear in the webview string tables
 	// (as a whole value, a substring of a format template, or without the render-time ellipsis) —
 	// otherwise the entry silently stops matching under that language.
-	const [{ text: enBlock }, { text: zhBlock }] = sourceFiles('src/webview/common/i18n/en.ts', 'src/webview/common/i18n/zh-cn.ts');
+	const [{ text: enBlock }, { text: zhBlock }] = sourceFiles('src/shared/i18n/en.ts', 'src/shared/i18n/zh-cn.ts');
 
 	const candidates = [];
 	for (const action of CATALOG) {

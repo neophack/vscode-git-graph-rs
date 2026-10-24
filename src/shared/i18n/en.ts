@@ -1,6 +1,7 @@
 /**
- * The English string table of the webview: plain data, one literal per key. The entries listed in
- * MARKUP_KEYS (./markup.ts) are markup templates; every other entry is text.
+ * The English string table: plain data, one literal per key. The entries listed in MARKUP_KEYS
+ * (the webview's i18n module, src/webview/common/i18n/index.ts) are markup templates; every other
+ * entry is text.
  */
 
 export const STRINGS_EN = {

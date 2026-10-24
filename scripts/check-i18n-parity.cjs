@@ -27,8 +27,8 @@ function check(name, en, zh) {
 }
 
 let problems = 0;
-const webEn = fs.readFileSync('src/webview/common/i18n/en.ts', 'utf8');
-const webZh = fs.readFileSync('src/webview/common/i18n/zh-cn.ts', 'utf8');
+const webEn = fs.readFileSync('src/shared/i18n/en.ts', 'utf8');
+const webZh = fs.readFileSync('src/shared/i18n/zh-cn.ts', 'utf8');
 problems += check('web', extractDict(webEn, 'export const STRINGS_EN = {', 'export type WebviewStrings'), extractDict(webZh, 'export const STRINGS_ZH_CN', 'export const MARKUP'));
 
 const i18n = fs.readFileSync('src/i18n.ts', 'utf8');
