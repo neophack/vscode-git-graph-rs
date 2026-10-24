@@ -40,6 +40,7 @@
 		"build:native": "node scripts/build-addon.mjs",
 		"build:native:release": "node scripts/build-addon.mjs --release",
 		"build:ts": "tsc -p tsconfig.json",
+		"build:dist": "node scripts/build/build.mjs",
 		"compile-src": "tsc -p ./src && node scripts/package-src.js",
 		"compile-web": "node scripts/build/webview.mjs && node scripts/package-highlight.js && node scripts/package-markdown.js",
 		"compile-web-debug": "node scripts/build/webview.mjs debug && node scripts/package-highlight.js debug && node scripts/package-markdown.js debug",
