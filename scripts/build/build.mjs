@@ -38,8 +38,9 @@
  *   node scripts/build/build.mjs              # development build (sourcemap, not minified)
  *   node scripts/build/build.mjs --production # what ships (minified, no sourcemaps)
  *
- * Type checking stays with the tsc pipelines (`build:ts`, the webview build's own check):
- * esbuild only strips types.
+ * After the webview build, the ES2018 compatibility gate (scripts/build/compat.mjs) scans the
+ * emitted artifacts and fails the build on a violation. Type checking stays with the tsc
+ * pipelines (`build:ts`, the webview build's own check): esbuild only strips types.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -47,6 +48,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
+import { checkCompat } from './compat.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const dist = path.join(root, 'dist');
@@ -170,6 +172,17 @@ async function main() {
 	console.log(`Bundled dist/ in ${Date.now() - started} ms (${production ? 'production' : 'development'})`);
 
 	buildWebview();
+
+	// The compatibility gate runs on every build, development or production: a dependency
+	// slipping post-ES2018 syntax past the bundler is as broken in a dev artifact as in a
+	// shipped one.
+	const problems = checkCompat();
+	if (problems.length > 0) {
+		console.error('\nCompatibility check failed (floor: VS Code 1.38 = Node 10.11 / Chromium 69):\n');
+		for (const problem of problems) console.error('  - ' + problem);
+		process.exit(1);
+	}
+	console.log('Compatibility check passed (ES2018 syntax).');
 }
 
 main().catch((error) => {
