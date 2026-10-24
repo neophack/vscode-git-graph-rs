@@ -1,62 +1,39 @@
 /**
- * Loading the native addon, and the raw calls into it.
+ * Loading the native addon, and the one request seam into it.
  *
- * Nothing above this file knows that the engine is a `.node` binary, that its payloads are JSON,
- * or that its errors arrive as strings with a prefix. That is the whole job here.
+ * Nothing above this file knows that the engine is a `.node` binary or that its payloads are
+ * JSON: `request` is typed against the generated protocol (`src/shared/engine/protocol.ts`), and
+ * failures arrive as the structured `{ kind, message }` object the engine serialises — never as
+ * a prefixed string to parse back apart. That is the whole job here.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { EngineError, EngineMethod, EngineMethods } from '../shared/engine/protocol';
 import { GitBackendError, GitErrorKind } from './types';
 
-/** The exports of `native/node/src/lib.rs`, as N-API presents them. */
+/**
+ * The exports of `native/node/src/lib.rs`, as N-API presents them: seven functions, no more.
+ * Everything the engine answers goes through `request`; the method table lives in the Rust
+ * protocol, and its TypeScript mirror regenerates from there.
+ */
 interface NativeAddon {
-	openRepository(path: string): Promise<string>;
-	closeRepository(path: string): void;
-	closeAllRepositories(): void;
-	openRepositoryCount(): number;
-	loadRepoInfo(path: string, optionsJson: string): Promise<string>;
-	loadCommits(path: string, optionsJson: string): Promise<string>;
-	loadRefs(path: string, optionsJson: string): Promise<string>;
-	loadCommitDetails(path: string, hash: string): Promise<string>;
-	loadLineCounts(path: string, from: string | null, to: string, pathsJson: string): Promise<string>;
-	loadUncommittedDetails(path: string): Promise<string>;
-	loadStashDetails(path: string, hash: string, stashJson: string): Promise<string>;
-	compareCommits(path: string, from: string, to: string): Promise<string>;
-	countUncommittedChanges(path: string, includeUntracked: boolean): Promise<number>;
-	loadStashes(path: string): Promise<string>;
-	loadConfig(path: string): Promise<string>;
-	loadCommitFile(path: string, commitHash: string, file: string): Promise<string>;
-	loadCommitFileDiff(path: string, commitHash: string, file: string): Promise<string>;
-	loadCommitBodies(path: string, hashes: string[]): Promise<string>;
-	loadCommitSubject(path: string, hash: string): Promise<string>;
-	loadCommitSummaries(path: string, hashes: string[]): Promise<string>;
-	searchHistory(path: string, query: string): Promise<string>;
-	loadTagDetails(path: string, tagName: string): Promise<string>;
-	remoteUrl(path: string, remote: string): Promise<string | null>;
-	newPathOfRenamedFile(path: string, commitHash: string, oldFilePath: string): Promise<string | null>;
-	submodules(path: string): Promise<string[]>;
-	currentBranchUpstream(path: string): Promise<string | null>;
-	countCommitsBefore(
-		path: string,
-		branches: string[] | null,
-		hash: string,
-		showRemoteBranches: boolean,
-		includeReflogs: boolean
-	): Promise<number>;
-	repoRoot(path: string): Promise<string>;
-	remoteNames(path: string): Promise<string[]>;
-	authors(path: string): Promise<string>;
-	authorStats(path: string): Promise<string>;
-	activityHeatmap(path: string): Promise<string>;
-	configList(path: string, local: boolean): Promise<string>;
-	currentBranchName(path: string): Promise<string | null>;
-	parseGerritMetas(path: string, remote: string, changes: number[], urlBase: string | null): Promise<string>;
-	listChangeRefs(path: string, remote: string): Promise<string>;
+	open(path: string): Promise<string>;
+	close(path: string): void;
+	closeAll(): void;
+	openCount(): number;
 	engineVersion(): string;
-	/** The whole engine as one JSON call; see `native/core/src/dispatch.rs` for the method table. */
+	/** One `{"method", "params"}` call; resolves to the `{"ok"|"error"}` envelope as JSON text. */
 	request(repo: string, requestJson: string): Promise<string>;
+	/** A file's raw bytes at a revision, or why they could not be read. */
+	requestBytes(repo: string, revision: string, filePath: string): Promise<BytesAnswer>;
+}
+
+/** The answer of `requestBytes`: the file's bytes, or the structured failure. */
+export interface BytesAnswer {
+	ok: Buffer | null;
+	error: EngineError | null;
 }
 
 /**
@@ -221,30 +198,43 @@ export function resetAddonCache(): void {
 }
 
 /**
- * The engine prefixes its errors with the kind (`Git: ...`), so that the two sides can disagree
- * about everything else and still agree about whether a failure is worth falling back over.
+ * The engine's wire error kinds (camelCase, generated with the protocol) mapped to the backend's
+ * PascalCase ones. `internal` — the engine caught one of its own panics at the protocol boundary
+ * — is folded into `Unsupported`, the "let another backend try" kind, exactly as the engine's
+ * error contract documents.
  */
-const ERROR_KINDS: ReadonlyArray<GitErrorKind> = [
-	'NotARepository',
-	'NotFound',
-	'InvalidArgument',
-	'Git',
-	'Io',
-	'Cancelled',
-	'Unsupported'
-];
+const ERROR_KINDS: Readonly<Record<string, GitErrorKind>> = {
+	notARepository: 'NotARepository',
+	notFound: 'NotFound',
+	invalidArgument: 'InvalidArgument',
+	git: 'Git',
+	io: 'Io',
+	cancelled: 'Cancelled',
+	unsupported: 'Unsupported',
+	internal: 'Unsupported'
+};
 
+/**
+ * Translate a failure into the backend's error contract. The engine answers in band, as the
+ * structured `{kind, message}` object `EngineError` describes; a thrown value can only come from
+ * the Node layer around it (a load failure, an aborted call) and is reported as a plain Git
+ * failure — there is no `"Kind: "` prefix to parse any more.
+ */
 export function toBackendError(error: unknown): GitBackendError {
 	if (error instanceof GitBackendError) return error;
-
-	const message = errorMessage(error);
-	for (const kind of ERROR_KINDS) {
-		const prefix = `${kind}: `;
-		if (message.startsWith(prefix)) {
-			return new GitBackendError(kind, message.slice(prefix.length));
-		}
+	if (isEngineError(error)) {
+		return new GitBackendError(ERROR_KINDS[error.kind] ?? 'Git', error.message);
 	}
-	return new GitBackendError('Git', message);
+	return new GitBackendError('Git', errorMessage(error));
+}
+
+function isEngineError(error: unknown): error is EngineError {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		typeof (error as EngineError).kind === 'string' &&
+		typeof (error as EngineError).message === 'string'
+	);
 }
 
 function errorMessage(error: unknown): string {
@@ -252,43 +242,18 @@ function errorMessage(error: unknown): string {
 	return String(error);
 }
 
-/** Run an addon call, translating both its errors and its JSON response. */
-export async function callJson<T>(work: () => Promise<string>): Promise<T> {
-	let raw: string;
-	try {
-		raw = await work();
-	} catch (error) {
-		throw toBackendError(error);
-	}
-	try {
-		return JSON.parse(raw) as T;
-	} catch (error) {
-		throw new GitBackendError('Git', `The engine returned a malformed response: ${errorMessage(error)}`);
-	}
-}
-
-/** Run an addon call that returns a plain value rather than JSON. */
-export async function call<T>(work: () => Promise<T>): Promise<T> {
-	try {
-		return await work();
-	} catch (error) {
-		throw toBackendError(error);
-	}
-}
-
 /**
- * One engine request through the single dispatch seam (`request`), answered as parsed JSON —
- * with the in-band error (`{"error": "Kind: message"}`, the string a typed call throws) raised
- * as the same backend error. The extension's own reads go through the typed API above; this is
- * the one-call surface for tools and second hosts that want the whole engine without a binding
- * per method. The method table lives in `native/core/src/dispatch.rs`.
+ * One engine request through the single seam: `request(repo, 'loadCommits', options)` answers
+ * the method's typed result, or throws a `GitBackendError` built from the envelope's structured
+ * error. The method name, its parameters and its result are all typed by the generated protocol,
+ * so the two sides cannot quietly disagree.
  */
-export async function engineRequest<T = unknown>(
+export async function request<M extends EngineMethod>(
 	repo: string,
-	method: string,
-	params?: object,
+	method: M,
+	params: EngineMethods[M]['params'],
 	root?: string
-): Promise<T> {
+): Promise<EngineMethods[M]['result']> {
 	let raw: string;
 	try {
 		raw = await loadAddon(root).request(repo, JSON.stringify({ method, params }));
@@ -301,13 +266,9 @@ export async function engineRequest<T = unknown>(
 	} catch (error) {
 		throw new GitBackendError('Git', `The engine returned a malformed response: ${errorMessage(error)}`);
 	}
-	if (
-		typeof answer === 'object' &&
-		answer !== null &&
-		'error' in answer &&
-		typeof (answer as { error: unknown }).error === 'string'
-	) {
-		throw toBackendError((answer as { error: string }).error);
+	const failure = (answer as { error?: unknown }).error;
+	if (isEngineError(failure)) {
+		throw toBackendError(failure);
 	}
-	return answer as T;
+	return (answer as { ok: EngineMethods[M]['result'] }).ok;
 }

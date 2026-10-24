@@ -3,11 +3,11 @@
  *
  * This is the seam the rewrite is built around. The extension talks to `GitBackend` and nothing
  * else; which implementation is behind it — the Rust engine or the `git` command line — is chosen
- * once, at startup, by `index.ts`. That is what makes the migration incremental: a capability the
- * engine does not have yet is answered by the CLI without the calling code knowing.
+ * once, at startup, by `index.ts`. That makes the migration incremental: a capability the engine
+ * does not have yet is answered by the CLI without the calling code knowing.
  */
 
-import { call, callJson, loadAddon } from './addon';
+import { loadAddon, request } from './addon';
 import { GerritChangeState } from '../types';
 import {
 	GitActivityCell,
@@ -31,6 +31,7 @@ import {
 	LogOptions,
 	RefReadOptions
 } from './types';
+import { EngineMethods } from '../shared/engine/protocol';
 
 /**
  * Everything the Git Graph View needs to read from a repository.
@@ -186,9 +187,11 @@ const DEFAULT_REF_OPTIONS: Required<RefReadOptions> = {
 /**
  * The Rust engine, reached through the native addon.
  *
- * Every method is a single call across the boundary carrying a single JSON payload — never a call
- * per commit or per ref, which is what made the original extension's process-per-question design
- * expensive.
+ * Every method is one call across the boundary through the single typed request seam — never a
+ * call per commit or per ref, which is what made the original extension's
+ * process-per-question design expensive, and never a hand-written binding per method: the method
+ * names, their parameters and their results are all fixed by the generated protocol
+ * (`src/shared/engine/protocol.ts`), so this class only maps the `GitBackend` vocabulary onto it.
  */
 export class NativeBackend implements GitBackend {
 	public readonly name = 'rust';
@@ -201,25 +204,28 @@ export class NativeBackend implements GitBackend {
 	}
 
 	public openRepository(path: string): Promise<string> {
-		return call(() => this.addon.openRepository(path));
+		return request(path, 'open', {});
 	}
 
 	public closeRepository(path: string): void {
-		this.addon.closeRepository(path);
+		this.addon.close(path);
 	}
 
 	public closeAllRepositories(): void {
-		this.addon.closeAllRepositories();
+		this.addon.closeAll();
 	}
 
 	/** How many repositories are currently held open. Exposed for the tests. */
 	public get openRepositoryCount(): number {
-		return this.addon.openRepositoryCount();
+		return this.addon.openCount();
 	}
 
 	public getRepoInfo(repo: string, options?: RefReadOptions): Promise<GitRepoInfo> {
-		const payload = JSON.stringify({ ...DEFAULT_REF_OPTIONS, ...options });
-		return callJson<GitRepoInfo>(() => this.addon.loadRepoInfo(repo, payload));
+		// The wire type ts-rs generates is all-required while the engine's serde defaults would
+		// fill an omitted field anyway; the merge always produces every field, so the cast only
+		// names that agreement rather than asserting anything about the caller's input.
+		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['loadRepoInfo']['params'];
+		return request(repo, 'loadRepoInfo', payload);
 	}
 
 	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
@@ -236,16 +242,18 @@ export class NativeBackend implements GitBackend {
 		// would then quietly disagree on every remote branch, tag and label whenever a caller
 		// relies on "unset" meaning "on", the documented default everywhere else in this API.
 		const payload: LogOptions = { ...options, showRemoteBranches: options.showRemoteBranches ?? true };
-		return callJson<GitCommitData>(() => this.addon.loadCommits(repo, JSON.stringify(payload)));
+		// Omitted fields mean "the engine's default" on the wire (serde fills them in); ts-rs
+		// types the struct as all-required, so the cast only records that the input bag is partial.
+		return request(repo, 'loadCommits', payload as EngineMethods['loadCommits']['params']);
 	}
 
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
-		const payload = JSON.stringify({ ...DEFAULT_REF_OPTIONS, ...options });
-		return callJson<GitRefData>(() => this.addon.loadRefs(repo, payload));
+		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['loadRefs']['params'];
+		return request(repo, 'loadRefs', payload);
 	}
 
 	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
-		return callJson<GitCommitDetails>(() => this.addon.loadCommitDetails(repo, hash));
+		return request(repo, 'commitDetails', { hash });
 	}
 
 	public getCommitSignature(_repo: string, _hash: string): Promise<GitSignature | null> {
@@ -260,11 +268,11 @@ export class NativeBackend implements GitBackend {
 		to: string,
 		paths: ReadonlyArray<string>
 	): Promise<{ [path: string]: GitLineCounts }> {
-		return callJson(() => this.addon.loadLineCounts(repo, from, to, JSON.stringify(paths)));
+		return request(repo, 'lineCounts', { from, to, paths: [...paths] });
 	}
 
 	public getUncommittedDetails(repo: string): Promise<GitCommitDetails> {
-		return callJson<GitCommitDetails>(() => this.addon.loadUncommittedDetails(repo));
+		return request(repo, 'uncommittedDetails', {});
 	}
 
 	public getStashDetails(
@@ -272,9 +280,7 @@ export class NativeBackend implements GitBackend {
 		hash: string,
 		stash: GitCommitStash
 	): Promise<GitCommitDetails> {
-		return callJson<GitCommitDetails>(() =>
-			this.addon.loadStashDetails(repo, hash, JSON.stringify(stash))
-		);
+		return request(repo, 'stashDetails', { hash, stash });
 	}
 
 	public compareCommits(
@@ -282,50 +288,50 @@ export class NativeBackend implements GitBackend {
 		from: string,
 		to: string
 	): Promise<ReadonlyArray<GitFileChange>> {
-		return callJson<GitFileChange[]>(() => this.addon.compareCommits(repo, from, to));
+		return request(repo, 'compareCommits', { from, to });
 	}
 
 	public getUncommittedChangeCount(repo: string, includeUntracked: boolean): Promise<number> {
-		return call(() => this.addon.countUncommittedChanges(repo, includeUntracked));
+		return request(repo, 'countUncommittedChanges', { includeUntracked });
 	}
 
 	public getStashes(repo: string): Promise<ReadonlyArray<GitStash>> {
-		return callJson<GitStash[]>(() => this.addon.loadStashes(repo));
+		return request(repo, 'stashes', {});
 	}
 
 	public getConfig(repo: string): Promise<GitConfigSnapshot> {
-		return callJson<GitConfigSnapshot>(() => this.addon.loadConfig(repo));
+		return request(repo, 'config', {});
 	}
 
 	public getCommitFile(repo: string, hash: string, file: string): Promise<GitCommitFile> {
-		return callJson<GitCommitFile>(() => this.addon.loadCommitFile(repo, hash, file));
+		return request(repo, 'fileContents', { revision: hash, path: file });
 	}
 
 	public getCommitFileDiff(repo: string, hash: string, file: string): Promise<string> {
-		return call(() => this.addon.loadCommitFileDiff(repo, hash, file));
+		return request(repo, 'fileDiff', { revision: hash, path: file });
 	}
 
 	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
-		return callJson(() => this.addon.loadCommitBodies(repo, [...hashes]));
+		return request(repo, 'commitBodies', { hashes: [...hashes] });
 	}
 
 	public getCommitSubject(repo: string, hash: string): Promise<string> {
-		return call(() => this.addon.loadCommitSubject(repo, hash));
+		return request(repo, 'commitSubject', { hash });
 	}
 
 	public getCommitSummaries(
 		repo: string,
 		hashes: ReadonlyArray<string>
 	): Promise<{ [hash: string]: GitCommitSummary }> {
-		return callJson(() => this.addon.loadCommitSummaries(repo, [...hashes]));
+		return request(repo, 'commitSummaries', { hashes: [...hashes] });
 	}
 
 	public searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>> {
-		return callJson(() => this.addon.searchHistory(repo, query));
+		return request(repo, 'searchHistory', { query });
 	}
 
 	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
-		return callJson(() => this.addon.loadTagDetails(repo, tagName));
+		return request(repo, 'tagDetails', { tagName });
 	}
 
 	public getTagSignature(_repo: string, _tagName: string): Promise<GitSignature | null> {
@@ -335,19 +341,19 @@ export class NativeBackend implements GitBackend {
 	}
 
 	public getRemoteUrl(repo: string, remote: string): Promise<string | null> {
-		return call(() => this.addon.remoteUrl(repo, remote));
+		return request(repo, 'remoteUrl', { remote });
 	}
 
 	public getNewPathOfRenamedFile(repo: string, commitHash: string, oldFilePath: string): Promise<string | null> {
-		return call(() => this.addon.newPathOfRenamedFile(repo, commitHash, oldFilePath));
+		return request(repo, 'newPathOfRenamedFile', { commitHash, oldFilePath });
 	}
 
 	public getSubmodules(repo: string): Promise<ReadonlyArray<string>> {
-		return call(() => this.addon.submodules(repo));
+		return request(repo, 'submodules', {});
 	}
 
 	public getCurrentBranchUpstream(repo: string): Promise<string | null> {
-		return call(() => this.addon.currentBranchUpstream(repo));
+		return request(repo, 'currentBranchUpstream', {});
 	}
 
 	public countCommitsBefore(
@@ -357,37 +363,40 @@ export class NativeBackend implements GitBackend {
 		showRemoteBranches: boolean,
 		includeCommitsMentionedByReflogs: boolean
 	): Promise<number> {
-		return call(() =>
-			this.addon.countCommitsBefore(repo, branches !== null ? [...branches] : null, hash, showRemoteBranches, includeCommitsMentionedByReflogs)
-		);
+		return request(repo, 'countCommitsBefore', {
+			branches: branches !== null ? [...branches] : null,
+			hash,
+			showRemoteBranches,
+			includeReflogs: includeCommitsMentionedByReflogs
+		});
 	}
 
 	public repoRoot(path: string): Promise<string> {
-		return call(() => this.addon.repoRoot(path));
+		return request(path, 'repoRoot', {});
 	}
 
 	public getRemotes(repo: string): Promise<ReadonlyArray<string>> {
-		return call(() => this.addon.remoteNames(repo));
+		return request(repo, 'remoteNames', {});
 	}
 
 	public getAuthors(repo: string): Promise<ReadonlyArray<GitAuthor>> {
-		return callJson(() => this.addon.authors(repo));
+		return request(repo, 'authors', {});
 	}
 
 	public getAuthorStatistics(repo: string): Promise<ReadonlyArray<GitAuthorStat>> {
-		return callJson(() => this.addon.authorStats(repo));
+		return request(repo, 'authorStats', {});
 	}
 
 	public getActivityHeatmap(repo: string): Promise<ReadonlyArray<GitActivityCell>> {
-		return callJson(() => this.addon.activityHeatmap(repo));
+		return request(repo, 'activityHeatmap', {});
 	}
 
 	public getConfigList(repo: string, location: 'local' | 'global'): Promise<{ [key: string]: string }> {
-		return callJson(() => this.addon.configList(repo, location === 'local'));
+		return request(repo, 'configList', { local: location === 'local' });
 	}
 
 	public currentBranchName(repo: string): Promise<string | null> {
-		return call(() => this.addon.currentBranchName(repo));
+		return request(repo, 'currentBranchName', {});
 	}
 
 	/**
@@ -395,7 +404,10 @@ export class NativeBackend implements GitBackend {
 	 * with the input order. An entry is NULL when the change's meta ref is not available locally.
 	 */
 	public parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<(GerritChangeState | null)[]> {
-		return callJson(() => this.addon.parseGerritMetas(repo, remote, [...changes], urlBase));
+		// The generated state type answers exactly what the engine serialises (`null` for an absent
+		// reviewer or vote list), while the extension-side type marks those fields optional; the
+		// bytes are identical, so the cast only bridges the two spellings.
+		return request(repo, 'parseGerritMetas', { remote, changes: [...changes], urlBase }) as Promise<(GerritChangeState | null)[]>;
 	}
 
 	/**
@@ -403,6 +415,6 @@ export class NativeBackend implements GitBackend {
 	 * `[refname, hash]` pairs from one in-process scan of the ref store.
 	 */
 	public listChangeRefs(repo: string, remote: string): Promise<[string, string][]> {
-		return callJson(() => this.addon.listChangeRefs(repo, remote));
+		return request(repo, 'listChangeRefs', { remote });
 	}
 }
