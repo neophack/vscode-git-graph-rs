@@ -6,7 +6,7 @@
  *
  *   1. type check   tsc -p src/webview (lib es2018 + dom: newer built-ins are type errors)
  *   2. source gate  no syntax newer than ES2018 in src/webview/**.ts
- *   3. html gate    innerHTML / outerHTML / insertAdjacentHTML are written only by
+ *   3. html gate    innerHTML / outerHTML / insertAdjacentHTML appear only in
  *                   src/webview/common/html.ts, which accepts SafeHtml alone
  *   4. bundle       esbuild, IIFE, target es2018 + chrome69
  *   5. output gate  no syntax newer than ES2018 in the emitted bundle
@@ -30,7 +30,12 @@ const TYPECHECK = !process.argv.includes('--no-typecheck');
 
 /** The only module allowed to write HTML into the DOM (see the html gate). */
 const HTML_SINK_MODULE = path.join(webviewDir, 'common', 'html.ts');
-const HTML_SINK_PATTERN = /\.(innerHTML|outerHTML)\s*(\+?=)(?!=)|\.insertAdjacentHTML\s*\(/;
+/* Any occurrence of the three DOM-HTML identifiers counts, not only assignment-shaped lines:
+   bracket writes (elem['innerHTML'] = ...), assignments split across lines and bare references
+   (aliases, .bind) all evade a line-local dot-then-= match, and the only legitimate readers are
+   the sinks of html.ts itself, which the module exemption covers. A line-by-line scan is
+   complete for this pattern: the identifiers themselves never span lines. */
+const HTML_SINK_PATTERN = /\b(?:innerHTML|outerHTML|insertAdjacentHTML)\b/;
 
 function walk(directory, extension) {
 	const files = [];
@@ -70,7 +75,7 @@ for (const file of sources) {
 		if (HTML_SINK_PATTERN.test(line)) htmlProblems.push(relative(file) + ':' + (index + 1) + ' ' + line.trim());
 	});
 }
-if (htmlProblems.length > 0) fail('HTML may only be written through setHtml() / replaceWithHtml() of src/webview/common/html.ts:', htmlProblems);
+if (htmlProblems.length > 0) fail('innerHTML / outerHTML / insertAdjacentHTML may only be used by the SafeHtml sinks of src/webview/common/html.ts:', htmlProblems);
 
 fs.mkdirSync(mediaDir, { recursive: true });
 const outJs = path.join(mediaDir, 'out.min.js');
