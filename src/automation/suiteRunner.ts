@@ -5,6 +5,7 @@ import { Logger } from '../logger';
 import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON } from './catalog';
 import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, git, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
+import { tabGroups } from '../extension/platform/vscodeCompat';
 import { AutomationServer } from './server';
 
 /**
@@ -277,12 +278,13 @@ const openTabs = automationOpenTabs;
  */
 async function cleanupActionSurfaces(beforeTabs: ReadonlySet<string>, beforeTerminals: ReadonlySet<unknown>): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 150)); // let late-opening surfaces appear
-	const tabGroups = (vscode.window as any).tabGroups;
-	if (tabGroups !== undefined && typeof tabGroups.close === 'function') {
+	const groups = tabGroups();
+	const closeTab = groups === null ? undefined : groups.close;
+	if (typeof closeTab === 'function') {
 		for (const tab of openTabs()) {
 			if (tab.input !== undefined && tab.input.viewType === GIT_GRAPH_VIEW_TYPE) continue;
 			if (beforeTabs.has(tabKey(tab))) continue;
-			try { await tabGroups.close(tab, true); } catch (_) { /* the tab is already gone */ }
+			try { await closeTab(tab, true); } catch (_) { /* the tab is already gone */ }
 		}
 	}
 	for (const terminal of (Array.isArray(vscode.window.terminals) ? vscode.window.terminals : [])) {

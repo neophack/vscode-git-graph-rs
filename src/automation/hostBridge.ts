@@ -6,6 +6,7 @@ import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
 import { GitGraphView } from '../gitGraphView';
 import { GitFileStatus } from '../types/git';
 import { RequestMessage, ResponseMessage } from '../types';
+import { tabGroups } from '../extension/platform/vscodeCompat';
 
 /**
  * The narrow seam the automation server drives. It touches Git Graph only through the three
@@ -52,11 +53,11 @@ export function automationTabKey(tab: any): string {
 
 /** Every open editor tab across all tab groups ([] where the Tab API is unavailable). */
 export function automationOpenTabs(): any[] {
-	const tabGroups = (vscode.window as any).tabGroups;
-	if (tabGroups === undefined || !Array.isArray(tabGroups.all)) return [];
+	const groups = tabGroups();
+	if (groups === null) return [];
 	// No flatMap here: src/tsconfig.json targets the es6 lib (the extension's VS Code floor).
 	const tabs: any[] = [];
-	for (const group of tabGroups.all as any[]) {
+	for (const group of groups.all) {
 		if (Array.isArray(group.tabs)) tabs.push(...group.tabs);
 	}
 	return tabs;
@@ -183,9 +184,7 @@ export class HostBridge {
 	 * verify", never as "no tabs".
 	 */
 	public tabKeys(): string[] | null {
-		const tabGroups = (vscode.window as any).tabGroups;
-		if (tabGroups === undefined || !Array.isArray(tabGroups.all)) return null;
-		return automationOpenTabs().map(automationTabKey);
+		return tabGroups() === null ? null : automationOpenTabs().map(automationTabKey);
 	}
 
 	/**
