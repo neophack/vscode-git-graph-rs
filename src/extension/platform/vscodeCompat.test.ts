@@ -17,7 +17,7 @@ const FULL_TAB_GROUPS = {
 		{ viewColumn: 1, tabs: [{ input: { viewType: 'git-graph-rs' } }] },
 		{ viewColumn: 2, tabs: [] }
 	],
-	close: (tab: unknown, preserveFocus?: boolean) => Promise.resolve(true)
+	close: (_tab: unknown, _preserveFocus?: boolean) => Promise.resolve(true)
 };
 
 beforeEach(() => {
