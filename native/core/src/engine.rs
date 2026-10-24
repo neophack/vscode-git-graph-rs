@@ -6,7 +6,7 @@
 //! not have to read them: this file is the contract, and it is kept small and stable.
 //!
 //! ```no_run
-//! use git_graph_core::api::{Engine, GraphOptions};
+//! use git_graph_core::engine::{Engine, GraphOptions};
 //!
 //! let engine = Engine::open("/path/inside/a/repository")?;
 //! let page = engine.graph(&GraphOptions::default())?;

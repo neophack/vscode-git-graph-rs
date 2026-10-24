@@ -5,23 +5,23 @@
 //! It knows nothing about VS Code: it takes plain requests and returns plain data, so it can be
 //! exercised by `cargo test` without Node in the picture.
 //!
-//! **Using it as a library**: start at [`api::Engine`] — one type, in one file (`src/api.rs`),
-//! that exposes everything a host needs (graph pages, commit details, diffs, file contents at a
-//! revision, working-tree status, configuration, statistics). The per-topic modules below are
-//! the implementation; they stay public for finer-grained access, but `api` is the contract.
-//! A host that speaks JSON instead of Rust — the Node addon's `request` export — goes through
-//! [`dispatch::request`], which routes the same surface as one `{"method", "params"}` call.
+//! **Using it as a library**: start at [`engine::Engine`] — one type, in one file
+//! (`src/engine.rs`), that exposes everything a host needs (graph pages, commit details, diffs,
+//! file contents at a revision, working-tree status, configuration, statistics). The per-topic
+//! modules below are the implementation; they stay public for finer-grained access, but
+//! `engine` is the contract. A host that speaks JSON instead of Rust — the Node addon — goes
+//! through [`protocol::request`]: one typed `Request` enum, one `{"method", "params"}` call.
 
-pub mod api;
 pub mod blob;
 pub mod config;
 pub mod details;
 pub mod diff;
-pub mod dispatch;
+pub mod engine;
 pub mod error;
 pub mod gerrit;
 pub mod graph;
 pub mod log;
+pub mod protocol;
 pub mod refs;
 pub mod repository;
 pub mod stash;
@@ -30,7 +30,7 @@ pub mod status;
 pub mod text;
 pub mod types;
 
-pub use api::{Engine, GraphOptions};
+pub use engine::{Engine, GraphOptions};
 pub use error::{Error, ErrorKind, Result};
 pub use repository::{Repo, RepoManager};
 

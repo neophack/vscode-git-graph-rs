@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 git-graph-core = { path = "../core" }
-napi = { version = "3", default-features = false, features = ["napi4", "async", "serde-json"] }
+napi = { version = "3", default-features = false, features = ["napi3", "dyn-symbols"] }
 napi-derive = "3"
 serde.workspace = true
 serde_json.workspace = true

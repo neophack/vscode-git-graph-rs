@@ -27,6 +27,7 @@ serde_json.workspace = true
 # The single dispatch surface's raw-byte read (`fileBytes`) answers base64, so binary content
 # crosses the JSON boundary without an encoding step on either side.
 base64 = "0.22"
+ts-rs = { version = "12", features = ["serde-json-impl"] }
 
 [dev-dependencies]
 tempfile = "3"

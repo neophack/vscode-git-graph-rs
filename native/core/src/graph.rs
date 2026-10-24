@@ -18,7 +18,7 @@ use crate::stash::read_stashes;
 use crate::status;
 use crate::types::{
     GitCommit, GitCommitData, GitCommitRemote, GitCommitStash, GitCommitTag, GitRefData,
-    GitRepoInfo, GitStash, LogOptions, RefReadOptions, UNCOMMITTED,
+    GitRepoInfo, GitStash, GitViewData, LogOptions, RefReadOptions, UNCOMMITTED,
 };
 
 /// Everything the view's `loadRepoInfo` request needs.
@@ -60,6 +60,34 @@ pub fn repo_info(
 /// the commits carry no remote labels — the caller sends this page straight away and follows up
 /// with a complete one.
 pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> {
+    load_page(repo, options).map(|page| page.data)
+}
+
+/// The view's opening load: the dropdown data and the first page from one ref scan and one
+/// stash read, where `repo_info` followed by `load_commits` would scan the refs twice.
+pub fn load_view(repo: &Repo, options: &LogOptions) -> Result<GitViewData> {
+    let page = load_page(repo, options)?;
+    Ok(GitViewData {
+        info: GitRepoInfo {
+            branches: page.data.branches.clone().unwrap_or_default(),
+            head: page.branch_head,
+            remotes: repo.remote_names(),
+            stashes: page.stashes,
+            tags: page.data.tags.clone(),
+            error: None,
+        },
+        commits: page.data,
+    })
+}
+
+/// A page plus the by-products of its ref scan that `load_view` answers as well.
+struct Page {
+    data: GitCommitData,
+    branch_head: Option<String>,
+    stashes: Vec<GitStash>,
+}
+
+fn load_page(repo: &Repo, options: &LogOptions) -> Result<Page> {
     // The engine does not read reflog entries yet. Decline this request instead of silently
     // omitting reflog-only commits; the backend layer then serves the exact `git log --reflog`
     // result through the CLI implementation.
@@ -100,10 +128,14 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
     let tips = resolve_tips(repo, options, &snapshot.ref_data, &stashes)?;
     if tips.is_empty() {
         // A repository with no commits yet renders an empty graph rather than an error.
-        return Ok(GitCommitData {
-            head: snapshot.ref_data.head,
-            branches: Some(snapshot.branches),
-            ..Default::default()
+        return Ok(Page {
+            data: GitCommitData {
+                head: snapshot.ref_data.head,
+                branches: Some(snapshot.branches),
+                ..Default::default()
+            },
+            branch_head: snapshot.branch_head,
+            stashes,
         });
     }
 
@@ -158,13 +190,17 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         }
     }
 
-    Ok(GitCommitData {
-        commits,
-        head: snapshot.ref_data.head,
-        tags,
-        branches: Some(snapshot.branches),
-        more_commits_available,
-        error: None,
+    Ok(Page {
+        data: GitCommitData {
+            commits,
+            head: snapshot.ref_data.head,
+            tags,
+            branches: Some(snapshot.branches),
+            more_commits_available,
+            error: None,
+        },
+        branch_head: snapshot.branch_head,
+        stashes,
     })
 }
 

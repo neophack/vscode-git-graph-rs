@@ -1,11 +1,11 @@
-//! The library façade (`git_graph_core::api::Engine`) end to end on a fixture repository: the
+//! The library façade (`git_graph_core::engine::Engine`) end to end on a fixture repository: the
 //! calls a host makes to draw a graph, show a commit, diff, read a file at a revision and list
 //! the working tree's state, all through the one public interface file.
 
 #[macro_use]
 mod common;
 
-use git_graph_core::api::{Engine, GraphOptions, INDEX, WORKING_TREE};
+use git_graph_core::engine::{Engine, GraphOptions, INDEX, WORKING_TREE};
 use git_graph_core::types::GitFileStatus;
 
 use common::TestRepo;

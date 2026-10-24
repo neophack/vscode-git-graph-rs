@@ -2,12 +2,14 @@
 //!
 //! The extension distinguishes "this repository is not usable" from "this Git operation failed"
 //! (the first makes the view fall back to another backend, the second is shown to the user), so
-//! the kind is carried alongside the message rather than being flattened into the text.
+//! the kind is carried alongside the message rather than being flattened into the text: on the
+//! wire an error is the object `{ "kind": "notFound", "message": "…" }`, never a prefixed string.
 
 use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// The path is not inside a Git repository, or the repository cannot be opened at all.
     NotARepository,
@@ -23,10 +25,14 @@ pub enum ErrorKind {
     Cancelled,
     /// The engine does not implement this yet; the caller should fall back to the `git` CLI.
     Unsupported,
+    /// The engine panicked. The panic is caught at the protocol boundary so the host survives;
+    /// the host treats it like [`ErrorKind::Unsupported`] and falls back to the `git` CLI.
+    Internal,
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, serde::Serialize, ts_rs::TS)]
 #[error("{message}")]
+#[ts(rename = "EngineError")]
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
@@ -57,28 +63,8 @@ impl Error {
     pub fn cancelled() -> Self {
         Error::new(ErrorKind::Cancelled, "The operation was cancelled")
     }
-
-    /// The failure with its kind named: `"NotARepository: …"`, the one string form every
-    /// boundary agrees on. The typed ones throw it (`native/node`'s error conversion), the
-    /// single dispatch surface answers it in-band (`dispatch::request`), and the TypeScript
-    /// side parses the prefix back into a kind to decide between fallback and error dialogue.
-    pub fn with_kind_prefix(&self) -> String {
-        format!("{}: {}", self.kind.as_str(), self.message)
-    }
-}
-
-impl ErrorKind {
-    /// The kind's wire name — the prefix of [`Error::with_kind_prefix`].
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            ErrorKind::NotARepository => "NotARepository",
-            ErrorKind::NotFound => "NotFound",
-            ErrorKind::InvalidArgument => "InvalidArgument",
-            ErrorKind::Git => "Git",
-            ErrorKind::Io => "Io",
-            ErrorKind::Cancelled => "Cancelled",
-            ErrorKind::Unsupported => "Unsupported",
-        }
+    pub fn internal(message: impl Into<String>) -> Self {
+        Error::new(ErrorKind::Internal, message)
     }
 }
 

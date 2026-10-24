@@ -5,13 +5,14 @@
 //! details view and context menus keep working unchanged against this engine.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// The synthetic hash the view uses for the "Uncommitted Changes" row.
 pub const UNCOMMITTED: &str = "*";
 
 /* ---------- Commits ---------- */
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommit {
     pub hash: String,
@@ -28,14 +29,14 @@ pub struct GitCommit {
     pub stash: Option<GitCommitStash>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitTag {
     pub name: String,
     pub annotated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitRemote {
     pub name: String,
@@ -43,7 +44,7 @@ pub struct GitCommitRemote {
     pub remote: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitStash {
     pub selector: String,
@@ -65,14 +66,14 @@ pub struct CommitRecord {
 
 /* ---------- Refs ---------- */
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRef {
     pub hash: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitTagRef {
     pub hash: String,
@@ -82,7 +83,7 @@ pub struct GitTagRef {
     pub annotated: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRefData {
     /// The commit HEAD resolves to, or `None` when the repository has no commits.
@@ -94,7 +95,7 @@ pub struct GitRefData {
 
 /// One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
 /// requests of a single view load.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RefSnapshot {
     pub ref_data: GitRefData,
@@ -117,7 +118,7 @@ pub struct RefReadOptions {
 
 /* ---------- Repository info ---------- */
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoInfo {
     pub branches: Vec<String>,
@@ -129,7 +130,7 @@ pub struct GitRepoInfo {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStash {
     pub hash: String,
@@ -142,7 +143,7 @@ pub struct GitStash {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitData {
     pub commits: Vec<GitCommit>,
@@ -159,7 +160,7 @@ pub struct GitCommitData {
 
 /* ---------- File changes ---------- */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum GitFileStatus {
     #[serde(rename = "A")]
     Added,
@@ -173,7 +174,7 @@ pub enum GitFileStatus {
     Untracked,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitFileChange {
     pub old_file_path: String,
@@ -188,7 +189,7 @@ pub struct GitFileChange {
 
 /// The `+N/-M` line counts of one file, as `git diff --numstat` reports them. Both fields are
 /// `None` for a binary file.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitLineCounts {
     pub additions: Option<u32>,
@@ -197,7 +198,7 @@ pub struct GitLineCounts {
 
 /* ---------- Commit details ---------- */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum GitSignatureStatus {
     #[serde(rename = "G")]
     GoodAndValid,
@@ -215,7 +216,7 @@ pub enum GitSignatureStatus {
     Bad,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitSignature {
     pub key: String,
@@ -223,7 +224,7 @@ pub struct GitSignature {
     pub status: GitSignatureStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitDetails {
     pub hash: String,
@@ -242,7 +243,7 @@ pub struct GitCommitDetails {
 
 /* ---------- Configuration ---------- */
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigSnapshot {
     pub remotes: Vec<RemoteConfig>,
@@ -253,7 +254,7 @@ pub struct ConfigSnapshot {
     pub diff_gui_tool: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConfig {
     pub name: String,
@@ -263,7 +264,7 @@ pub struct RemoteConfig {
 
 /* ---------- File content at a revision ---------- */
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitFile {
     /// The file's text, or `None` when it is not valid UTF-8.
@@ -275,7 +276,7 @@ pub struct CommitFile {
 /* ---------- On-demand commit reads ---------- */
 
 /// The fields the Commit Comparison View describes a commit with.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitSummary {
     pub hash: String,
@@ -288,7 +289,7 @@ pub struct GitCommitSummary {
 }
 
 /// A distinct commit author, as the settings widget's author dropdown lists them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthor {
     pub name: String,
@@ -297,7 +298,7 @@ pub struct GitAuthor {
 
 /// Commit count for one author across all refs (branches, tags, remote-tracking, the stash),
 /// merge commits excluded - what the Statistics view's author table lists.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthorStat {
     pub name: String,
@@ -308,7 +309,7 @@ pub struct GitAuthorStat {
 /// One non-zero cell of the Statistics view's commit-activity heatmap, binned by each commit's
 /// AUTHOR-LOCAL weekday/hour (not the viewer's timezone - see `stats::activity_heatmap`). Sparse:
 /// a cell with no commits is omitted rather than sent as an explicit zero.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitActivityCell {
     /// 0 = Sunday, matching JavaScript's `Date.getUTCDay()`.
@@ -318,7 +319,7 @@ pub struct GitActivityCell {
 }
 
 /// One hit of a commit-message search, as the Find dialogue lists them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHistoryMatch {
     pub hash: String,
@@ -331,7 +332,7 @@ pub struct GitHistoryMatch {
 /* ---------- Gerrit change states ---------- */
 
 /// One review event parsed out of a NoteDb meta commit, in the shape the webview renders.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GerritChangeEvent {
     #[serde(rename = "type")]
@@ -351,7 +352,7 @@ pub struct GerritChangeEvent {
 }
 
 /// One label vote of a review event (e.g. `Code-Review +2`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GerritVote {
     pub name: String,
@@ -359,7 +360,7 @@ pub struct GerritVote {
 }
 
 /// The review state of one Gerrit change, as the badges and the review dialog consume it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GerritChangeState {
     pub change: u64,
@@ -385,7 +386,7 @@ pub struct GerritChangeState {
 ///
 /// A lightweight tag has no tagger and no message of its own: the tagger fields are empty and the
 /// message is the tagged commit's, which is what `for-each-ref %(contents)` reports for one.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitTagDetails {
     /// The tag object for an annotated tag, the commit for a lightweight one.
@@ -408,7 +409,7 @@ pub struct GitStatusFiles {
 
 /* ---------- Log options ---------- */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum CommitOrdering {
     #[default]
@@ -418,7 +419,7 @@ pub enum CommitOrdering {
 }
 
 /// Everything `loadCommits` needs, in the shape the TypeScript side sends it.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LogOptions {
     /// The branch heads to show, or `None` to show all refs.
@@ -461,4 +462,48 @@ pub struct LogOptions {
 /// The serde default of `LogOptions::show_tags`.
 fn default_true() -> bool {
     true
+}
+
+/// The wire form of the ref-reading options, plus the stash flag `loadRepoInfo` also needs.
+/// The defaults are the ones a view load uses, so an omitted field means "the usual".
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RefOptions {
+    pub show_remote_branches: bool,
+    pub show_remote_heads: bool,
+    pub hide_remotes: Vec<String>,
+    pub show_change_refs: bool,
+    pub show_stashes: bool,
+}
+
+impl Default for RefOptions {
+    fn default() -> Self {
+        RefOptions {
+            show_remote_branches: true,
+            show_remote_heads: false,
+            hide_remotes: Vec::new(),
+            show_change_refs: false,
+            show_stashes: true,
+        }
+    }
+}
+
+impl RefOptions {
+    pub fn to_read_options(&self) -> RefReadOptions {
+        RefReadOptions {
+            show_remote_branches: self.show_remote_branches,
+            show_remote_heads: self.show_remote_heads,
+            hide_remotes: self.hide_remotes.clone(),
+            show_change_refs: self.show_change_refs,
+        }
+    }
+}
+
+/// Everything the view opens with, from one ref scan: the dropdown data and the first page.
+/// `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
+#[derive(Debug, Clone, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitViewData {
+    pub info: GitRepoInfo,
+    pub commits: GitCommitData,
 }
