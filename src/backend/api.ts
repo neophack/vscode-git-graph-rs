@@ -7,7 +7,7 @@
  * does not have yet is answered by the CLI without the calling code knowing.
  */
 
-import { loadAddon, request } from './addon';
+import { cancel, loadAddon, request } from './addon';
 import { GerritChangeState } from '../types';
 import {
 	GitActivityCell,
@@ -31,7 +31,7 @@ import {
 	LogOptions,
 	RefReadOptions
 } from './types';
-import { EngineMethods } from '../shared/engine/protocol';
+import { EngineMethod, EngineMethods } from '../shared/engine/protocol';
 
 /**
  * Everything the Git Graph View needs to read from a repository.
@@ -183,6 +183,47 @@ const DEFAULT_REF_OPTIONS: Required<RefReadOptions> = {
 	showChangeRefs: false,
 	showStashes: true
 };
+
+/**
+ * One engine request in flight, together with the handle that cancels it (task 2.9).
+ *
+ * This is the shape the host scheduler (task 4.8) consumes: it issues a request, hands the
+ * promise to whoever waits, and calls `cancel()` when a newer request of the same kind
+ * supersedes this one. Cancelling is safe at any point in the request's life — see
+ * {@link cancel} in `addon.ts`.
+ */
+export interface CancellableRequest<T> {
+	/** The request's eventual answer or `GitBackendError` (kind `Cancelled` when cancelled). */
+	readonly promise: Promise<T>;
+	/** Ask the engine to stop the request; the promise then rejects with kind `Cancelled`. */
+	cancel(): void;
+}
+
+/** The next request id, so callers that cancel never reuse an in-flight id. */
+let nextRequestId = 1;
+
+/** A fresh request id for {@link startCancellableRequest} (ids are unique per session). */
+export function issueRequestId(): number {
+	return nextRequestId++;
+}
+
+/**
+ * Issue one engine request the caller can cancel (task 2.9), through the same typed seam as
+ * `NativeBackend`'s methods. Not wired into the backend itself yet — the host scheduler (4.8)
+ * decides which calls run under cancellation.
+ */
+export function startCancellableRequest<M extends EngineMethod>(
+	repo: string,
+	method: M,
+	params: EngineMethods[M]['params'],
+	requestId: number = issueRequestId(),
+	root?: string
+): CancellableRequest<EngineMethods[M]['result']> {
+	return {
+		promise: request(repo, method, params, root, { requestId }),
+		cancel: () => cancel(requestId, root)
+	};
+}
 
 /**
  * The Rust engine, reached through the native addon.

@@ -14,20 +14,26 @@ import { EngineError, EngineMethod, EngineMethods } from '../shared/engine/proto
 import { GitBackendError, GitErrorKind } from './types';
 
 /**
- * The exports of `native/node/src/lib.rs`, as N-API presents them: seven functions, no more.
+ * The exports of `native/node/src/lib.rs`, as N-API presents them: eight functions, no more.
  * Everything the engine answers goes through `request`; the method table lives in the Rust
  * protocol, and its TypeScript mirror regenerates from there.
  */
-interface NativeAddon {
+export interface NativeAddon {
 	open(path: string): Promise<string>;
 	close(path: string): void;
 	closeAll(): void;
 	openCount(): number;
 	engineVersion(): string;
 	/** One `{"method", "params"}` call; resolves to the `{"ok"|"error"}` envelope as JSON text. */
-	request(repo: string, requestJson: string): Promise<string>;
+	request(repo: string, requestJson: string, requestId?: number): Promise<string>;
 	/** A file's raw bytes at a revision, or why they could not be read. */
-	requestBytes(repo: string, revision: string, filePath: string): Promise<BytesAnswer>;
+	requestBytes(repo: string, revision: string, filePath: string, requestId?: number): Promise<BytesAnswer>;
+	/**
+	 * Cancel the request registered under `requestId` (task 2.9): it answers the structured
+	 * `cancelled` error at its next checkpoint. Unknown and already-finished ids are no-ops, but
+	 * a cancellation ahead of a request that later runs under the same id is honored.
+	 */
+	cancel(requestId: number): void;
 }
 
 /** The answer of `requestBytes`: the file's bytes, or the structured failure. */
@@ -243,6 +249,28 @@ function errorMessage(error: unknown): string {
 }
 
 /**
+ * How a call reaches the addon. `requestId` names the request for `cancel` (task 2.9);
+ * `load` substitutes the binary loader, so tests can drive the adapter against a fake addon —
+ * the seam is injectable rather than mocked at the `require` of the `.node` binary.
+ */
+export interface AddonCallOptions {
+	/** Register the in-flight request under this id, cancellable via {@link cancel}. */
+	requestId?: number;
+	/** The loader that yields the addon; defaults to the binary loader of {@link loadAddon}. */
+	load?: () => NativeAddon;
+}
+
+/**
+ * Cancel the request registered under `requestId` (task 2.9): the engine's long-running loops
+ * unwind with the structured `cancelled` error. Safe at any time — before the request reaches
+ * the engine (the cancellation is remembered), while it runs, and after it finished (a no-op for
+ * that request). Unknown ids affect no other request.
+ */
+export function cancel(requestId: number, root?: string, options?: AddonCallOptions): void {
+	(options?.load !== undefined ? options.load() : loadAddon(root)).cancel(requestId);
+}
+
+/**
  * One engine request through the single seam: `request(repo, 'loadCommits', options)` answers
  * the method's typed result, or throws a `GitBackendError` built from the envelope's structured
  * error. The method name, its parameters and its result are all typed by the generated protocol,
@@ -252,11 +280,13 @@ export async function request<M extends EngineMethod>(
 	repo: string,
 	method: M,
 	params: EngineMethods[M]['params'],
-	root?: string
+	root?: string,
+	options?: AddonCallOptions
 ): Promise<EngineMethods[M]['result']> {
 	let raw: string;
 	try {
-		raw = await loadAddon(root).request(repo, JSON.stringify({ method, params }));
+		const addon = options?.load !== undefined ? options.load() : loadAddon(root);
+		raw = await addon.request(repo, JSON.stringify({ method, params }), options?.requestId);
 	} catch (error) {
 		throw toBackendError(error);
 	}
