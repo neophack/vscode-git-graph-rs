@@ -15,7 +15,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-const { CliBackend, NativeBackend } = await import('../out/backend/index.js');
+const { CliBackend, NativeBackend } = await import('../out/extension/git/read/backendIndex.js');
+const { isAddonAvailable } = await import('../out/extension/git/read/addonLoader.js');
+
+// The fuzz comparison needs the native engine; environments without the prebuilt addon
+// (fresh clones before the first addon build) skip the suite - the CLI leg stays covered
+// by the reader contract suite, the same gate the vitest side applies.
+const engineMissing = !isAddonAvailable();
 
 /* ---------- A seeded PRNG (mulberry32), so every repository is reproducible ---------- */
 
@@ -211,7 +217,7 @@ const sortedChanges = (changes) =>
 		.map((change) => ({ oldFilePath: change.oldFilePath, newFilePath: change.newFilePath, type: change.type, additions: change.additions, deletions: change.deletions }))
 		.sort((a, b) => `${a.newFilePath}|${a.oldFilePath}`.localeCompare(`${b.newFilePath}|${b.oldFilePath}`));
 
-describe('the backends agree on randomly generated repositories', () => {
+describe('the backends agree on randomly generated repositories', { skip: engineMissing && 'no prebuilt native engine in this environment' }, () => {
 	const seeds = [1, 2, 3, 4, 5, 6];
 	for (const seed of seeds) {
 		describe(`seed ${seed}`, () => {

@@ -153,69 +153,7 @@ describe('the source packager', () => {
 	});
 });
 
-describe('the benchmark runner', () => {
-	let repoPath;
-	let clock = 1_700_000_000;
-
-	function git(args) {
-		return execFileSync('git', args, {
-			cwd: repoPath,
-			encoding: 'utf8',
-			env: {
-				...process.env,
-				GIT_CONFIG_NOSYSTEM: '1',
-				HOME: repoPath,
-				GIT_AUTHOR_DATE: `${clock} +0000`,
-				GIT_COMMITTER_DATE: `${clock} +0000`
-			}
-		});
-	}
-
-	function commit(message) {
-		clock += 60;
-		fs.writeFileSync(path.join(repoPath, 'file.txt'), `${message}\n`);
-		git(['add', '-A']);
-		git(['commit', '--quiet', '--allow-empty', '-m', message]);
-	}
-
-	before(() => {
-		repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-bench-'));
-		git(['init', '--quiet', '--initial-branch=main']);
-		git(['config', 'user.name', 'Bench User']);
-		git(['config', 'user.email', 'bench@example.com']);
-		for (let i = 0; i < 5; i++) commit(`commit number ${i}`);
-	});
-
-	after(() => {
-		fs.rmSync(repoPath, { recursive: true, force: true });
-	});
-
-	it('compares the shipped backend with the git CLI on a view load', () => {
-		const output = runNode('bench.mjs', [repoPath, '--runs', '1']);
-		assert.match(output, /Repository: /);
-		assert.match(output, /Shipped backend: /);
-		assert.match(output, /git-cli .* median .* ms/);
-		assert.match(output, /shipped .* median .* ms/);
-		assert.match(output, /Speedup: \d+\.\d+x/);
-	});
-
-	it('times every read operation in --all mode, and can emit JSON', () => {
-		const json = JSON.parse(runNode('bench.mjs', [repoPath, '--all', '--runs', '1', '--json']));
-		assert.equal(typeof json.repository, 'string');
-		assert.equal(typeof json.backend, 'string');
-		assert.ok(Array.isArray(json.results) && json.results.length >= 18, `expected every operation to be timed, got ${json.results?.length}`);
-		for (const row of json.results) {
-			assert.ok(row.cli !== undefined && row.shipped !== undefined, `missing a backend column for ${row.operation}`);
-			// An operation may legitimately fail on a repository without the object it needs
-			// (no annotated tag, no README), but the tooling itself must never blow up.
-			assert.ok(row.shipped.error !== undefined || typeof row.shipped.median === 'number', `${row.operation} has no measurement`);
-		}
-	});
-
-	it('prints the per-operation table', () => {
-		const output = runNode('bench.mjs', [repoPath, '--all', '--runs', '1']);
-		assert.match(output, /operation\s+git-cli\s+shipped\s+speedup/);
-		assert.match(output, /getCommitDetails/);
-		assert.match(output, /searchHistory/);
-	});
-});
+// The benchmark runner and the shipped-backend comparison moved out of the legacy tree
+// (task 3.6/P2): scripts/bench.mjs is superseded by test/perf/p2-host.mjs, and the
+// engine-vs-CLI parity question is owned by the reader contract suite
+// (test/integration/reader) plus the Rust git_parity tests.

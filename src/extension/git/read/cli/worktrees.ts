@@ -3,7 +3,7 @@
  * `git worktree list --porcelain` reports them.
  */
 
-import { GitWorktree } from '../../../../backend/types';
+import { GitWorktree } from '../types';
 import { EOL, GitCli } from './process';
 
 /**

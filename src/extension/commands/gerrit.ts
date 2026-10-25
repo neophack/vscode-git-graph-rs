@@ -1,5 +1,5 @@
 import { t } from '../../i18n';
-import { extractChangeId, generateChangeId } from '../../gerrit';
+import { extractChangeId, generateChangeId } from '../integrations/gerrit/gerritProtocol';
 import { getConfig } from '../../config';
 import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../../utils/actions';
 import { UiPort } from '../../extension/platform/uiPort';

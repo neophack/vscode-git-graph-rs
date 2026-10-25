@@ -15,7 +15,7 @@
  * strings, which the Reader contract suite locks.
  */
 
-import { GitBackend } from '../../../../backend/api';
+import { GitBackend } from '../gitReader';
 import {
 	GitActivityCell,
 	GitAuthor,

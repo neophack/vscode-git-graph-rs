@@ -161,7 +161,7 @@ Module._load = function (request, ...rest) {
 };
 require(${JSON.stringify(path.join(copyRoot, 'out', 'extension.js'))});
 require(${JSON.stringify(path.join(copyRoot, 'out', 'commands.js'))});
-require(${JSON.stringify(path.join(copyRoot, 'out', 'gitGraphView.js'))});
+require(${JSON.stringify(path.join(copyRoot, 'out', 'extension', 'graphView', 'panel.js'))});
 console.log('STRIPPED-BUILD-LOADS');
 `);
 		const output = execFileSync(process.execPath, [probe], { encoding: 'utf8' });

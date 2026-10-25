@@ -10,7 +10,7 @@ import {
 	GitStash,
 	GitTagRef,
 	RefReadOptions
-} from '../../../../backend/types';
+} from '../types';
 import { EOL, GitCli, message, SEPARATOR } from './process';
 import { parseStashReflog } from './parse/log';
 

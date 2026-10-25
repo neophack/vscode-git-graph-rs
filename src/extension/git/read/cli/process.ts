@@ -15,7 +15,7 @@
 import { execFile } from 'child_process';
 import * as cp from 'child_process';
 
-import { GitBackendError, GitLineCounts } from '../../../../backend/types';
+import { GitBackendError, GitLineCounts } from '../types';
 import { GitError } from '../../process/errors';
 import { GitProcess } from '../../process/gitProcess';
 import type { AbortLike, GitSpawnFn } from '../../process/gitProcess';

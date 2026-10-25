@@ -46,7 +46,7 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 const created: unknown[][] = vi.hoisted(() => []);
-vi.mock('../../gitGraphView', () => ({
+vi.mock('../graphView/panel', () => ({
 	GitGraphView: {
 		createOrShow: (...args: unknown[]) => { created.push(args); }
 	}

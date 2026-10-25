@@ -4,7 +4,7 @@
  * (no working-tree side effects).
  */
 
-import { GitConflictPrediction } from '../../../../backend/types';
+import { GitConflictPrediction } from '../types';
 import { hasCapability } from '../../executable/capabilities';
 import { EOL, GitCli } from './process';
 

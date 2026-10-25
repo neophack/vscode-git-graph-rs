@@ -11,7 +11,7 @@ import {
 	GitStash,
 	LogOptions,
 	UNCOMMITTED
-} from '../../../../backend/types';
+} from '../types';
 import type { AbortLike } from '../../process/gitProcess';
 import { EOL, GitCli, message, SEPARATOR } from './process';
 import { LogRecord, parseLogRecord } from './parse/log';

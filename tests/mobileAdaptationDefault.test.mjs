@@ -41,7 +41,13 @@ fs.writeFileSync(path.join(repoDir, 'a.txt'), 'first\n');
 execFileSync('git', ['add', 'a.txt'], { cwd: repoDir });
 execFileSync('git', ['commit', '-q', '-m', 'first'], { cwd: repoDir });
 
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// Windows keeps transient handles on freshly-written temp trees (AV scans, indexer); the
+// cleanup is best-effort - a stuck temp dir must not fail behaviour tests that already passed.
+after(() => {
+	try {
+		fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+	} catch { /* best-effort: the OS reclaims its temp root */ }
+});
 
 const vscode = createVscodeStub({ uriScheme: 'ggs', workspaceFolders: [{ path: repoDir }] });
 const restore = installVscodeStub(vscode);

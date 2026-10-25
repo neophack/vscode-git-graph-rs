@@ -1,4 +1,4 @@
-import { GitSignature, GitSignatureStatus } from '../../../backend/types';
+import { GitSignature, GitSignatureStatus } from './types';
 
 interface GpgStatusCodeParsingDetails {
 	readonly status: GitSignatureStatus;

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GitGraphView } from '../../gitGraphView';
+import { GitGraphView } from '../graphView/panel';
 import { t } from '../../i18n';
 import { CodeReviewData, CodeReviews } from '../../extensionState';
 import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';

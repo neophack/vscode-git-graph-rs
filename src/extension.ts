@@ -1,11 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { hasEngineForPlatform, isAddonAvailable, platformKey } from './backend/addon';
+import { hasEngineForPlatform, isAddonAvailable, platformKey } from './extension/git/read/addonLoader';
 import { AskpassManager } from './askpass/askpassManager';
 import { AvatarManager } from './avatarManager';
 import { CommandManager } from './commands';
 import { getConfig } from './config';
-import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
 import { GitGraphView } from './extension/graphView/panel';
@@ -45,10 +44,8 @@ import { EventEmitter } from './utils/event';
  * The composition root (REFACTOR-PLAN task 3.6, host side): the production git layer is composed
  * here — the read backend (the Rust engine preferred, the `git` CLI answering whatever it
  * declines), the single `GitProcess` every write and runner spawn goes through, the GitWriter
- * over it, and the `GitRepository` facade the Git Graph view runs on. The legacy `DataSource` is
- * still constructed for the consumers that have not migrated (the RepoManager, the AvatarManager,
- * the command registry, the diff document provider and the two auxiliary views); it is drained
- * and deleted as those move.
+ * over it, and the `GitRepository` facade every consumer runs on (the view, the commands, the
+ * repository manager, the avatars, the diff documents and the two auxiliary views).
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
@@ -147,7 +144,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	/* ---------- The collaborators ---------- */
 
-	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
 	const avatarManager = new AvatarManager(reader, extensionState, logger);
 	const repoManager = new RepoManager(repo, gitRunner, extensionState, onDidChangeConfiguration, logger);
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
@@ -198,8 +194,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(prewarm);
 	context.subscriptions.push(askpass);
 
-	// The legacy DataSource rebuilds its backend (and the writer follows the executable through
-	// the cell) when the Git executable changes; the new layer's reader rebuilds with it.
+	// The read backend rebuilds when the Git executable changes (the writer and the runner follow
+	// the executable through the cell).
 	context.subscriptions.push(onDidChangeGitExecutable((executable) => {
 		gitCell.executable = toProcessExecutable(executable);
 		readerCell.backend = buildBackend(executable, logger);
@@ -239,7 +235,6 @@ export async function activate(context: vscode.ExtensionContext) {
 		statusBarItem,
 		repoManager,
 		avatarManager,
-		dataSource,
 		configurationEmitter,
 		extensionState,
 		gitExecutableEmitter,

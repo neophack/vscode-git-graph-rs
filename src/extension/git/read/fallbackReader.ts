@@ -8,8 +8,8 @@
  * it: nothing in this module changes.
  */
 
-import { GitBackend } from '../../../backend/api';
-import { GitBackendError } from '../../../backend/types';
+import { GitBackend } from './gitReader';
+import { GitBackendError } from './types';
 
 /** One read call, whichever reader answers it: the arguments travel through untouched. */
 type ReaderCall = (...args: unknown[]) => Promise<unknown>;

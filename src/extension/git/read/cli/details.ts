@@ -13,7 +13,7 @@ import {
 	GitFileStatus,
 	GitSignature,
 	UNCOMMITTED
-} from '../../../../backend/types';
+} from '../types';
 import { GitCli, SEPARATOR } from './process';
 import { StatusFiles, parseStatusFiles, mergeStatusFiles } from './parse/status';
 

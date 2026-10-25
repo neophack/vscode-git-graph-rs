@@ -53,8 +53,6 @@
 		"test:unit": "vitest run",
 		"test:node": "node scripts/run-tests.mjs",
 		"test:node:cov": "c8 node scripts/run-tests.mjs",
-		"bench": "node scripts/bench.mjs",
-		"bench:all": "node scripts/bench.mjs --all",
 		"analyze-log": "node scripts/analyze-log.mjs",
 		"test:automation:full": "node scripts/automation/full-test.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check",
