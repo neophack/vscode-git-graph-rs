@@ -17,8 +17,8 @@ use serde::Serialize;
 
 use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
+use crate::model::{GitFileChange, GitFileStatus, GitStatusFiles};
 use crate::repository::Repo;
-use crate::types::{GitFileChange, GitFileStatus, GitStatusFiles};
 
 /// One path's state, as the two halves of a porcelain status code.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -22,7 +22,8 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use git_graph_core::{cancel, protocol, RepoManager};
+use git_graph_core::repository::RepoManager;
+use git_graph_core::{cancel, protocol};
 
 /// Answer one protocol request against the repository containing `repo` (any path inside it).
 ///

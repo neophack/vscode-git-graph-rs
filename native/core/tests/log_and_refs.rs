@@ -3,10 +3,10 @@
 #[macro_use]
 mod common;
 
-use git_graph_core::log::{self, WalkOptions};
-use git_graph_core::refs::read_refs;
+use git_graph_core::model::{CommitOrdering, RefReadOptions};
+use git_graph_core::read::log::{self, WalkOptions};
+use git_graph_core::read::refs::read_refs;
 use git_graph_core::repository::Repo;
-use git_graph_core::types::{CommitOrdering, RefReadOptions};
 
 use common::TestRepo;
 

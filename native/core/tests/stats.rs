@@ -7,8 +7,8 @@ mod common;
 
 use git_graph_core::cancel::Cancel;
 
+use git_graph_core::read::stats;
 use git_graph_core::repository::Repo;
-use git_graph_core::stats;
 
 use common::TestRepo;
 

@@ -20,12 +20,12 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::error::{Result, ResultExt};
+use crate::model::{GerritChangeEvent, GerritChangeState, GerritVote};
 use crate::repository::Repo;
-use crate::types::{GerritChangeEvent, GerritChangeState, GerritVote};
 
 /// One commit of a NoteDb meta history: who acted, when, and the verbatim message.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MetaCommitRecord {
+pub(crate) struct MetaCommitRecord {
     /// The Gerrit user that performed the action (e.g. "Gerrit User 1000018").
     pub committer: String,
     /// The commit timestamp, in seconds since the Unix epoch.
@@ -36,7 +36,7 @@ pub struct MetaCommitRecord {
 
 /// A meta commit parsed into an event plus the state transitions it carries.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsedMetaCommit {
+pub(crate) struct ParsedMetaCommit {
     pub event: GerritChangeEvent,
     pub patchset: u32,
     pub status: Option<&'static str>,
@@ -158,7 +158,7 @@ fn read_meta_history(git: &gix::Repository, meta_ref: &str) -> Result<Vec<MetaCo
 /// Parse a single NoteDb meta commit message into an event plus its state fields.
 ///
 /// Returns `None` when the message is not a recognised review event.
-pub fn parse_meta_commit(record: &MetaCommitRecord) -> Option<ParsedMetaCommit> {
+pub(crate) fn parse_meta_commit(record: &MetaCommitRecord) -> Option<ParsedMetaCommit> {
     let message = &record.message;
     let lines = split_lines(message);
     let header = lines.first().copied().unwrap_or("").trim();
@@ -313,7 +313,10 @@ pub fn parse_meta_commit(record: &MetaCommitRecord) -> Option<ParsedMetaCommit> 
 /// Parse the full NoteDb meta history of a change into its state.
 ///
 /// `records` are newest first, as the history walk and `git log` produce them.
-pub fn parse_meta_history(change: u64, records: &[MetaCommitRecord]) -> Option<GerritChangeState> {
+pub(crate) fn parse_meta_history(
+    change: u64,
+    records: &[MetaCommitRecord],
+) -> Option<GerritChangeState> {
     if records.is_empty() {
         return None;
     }
@@ -499,3 +502,245 @@ grammar_regex!(
     regex_commit_multiline,
     r"(?m)^Commit:\s*([0-9a-f]{4,40})\s*$"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_meta_commit, parse_meta_history, MetaCommitRecord};
+
+    /// A record with the given committer, timestamp and message.
+    fn record(committer: &str, timestamp: i64, message: &str) -> MetaCommitRecord {
+        MetaCommitRecord {
+            committer: committer.to_string(),
+            timestamp,
+            message: message.to_string(),
+        }
+    }
+
+    #[test]
+    fn recognises_the_create_change_event() {
+        let parsed = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_060,
+            "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\n",
+        ))
+        .expect("a create record is a review event");
+        assert_eq!(parsed.event.kind, "created");
+        assert_eq!(parsed.patchset, 1);
+        assert_eq!(parsed.event.patchset, 1);
+    }
+
+    #[test]
+    fn collects_label_footers_into_votes() {
+        let parsed = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_120,
+            "Patch Set 2: Code-Review+2\n\nPatch-set: 2\nLabel: Code-Review=+2\n",
+        ))
+        .expect("a vote record is a review event");
+        assert_eq!(parsed.event.kind, "vote");
+        let labels = parsed.event.labels.as_ref().expect("the votes are carried");
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "Code-Review");
+        assert_eq!(labels[0].value, 2);
+        assert_eq!(parsed.patchset, 2); // the "Patch Set N:" header overrides the footer
+    }
+
+    #[test]
+    fn reads_a_header_only_vote_without_a_label_footer() {
+        // The canonical NoteDb shape of a modern vote: "Patch Set N: Label±V" with NO space before
+        // the value and no `Label:` footer at all — the header is then the only evidence of the
+        // vote, and a miss degrades the record to a comment (silently dropping every badge).
+        let parsed = parse_meta_commit(&record(
+            "Reviewer",
+            1_600_000_150,
+            "Patch Set 2: Code-Review+2\n\nPatch-set: 2\nCommit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+        ))
+        .expect("a vote record is a review event");
+        assert_eq!(parsed.event.kind, "vote");
+        let labels = parsed.event.labels.as_ref().expect("the votes are carried");
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "Code-Review");
+        assert_eq!(labels[0].value, 2);
+    }
+
+    #[test]
+    fn classifies_restore_ready_for_review_as_ready() {
+        // "Restore Ready for Review" readies the change in the same record that restores it: the
+        // plain "Restore" fallback must not swallow it and leave the change stuck as WIP.
+        let parsed = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_300,
+            "Restore Ready for Review\n\nPatch-set: 2\n",
+        ))
+        .expect("a restore-ready record is a review event");
+        assert_eq!(parsed.event.kind, "ready");
+        assert_eq!(parsed.wip, Some(false));
+        assert_eq!(parsed.status, Some("new"));
+    }
+
+    #[test]
+    fn resolves_the_submitter_of_a_merge_from_the_body() {
+        let parsed = parse_meta_commit(&record(
+            "Gerrit User 1000018",
+            1_600_000_180,
+            "Update patch set 3\n\nChange has been successfully merged by Alice Developer <alice@example.com>\n\nPatch-set: 3\nStatus: merged\n",
+        ))
+        .expect("a submit record is a review event");
+        assert_eq!(parsed.event.kind, "merged");
+        assert_eq!(parsed.status, Some("merged"));
+        assert_eq!(parsed.event.reviewer.as_deref(), Some("Alice Developer"));
+    }
+
+    #[test]
+    fn maps_an_abandoned_header_to_the_abandoned_status() {
+        let parsed =
+            parse_meta_commit(&record("Dev", 1_600_000_240, "Abandoned\n\nPatch-set: 2\n"))
+                .expect("an abandon record is a review event");
+        assert_eq!(parsed.event.kind, "abandoned");
+        assert_eq!(parsed.status, Some("abandoned"));
+    }
+
+    #[test]
+    fn recognises_work_in_progress_transitions() {
+        let wip_started = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_300,
+            "Start Work In Progress\n\nPatch-set: 1\n",
+        ))
+        .expect("a WIP start is a review event");
+        assert_eq!(wip_started.event.kind, "wip");
+        assert_eq!(wip_started.wip, Some(true));
+
+        let wip_upload = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_360,
+            "Uploaded patch set 2 (WIP)\n\nPatch-set: 2\nWork-in-progress: true\n",
+        ))
+        .expect("a WIP upload is a review event");
+        // The WIP shape of an upload must be classified before the generic "Uploaded patch set" one
+        assert_eq!(wip_upload.event.kind, "wip");
+        assert_eq!(wip_upload.wip, Some(true));
+        assert_eq!(wip_upload.patchset, 2);
+
+        let plain_upload = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_420,
+            "Uploaded patch set 2.\n\nPatch-set: 2\n",
+        ))
+        .expect("an upload is a review event");
+        assert_eq!(plain_upload.event.kind, "patchset");
+
+        let ready = parse_meta_commit(&record(
+            "Dev",
+            1_600_000_480,
+            "Remove WIP\n\nPatch-set: 1\nWork-in-progress: false\n",
+        ))
+        .expect("a ready-for-review record is a review event");
+        assert_eq!(ready.event.kind, "ready");
+        assert_eq!(ready.wip, Some(false));
+    }
+
+    #[test]
+    fn rejects_records_without_any_patchset_reference() {
+        assert!(parse_meta_commit(&record("Dev", 1_600_000_540, "Status: new\n")).is_none());
+    }
+
+    #[test]
+    fn derives_the_state_from_the_newest_first_records() {
+        // Newest first, as the history walk and `git log` produce: a merged change of two patchsets
+        // with a +2 on the second.
+        let head2 = "0123456789012345678901234567890123456789";
+        let head1 = "9876543210987654321098765432109876543210";
+        let records = vec![
+            record(
+                "Gerrit User 1000018",
+                1_600_000_600,
+                "Update patch set 3\n\nChange has been successfully merged by Alice Developer\n\nPatch-set: 1\nStatus: merged\nCommit: 1111111111111111111111111111111111111111\n",
+            ),
+            record(
+                "Reviewer",
+                1_600_000_540,
+                "Patch Set 2: Code-Review+2\n\nPatch-set: 2\nLabel: Code-Review=+2\nCommit: 0123456789012345678901234567890123456789\n",
+            ),
+            record(
+                "Dev",
+                1_600_000_480,
+                "Uploaded patch set 2.\n\nPatch-set: 2\nCommit: 9876543210987654321098765432109876543210\n",
+            ),
+            record(
+                "Dev",
+                1_600_000_420,
+                "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\nCommit: 9876543210987654321098765432109876543210\n",
+            ),
+        ];
+        let state = parse_meta_history(41466, &records).expect("the history carries commit hashes");
+        assert_eq!(state.change, 41466);
+        assert_eq!(state.patchset, 2);
+        assert_eq!(state.status, "merged");
+        assert!(!state.wip);
+        assert_eq!(state.code_review, 2);
+        assert_eq!(state.verified, 0);
+        // The merged record references an older patchset's commit (a stale footer Gerrit kept): the
+        // latest patchset's own hash must win
+        assert_eq!(state.head_hash, head2);
+        assert_eq!(state.events.len(), 4);
+        assert_eq!(state.events[0].kind, "merged"); // newest first
+        assert_eq!(state.events[3].kind, "created");
+        let _ = head1;
+    }
+
+    #[test]
+    fn prefers_the_strongest_vote_even_when_recorded_earlier() {
+        let records = vec![
+            record(
+                "Dev",
+                1_600_000_600,
+                "Uploaded patch set 3.\n\nPatch-set: 3\nCommit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            ),
+            record(
+                "Reviewer",
+                1_600_000_540,
+                "Patch Set 2: Code-Review+2\n\nPatch-set: 2\nLabel: Code-Review=+2\nCommit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+            ),
+            record(
+                "Other Reviewer",
+                1_600_000_480,
+                "Patch Set 1: Code-Review-1\n\nPatch-set: 1\nLabel: Code-Review=-1\nCommit: cccccccccccccccccccccccccccccccccccccccc\n",
+            ),
+        ];
+        let state = parse_meta_history(41, &records).expect("the history carries commit hashes");
+        assert_eq!(state.code_review, 2);
+        assert_eq!(state.patchset, 3);
+        assert_eq!(state.status, "new");
+    }
+
+    #[test]
+    fn falls_back_to_any_commit_footer_when_the_latest_patchset_has_none() {
+        let records = vec![
+            record(
+                "Dev",
+                1_600_000_600,
+                "Uploaded patch set 2.\n\nPatch-set: 2\n",
+            ),
+            record(
+                "Dev",
+                1_600_000_540,
+                "Create change\n\nUploaded patch set 1.\n\nPatch-set: 1\nCommit: dddddddddddddddddddddddddddddddddddddddd\n",
+            ),
+        ];
+        let state = parse_meta_history(42, &records).expect("a commit hash exists in the history");
+        assert_eq!(state.patchset, 2);
+        assert_eq!(state.head_hash, "dddddddddddddddddddddddddddddddddddddddd");
+    }
+
+    #[test]
+    fn returns_none_when_no_record_carries_a_commit_hash() {
+        let records = vec![record(
+            "Dev",
+            1_600_000_600,
+            "Uploaded patch set 1.\n\nPatch-set: 1\n",
+        )];
+        assert!(parse_meta_history(43, &records).is_none());
+        assert!(parse_meta_history(44, &[]).is_none());
+    }
+}

@@ -4,20 +4,20 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 
 use crate::cancel::Cancel;
-use crate::diff;
 use crate::error::{Error, Result, ResultExt};
-use crate::repository::Repo;
-use crate::text::CommitEncoding;
-use crate::types::{
+use crate::model::{
     GitCommitDetails, GitCommitStash, GitCommitSummary, GitFileStatus, GitSignature,
     GitSignatureStatus, GitTagDetails, UNCOMMITTED,
 };
+use crate::read::diff;
+use crate::repository::Repo;
+use crate::text::CommitEncoding;
 
 /// Read a commit in full, including the file statuses of the diff against its first parent.
 ///
 /// The per-file line counts are deliberately **not** computed here: each one reads two blobs,
 /// which on a commit touching thousands of files dominates the load. They arrive separately, for
-/// the paths the view asks about, through [`crate::diff::line_counts`].
+/// the paths the view asks about, through [`crate::read::diff::line_counts`].
 pub fn commit_details(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
     // A replaced commit's parents and tree are the replacement's in git; see
     // `Repo::uses_replace_refs` for why the engine cannot show them.
@@ -32,7 +32,7 @@ pub fn commit_details(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
 }
 
 /// Read the commit's own fields, without touching its diff.
-pub fn commit_details_base(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
+pub(crate) fn commit_details_base(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
@@ -74,7 +74,7 @@ pub fn commit_details_base(repo: &Repo, hash: &str) -> Result<GitCommitDetails> 
 /// A stash is diffed against the commit it was taken from rather than against its own first
 /// parent, and — when it was taken with `--include-untracked` — the files recorded in its third
 /// parent are appended as untracked rather than as added. As with a plain commit, the line counts
-/// are left for [`crate::diff::line_counts`], called with the stash's base as `from`.
+/// are left for [`crate::read::diff::line_counts`], called with the stash's base as `from`.
 pub fn stash_details(repo: &Repo, hash: &str, stash: &GitCommitStash) -> Result<GitCommitDetails> {
     let mut details = commit_details_base(repo, hash)?;
 
@@ -114,7 +114,7 @@ pub fn uncommitted_details(repo: &Repo, cancel: Cancel) -> Result<GitCommitDetai
         committer_date: 0,
         signature: None,
         body: String::new(),
-        file_changes: crate::status::uncommitted_changes(repo, cancel)?,
+        file_changes: crate::read::status::uncommitted_changes(repo, cancel)?,
     })
 }
 

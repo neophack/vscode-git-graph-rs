@@ -79,7 +79,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Attach a kind to any error that only knows how to display itself.
 ///
 /// gix returns a distinct error type per operation, so there is no single `From` impl to write.
-pub trait ResultExt<T> {
+pub(crate) trait ResultExt<T> {
     /// Map the error to [`ErrorKind::Git`], prefixed with `context`.
     fn git_ctx(self, context: &str) -> Result<T>;
 }

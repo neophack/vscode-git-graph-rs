@@ -12,8 +12,8 @@
 use std::path::Path;
 
 use crate::error::{Error, ErrorKind, Result};
+use crate::model::{ConfigSnapshot, RemoteConfig};
 use crate::repository::Repo;
-use crate::types::{ConfigSnapshot, RemoteConfig};
 
 /// Read the configuration values the view shows.
 pub fn read_config(repo: &Repo) -> Result<ConfigSnapshot> {

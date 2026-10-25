@@ -34,13 +34,13 @@ use std::sync::Arc;
 
 use crate::cancel::Cancel;
 use crate::error::Result;
-use crate::repository::{Repo, RepoManager};
-use crate::status::ScmChange;
-use crate::types::{
+use crate::model::{
     CommitFile, CommitOrdering, ConfigSnapshot, GitActivityCell, GitAuthor, GitAuthorStat,
     GitCommitData, GitCommitDetails, GitFileChange, GitHistoryMatch, GitRepoInfo, GitStash,
     GitTagDetails, LogOptions, RefReadOptions, RefSnapshot,
 };
+use crate::read::status::ScmChange;
+use crate::repository::{Repo, RepoManager};
 use serde::Deserialize;
 
 /// How a graph page is loaded. `Default` is the view's own default request: every local
@@ -119,7 +119,7 @@ impl GraphOptions {
 
 /// A revision as the engine's file and diff calls take it: a hash, a ref name, `HEAD~2`, …,
 /// or one of the two special sides of a working tree.
-pub const WORKING_TREE: &str = crate::types::UNCOMMITTED;
+pub const WORKING_TREE: &str = crate::model::UNCOMMITTED;
 /// The staged copy of a file (`git show :path`).
 pub const INDEX: &str = ":index";
 
@@ -169,57 +169,61 @@ impl Engine {
     /// Branch names, tag names, remote names, stashes and HEAD - what a graph host shows in
     /// its dropdowns before (or alongside) the first page.
     pub fn info(&self, options: &GraphOptions) -> Result<GitRepoInfo> {
-        crate::graph::repo_info(&self.repo, &options.to_ref_options(), true)
+        crate::read::graph::repo_info(&self.repo, &options.to_ref_options(), true)
     }
 
     /// One page of the commit graph, with the refs attached to each commit.
     pub fn graph(&self, options: &GraphOptions) -> Result<GitCommitData> {
         let remotes = self.repo.remote_names();
-        crate::graph::load_commits(&self.repo, &options.to_log_options(remotes), Cancel::none())
+        crate::read::graph::load_commits(
+            &self.repo,
+            &options.to_log_options(remotes),
+            Cancel::none(),
+        )
     }
 
     /// Every ref the graph annotates commits with, plus the branch and tag name lists.
     pub fn refs(&self, options: &GraphOptions) -> Result<RefSnapshot> {
-        crate::refs::read_refs(&self.repo, &options.to_ref_options())
+        crate::read::refs::read_refs(&self.repo, &options.to_ref_options())
     }
 
     pub fn stashes(&self) -> Result<Vec<GitStash>> {
-        crate::stash::read_stashes(&self.repo)
+        crate::read::stash::read_stashes(&self.repo)
     }
 
     /// Search commit messages, newest first (`git log --all -E -i --grep`).
     pub fn search_history(&self, query: &str) -> Result<Vec<GitHistoryMatch>> {
-        crate::log::search_history(&self.repo, query, Cancel::none())
+        crate::read::log::search_history(&self.repo, query, Cancel::none())
     }
 
     /* ---------- Commits ---------- */
 
     /// A commit in full: message, author, signature, parents and the files it changed.
     pub fn commit(&self, hash: &str) -> Result<GitCommitDetails> {
-        crate::details::commit_details(&self.repo, hash)
+        crate::read::details::commit_details(&self.repo, hash)
     }
 
     /// The full message bodies of several commits at once.
     pub fn commit_bodies(&self, hashes: &[String]) -> Result<BTreeMap<String, String>> {
-        crate::details::commit_bodies(&self.repo, hashes)
+        crate::read::details::commit_bodies(&self.repo, hashes)
     }
 
     pub fn commit_subject(&self, hash: &str) -> Result<String> {
-        crate::details::commit_subject(&self.repo, hash)
+        crate::read::details::commit_subject(&self.repo, hash)
     }
 
     pub fn tag(&self, name: &str) -> Result<GitTagDetails> {
-        crate::details::tag_details(&self.repo, name)
+        crate::read::details::tag_details(&self.repo, name)
     }
 
     /// The files changed between two revisions; `to` may be [`WORKING_TREE`].
     pub fn diff(&self, from: &str, to: &str) -> Result<Vec<GitFileChange>> {
-        crate::diff::diff_revisions(&self.repo, from, to)
+        crate::read::diff::diff_revisions(&self.repo, from, to)
     }
 
     /// The files a single commit changed against its first parent.
     pub fn commit_files(&self, hash: &str) -> Result<Vec<GitFileChange>> {
-        crate::diff::diff_commit(&self.repo, hash)
+        crate::read::diff::diff_commit(&self.repo, hash)
     }
 
     /* ---------- Files ---------- */
@@ -244,14 +248,14 @@ impl Engine {
             });
         }
         if revision == INDEX {
-            return crate::blob::index_file(&self.repo, path);
+            return crate::read::blob::index_file(&self.repo, path);
         }
-        crate::blob::commit_file(&self.repo, revision, path)
+        crate::read::blob::commit_file(&self.repo, revision, path)
     }
 
     /// The unified diff of one file in one commit, against its first parent.
     pub fn file_diff(&self, hash: &str, path: &str) -> Result<String> {
-        crate::blob::commit_file_diff(&self.repo, hash, path)
+        crate::read::blob::commit_file_diff(&self.repo, hash, path)
     }
 
     /* ---------- The working tree ---------- */
@@ -259,51 +263,51 @@ impl Engine {
     /// The working tree's changes, staged and unstaged halves apart, conflicts flagged - what
     /// a Source Control view lists.
     pub fn status(&self) -> Result<Vec<ScmChange>> {
-        crate::status::scm_changes(&self.repo, Cancel::none())
+        crate::read::status::scm_changes(&self.repo, Cancel::none())
     }
 
     /// Whether anything in the tracked files is uncommitted (a cheaper question than
-    /// [`Engine::status`]; untracked files do not count — see [`crate::status::is_dirty`]).
+    /// [`Engine::status`]; untracked files do not count — see [`crate::read::status::is_dirty`]).
     pub fn is_dirty(&self) -> Result<bool> {
-        crate::status::is_dirty(&self.repo)
+        crate::read::status::is_dirty(&self.repo)
     }
 
     /* ---------- Configuration and statistics ---------- */
 
     /// The repository's remotes, user identity and the settings the graph reads.
     pub fn config(&self) -> Result<ConfigSnapshot> {
-        crate::config::read_config(&self.repo)
+        crate::read::config::read_config(&self.repo)
     }
 
     pub fn current_branch(&self) -> Result<Option<String>> {
-        crate::config::current_branch_name(&self.repo)
+        crate::read::config::current_branch_name(&self.repo)
     }
 
     pub fn upstream_of_current_branch(&self) -> Result<Option<String>> {
-        crate::config::current_branch_upstream(&self.repo)
+        crate::read::config::current_branch_upstream(&self.repo)
     }
 
     pub fn remote_url(&self, remote: &str) -> Result<Option<String>> {
-        crate::config::remote_url(&self.repo, remote)
+        crate::read::config::remote_url(&self.repo, remote)
     }
 
     pub fn submodules(&self) -> Result<Vec<String>> {
-        crate::config::submodules(&self.repo)
+        crate::read::config::submodules(&self.repo)
     }
 
     /// Every distinct author, for an author filter.
     pub fn authors(&self) -> Result<Vec<GitAuthor>> {
-        crate::log::authors(&self.repo, Cancel::none())
+        crate::read::log::authors(&self.repo, Cancel::none())
     }
 
     /// Commits per author.
     pub fn author_stats(&self) -> Result<Vec<GitAuthorStat>> {
-        crate::stats::author_stats(&self.repo, Cancel::none())
+        crate::read::stats::author_stats(&self.repo, Cancel::none())
     }
 
     /// Commits per day, for an activity heat map.
     pub fn activity(&self) -> Result<Vec<GitActivityCell>> {
-        crate::stats::activity_heatmap(&self.repo, Cancel::none())
+        crate::read::stats::activity_heatmap(&self.repo, Cancel::none())
     }
 }
 

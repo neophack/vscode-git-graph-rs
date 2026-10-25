@@ -19,12 +19,13 @@ use std::process::Command;
 
 use common::TestRepo;
 use git_graph_core::cancel::Cancel;
-use git_graph_core::incremental;
-use git_graph_core::repository::Repo;
-use git_graph_core::types::{
+use git_graph_core::model::{
     AnnotateParams, CommitOrdering, LogOptions, RefOptions, RefReadOptions,
 };
-use git_graph_core::{graph, protocol};
+use git_graph_core::protocol;
+use git_graph_core::read::graph;
+use git_graph_core::read::incremental;
+use git_graph_core::repository::Repo;
 use serde::Serialize;
 
 /* ---------- A seeded generator, so every case is reproducible ---------- */

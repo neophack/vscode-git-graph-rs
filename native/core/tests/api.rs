@@ -6,7 +6,7 @@
 mod common;
 
 use git_graph_core::engine::{Engine, GraphOptions, INDEX, WORKING_TREE};
-use git_graph_core::types::GitFileStatus;
+use git_graph_core::model::GitFileStatus;
 
 use common::TestRepo;
 

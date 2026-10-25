@@ -19,9 +19,9 @@ use gix::ObjectId;
 
 use crate::cancel::Cancel;
 use crate::error::{Error, Result, ResultExt};
+use crate::model::{CommitOrdering, CommitRecord, GitAuthor, GitHistoryMatch};
 use crate::repository::{Repo, Shallow};
 use crate::text::{self, CommitEncoding};
-use crate::types::{CommitOrdering, CommitRecord, GitAuthor, GitHistoryMatch};
 
 /// How many commits are read for every commit displayed, so that the topological re-ordering has
 /// enough of the graph to be exact over the page it returns.
@@ -55,7 +55,7 @@ pub struct WalkOptions {
 #[derive(Debug, Clone, Default)]
 pub struct WalkResult {
     /// Every commit the walk read, in walk order, after any filter re-parenting. This is the
-    /// unit the incremental cache ([`crate::incremental`]) stores and continues from: a later
+    /// unit the incremental cache ([`crate::read::incremental`]) stores and continues from: a later
     /// load that only adds commits re-orders this list together with the new part, instead of
     /// reading it again.
     pub window: Vec<CommitRecord>,
@@ -443,7 +443,7 @@ impl PartialOrd for Ready {
 
 /// Topologically sort `records`, ranking the commits that are ready to be shown by `ordering`.
 ///
-/// Public because the incremental traversal ([`crate::incremental`]) re-orders a merged window —
+/// Public because the incremental traversal ([`crate::read::incremental`]) re-orders a merged window —
 /// the new records plus a cached one — through exactly this function, which is what makes its
 /// page the page a full walk would have produced.
 pub fn order_records(

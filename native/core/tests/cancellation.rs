@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use common::TestRepo;
 use git_graph_core::cancel::Registry;
-use git_graph_core::incremental;
 use git_graph_core::protocol;
+use git_graph_core::read::incremental;
 use serde_json::Value;
 
 /// These tests share the process-global registries (repository handles, cancellation ids) with

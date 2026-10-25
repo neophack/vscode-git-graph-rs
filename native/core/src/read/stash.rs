@@ -9,8 +9,8 @@
 //! used — is a tree of the untracked files. The view needs the first and the third.
 
 use crate::error::Result;
+use crate::model::GitStash;
 use crate::repository::Repo;
-use crate::types::GitStash;
 
 /// Read every stash entry, newest first.
 ///

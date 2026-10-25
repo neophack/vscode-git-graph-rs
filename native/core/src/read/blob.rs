@@ -8,10 +8,10 @@
 use gix::diff::blob::unified_diff::{ConsumeHunk, ContextSize, DiffLineKind, HunkHeader};
 use gix::diff::blob::{diff_with_slider_heuristics, Algorithm, InternedInput, UnifiedDiff};
 
-use crate::diff;
 use crate::error::{Error, Result, ResultExt};
+use crate::model::CommitFile;
+use crate::read::diff;
 use crate::repository::Repo;
-use crate::types::CommitFile;
 
 /// How far into a blob git looks before deciding it is binary: a NUL byte within the first 8000
 /// bytes marks the blob binary, everything else is diffed as text.
@@ -195,7 +195,7 @@ pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<Stri
         }
         _ => {}
     }
-    if change.kind == crate::types::GitFileStatus::Renamed {
+    if change.kind == crate::model::GitFileStatus::Renamed {
         out.push_str(&format!("rename from {old_path}\nrename to {new_path}\n"));
     }
 

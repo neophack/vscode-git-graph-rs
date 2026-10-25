@@ -12,17 +12,17 @@ use std::collections::HashMap;
 
 use crate::cancel::Cancel;
 use crate::error::Result;
-use crate::incremental;
-use crate::log::{self, WalkOptions};
-use crate::refs::read_refs;
-use crate::repository::Repo;
-use crate::stash::read_stashes;
-use crate::status;
-use crate::types::{
+use crate::model::{
     AnnotateParams, AnnotateResult, GitCommit, GitCommitData, GitCommitRefs, GitCommitRemote,
     GitCommitStash, GitCommitTag, GitRefData, GitRepoInfo, GitStash, GitViewData, LogOptions,
     RefReadOptions, UNCOMMITTED,
 };
+use crate::read::incremental;
+use crate::read::log::{self, WalkOptions};
+use crate::read::refs::read_refs;
+use crate::read::stash::read_stashes;
+use crate::read::status;
+use crate::repository::Repo;
 
 /// Everything the view's `loadRepoInfo` request needs.
 ///
@@ -203,7 +203,7 @@ fn load_page(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Page> 
     // options only needs commits added on top of what it already walked, walk just the new part
     // and re-order it together with the cached window — `records` ends up the same list either
     // way. Guard failures (history rewritten, fetched old dates, filtered walks) answer `None`
-    // and the full walk below takes over; see `crate::incremental` for the guarantees.
+    // and the full walk below takes over; see `crate::read::incremental` for the guarantees.
     let key = incremental::CacheKey::of(options);
     let cacheable = incremental::eligible(options);
     let window = match cacheable

@@ -26,18 +26,18 @@ use ts_rs::{Config, TypeVisitor, TS};
 
 use crate::cancel::{Cancel, Registry};
 use crate::error::{Error, Result};
-use crate::repository::{Repo, RepoManager};
-use crate::status::ScmChange;
-use crate::types::{
+use crate::model::{
     AnnotateParams, AnnotateResult, CommitFile, ConfigSnapshot, GerritChangeState, GitActivityCell,
     GitAuthor, GitAuthorStat, GitCommitData, GitCommitDetails, GitCommitStash, GitCommitSummary,
     GitFileChange, GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo, GitStash,
     GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot,
 };
+use crate::read::status::ScmChange;
+use crate::repository::{Repo, RepoManager};
 
 /// What a handler sees: the repository path the request names, a warm handle on demand, and the
 /// request's cancellation state (task 2.9) for the handlers whose work loops.
-pub struct Context<'a> {
+pub(crate) struct Context<'a> {
     repo_path: &'a str,
     cancel: Cancel,
 }
@@ -88,7 +88,7 @@ macro_rules! protocol {
             }
 
             /// Run the request and serialise its result.
-            pub fn answer(self, context: &Context<'_>) -> Result<Value> {
+            pub(crate) fn answer(self, context: &Context<'_>) -> Result<Value> {
                 match self {
                     $(Request::$variant($p) => {
                         let $ctx = context;
@@ -116,9 +116,18 @@ macro_rules! protocol {
                 ));
             )*
             declarations.visit_root::<Error>(&config);
+            // Declarations are emitted sorted by name, not in traversal order: the order the type
+            // visitor reaches them in is fixed per compilation of this crate (ts-rs's derive emits
+            // its per-struct dependency walks from a hash set), so relying on it would reshuffle
+            // the generated module on every rebuild and churn the file for no content change.
+            let ordered = declarations
+                .output
+                .values()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join("\n");
             format!(
-                "{GENERATED_HEADER}\n{}\n/** Every engine method: its parameters and its result. */\nexport interface EngineMethods {{\n{methods}}}\n\nexport type EngineMethod = keyof EngineMethods;\n",
-                declarations.output.join("\n"),
+                "{GENERATED_HEADER}\n{ordered}\n/** Every engine method: its parameters and its result. */\nexport interface EngineMethods {{\n{methods}}}\n\nexport type EngineMethod = keyof EngineMethods;\n",
             )
         }
     };
@@ -149,92 +158,92 @@ protocol! {
     /* ---------- The graph and its refs ---------- */
 
     /// The view's opening load — `loadRepoInfo` and `loadCommits` from one ref scan.
-    "loadView" => LoadView(LogOptions) -> GitViewData = |ctx, options| crate::graph::load_view(&*ctx.repo()?, &options, ctx.cancel());
+    "loadView" => LoadView(LogOptions) -> GitViewData = |ctx, options| crate::read::graph::load_view(&*ctx.repo()?, &options, ctx.cancel());
     "loadRepoInfo" => LoadRepoInfo(RefOptions) -> GitRepoInfo = |ctx, options| {
-        crate::graph::repo_info(&*ctx.repo()?, &options.to_read_options(), options.show_stashes)
+        crate::read::graph::repo_info(&*ctx.repo()?, &options.to_read_options(), options.show_stashes)
     };
-    "loadCommits" => LoadCommits(LogOptions) -> GitCommitData = |ctx, options| crate::graph::load_commits(&*ctx.repo()?, &options, ctx.cancel());
+    "loadCommits" => LoadCommits(LogOptions) -> GitCommitData = |ctx, options| crate::read::graph::load_commits(&*ctx.repo()?, &options, ctx.cancel());
     "loadRefs" => LoadRefs(RefOptions) -> GitRefData = |ctx, options| {
-        crate::refs::read_refs(&*ctx.repo()?, &options.to_read_options()).map(|snapshot| snapshot.ref_data)
+        crate::read::refs::read_refs(&*ctx.repo()?, &options.to_read_options()).map(|snapshot| snapshot.ref_data)
     };
     /// Re-read the repository's refs — the refs-only refresh of the operate path (§3.8.3). One
     /// scan, no commits walked and no stashes read; answers the branch/tag name lists and the
     /// checked-out branch alongside the raw ref data, where `loadRefs` answers the raw data alone.
-    "refs" => Refs(RefOptions) -> RefSnapshot = |ctx, options| crate::refs::read_refs(&*ctx.repo()?, &options.to_read_options());
+    "refs" => Refs(RefOptions) -> RefSnapshot = |ctx, options| crate::read::refs::read_refs(&*ctx.repo()?, &options.to_read_options());
     /// Re-annotate a commit list the caller already holds with freshly read refs, without
     /// walking a single commit — the other half of the refs-only refresh. A full `loadCommits`
     /// of the same options attaches the same labels to the same commits.
-    "annotate" => Annotate(AnnotateParams) -> AnnotateResult = |ctx, p| crate::graph::annotate(&*ctx.repo()?, &p);
+    "annotate" => Annotate(AnnotateParams) -> AnnotateResult = |ctx, p| crate::read::graph::annotate(&*ctx.repo()?, &p);
     /// The working tree's changes, staged and unstaged halves apart.
-    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::status::scm_changes(&*ctx.repo()?, ctx.cancel());
+    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::read::status::scm_changes(&*ctx.repo()?, ctx.cancel());
     "countUncommittedChanges" => CountUncommittedChanges(UntrackedParams) -> usize = |ctx, p| {
-        crate::status::count_changes(&*ctx.repo()?, p.include_untracked, ctx.cancel())
+        crate::read::status::count_changes(&*ctx.repo()?, p.include_untracked, ctx.cancel())
     };
 
     /* ---------- Commits ---------- */
 
-    "commitDetails" => CommitDetails(HashParams) -> GitCommitDetails = |ctx, p| crate::details::commit_details(&*ctx.repo()?, &p.hash);
-    "commitBodies" => CommitBodies(HashesParams) -> BTreeMap<String, String> = |ctx, p| crate::details::commit_bodies(&*ctx.repo()?, &p.hashes);
-    "commitSubject" => CommitSubject(HashParams) -> String = |ctx, p| crate::details::commit_subject(&*ctx.repo()?, &p.hash);
+    "commitDetails" => CommitDetails(HashParams) -> GitCommitDetails = |ctx, p| crate::read::details::commit_details(&*ctx.repo()?, &p.hash);
+    "commitBodies" => CommitBodies(HashesParams) -> BTreeMap<String, String> = |ctx, p| crate::read::details::commit_bodies(&*ctx.repo()?, &p.hashes);
+    "commitSubject" => CommitSubject(HashParams) -> String = |ctx, p| crate::read::details::commit_subject(&*ctx.repo()?, &p.hash);
     "commitSummaries" => CommitSummaries(HashesParams) -> BTreeMap<String, GitCommitSummary> = |ctx, p| {
-        crate::details::commit_summaries(&*ctx.repo()?, &p.hashes)
+        crate::read::details::commit_summaries(&*ctx.repo()?, &p.hashes)
     };
-    "tagDetails" => TagDetails(TagParams) -> GitTagDetails = |ctx, p| crate::details::tag_details(&*ctx.repo()?, &p.tag_name);
-    "stashDetails" => StashDetails(StashParams) -> GitCommitDetails = |ctx, p| crate::details::stash_details(&*ctx.repo()?, &p.hash, &p.stash);
+    "tagDetails" => TagDetails(TagParams) -> GitTagDetails = |ctx, p| crate::read::details::tag_details(&*ctx.repo()?, &p.tag_name);
+    "stashDetails" => StashDetails(StashParams) -> GitCommitDetails = |ctx, p| crate::read::details::stash_details(&*ctx.repo()?, &p.hash, &p.stash);
     /// The "Uncommitted Changes" row in full.
-    "uncommittedDetails" => UncommittedDetails(NoParams) -> GitCommitDetails = |ctx, _| crate::details::uncommitted_details(&*ctx.repo()?, ctx.cancel());
+    "uncommittedDetails" => UncommittedDetails(NoParams) -> GitCommitDetails = |ctx, _| crate::read::details::uncommitted_details(&*ctx.repo()?, ctx.cancel());
 
     /* ---------- Diffs and files ---------- */
 
     /// The files that differ between two revisions; `to` may be `*` for the working tree.
     "compareCommits" => CompareCommits(TwoRevisionsParams) -> Vec<GitFileChange> = |ctx, p| {
-        crate::diff::diff_revisions(&*ctx.repo()?, &p.from, &p.to)
+        crate::read::diff::diff_revisions(&*ctx.repo()?, &p.from, &p.to)
     };
     /// The `+N/-M` counts of the given paths; `from: null` diffs `to` against its first parent.
     "lineCounts" => LineCounts(LineCountsParams) -> BTreeMap<String, GitLineCounts> = |ctx, p| {
-        crate::diff::line_counts(&*ctx.repo()?, p.from.as_deref(), &p.to, &p.paths)
+        crate::read::diff::line_counts(&*ctx.repo()?, p.from.as_deref(), &p.to, &p.paths)
     };
     "newPathOfRenamedFile" => NewPathOfRenamedFile(RenamedFileParams) -> Option<String> = |ctx, p| {
-        crate::diff::new_path_of_renamed_file(&*ctx.repo()?, &p.commit_hash, &p.old_file_path)
+        crate::read::diff::new_path_of_renamed_file(&*ctx.repo()?, &p.commit_hash, &p.old_file_path)
     };
     /// A file's text at a revision: a commit-ish, `:index` for the staged copy or `*` for the
     /// working tree. Binary or non-UTF-8 files answer `contents: null`.
     "fileContents" => FileContents(FileParams) -> CommitFile = |ctx, p| file_contents(&*ctx.repo()?, &p.revision, &p.path);
     /// The unified diff of one file in one commit, against its first parent.
-    "fileDiff" => FileDiff(FileParams) -> String = |ctx, p| crate::blob::commit_file_diff(&*ctx.repo()?, &p.revision, &p.path);
+    "fileDiff" => FileDiff(FileParams) -> String = |ctx, p| crate::read::blob::commit_file_diff(&*ctx.repo()?, &p.revision, &p.path);
 
     /* ---------- Stashes, configuration, statistics, history ---------- */
 
-    "stashes" => Stashes(NoParams) -> Vec<GitStash> = |ctx, _| crate::stash::read_stashes(&*ctx.repo()?);
-    "config" => Config(NoParams) -> ConfigSnapshot = |ctx, _| crate::config::read_config(&*ctx.repo()?);
+    "stashes" => Stashes(NoParams) -> Vec<GitStash> = |ctx, _| crate::read::stash::read_stashes(&*ctx.repo()?);
+    "config" => Config(NoParams) -> ConfigSnapshot = |ctx, _| crate::read::config::read_config(&*ctx.repo()?);
     "configList" => ConfigList(ConfigListParams) -> BTreeMap<String, String> = |ctx, p| {
-        let location = if p.local { crate::config::ConfigLocation::Local } else { crate::config::ConfigLocation::Global };
-        crate::config::config_list(&*ctx.repo()?, location)
+        let location = if p.local { crate::read::config::ConfigLocation::Local } else { crate::read::config::ConfigLocation::Global };
+        crate::read::config::config_list(&*ctx.repo()?, location)
     };
-    "remoteUrl" => RemoteUrl(RemoteParams) -> Option<String> = |ctx, p| crate::config::remote_url(&*ctx.repo()?, &p.remote);
-    "remoteNames" => RemoteNames(NoParams) -> Vec<String> = |ctx, _| crate::config::remote_names(&*ctx.repo()?);
-    "submodules" => Submodules(NoParams) -> Vec<String> = |ctx, _| crate::config::submodules(&*ctx.repo()?);
-    "currentBranchName" => CurrentBranchName(NoParams) -> Option<String> = |ctx, _| crate::config::current_branch_name(&*ctx.repo()?);
+    "remoteUrl" => RemoteUrl(RemoteParams) -> Option<String> = |ctx, p| crate::read::config::remote_url(&*ctx.repo()?, &p.remote);
+    "remoteNames" => RemoteNames(NoParams) -> Vec<String> = |ctx, _| crate::read::config::remote_names(&*ctx.repo()?);
+    "submodules" => Submodules(NoParams) -> Vec<String> = |ctx, _| crate::read::config::submodules(&*ctx.repo()?);
+    "currentBranchName" => CurrentBranchName(NoParams) -> Option<String> = |ctx, _| crate::read::config::current_branch_name(&*ctx.repo()?);
     "currentBranchUpstream" => CurrentBranchUpstream(NoParams) -> Option<String> = |ctx, _| {
-        crate::config::current_branch_upstream(&*ctx.repo()?)
+        crate::read::config::current_branch_upstream(&*ctx.repo()?)
     };
     /// Commit messages matching a pattern, newest first (`git log --all -E -i --grep`).
-    "searchHistory" => SearchHistory(SearchParams) -> Vec<GitHistoryMatch> = |ctx, p| crate::log::search_history(&*ctx.repo()?, &p.query, ctx.cancel());
-    "authors" => Authors(NoParams) -> Vec<GitAuthor> = |ctx, _| crate::log::authors(&*ctx.repo()?, ctx.cancel());
-    "authorStats" => AuthorStats(NoParams) -> Vec<GitAuthorStat> = |ctx, _| crate::stats::author_stats(&*ctx.repo()?, ctx.cancel());
-    "activityHeatmap" => ActivityHeatmap(NoParams) -> Vec<GitActivityCell> = |ctx, _| crate::stats::activity_heatmap(&*ctx.repo()?, ctx.cancel());
+    "searchHistory" => SearchHistory(SearchParams) -> Vec<GitHistoryMatch> = |ctx, p| crate::read::log::search_history(&*ctx.repo()?, &p.query, ctx.cancel());
+    "authors" => Authors(NoParams) -> Vec<GitAuthor> = |ctx, _| crate::read::log::authors(&*ctx.repo()?, ctx.cancel());
+    "authorStats" => AuthorStats(NoParams) -> Vec<GitAuthorStat> = |ctx, _| crate::read::stats::author_stats(&*ctx.repo()?, ctx.cancel());
+    "activityHeatmap" => ActivityHeatmap(NoParams) -> Vec<GitActivityCell> = |ctx, _| crate::read::stats::activity_heatmap(&*ctx.repo()?, ctx.cancel());
     /// How many commits of the shown refs precede `hash` (`git rev-list --count`).
     "countCommitsBefore" => CountCommitsBefore(CountBeforeParams) -> u64 = |ctx, p| {
-        crate::log::count_commits_before(&*ctx.repo()?, p.branches.as_deref(), &p.hash, p.show_remote_branches, p.include_reflogs, ctx.cancel())
+        crate::read::log::count_commits_before(&*ctx.repo()?, p.branches.as_deref(), &p.hash, p.show_remote_branches, p.include_reflogs, ctx.cancel())
     };
 
     /* ---------- Gerrit ---------- */
 
     "parseGerritMetas" => ParseGerritMetas(GerritMetasParams) -> Vec<Option<GerritChangeState>> = |ctx, p| {
-        crate::gerrit::parse_gerrit_metas(&*ctx.repo()?, &p.remote, &p.changes, p.url_base.as_deref())
+        crate::read::gerrit::parse_gerrit_metas(&*ctx.repo()?, &p.remote, &p.changes, p.url_base.as_deref())
     };
     /// `(change ref, hash)` pairs below the remote's `changes/` namespace.
-    "listChangeRefs" => ListChangeRefs(RemoteParams) -> Vec<(String, String)> = |ctx, p| crate::gerrit::list_change_refs(&*ctx.repo()?, &p.remote);
+    "listChangeRefs" => ListChangeRefs(RemoteParams) -> Vec<(String, String)> = |ctx, p| crate::read::gerrit::list_change_refs(&*ctx.repo()?, &p.remote);
 }
 
 /// Answer one JSON request against the repository containing `repo_path`.
@@ -337,9 +346,9 @@ fn file_bytes_answer(
     catch_unwind(AssertUnwindSafe(|| {
         let repo = RepoManager::global().get(repo_path)?;
         if revision == crate::engine::INDEX {
-            crate::blob::index_file_bytes(&repo, path)
+            crate::read::blob::index_file_bytes(&repo, path)
         } else {
-            crate::blob::commit_file_bytes(&repo, revision, path)
+            crate::read::blob::commit_file_bytes(&repo, revision, path)
         }
     }))
     .unwrap_or_else(|panic| Err(Error::internal(panic_message(&panic))))
@@ -360,9 +369,9 @@ fn file_contents(repo: &Repo, revision: &str, path: &str) -> Result<CommitFile> 
         });
     }
     if revision == crate::engine::INDEX {
-        return crate::blob::index_file(repo, path);
+        return crate::read::blob::index_file(repo, path);
     }
-    crate::blob::commit_file(repo, revision, path)
+    crate::read::blob::commit_file(repo, revision, path)
 }
 
 /// Serialise an engine answer. The engine's own types cannot fail to serialise, but a failure
@@ -383,6 +392,7 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 
 /* ---------- TypeScript generation ---------- */
 
+// Type declarations are emitted sorted by name, so regeneration is deterministic across rebuilds.
 const GENERATED_HEADER: &str = "// @generated by native/core (protocol::typescript) — do not edit.\n// Regenerate with `cargo test -p git-graph-core --test protocol`.\n/* eslint-disable */";
 
 /// Integers are JSON numbers on the wire and `JSON.parse` yields `number`, never `bigint`.
@@ -391,10 +401,12 @@ fn typescript_config() -> Config {
 }
 
 /// Every named type reachable from the protocol's parameters and results, declared once each.
+/// The output is keyed by the type's TypeScript name and emitted sorted by it, because the
+/// visitor's traversal order is fixed per compilation (see `typescript`).
 #[derive(Default)]
 struct Declarations {
     seen: Vec<std::any::TypeId>,
-    output: Vec<String>,
+    output: BTreeMap<String, String>,
 }
 
 impl Declarations {
@@ -426,9 +438,10 @@ impl TypeVisitor for Visitor<'_> {
         <T as TS>::visit_generics(self);
         if named {
             let docs = <T as TS>::docs().unwrap_or_default();
-            self.declarations
-                .output
-                .push(format!("{docs}export {}", <T as TS>::decl(self.config)));
+            self.declarations.output.insert(
+                <T as TS>::name(self.config).to_string(),
+                format!("{docs}export {}", <T as TS>::decl(self.config)),
+            );
         }
     }
 }

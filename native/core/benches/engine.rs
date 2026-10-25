@@ -22,9 +22,9 @@ use std::time::{Duration, Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use git_graph_core::cancel::Cancel;
+use git_graph_core::model::{CommitOrdering, LogOptions, RefReadOptions};
+use git_graph_core::read::{details, graph, incremental, refs, stats, status};
 use git_graph_core::repository::Repo;
-use git_graph_core::types::{CommitOrdering, LogOptions, RefReadOptions};
-use git_graph_core::{details, graph, incremental, refs, stats, status};
 
 /* ---------- The fixtures ---------- */
 

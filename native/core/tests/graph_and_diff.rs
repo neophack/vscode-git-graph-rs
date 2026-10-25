@@ -5,8 +5,9 @@ mod common;
 
 use git_graph_core::cancel::Cancel;
 
-use git_graph_core::types::{GitFileStatus, LogOptions, RefReadOptions, UNCOMMITTED};
-use git_graph_core::{details, diff, graph, repository::Repo, stash, status};
+use git_graph_core::model::{GitFileStatus, LogOptions, RefReadOptions, UNCOMMITTED};
+use git_graph_core::read::{details, diff, graph, stash, status};
+use git_graph_core::repository::Repo;
 
 use common::TestRepo;
 
@@ -401,7 +402,7 @@ fn settles_the_line_counts_of_a_stash_against_its_base() {
     assert_eq!(stashes[0].base_hash, base);
 
     // The stash's own file list arrives as statuses only, like every other details load.
-    let commit_stash = git_graph_core::types::GitCommitStash {
+    let commit_stash = git_graph_core::model::GitCommitStash {
         selector: stashes[0].selector.clone(),
         base_hash: stashes[0].base_hash.clone(),
         untracked_files_hash: None,
@@ -698,7 +699,7 @@ fn records_the_untracked_files_of_a_stash_taken_with_them() {
         .expect("the third parent recording the untracked files is missing");
 
     // The untracked file is listed as untracked, not as an addition.
-    let commit_stash = git_graph_core::types::GitCommitStash {
+    let commit_stash = git_graph_core::model::GitCommitStash {
         selector: stashes[0].selector.clone(),
         base_hash: stashes[0].base_hash.clone(),
         untracked_files_hash: Some(untracked_hash),
@@ -805,7 +806,7 @@ fn keeps_repository_handles_open_across_requests() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "1", "first");
 
-    let manager = git_graph_core::RepoManager::new();
+    let manager = git_graph_core::repository::RepoManager::new();
     let first = manager.get(repo.path()).unwrap();
     let second = manager.get(repo.path()).unwrap();
 

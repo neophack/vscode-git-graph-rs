@@ -11,7 +11,7 @@
 //! - A [`Cancel`] token is what a request *observes*. Most requests have none ([`Cancel::none`]):
 //!   the checks in the traversal loops then cost one null check and nothing more. A token that a
 //!   host did name carries an [`AtomicBool`] shared with the registry.
-//! - The [`Registry`] maps request ids to those flags, process-wide, exactly as [`crate::RepoManager`]
+//! - The [`Registry`] maps request ids to those flags, process-wide, exactly as [`crate::repository::RepoManager`]
 //!   maps paths to repository handles. The Node binding registers the id when the request starts
 //!   (see [`protocol::request_with_id`]) and `cancel(requestId)` sets the flag from any thread.
 //!

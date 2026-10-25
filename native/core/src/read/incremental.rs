@@ -52,9 +52,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use gix::ObjectId;
 
 use crate::error::Result;
-use crate::log::{self, WalkOptions};
+use crate::model::{CommitOrdering, CommitRecord, LogOptions};
+use crate::read::log::{self, WalkOptions};
 use crate::repository::{Repo, Shallow};
-use crate::types::{CommitOrdering, CommitRecord, LogOptions};
 
 /// How many traversals are kept, process-wide. A session opens a handful of repositories with a
 /// handful of option sets each; the cap only stops unbounded growth (each entry is at most one
@@ -133,7 +133,7 @@ impl CachedWalk {
 }
 
 /// The traversals of every open repository, process-wide — the same shape as
-/// [`crate::RepoManager`]: a cache keyed by repository, guarded (not invalidated) by the walks
+/// [`crate::repository::RepoManager`]: a cache keyed by repository, guarded (not invalidated) by the walks
 /// themselves, bounded by [`MAX_ENTRIES`].
 #[derive(Default)]
 pub struct Store {
@@ -327,7 +327,7 @@ fn boundary_walk(
 }
 
 /// The committer date of a commit, as the walk's queue ranks by (`0` where the header is absent,
-/// matching what [`crate::types::CommitRecord::date`] records).
+/// matching what [`crate::model::CommitRecord::date`] records).
 fn commit_time(commit: &gix::Commit<'_>) -> i64 {
     commit
         .committer()

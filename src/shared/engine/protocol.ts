@@ -2,124 +2,6 @@
 // Regenerate with `cargo test -p git-graph-core --test protocol`.
 /* eslint-disable */
 /**
- * The parameters of a method that takes none. On the wire: `{}`, or the `params` key omitted.
- */
-export type NoParams = Record<symbol, never>;
-export type CommitOrdering = "date" | "author-date" | "topo";
-/**
- * Everything `loadCommits` needs, in the shape the TypeScript side sends it.
- */
-export type LogOptions = { 
-/**
- * The branch heads to show, or `None` to show all refs.
- */
-branches: Array<string> | null, 
-/**
- * Only show commits whose author matches one of these names.
- */
-authors: Array<string> | null, maxCommits: number, 
-/**
- * Defaults to true: `git log --decorate` always names tags, so a caller that does not say
- * otherwise must not lose them.
- */
-showTags: boolean, showRemoteBranches: boolean, showRemoteHeads: boolean, 
-/**
- * Skip the `refs/remotes/` scan in this load: the response carries the local refs (and the
- * tags) only, and the caller follows up with a complete load. The remote pass dominates the
- * scan time on repositories with many remote-tracking refs — a Gerrit one above all.
- */
-deferRemoteRefs: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: Array<string>, hideRemotes: Array<string>, 
-/**
- * Gerrit change refs allowed into the graph; `None` disables the Gerrit integration.
- */
-gerritRefs: Array<string> | null, gerritShowChangeRefs: boolean, 
-/**
- * Only show commits touching these repository-relative paths.
- */
-filterPaths: Array<string>, 
-/**
- * Skip the working-tree scan that produces the "Uncommitted Changes" row.
- */
-deferUncommittedChanges: boolean, showUncommittedChanges: boolean, showUntrackedFiles: boolean, 
-/**
- * Include commits that are only referenced by a tag.
- */
-showCommitsOnlyReferencedByTags: boolean, 
-/**
- * Apply `.mailmap` to author names and emails. The engine does not read mailmaps: when this
- * is set and the work tree carries a `.mailmap`, the load is declined (`Unsupported`) so the
- * CLI backend serves the mapped names.
- */
-useMailmap: boolean, };
-export type GitCommitTag = { name: string, annotated: boolean, };
-export type GitCommitRemote = { name: string, 
-/**
- * `None` when the ref's remote is not one of the repository's known remotes.
- */
-remote: string | null, };
-export type GitCommitStash = { selector: string, baseHash: string, untrackedFilesHash: string | null, };
-export type GitCommit = { hash: string, parents: Array<string>, author: string, email: string, 
-/**
- * Seconds since the Unix epoch.
- */
-date: number, 
-/**
- * The commit subject (first line of the message).
- */
-message: string, heads: Array<string>, tags: Array<GitCommitTag>, remotes: Array<GitCommitRemote>, stash: GitCommitStash | null, };
-export type GitCommitData = { commits: Array<GitCommit>, head: string | null, tags: Array<string>, 
-/**
- * The branch name list of the ref scan this page was built from — the same list `loadRepoInfo`
- * returns, riding along so a deferred view load can complete the branch dropdown without a
- * second scan. `None` on error (and for callers that did not ask for it).
- */
-branches?: Array<string> | null, moreCommitsAvailable: boolean, error: string | null, };
-export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
-export type GitRepoInfo = { branches: Array<string>, 
-/**
- * The checked-out branch's short name, or `None` when HEAD is detached.
- */
-head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
-/**
- * Everything the view opens with, from one ref scan: the dropdown data and the first page.
- * `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
- */
-export type GitViewData = { info: GitRepoInfo, commits: GitCommitData, };
-/**
- * The wire form of the ref-reading options, plus the stash flag `loadRepoInfo` also needs.
- * The defaults are the ones a view load uses, so an omitted field means "the usual".
- */
-export type RefOptions = { showRemoteBranches: boolean, showRemoteHeads: boolean, hideRemotes: Array<string>, showChangeRefs: boolean, showStashes: boolean, };
-export type GitTagRef = { hash: string, name: string, 
-/**
- * True for the peeled record of an annotated tag, which points at the commit rather than at
- * the tag object.
- */
-annotated: boolean, };
-export type GitRef = { hash: string, name: string, };
-export type GitRefData = { 
-/**
- * The commit HEAD resolves to, or `None` when the repository has no commits.
- */
-head: string | null, heads: Array<GitRef>, tags: Array<GitTagRef>, remotes: Array<GitRef>, };
-/**
- * One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
- * requests of a single view load.
- */
-export type RefSnapshot = { refData: GitRefData, 
-/**
- * Local branch names, in the order the view lists them.
- */
-branches: Array<string>, 
-/**
- * The checked-out branch, or `None` when HEAD is detached.
- */
-branchHead: string | null, 
-/**
- * Tag names, excluding the duplicate peeled records of annotated tags.
- */
-tagNames: Array<string>, };
-/**
  * The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
  * the caller already holds on screen — plus which refs to annotate them with.
  */
@@ -137,11 +19,6 @@ refs: RefOptions,
  */
 showTags: boolean, };
 /**
- * The refs of one commit, as a refs-only refresh re-annotates it: exactly the labels a full
- * `loadCommits` of the same options would attach to that commit, in the same order.
- */
-export type GitCommitRefs = { hash: string, heads: Array<string>, tags: Array<GitCommitTag>, remotes: Array<GitCommitRemote>, };
-/**
  * The answer of the `annotate` request: a freshly read HEAD together with the re-annotated
  * commits, in the order they were given.
  */
@@ -150,71 +27,6 @@ export type AnnotateResult = {
  * The commit HEAD resolves to now — the page's `head` field, refreshed.
  */
 head: string | null, commits: Array<GitCommitRefs>, };
-/**
- * One path as the Source Control view lists it: the staged and unstaged halves of its change
- * kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
- */
-export type ScmChange = { path: string, oldPath: string | null, staged: string | null, unstaged: string | null, untracked: boolean, 
-/**
- * The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control
- * view lists it under "Merge Changes" and opens it in the merge editor.
- */
-conflicted: boolean, };
-export type UntrackedParams = { includeUntracked: boolean, };
-export type HashParams = { hash: string, };
-export type GitFileStatus = "A" | "M" | "D" | "R" | "U";
-export type GitFileChange = { oldFilePath: string, newFilePath: string, type: GitFileStatus, 
-/**
- * `None` for binary files, where git reports a dash instead of a line count — and while the
- * counts of a freshly opened view are still being computed in the background.
- */
-additions: number | null, deletions: number | null, };
-export type GitSignatureStatus = "G" | "U" | "X" | "Y" | "R" | "E" | "B";
-export type GitSignature = { key: string, signer: string, status: GitSignatureStatus, };
-export type GitCommitDetails = { hash: string, parents: Array<string>, author: string, authorEmail: string, authorDate: number, committer: string, committerEmail: string, committerDate: number, signature: GitSignature | null, 
-/**
- * The full commit message, including the subject.
- */
-body: string, fileChanges: Array<GitFileChange>, };
-export type HashesParams = { hashes: Array<string>, };
-/**
- * The fields the Commit Comparison View describes a commit with.
- */
-export type GitCommitSummary = { hash: string, author: string, email: string, 
-/**
- * The author date, which is what `git show --format=%at` reports.
- */
-date: number, 
-/**
- * The full commit message, trimmed as `git show --format=%B` output is.
- */
-message: string, };
-export type TagParams = { tagName: string, };
-/**
- * An annotated tag in full, or the fields a lightweight tag can fill in.
- *
- * A lightweight tag has no tagger and no message of its own: the tagger fields are empty and the
- * message is the tagged commit's, which is what `for-each-ref %(contents)` reports for one.
- */
-export type GitTagDetails = { 
-/**
- * The tag object for an annotated tag, the commit for a lightweight one.
- */
-hash: string, taggerName: string, taggerEmail: string, taggerDate: number, message: string, 
-/**
- * Present when the tag carries a signature; the host may replace status E after Git verifies it.
- */
-signature: GitSignature | null, };
-export type StashParams = { hash: string, stash: GitCommitStash, };
-export type TwoRevisionsParams = { from: string, to: string, };
-export type LineCountsParams = { from: string | null, to: string, paths: Array<string>, };
-/**
- * The `+N/-M` line counts of one file, as `git diff --numstat` reports them. Both fields are
- * `None` for a binary file.
- */
-export type GitLineCounts = { additions: number | null, deletions: number | null, };
-export type RenamedFileParams = { commitHash: string, oldFilePath: string, };
-export type FileParams = { revision: string, path: string, };
 export type CommitFile = { 
 /**
  * The file's text, or `None` when it is not valid UTF-8.
@@ -224,44 +36,13 @@ contents: string | null,
  * True when the blob is binary and `contents` is `None`.
  */
 binary: boolean, };
-export type RemoteConfig = { name: string, url: string | null, pushUrl: string | null, };
-export type ConfigSnapshot = { remotes: Array<RemoteConfig>, userName: string | null, userEmail: string | null, pushDefault: string | null, diffTool: string | null, diffGuiTool: string | null, };
+export type CommitOrdering = "date" | "author-date" | "topo";
 export type ConfigListParams = { local: boolean, };
-export type RemoteParams = { remote: string, };
-export type SearchParams = { query: string, };
-/**
- * One hit of a commit-message search, as the Find dialogue lists them.
- */
-export type GitHistoryMatch = { hash: string, author: string, date: number, 
-/**
- * The commit subject.
- */
-message: string, };
-/**
- * A distinct commit author, as the settings widget's author dropdown lists them.
- */
-export type GitAuthor = { name: string, email: string, };
-/**
- * Commit count for one author across all refs (branches, tags, remote-tracking, the stash),
- * merge commits excluded - what the Statistics view's author table lists.
- */
-export type GitAuthorStat = { name: string, email: string, commits: number, };
-/**
- * One non-zero cell of the Statistics view's commit-activity heatmap, binned by each commit's
- * AUTHOR-LOCAL weekday/hour (not the viewer's timezone - see `stats::activity_heatmap`). Sparse:
- * a cell with no commits is omitted rather than sent as an explicit zero.
- */
-export type GitActivityCell = { 
-/**
- * 0 = Sunday, matching JavaScript's `Date.getUTCDay()`.
- */
-weekday: number, hour: number, count: number, };
+export type ConfigSnapshot = { remotes: Array<RemoteConfig>, userName: string | null, userEmail: string | null, pushDefault: string | null, diffTool: string | null, diffGuiTool: string | null, };
 export type CountBeforeParams = { branches: Array<string> | null, hash: string, showRemoteBranches: boolean, includeReflogs: boolean, };
-export type GerritMetasParams = { remote: string, changes: Array<number>, urlBase: string | null, };
-/**
- * One label vote of a review event (e.g. `Code-Review +2`).
- */
-export type GerritVote = { name: string, value: number, };
+export type EngineError = { kind: ErrorKind, message: string, };
+export type ErrorKind = "notARepository" | "notFound" | "invalidArgument" | "git" | "io" | "cancelled" | "unsupported" | "internal";
+export type FileParams = { revision: string, path: string, };
 /**
  * One review event parsed out of a NoteDb meta commit, in the shape the webview renders.
  */
@@ -310,8 +91,227 @@ headHash: string, events: Array<GerritChangeEvent>,
  * The change's web URL, when the remote's URL allowed deriving one.
  */
 url: string | null, };
-export type ErrorKind = "notARepository" | "notFound" | "invalidArgument" | "git" | "io" | "cancelled" | "unsupported" | "internal";
-export type EngineError = { kind: ErrorKind, message: string, };
+export type GerritMetasParams = { remote: string, changes: Array<number>, urlBase: string | null, };
+/**
+ * One label vote of a review event (e.g. `Code-Review +2`).
+ */
+export type GerritVote = { name: string, value: number, };
+/**
+ * One non-zero cell of the Statistics view's commit-activity heatmap, binned by each commit's
+ * AUTHOR-LOCAL weekday/hour (not the viewer's timezone - see `stats::activity_heatmap`). Sparse:
+ * a cell with no commits is omitted rather than sent as an explicit zero.
+ */
+export type GitActivityCell = { 
+/**
+ * 0 = Sunday, matching JavaScript's `Date.getUTCDay()`.
+ */
+weekday: number, hour: number, count: number, };
+/**
+ * A distinct commit author, as the settings widget's author dropdown lists them.
+ */
+export type GitAuthor = { name: string, email: string, };
+/**
+ * Commit count for one author across all refs (branches, tags, remote-tracking, the stash),
+ * merge commits excluded - what the Statistics view's author table lists.
+ */
+export type GitAuthorStat = { name: string, email: string, commits: number, };
+export type GitCommit = { hash: string, parents: Array<string>, author: string, email: string, 
+/**
+ * Seconds since the Unix epoch.
+ */
+date: number, 
+/**
+ * The commit subject (first line of the message).
+ */
+message: string, heads: Array<string>, tags: Array<GitCommitTag>, remotes: Array<GitCommitRemote>, stash: GitCommitStash | null, };
+export type GitCommitData = { commits: Array<GitCommit>, head: string | null, tags: Array<string>, 
+/**
+ * The branch name list of the ref scan this page was built from — the same list `loadRepoInfo`
+ * returns, riding along so a deferred view load can complete the branch dropdown without a
+ * second scan. `None` on error (and for callers that did not ask for it).
+ */
+branches?: Array<string> | null, moreCommitsAvailable: boolean, error: string | null, };
+export type GitCommitDetails = { hash: string, parents: Array<string>, author: string, authorEmail: string, authorDate: number, committer: string, committerEmail: string, committerDate: number, signature: GitSignature | null, 
+/**
+ * The full commit message, including the subject.
+ */
+body: string, fileChanges: Array<GitFileChange>, };
+/**
+ * The refs of one commit, as a refs-only refresh re-annotates it: exactly the labels a full
+ * `loadCommits` of the same options would attach to that commit, in the same order.
+ */
+export type GitCommitRefs = { hash: string, heads: Array<string>, tags: Array<GitCommitTag>, remotes: Array<GitCommitRemote>, };
+export type GitCommitRemote = { name: string, 
+/**
+ * `None` when the ref's remote is not one of the repository's known remotes.
+ */
+remote: string | null, };
+export type GitCommitStash = { selector: string, baseHash: string, untrackedFilesHash: string | null, };
+/**
+ * The fields the Commit Comparison View describes a commit with.
+ */
+export type GitCommitSummary = { hash: string, author: string, email: string, 
+/**
+ * The author date, which is what `git show --format=%at` reports.
+ */
+date: number, 
+/**
+ * The full commit message, trimmed as `git show --format=%B` output is.
+ */
+message: string, };
+export type GitCommitTag = { name: string, annotated: boolean, };
+export type GitFileChange = { oldFilePath: string, newFilePath: string, type: GitFileStatus, 
+/**
+ * `None` for binary files, where git reports a dash instead of a line count — and while the
+ * counts of a freshly opened view are still being computed in the background.
+ */
+additions: number | null, deletions: number | null, };
+export type GitFileStatus = "A" | "M" | "D" | "R" | "U";
+/**
+ * One hit of a commit-message search, as the Find dialogue lists them.
+ */
+export type GitHistoryMatch = { hash: string, author: string, date: number, 
+/**
+ * The commit subject.
+ */
+message: string, };
+/**
+ * The `+N/-M` line counts of one file, as `git diff --numstat` reports them. Both fields are
+ * `None` for a binary file.
+ */
+export type GitLineCounts = { additions: number | null, deletions: number | null, };
+export type GitRef = { hash: string, name: string, };
+export type GitRefData = { 
+/**
+ * The commit HEAD resolves to, or `None` when the repository has no commits.
+ */
+head: string | null, heads: Array<GitRef>, tags: Array<GitTagRef>, remotes: Array<GitRef>, };
+export type GitRepoInfo = { branches: Array<string>, 
+/**
+ * The checked-out branch's short name, or `None` when HEAD is detached.
+ */
+head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
+export type GitSignature = { key: string, signer: string, status: GitSignatureStatus, };
+export type GitSignatureStatus = "G" | "U" | "X" | "Y" | "R" | "E" | "B";
+export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
+/**
+ * An annotated tag in full, or the fields a lightweight tag can fill in.
+ *
+ * A lightweight tag has no tagger and no message of its own: the tagger fields are empty and the
+ * message is the tagged commit's, which is what `for-each-ref %(contents)` reports for one.
+ */
+export type GitTagDetails = { 
+/**
+ * The tag object for an annotated tag, the commit for a lightweight one.
+ */
+hash: string, taggerName: string, taggerEmail: string, taggerDate: number, message: string, 
+/**
+ * Present when the tag carries a signature; the host may replace status E after Git verifies it.
+ */
+signature: GitSignature | null, };
+export type GitTagRef = { hash: string, name: string, 
+/**
+ * True for the peeled record of an annotated tag, which points at the commit rather than at
+ * the tag object.
+ */
+annotated: boolean, };
+/**
+ * Everything the view opens with, from one ref scan: the dropdown data and the first page.
+ * `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
+ */
+export type GitViewData = { info: GitRepoInfo, commits: GitCommitData, };
+export type HashParams = { hash: string, };
+export type HashesParams = { hashes: Array<string>, };
+export type LineCountsParams = { from: string | null, to: string, paths: Array<string>, };
+/**
+ * Everything `loadCommits` needs, in the shape the TypeScript side sends it.
+ */
+export type LogOptions = { 
+/**
+ * The branch heads to show, or `None` to show all refs.
+ */
+branches: Array<string> | null, 
+/**
+ * Only show commits whose author matches one of these names.
+ */
+authors: Array<string> | null, maxCommits: number, 
+/**
+ * Defaults to true: `git log --decorate` always names tags, so a caller that does not say
+ * otherwise must not lose them.
+ */
+showTags: boolean, showRemoteBranches: boolean, showRemoteHeads: boolean, 
+/**
+ * Skip the `refs/remotes/` scan in this load: the response carries the local refs (and the
+ * tags) only, and the caller follows up with a complete load. The remote pass dominates the
+ * scan time on repositories with many remote-tracking refs — a Gerrit one above all.
+ */
+deferRemoteRefs: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: Array<string>, hideRemotes: Array<string>, 
+/**
+ * Gerrit change refs allowed into the graph; `None` disables the Gerrit integration.
+ */
+gerritRefs: Array<string> | null, gerritShowChangeRefs: boolean, 
+/**
+ * Only show commits touching these repository-relative paths.
+ */
+filterPaths: Array<string>, 
+/**
+ * Skip the working-tree scan that produces the "Uncommitted Changes" row.
+ */
+deferUncommittedChanges: boolean, showUncommittedChanges: boolean, showUntrackedFiles: boolean, 
+/**
+ * Include commits that are only referenced by a tag.
+ */
+showCommitsOnlyReferencedByTags: boolean, 
+/**
+ * Apply `.mailmap` to author names and emails. The engine does not read mailmaps: when this
+ * is set and the work tree carries a `.mailmap`, the load is declined (`Unsupported`) so the
+ * CLI backend serves the mapped names.
+ */
+useMailmap: boolean, };
+/**
+ * The parameters of a method that takes none. On the wire: `{}`, or the `params` key omitted.
+ */
+export type NoParams = Record<symbol, never>;
+/**
+ * The wire form of the ref-reading options, plus the stash flag `loadRepoInfo` also needs.
+ * The defaults are the ones a view load uses, so an omitted field means "the usual".
+ */
+export type RefOptions = { showRemoteBranches: boolean, showRemoteHeads: boolean, hideRemotes: Array<string>, showChangeRefs: boolean, showStashes: boolean, };
+/**
+ * One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
+ * requests of a single view load.
+ */
+export type RefSnapshot = { refData: GitRefData, 
+/**
+ * Local branch names, in the order the view lists them.
+ */
+branches: Array<string>, 
+/**
+ * The checked-out branch, or `None` when HEAD is detached.
+ */
+branchHead: string | null, 
+/**
+ * Tag names, excluding the duplicate peeled records of annotated tags.
+ */
+tagNames: Array<string>, };
+export type RemoteConfig = { name: string, url: string | null, pushUrl: string | null, };
+export type RemoteParams = { remote: string, };
+export type RenamedFileParams = { commitHash: string, oldFilePath: string, };
+/**
+ * One path as the Source Control view lists it: the staged and unstaged halves of its change
+ * kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
+ */
+export type ScmChange = { path: string, oldPath: string | null, staged: string | null, unstaged: string | null, untracked: boolean, 
+/**
+ * The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control
+ * view lists it under "Merge Changes" and opens it in the merge editor.
+ */
+conflicted: boolean, };
+export type SearchParams = { query: string, };
+export type StashParams = { hash: string, stash: GitCommitStash, };
+export type TagParams = { tagName: string, };
+export type TwoRevisionsParams = { from: string, to: string, };
+export type UntrackedParams = { includeUntracked: boolean, };
 /** Every engine method: its parameters and its result. */
 export interface EngineMethods {
 	engineVersion: { params: NoParams; result: string };

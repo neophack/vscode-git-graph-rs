@@ -11,9 +11,9 @@ use std::collections::HashMap;
 
 use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
-use crate::log::{all_tips, stash_tip};
+use crate::model::{GitActivityCell, GitAuthorStat};
+use crate::read::log::{all_tips, stash_tip};
 use crate::repository::Repo;
-use crate::types::{GitActivityCell, GitAuthorStat};
 
 /// `all_tips` plus the stash tip (if any), deduplicated - the same merge `search_history`
 /// performs, duplicated here rather than factored out so this module cannot change that

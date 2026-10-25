@@ -14,9 +14,10 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use git_graph_core::model::{GitFileStatus, LogOptions};
+use git_graph_core::read::{blob, details, diff, graph, log, stats, status};
 use git_graph_core::repository::Repo;
-use git_graph_core::types::{GitFileStatus, LogOptions};
-use git_graph_core::{blob, details, diff, graph, log, stats, status, ErrorKind};
+use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 

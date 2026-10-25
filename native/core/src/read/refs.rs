@@ -12,8 +12,8 @@
 //!    only tags can point at something other than a commit.
 
 use crate::error::{Result, ResultExt};
+use crate::model::{GitRef, GitRefData, GitTagRef, RefReadOptions, RefSnapshot};
 use crate::repository::Repo;
-use crate::types::{GitRef, GitRefData, GitTagRef, RefReadOptions, RefSnapshot};
 
 /// Read every ref the Git Graph View needs.
 ///

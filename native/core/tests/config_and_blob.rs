@@ -3,8 +3,8 @@
 #[macro_use]
 mod common;
 
+use git_graph_core::read::{blob, config};
 use git_graph_core::repository::Repo;
-use git_graph_core::{blob, config};
 
 use common::TestRepo;
 

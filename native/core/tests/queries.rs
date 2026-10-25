@@ -8,8 +8,9 @@ use git_graph_core::cancel::Cancel;
 
 use std::process::Command;
 
+use git_graph_core::read::{config, details, diff, log};
 use git_graph_core::repository::Repo;
-use git_graph_core::{config, details, diff, log, ErrorKind};
+use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 
@@ -502,7 +503,7 @@ trait UnwrapErrOrElse {
     fn unwrap_err_or_else(self, message: impl FnOnce() -> String) -> git_graph_core::Error;
 }
 
-impl UnwrapErrOrElse for Result<git_graph_core::types::GitTagDetails, git_graph_core::Error> {
+impl UnwrapErrOrElse for Result<git_graph_core::model::GitTagDetails, git_graph_core::Error> {
     fn unwrap_err_or_else(self, message: impl FnOnce() -> String) -> git_graph_core::Error {
         match self {
             Ok(_) => panic!("{}", message()),
@@ -704,11 +705,11 @@ fn aggregates_authors_like_shortlog() {
     assert_eq!(
         authors,
         vec![
-            git_graph_core::types::GitAuthor {
+            git_graph_core::model::GitAuthor {
                 name: "Second Author".into(),
                 email: "second@example.com".into()
             },
-            git_graph_core::types::GitAuthor {
+            git_graph_core::model::GitAuthor {
                 name: "Test User".into(),
                 email: "test@example.com".into()
             },
