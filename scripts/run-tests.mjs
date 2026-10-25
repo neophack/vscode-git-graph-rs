@@ -33,5 +33,11 @@ if (testFiles.length === 0) {
 
 const env = { ...process.env, GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'true' };
 
-const result = spawnSync(process.execPath, ['--test', ...testFiles], { stdio: 'inherit', env });
+// The real-pipeline files (automationRunner, gitGraphView, webviewRealPipeline, ...) boot the
+// compiled extension against real git repositories and Rust-engine handles, and clean them up
+// through bounded removals that wait out Windows file locks. Booting a dozen of them at once
+// oversubscribes those deadlines: a leaked handle then keeps the file's process alive and the
+// whole `--test` run never exits. The default concurrency is `cores - 1`; four keeps every
+// heavy file's cleanup inside its deadline while still overlapping the fast files.
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=4', ...testFiles], { stdio: 'inherit', env });
 process.exit(result.status ?? 1);

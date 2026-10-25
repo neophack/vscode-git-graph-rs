@@ -7,10 +7,11 @@ import type {
 	RequestDeleteRemoteBranch, RequestDeleteTag, RequestDeleteUserDetails, RequestDropCommit, RequestDropStash,
 	RequestEditCommitMessage, RequestEditRemote, RequestEditUserDetails, RequestEndCodeReview, RequestExportRepoConfig,
 	RequestFetch, RequestFetchAvatar, RequestFetchIntoLocalBranch, RequestFetchPullRequest, RequestGerritSetFetchRefs,
-	RequestLoadCommits, RequestLoadConfig, RequestLoadRepoInfo, RequestLoadRepos, RequestMerge, RequestOpenCompareTab,
+	RequestLoadCommits, RequestLoadConfig, RequestLoadRepoInfo, RequestLoadRepos, RequestLoadView,
+	RequestMerge, RequestOpenCompareTab,
 	RequestOpenExtensionSettings, RequestOpenExternalDirDiff, RequestOpenExternalUrl, RequestOpenFile, RequestOpenLogFile,
 	RequestOpenTerminal, RequestPopStash, RequestPredictConflicts, RequestPruneRemote, RequestPullBranch, RequestPushBranch,
-	RequestPushStash, RequestPushTag, RequestRebase, RequestReflog, RequestRenameBranch, RequestRepoStatistics,
+	RequestPushStash, RequestPushTag, RequestRebase, RequestReady, RequestReflog, RequestRenameBranch, RequestRepoStatistics,
 	RequestRescanForRepos, RequestResetFileToRevision, RequestResetToCommit, RequestRevertCommit, RequestSetGlobalSetting,
 	RequestSetGlobalViewState, RequestSetInterfaceLanguage, RequestSetRepoState, RequestSetViewSnapshot,
 	RequestSetWorkspaceViewState, RequestShowErrorDialog, RequestStartCodeReview, RequestTagDetails, RequestUndoLastCommit,
@@ -27,7 +28,7 @@ import type {
 	ResponseDeleteRemote, ResponseDeleteRemoteBranch, ResponseDeleteTag, ResponseDeleteUserDetails, ResponseDropCommit,
 	ResponseDropStash, ResponseEditCommitMessage, ResponseEditRemote, ResponseEditUserDetails, ResponseExportRepoConfig,
 	ResponseFetch, ResponseFetchAvatar, ResponseFetchIntoLocalBranch, ResponseGerritSetFetchRefs, ResponseLoadCommits,
-	ResponseLoadConfig, ResponseLoadRepoInfo, ResponseLoadRepos, ResponseMerge, ResponseOpenExtensionSettings,
+	ResponseLoadConfig, ResponseLoadRepoInfo, ResponseLoadRepos, ResponseLoadView, ResponseMerge, ResponseOpenExtensionSettings,
 	ResponseOpenExternalDirDiff, ResponseOpenExternalUrl, ResponseOpenFile, ResponseOpenLogFile, ResponseOpenTerminal,
 	ResponsePopStash, ResponsePredictConflicts, ResponsePruneRemote, ResponsePullBranch, ResponsePullRequestStatus,
 	ResponsePushBranch, ResponsePushStash, ResponsePushTag, ResponseRebase, ResponseReflog, ResponseRenameBranch,
@@ -59,6 +60,7 @@ import type {
 export type SilentCommand =
 	| 'endCodeReview'
 	| 'openCompareTab'
+	| 'ready'
 	| 'rescanForRepos'
 	| 'setRepoState'
 	| 'setViewSnapshot'
@@ -109,6 +111,7 @@ export interface GraphViewRequests {
 	readonly loadConfig: { readonly req: RequestLoadConfig; readonly res: ResponseLoadConfig };
 	readonly loadRepoInfo: { readonly req: RequestLoadRepoInfo; readonly res: ResponseLoadRepoInfo };
 	readonly loadRepos: { readonly req: RequestLoadRepos; readonly res: ResponseLoadRepos };
+	readonly loadView: { readonly req: RequestLoadView; readonly res: ResponseLoadView };
 	readonly merge: { readonly req: RequestMerge; readonly res: ResponseMerge };
 	readonly openCompareTab: { readonly req: RequestOpenCompareTab; readonly res: void };
 	readonly openExtensionSettings: { readonly req: RequestOpenExtensionSettings; readonly res: ResponseOpenExtensionSettings };
@@ -124,6 +127,7 @@ export interface GraphViewRequests {
 	readonly pushBranch: { readonly req: RequestPushBranch; readonly res: ResponsePushBranch };
 	readonly pushStash: { readonly req: RequestPushStash; readonly res: ResponsePushStash };
 	readonly pushTag: { readonly req: RequestPushTag; readonly res: ResponsePushTag };
+	readonly ready: { readonly req: RequestReady; readonly res: void };
 	readonly rebase: { readonly req: RequestRebase; readonly res: ResponseRebase };
 	readonly reflog: { readonly req: RequestReflog; readonly res: ResponseReflog };
 	readonly renameBranch: { readonly req: RequestRenameBranch; readonly res: ResponseRenameBranch };
@@ -182,9 +186,9 @@ export const REQUEST_COMMANDS: ReadonlyArray<RequestCommand> = [
 	'createArchive', 'createBranch', 'createPullRequest', 'deleteBranch', 'deleteRemote', 'deleteRemoteBranch',
 	'deleteTag', 'deleteUserDetails', 'dropCommit', 'dropStash', 'editCommitMessage', 'editRemote', 'editUserDetails',
 	'endCodeReview', 'exportRepoConfig', 'fetch', 'fetchAvatar', 'fetchIntoLocalBranch', 'fetchPullRequest',
-	'gerritSetFetchRefs', 'loadCommits', 'loadConfig', 'loadRepoInfo', 'loadRepos', 'merge', 'openCompareTab',
+	'gerritSetFetchRefs', 'loadCommits', 'loadConfig', 'loadRepoInfo', 'loadRepos', 'loadView', 'merge', 'openCompareTab',
 	'openExtensionSettings', 'openExternalDirDiff', 'openExternalUrl', 'openFile', 'openLogFile', 'openTerminal',
-	'popStash', 'predictConflicts', 'pruneRemote', 'pullBranch', 'pushBranch', 'pushStash', 'pushTag', 'rebase',
+	'popStash', 'predictConflicts', 'pruneRemote', 'pullBranch', 'pushBranch', 'pushStash', 'pushTag', 'ready', 'rebase',
 	'reflog', 'renameBranch', 'repoStatistics', 'rescanForRepos', 'resetFileToRevision', 'resetToCommit',
 	'revertCommit', 'setGlobalSetting', 'setGlobalViewState', 'setInterfaceLanguage', 'setRepoState',
 	'setViewSnapshot', 'setWorkspaceViewState', 'showErrorMessage', 'startCodeReview', 'tagDetails', 'undoLastCommit',
@@ -243,6 +247,7 @@ export const MUTATING_COMMANDS: { readonly [K in RequestCommand]: boolean } = {
 	loadConfig: false,
 	loadRepoInfo: false,
 	loadRepos: false,
+	loadView: false,
 	merge: true,
 	openCompareTab: false,
 	openExtensionSettings: false,
@@ -258,6 +263,7 @@ export const MUTATING_COMMANDS: { readonly [K in RequestCommand]: boolean } = {
 	pushBranch: true,
 	pushStash: true,
 	pushTag: true,
+	ready: false,
 	rebase: true,
 	reflog: false,
 	renameBranch: true,

@@ -29,7 +29,7 @@ import { GraphView } from './render/graphSvg';
 import { LayoutMode } from './render/layoutMode';
 import { Viewport } from './render/viewport';
 import { createResponseRouter } from './responses';
-import { Persistence } from './state/persistence';
+import { decodePersistedWebViewState, Persistence } from './state/persistence';
 import { Store } from './state/store';
 import { WebViewState } from './state/types';
 import { TextFormatter } from './text/textFormatter';
@@ -178,7 +178,14 @@ window.addEventListener('load', () => {
 
 	// A page replacing one left behind by an Extension Host restart has no state of its own yet:
 	// it reopens on the snapshot the old page reported (only the fields a reload restores)
-	const ctx = createView(dom, bridge.getState() || <WebViewState | null>initialState.restoredSnapshot);
+	const ctx = createView(dom, decodePersistedWebViewState(bridge.getState()) || <WebViewState | null>initialState.restoredSnapshot);
 
 	bridge.onMessage(createResponseRouter(ctx));
+
+	// The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
+	// `loadView` read when the panel was created and pushes the result now that this page's
+	// response router is installed — the boot sent no loadRepoInfo/loadCommits requests of its
+	// own. The handshake MUST follow the router registration above, or a fast push would arrive
+	// before anything listens for it.
+	bridge.send({ command: 'ready' });
 });

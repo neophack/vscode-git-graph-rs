@@ -1,4 +1,4 @@
-import type { GitCommitData } from '../../dataSource';
+import type { GitCommitData } from '../git/read/types';
 
 /**
  * Whether the complete (remote-refs-included) response of the remote-refs follow-up differs from
@@ -26,8 +26,8 @@ export function remoteRefsFollowUpChanged(deferred: GitCommitData, complete: Git
 	});
 }
 
-function stringArraysEqual(a: ReadonlyArray<string> | undefined, b: ReadonlyArray<string> | undefined): boolean {
+function stringArraysEqual(a: ReadonlyArray<string> | null | undefined, b: ReadonlyArray<string> | null | undefined): boolean {
 	if (a === b) return true;
-	if (a === undefined || b === undefined || a.length !== b.length) return false;
+	if (a === undefined || a === null || b === undefined || b === null || a.length !== b.length) return false;
 	return a.every((value, index) => value === b[index]);
 }

@@ -1,4 +1,6 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
+import { checkUnsafeGitArgs } from '../../git/write/argSafety';
+import { UNCOMMITTED } from '../../git/read/types';
 import type { Handler } from './context';
 
 /** File and diff handlers: opening files/diffs and the clipboard. */
@@ -63,9 +65,18 @@ export const openFile: Handler<'openFile'> = {
 export const openExternalDirDiff: Handler<'openExternalDirDiff'> = {
 	mutates: MUTATING_COMMANDS.openExternalDirDiff,
 	async handle(msg, ctx) {
+		// The hashes are interpolated into a shell command sent to the integrated terminal when
+		// the external diff tool is not GUI based, so they must be validated against injection.
+		const unsafe = checkUnsafeGitArgs(ctx.t,
+			['fromHash', msg.fromHash === UNCOMMITTED ? null : msg.fromHash, 'hash'],
+			['toHash', msg.toHash === UNCOMMITTED ? null : msg.toHash, 'hash']);
+		if (unsafe !== null) {
+			ctx.send({ command: 'openExternalDirDiff', error: unsafe });
+			return;
+		}
 		ctx.send({
 			command: 'openExternalDirDiff',
-			error: await ctx.repo.openExternalDirDiff(msg.repo, msg.fromHash, msg.toHash, msg.isGui)
+			error: await ctx.ui.openExternalDirDiff(msg.repo, msg.fromHash, msg.toHash, msg.isGui)
 		});
 	}
 };

@@ -220,6 +220,10 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		loadCommits: (msg) => ctx.loader.processLoadCommitsResponse(msg),
 		loadConfig: (msg) => ctx.loader.processLoadConfig(msg),
 		loadRepoInfo: (msg) => ctx.loader.processLoadRepoInfoResponse(msg),
+		// The merged open path (task 4.7): the host pushes the repo info and the first commit page
+		// in one message when the page reports `ready`; each half routes through the processing of
+		// the corresponding partial response, so the staged follow-ups keep working unchanged.
+		loadView: (msg) => ctx.loader.processLoadView(msg),
 		reflog: (msg) => ctx.widgets.reflog.processResponse(msg),
 		worktreeList: (msg) => ctx.widgets.worktree.processListResponse(msg),
 		repoStatistics: (msg) => ctx.widgets.statistics.processResponse(msg),

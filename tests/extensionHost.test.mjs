@@ -108,7 +108,9 @@ describe('ExtensionState', () => {
 		assert.equal(repos['/r/v2'].showRemoteBranchesV2, BooleanOverride.Enabled);
 
 		state.saveRepos({ '/r/x': DEFAULT_REPO_STATE });
-		assert.deepEqual(Object.keys(workspaceState.store.repoStates), ['/r/x']);
+		// The memento value is the versioned envelope (task C8): the repo map rides in `data`.
+		assert.deepEqual(Object.keys(workspaceState.store.repoStates.data), ['/r/x']);
+		assert.equal(workspaceState.store.repoStates.version, 1);
 	});
 
 	it('transfers the last active repository and code reviews when a repository moves', async () => {
@@ -187,8 +189,8 @@ describe('ExtensionState', () => {
 		await state.startCodeReview('/r/a', 'old', ['a'], null);
 		await state.startCodeReview('/r/a', 'fresh', ['a'], null);
 		await state.startCodeReview('/r/b', 'stale', ['a'], null);
-		workspaceState.store.codeReviews['/r/a'].old.lastActive = Date.now() - 100 * 86400000;
-		workspaceState.store.codeReviews['/r/b'].stale.lastActive = Date.now() - 100 * 86400000;
+		workspaceState.store.codeReviews.data['/r/a'].old.lastActive = Date.now() - 100 * 86400000;
+		workspaceState.store.codeReviews.data['/r/b'].stale.lastActive = Date.now() - 100 * 86400000;
 		state.expireOldCodeReviews();
 		assert.deepEqual(Object.keys(state.getCodeReviews()), ['/r/a']);
 		assert.deepEqual(Object.keys(state.getCodeReviews()['/r/a']), ['fresh']);
@@ -464,7 +466,7 @@ describe('activate()', () => {
 		// The repository in the workspace is discovered, which shows the status bar item
 		for (let i = 0; i < 100 && !vscode.statusBarItems[0].visible; i++) await sleep(50);
 		assert.equal(vscode.statusBarItems[0].visible, true);
-		assert.ok(Object.keys(context.workspaceState.store.repoStates ?? {}).some((repo) => repo.endsWith('/repo')));
+		assert.ok(Object.keys(context.workspaceState.store.repoStates?.data ?? {}).some((repo) => repo.endsWith('/repo')));
 
 		// Configuration changes are forwarded (and toggle logging); a git.path change re-resolves Git
 		vscode.settings.enableLog = false;

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { GitCommitData } from '../../dataSource';
-import type { CommitLoadQuery, CommitLoaderConfig, GerritDataPort, UncommittedReading, UncommittedStabiliser } from './commitLoader';
+import type { GitCommitData, GitCommit as BackendGitCommit } from '../git/read/types';
+import type { CommitDataPort, CommitLoadQuery, CommitLoaderConfig, GerritDataPort, RepoInfoHalf, UncommittedReading, UncommittedStabiliser } from './commitLoader';
 import { CommitLoader } from './commitLoader';
 import { remoteRefsFollowUpChanged } from './followUpChange';
 import { CommitOrdering } from '../../types';
-import type { GerritChangeState, GitCommit, RequestLoadCommits, ResponseLoadCommits } from '../../types';
+import type { GerritChangeState, RequestLoadCommits, ResponseLoadCommits } from '../../types';
 
 /**
  * CommitLoader tests (REFACTOR-PLAN task 4.3): the staged follow-up orders (plain / Gerrit /
@@ -15,11 +15,11 @@ import type { GerritChangeState, GitCommit, RequestLoadCommits, ResponseLoadComm
 
 /* ---------- Fixtures ---------- */
 
-function commit(hash: string, remotes: { name: string, remote: string | null }[] = []): GitCommit {
+function commit(hash: string, remotes: { name: string, remote: string | null }[] = []): BackendGitCommit {
 	return { hash: hash, parents: [], author: 'A', email: 'a@x', date: 1, message: 'm', heads: [], tags: [], remotes: remotes, stash: null };
 }
 
-function page(commits: GitCommit[], options: { head?: string | null, branches?: string[] } = {}): GitCommitData {
+function page(commits: BackendGitCommit[], options: { head?: string | null, branches?: string[] } = {}): GitCommitData {
 	return {
 		commits: commits,
 		head: options.head !== undefined ? options.head : (commits.length > 0 ? commits[0].hash : null),
@@ -62,10 +62,21 @@ class FakeReads {
 	public uncommitted: number | Promise<number> = 0;
 	public getCommitsHandler: (query: CommitLoadQuery) => Promise<GitCommitData> = () => Promise.resolve(page([commit('a')]));
 
-	public getCommits(repo: string, query: CommitLoadQuery): Promise<GitCommitData> {
+	public getCommits(repo: string, query: CommitLoadQuery, _signal?: { readonly aborted: boolean }): Promise<GitCommitData> {
 		expect(repo).toBe('/repo');
 		this.commitsQueries.push(query);
 		return this.getCommitsHandler(query);
+	}
+
+	public getRepoInfo(_repo: string, _options: unknown): Promise<RepoInfoHalf> {
+		return Promise.resolve({
+			branches: ['main'], head: 'main', remotes: [], stashes: [], tags: [], error: null,
+			isRepo: true, operationState: { type: null, conflictedFiles: [], progress: null }
+		});
+	}
+
+	public getOperationState(_repo: string): Promise<{ type: null; conflictedFiles: string[]; progress: null }> {
+		return Promise.resolve({ type: null, conflictedFiles: [], progress: null });
 	}
 
 	public getUncommittedChanges(repo: string): Promise<number> {
@@ -123,12 +134,12 @@ class Harness {
 	public readonly errors: string[] = [];
 	public readonly sleeps: number[] = [];
 	public clock = 1000;
-	public config: CommitLoaderConfig = { showUncommittedChanges: true, gerrit: { remote: 'gerrit', fetchLimit: 20 } };
+	public config: CommitLoaderConfig & { showRemoteHeads: boolean } = { showUncommittedChanges: true, showRemoteHeads: false, gerrit: { remote: 'gerrit', fetchLimit: 20 } };
 	public readonly loader: CommitLoader;
 
 	constructor() {
 		this.loader = new CommitLoader({
-			reads: this.reads,
+			reads: this.reads as unknown as CommitDataPort,
 			gerrit: this.gerrit as GerritDataPort,
 			getConfig: () => this.config,
 			logger: { log: (message) => this.logs.push(message), logError: (message) => this.errors.push(message) },

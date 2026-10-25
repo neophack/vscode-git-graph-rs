@@ -31,7 +31,7 @@ const REQUEST_MESSAGE_COMMANDS: ReadonlyArray<string> = [
 	'deleteRemoteBranch', 'deleteTag', 'deleteUserDetails', 'dropCommit', 'dropStash', 'undoLastCommit',
 	'editCommitMessage', 'editRemote', 'editUserDetails', 'endCodeReview', 'exportRepoConfig', 'fetch',
 	'fetchAvatar', 'fetchIntoLocalBranch', 'gerritSetFetchRefs', 'loadCommits', 'loadConfig', 'loadRepoInfo',
-	'loadRepos', 'merge', 'openExtensionSettings', 'openExternalDirDiff', 'openExternalUrl', 'openCompareTab',
+	'loadRepos', 'loadView', 'ready', 'merge', 'openExtensionSettings', 'openExternalDirDiff', 'openExternalUrl', 'openCompareTab',
 	'openFile', 'openLogFile', 'openTerminal', 'popStash', 'predictConflicts', 'pruneRemote', 'pullBranch',
 	'pushBranch', 'pushStash', 'pushTag', 'rebase', 'reflog', 'renameBranch', 'rescanForRepos',
 	'resetFileToRevision', 'resetToCommit', 'revertCommit', 'setGlobalViewState', 'setRepoState', 'setViewSnapshot',

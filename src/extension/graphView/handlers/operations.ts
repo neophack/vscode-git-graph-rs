@@ -2,6 +2,7 @@ import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
 import { GitPushBranchMode } from '../../../types';
 import type { ErrorInfo } from '../../../types';
 import type { Handler } from './context';
+import * as flows from '../writeFlows';
 
 /** In-progress Git operation handlers plus conflict prediction and PR creation. */
 
@@ -11,7 +12,7 @@ export const merge: Handler<'merge'> = {
 		ctx.send({
 			command: 'merge',
 			actionOn: msg.actionOn,
-			error: await ctx.repo.merge(msg.repo, msg.obj, msg.actionOn, msg.createNewCommit, msg.squash, msg.noCommit)
+			error: await flows.merge(ctx, msg.repo, msg.obj, msg.actionOn, msg.createNewCommit, msg.squash, msg.noCommit)
 		});
 	}
 };
@@ -23,7 +24,7 @@ export const rebase: Handler<'rebase'> = {
 			command: 'rebase',
 			actionOn: msg.actionOn,
 			interactive: msg.interactive,
-			error: await ctx.repo.rebase(msg.repo, msg.obj, msg.actionOn, msg.ignoreDate, msg.interactive, msg.autosquash)
+			error: await flows.rebase(ctx, msg.repo, msg.obj, msg.actionOn, msg.ignoreDate, msg.interactive, msg.autosquash)
 		});
 	}
 };
@@ -33,7 +34,7 @@ export const abortOperation: Handler<'abortOperation'> = {
 	async handle(msg, ctx) {
 		ctx.send({
 			command: 'abortOperation',
-			error: await ctx.repo.abortOperation(msg.repo, msg.type)
+			error: await flows.abortOperation(ctx, msg.repo, msg.type)
 		});
 	}
 };
@@ -43,7 +44,7 @@ export const continueOperation: Handler<'continueOperation'> = {
 	async handle(msg, ctx) {
 		ctx.send({
 			command: 'continueOperation',
-			error: await ctx.repo.continueOperation(msg.repo, msg.type)
+			error: await flows.continueOperation(ctx, msg.repo, msg.type)
 		});
 	}
 };
@@ -55,7 +56,7 @@ export const predictConflicts: Handler<'predictConflicts'> = {
 			command: 'predictConflicts',
 			ours: msg.ours,
 			theirs: msg.theirs,
-			prediction: await ctx.repo.predictConflicts(msg.repo, msg.ours, msg.theirs)
+			prediction: await ctx.repo.read.predictConflicts(msg.repo, msg.ours, msg.theirs).catch(() => null)
 		});
 	}
 };
@@ -65,7 +66,7 @@ export const cleanUntrackedFiles: Handler<'cleanUntrackedFiles'> = {
 	async handle(msg, ctx) {
 		ctx.send({
 			command: 'cleanUntrackedFiles',
-			error: await ctx.repo.cleanUntrackedFiles(msg.repo, msg.directories)
+			error: await flows.cleanUntrackedFiles(ctx, msg.repo, msg.directories)
 		});
 	}
 };
@@ -75,7 +76,7 @@ export const createPullRequest: Handler<'createPullRequest'> = {
 	async handle(msg, ctx) {
 		// The branch is pushed first (when asked); the PR opens only on a clean push
 		const errorInfos: ErrorInfo[] = [msg.push
-			? <ErrorInfo>await ctx.repo.pushBranch(msg.repo, msg.sourceBranch, msg.sourceRemote, true, GitPushBranchMode.Normal)
+			? <ErrorInfo>await flows.pushBranch(ctx, msg.repo, msg.sourceBranch, msg.sourceRemote, true, GitPushBranchMode.Normal, false)
 			: null];
 		if (errorInfos[0] === null) {
 			errorInfos.push(await ctx.ui.createPullRequest(msg.config, msg.sourceOwner, msg.sourceRepo, msg.sourceBranch));

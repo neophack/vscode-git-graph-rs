@@ -1,4 +1,4 @@
-import type { GitCommitData } from '../../dataSource';
+import type { GitCommitData } from '../git/read/types';
 import type { GerritChangeState, GerritStatusFilter, RequestLoadCommits } from '../../types';
 import type { CommitLoaderConfig, CommitLoaderLogger, GerritDataPort } from './commitLoader';
 import {

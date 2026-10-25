@@ -15,7 +15,7 @@ export const openTerminal: Handler<'openTerminal'> = {
 	async handle(msg, ctx) {
 		ctx.send({
 			command: 'openTerminal',
-			error: await ctx.repo.openGitTerminal(msg.repo, null, msg.name)
+			error: await ctx.ui.openGitTerminal(msg.repo, null, msg.name)
 		});
 	}
 };

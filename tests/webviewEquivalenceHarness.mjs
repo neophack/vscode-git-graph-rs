@@ -183,6 +183,19 @@ export async function bootBundle(options) {
 			}
 			for (const message of pending) {
 				answered.add(message);
+				if (message.command === 'ready') {
+					/* The push-based boot (REFACTOR-PLAN task 4.7): the page installs its router,
+					 * sends `ready` and waits for the merged loadView push. Harvest the scenario's
+					 * answers for the two pull requests and push them merged, as the host does. */
+					const info = (options.respond({ command: 'loadRepoInfo', refreshId: 1 }, host) || [])[0];
+					const page = (options.respond({ command: 'loadCommits', refreshId: 1, maxCommits: 300 }, host) || [])[0];
+					if (info !== undefined && page !== undefined) {
+						const { command: _ic, refreshId: _ir, ...infoBody } = info;
+						const { command: _pc, refreshId: _pr, ...pageBody } = page;
+						dispatch({ command: 'loadView', repo: REPO, refreshId: 1, repoInfo: infoBody, commits: pageBody });
+					}
+					continue;
+				}
 				const responses = options.respond(message, host);
 				if (responses) for (const response of responses) dispatch(response);
 			}

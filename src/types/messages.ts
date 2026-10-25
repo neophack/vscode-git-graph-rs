@@ -596,6 +596,58 @@ export interface ResponseAbortOperation extends ResponseWithErrorInfo {
 	readonly command: 'abortOperation';
 }
 
+/**
+ * The merged open-path request (REFACTOR-PLAN task 4.7): one round trip carrying the repository
+ * info AND the first commit page. The host begins this read itself when the panel is created and
+ * pushes the result as soon as the page reports `ready` — the webview's initial boot sends no
+ * loadRepoInfo/loadCommits requests of its own. The request form stays in the protocol for a
+ * caller that wants the same merged answer later (e.g. a full reload after an error), while the
+ * two partial requests remain for partial refreshes.
+ *
+ * The fields are the commit-page options the view already sends with `loadCommits` (the LogOptions
+ * the engine walk accepts), plus the refresh id the response carries back.
+ */
+export interface RequestLoadView extends RepoRequest {
+	readonly command: 'loadView';
+	readonly refreshId: number;
+	readonly hard: boolean; // true => the extension host must bypass its commit cache
+	readonly branches: ReadonlyArray<string> | null; // null => Show All
+	readonly authors: ReadonlyArray<string> | null; // null => Show All
+	readonly maxCommits: number;
+	readonly showTags: boolean;
+	readonly showRemoteBranches: boolean;
+	readonly includeCommitsMentionedByReflogs: boolean;
+	readonly onlyFollowFirstParent: boolean;
+	readonly commitOrdering: CommitOrdering;
+	readonly remotes: ReadonlyArray<string>;
+	readonly hideRemotes: ReadonlyArray<string>;
+	readonly stashes: ReadonlyArray<GitStash>;
+	readonly filterPath?: string | null; // only show commits that modified the file(s) at this path; null/undefined => no path filter
+}
+
+/**
+ * The merged open-path response: the halves of a loadRepoInfo and a loadCommits response in one
+ * message (each without its command/refresh-id envelope, which the response itself carries).
+ * The webview routes each half through the processing of the corresponding partial response, so
+ * the staged follow-ups (remote refs, the "Uncommitted Changes" row) keep working unchanged.
+ */
+export interface ResponseLoadView extends BaseMessage {
+	readonly command: 'loadView';
+	readonly repo: string;
+	readonly refreshId: number;
+	readonly repoInfo: Omit<ResponseLoadRepoInfo, 'command' | 'refreshId'>;
+	readonly commits: Omit<ResponseLoadCommits, 'command' | 'refreshId'>;
+}
+
+/**
+ * The webview's boot acknowledgement: the page has installed its response router and waits for
+ * the host to push the merged `loadView` result of the read the host began at panel creation.
+ * The host sends no direct reply; the push (and its staged follow-ups) is the answer.
+ */
+export interface RequestReady extends BaseMessage {
+	readonly command: 'ready';
+}
+
 export interface RequestLoadRepos extends BaseMessage {
 	readonly command: 'loadRepos';
 	readonly check: boolean;
@@ -1062,6 +1114,8 @@ export type RequestMessage =
 	| RequestLoadConfig
 	| RequestLoadRepoInfo
 	| RequestLoadRepos
+	| RequestLoadView
+	| RequestReady
 	| RequestMerge
 	| RequestOpenExtensionSettings
 	| RequestOpenExternalDirDiff
@@ -1151,6 +1205,7 @@ export type ResponseMessage =
 	| ResponseLoadConfig
 	| ResponseLoadRepoInfo
 	| ResponseLoadRepos
+	| ResponseLoadView
 	| ResponseMerge
 	| ResponseOpenExtensionSettings
 	| ResponseOpenExternalDirDiff

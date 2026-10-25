@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { AvatarManager } from '../../avatarManager';
 import { DataSource } from '../../dataSource';
+import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
+import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../../extensionState';
 import { Logger } from '../../logger';
 import { RepoManager } from '../../repoManager';
@@ -21,6 +23,12 @@ export interface CommandHost {
 	readonly context: vscode.ExtensionContext;
 	readonly avatarManager: AvatarManager;
 	readonly dataSource: DataSource;
+	/** The facade the Git Graph view runs on (the composition root's `GitRepository`). */
+	readonly repo: ProductionGitRepository;
+	/** The view's raw git runner (editor-script flows the ops do not model). */
+	readonly gitRunner: GitRunnerPort;
+	/** The auxiliary views the panel hands off to (comparison, binary compare, diff doc). */
+	readonly legacyViews: LegacyViewPort;
 	readonly extensionState: ExtensionState;
 	readonly logger: Logger;
 	readonly repoManager: RepoManager;

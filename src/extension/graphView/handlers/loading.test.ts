@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import type { DataSource } from '../../../dataSource';
-import type { GitCommitData } from '../../../dataSource';
+import type { GitCommitData } from '../../git/read/types';
 import { CommitLoader } from '../commitLoader';
 import type { CommitDataPort } from '../commitLoader';
 import { CommitOrdering } from '../../../types';
-import type { RequestLoadCommits, ResponseMessage, ResponseLoadCommits } from '../../../types';
+import type { RequestLoadCommits, RequestLoadView, ResponseMessage, ResponseLoadCommits, ResponseLoadView } from '../../../types';
+import type { AbortLike } from '../../git/process/gitProcess';
 import type { CommitLoaderPort, ConfigSnapshot, HandlerContext, UiPort, ViewPort } from './context';
+import type { ProductionGitRepository } from '../../git/gitRepository';
 import { dispatchRequest } from './index';
 
 /**
- * Wiring tests (task 4.3, feature 2): the handler table's `loadCommits` handler delegates to a
- * REAL CommitLoader (not the recording stub of index.test.ts) and every staged response the
- * loader emits reaches the webview through `ctx.send` - proving the port surface the table
- * consumes is exactly the surface the extracted loader implements, before the Panel cutover
- * (task 4.4) constructs this pairing in production.
+ * Wiring tests (task 4.3, feature 2 + task 4.7): the handler table's `loadCommits` handler
+ * delegates to a REAL CommitLoader (not the recording stub of index.test.ts) and every staged
+ * response the loader emits reaches the webview through `ctx.send` - proving the port surface the
+ * table consumes is exactly the surface the extracted loader implements. The `loadView` half
+ * proves the merged open path answers in ONE response carrying both halves, through the same send.
  */
 
 function page(commits: string[]): GitCommitData {
@@ -34,12 +35,25 @@ function loadCommitsRequest(refreshId: number): RequestLoadCommits {
 	};
 }
 
+function loadViewRequest(refreshId: number): RequestLoadView {
+	return {
+		command: 'loadView', repo: '/repo', refreshId: refreshId, hard: false, branches: null, authors: null,
+		maxCommits: 1000, showTags: true, showRemoteBranches: false, includeCommitsMentionedByReflogs: false,
+		onlyFollowFirstParent: false, commitOrdering: CommitOrdering.Date, remotes: [], hideRemotes: [], stashes: [], filterPath: null
+	};
+}
+
 /** A context whose loader is the real CommitLoader over fake reads; only loader and send are exercised. */
 class WiringContext implements HandlerContext {
 	public readonly sent: ResponseMessage[] = [];
 	public reads = 0;
-	public readonly repo: DataSource = null as unknown as DataSource; // the handlers under test touch only ctx.loader and ctx.send
-	public readonly config: ConfigSnapshot = { gerrit: { remote: 'gerrit' } };
+	public readonly signals: (AbortLike | undefined)[] = [];
+	public readonly repo: ProductionGitRepository = null as unknown as ProductionGitRepository; // the handlers under test touch only ctx.loader and ctx.send
+	public readonly git = { hasGit: () => true } as never;
+	public readonly repoConfig = null as never;
+	public readonly gerrit = null as never;
+	public readonly t = (key: string): string => key;
+	public readonly config: ConfigSnapshot = { gerrit: { remote: 'gerrit' }, showRemoteHeads: false, squashPullMessageFormat: 0 as never, squashMergeMessageFormat: 0 as never };
 	public readonly ui: UiPort = null as unknown as UiPort; // never reached by these handlers
 	// The ports the loadCommits pipeline never touches (typed `never`, assignable to every port);
 	// loadRepoInfo reads only ctx.view, recorded minimally
@@ -52,17 +66,25 @@ class WiringContext implements HandlerContext {
 	public readonly view: ViewPort = {
 		viewHasCommits: false,
 		noteRefreshId: () => undefined,
-		repoSwitched: () => undefined
+		repoSwitched: () => undefined,
+		viewReady: () => undefined
 	};
 	public readonly loader: CommitLoaderPort;
 
 	constructor() {
+		const context = this;
 		const reads: CommitDataPort = {
-			getCommits: (_repo, query) => {
-				this.reads++;
+			getCommits: (_repo, query, signal) => {
+				context.reads++;
+				context.signals.push(signal);
 				return Promise.resolve(page(query.deferRemoteRefs ? ['a'] : ['a', 'b']));
 			},
-			getUncommittedChanges: () => Promise.resolve(0)
+			getUncommittedChanges: () => Promise.resolve(0),
+			getRepoInfo: () => Promise.resolve({
+				branches: ['main'], head: 'main', remotes: [], stashes: [], tags: [], error: null,
+				isRepo: true, operationState: { type: null, conflictedFiles: [], progress: null }
+			}),
+			getOperationState: () => Promise.resolve({ type: null, conflictedFiles: [], progress: null })
 		};
 		// The production pairing under test: the real loader implements the port the table declares
 		this.loader = new CommitLoader({
@@ -75,7 +97,7 @@ class WiringContext implements HandlerContext {
 				parseMetas: () => Promise.resolve(new Map<number, never>()),
 				getChangeUrlBase: () => Promise.resolve(null)
 			},
-			getConfig: () => ({ showUncommittedChanges: true, gerrit: { remote: 'gerrit', fetchLimit: 20 } }),
+			getConfig: () => ({ showUncommittedChanges: true, showRemoteHeads: false, gerrit: { remote: 'gerrit', fetchLimit: 20 } }),
 			logger: { log: () => undefined, logError: () => undefined },
 			formatUncommittedRow: (count) => 'Uncommitted Changes (' + count + ')',
 			stabiliser: {
@@ -130,5 +152,42 @@ describe('loadCommits handler wiring', () => {
 		await dispatchRequest(loadCommitsRequest(2), ctx);
 		await flush();
 		expect(ctx.reads).toBe(2); // the port call dropped the cache: the page was read again
+	});
+});
+
+describe('loadView handler wiring (the merged open path)', () => {
+	it('answers with ONE loadView response carrying the repo info and the first commit page', async () => {
+		const ctx = new WiringContext();
+		await dispatchRequest(loadViewRequest(1), ctx);
+		await flush();
+
+		const views = ctx.sent.filter((msg) => msg.command === 'loadView') as ResponseLoadView[];
+		expect(views.length).toBe(1);
+		expect(views[0].repo).toBe('/repo');
+		expect(views[0].refreshId).toBe(1);
+		expect(views[0].repoInfo).toMatchObject({ branches: ['main'], head: 'main', isRepo: true, error: null });
+		expect(views[0].commits.commits.map((c) => c.hash)).toEqual(['a', 'b']);
+		// The staged follow-ups keep their shape: the uncommitted row arrives as a loadCommits response
+		const followUps = ctx.sent.filter((msg) => msg.command === 'loadCommits') as ResponseLoadCommits[];
+		expect(followUps.length).toBe(1);
+		expect(followUps[0].uncommittedCount).toBe(0);
+	});
+
+	it('registers the read under the loader\'s per-repo cancellation: a newer load supersedes it', async () => {
+		const ctx = new WiringContext();
+		const first = loadViewRequest(1);
+		// The same kind of load, newer, with a different page key so it reads again (and registers its own signal)
+		const second: RequestLoadCommits = { ...loadCommitsRequest(2), maxCommits: 500 };
+		const firstDispatch = dispatchRequest(first, ctx);
+		await dispatchRequest(second, ctx);
+		await flush();
+		await firstDispatch;
+
+		// The first load's in-flight walk received a signal, and the newer load aborted it
+		expect(ctx.signals.length).toBe(2);
+		expect(ctx.signals[0]?.aborted).toBe(true);
+		expect(ctx.signals[1]?.aborted).toBe(false);
+		// The superseded open pushed nothing
+		expect(ctx.sent.filter((msg) => msg.command === 'loadView')).toEqual([]);
 	});
 });

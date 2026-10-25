@@ -16,7 +16,7 @@ export const gerritSetFetchRefs: Handler<'gerritSetFetchRefs'> = {
 		}
 		// Disabling deletes ALL locally fetched change refs with one batched update-ref, so the
 		// change commits leave the graph and nothing is re-fetched until it is enabled again
-		const { error, cleared } = await ctx.repo.gerrit.clearLocalChanges(msg.repo, ctx.config.gerrit.remote);
+		const { error, cleared } = await ctx.gerrit.clearLocalChanges(msg.repo, ctx.config.gerrit.remote);
 		if (error === null) {
 			ctx.loader.clearGerritCache(msg.repo);
 			ctx.loader.unmarkGerritStale(msg.repo);

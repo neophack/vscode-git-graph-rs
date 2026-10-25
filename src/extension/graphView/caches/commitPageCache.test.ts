@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GitCommitData } from '../../../dataSource';
+import type { GitCommitData } from '../../git/read/types';
 import { CommitOrdering } from '../../../types';
 import type { RequestLoadCommits } from '../../../types';
 import { CommitPageCache, commitPageCacheKey } from './commitPageCache';

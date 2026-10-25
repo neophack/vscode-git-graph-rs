@@ -1,9 +1,12 @@
-import type { DataSource } from '../../../dataSource';
+import type { ProductionGitRepository } from '../../git/gitRepository';
+import type { Localize } from '../../git/write/argSafety';
+import type { GitRunnerPort } from '../gitRunner';
+import type { RepoConfigData } from '../repoReads';
 import type { GraphViewRequests, RequestCommand } from '../../../shared/protocol/graphView';
 import type {
 	CodeReview, ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewGlobalState, GitGraphViewSnapshot,
 	GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, LossWarning, PullRequestConfig,
-	PullRequestInfo, RequestLoadCommits, RequestMessage, ResponseLoadCommits, ResponseMessage
+	PullRequestInfo, RequestLoadCommits, RequestLoadView, RequestMessage, ResponseLoadCommits, ResponseLoadView, ResponseMessage, SquashMessageFormat
 } from '../../../types';
 
 /**
@@ -46,6 +49,18 @@ export interface UiPort {
 	 * show (the impl derives the comparison base the same way src/utils/actions.ts does).
 	 */
 	viewDiffBinary(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus): void;
+	/**
+	 * Open the integrated terminal at `repo`, optionally running a Git command (the "Open Terminal"
+	 * button, and the interactive-rebase handoff of the rebase flow).
+	 */
+	openGitTerminal(repo: string, command: string | null, name: string): Thenable<ErrorInfo>;
+	/** Shell-quote an object for the integrated terminal's shell (the rebase flow's argument), or NULL when it cannot be quoted safely. */
+	quoteForTerminal(obj: string): string | null;
+	/**
+	 * Open the external diff tool over the directory diff of two revisions (a GUI tool blocks the
+	 * handler until it exits, so the impl resolves after the tool LAUNCHED).
+	 */
+	openExternalDirDiff(repo: string, fromHash: string, toHash: string, isGui: boolean): Thenable<ErrorInfo>;
 }
 
 /**
@@ -62,6 +77,11 @@ export interface CommitLoaderPort {
 	 * row) through the same send function as they complete.
 	 */
 	loadCommits(msg: RequestLoadCommits, send: (response: ResponseLoadCommits) => void): Promise<void>;
+	/**
+	 * Serve a loadView request (the merged open path): one response carrying the repo info and
+	 * the first commit page, then the same staged follow-ups.
+	 */
+	loadView(msg: RequestLoadView, send: (response: ResponseLoadView | ResponseLoadCommits) => void): Promise<void>;
 	/** Mark the repository's cached Gerrit data stale: a fetch may have updated its change refs. */
 	markGerritStale(repo: string): void;
 	/** Drop the stale flag (the repository's Gerrit change refs were just deleted). */
@@ -132,9 +152,9 @@ export interface ReposPort {
 }
 
 /**
- * The git identity-config writes of the Settings widget's User Details rows. GitConfigKey lives
- * in dataSource.ts until the Phase 3 git-layer split; the port carries plain key names so the
- * handler modules never import the enum's (vscode-typed) module at runtime.
+ * The git identity-config writes of the Settings widget's User Details rows. The keys are the
+ * write-op table's `GitConfigKey` (write/ops/config.ts); the port carries plain key names so the
+ * handler modules never import the (vscode-typed) configuration module at runtime.
  */
 export interface UserConfigPort {
 	setUserName(repo: string, name: string, location: GitConfigLocation): Promise<ErrorInfo>;
@@ -198,7 +218,7 @@ export type RefreshIdKind = 'loadRepoInfo' | 'loadCommits' | 'loadConfig';
  * and reports a repository switch so the Panel restarts watching and resets its per-repo state.
  */
 export interface ViewPort {
-	/** Whether the view currently renders a commit list (see CommitLoaderPort.viewHasCommits). */
+	/** Whether the view currently renders a commit list (see {@link viewHasCommits}). */
 	readonly viewHasCommits: boolean;
 	/** Record the latest refresh id of a staged request (embedded into the regenerated page). */
 	noteRefreshId(kind: RefreshIdKind, id: number): void;
@@ -208,29 +228,32 @@ export interface ViewPort {
 	 * watcher and the background poll baseline, and resets the loader's per-repo view state.
 	 */
 	repoSwitched(repo: string): void;
+	/**
+	 * The webview reported `ready`: the impl pushes the merged loadView result the panel began
+	 * reading at creation (the open path of task 4.7) and records the repository it pushed for.
+	 */
+	viewReady(): void;
 }
 
 /**
- * The slice of the extension configuration the request handlers read, taken once at the start
- * of the request (task 4.5 widens this into the full snapshot and moves the getConfig calls).
- */
-export interface ConfigSnapshot {
-	readonly gerrit: {
-		/** The remote the Gerrit integration fetches change refs from. */
-		readonly remote: string;
-	};
-}
-
-/**
- * Everything a handler may touch: the repository (the live DataSource until the git layer is
- * split in Phase 3 - imported here as a type only, so handler modules stay vscode-free), the
- * configuration snapshot, the UI and commit-loading ports, the panel-collaborator ports
- * (avatars, persisted state, the repository registry, the settings writes, pull requests and
- * the view state - each a port until its future module in the plan owns the impl), and the
- * send function back to the webview.
+ * Everything a handler may touch: the repository facade (the `GitRepository` the composition root
+ * composed from the read backend and the GitWriter — task 3.6's replacement of the legacy
+ * `DataSource`), the raw Git runner, the composed config cache and the Gerrit write, the
+ * configuration snapshot, the UI and commit-loading ports, the panel-collaborator ports (avatars,
+ * persisted state, the repository registry, the settings writes, pull requests and the view
+ * state), the localizer, and the send function back to the webview.
  */
 export interface HandlerContext {
-	readonly repo: DataSource;
+	/** The repository: reads via `repo.read.<method>`, writes via `repo.write(repo, op)`. */
+	readonly repo: ProductionGitRepository;
+	/** The raw Git runner (the Gerrit integration's data reads, the non-op flows). */
+	readonly git: GitPort;
+	/** The composed, cached repository configuration (the loadConfig handler's source). */
+	readonly repoConfig: RepoConfigPort;
+	/** The Gerrit write of the integration's disable flow. */
+	readonly gerrit: GerritWritesPort;
+	/** The localizer for handler-produced messages (injected, so this module stays vscode-free). */
+	readonly t: Localize;
 	readonly config: ConfigSnapshot;
 	readonly ui: UiPort;
 	readonly loader: CommitLoaderPort;
@@ -242,6 +265,58 @@ export interface HandlerContext {
 	readonly pullRequests: PullRequestsPort;
 	readonly view: ViewPort;
 	send(msg: ResponseMessage): void;
+}
+
+/**
+ * The context the write flows run against: the slice of the handler context they consume. The
+ * panel's HandlerContext satisfies this structurally (its `ui` port carries the two flow members
+ * among its own, and `repoConfig.invalidate` is the invalidation hook), so handlers pass `ctx`
+ * straight through to the flows.
+ */
+export type WriteFlowHost = import('../writeFlows').WriteFlowContext;
+
+/**
+ * The slice of the extension configuration the request handlers read, taken once at the start of
+ * the request. The Settings-related and merge/pull formats ride along so the handler modules stay
+ * free of the vscode-dependent configuration module.
+ */
+export interface ConfigSnapshot {
+	readonly gerrit: {
+		/** The remote the Gerrit integration fetches change refs from. */
+		readonly remote: string;
+	};
+	/** Whether remote HEADs are shown in the branch list (the loadRepoInfo / loadView ref read). */
+	readonly showRemoteHeads: boolean;
+	/** The squash-commit message formats of the squash pull and squash merge flows. */
+	readonly squashPullMessageFormat: SquashMessageFormat;
+	readonly squashMergeMessageFormat: SquashMessageFormat;
+}
+
+/**
+ * The raw Git runner of the view (see gitRunner.ts): the spawn seam behind the Gerrit
+ * integration's data reads and the couple of flows that are not pure ops.
+ */
+export type GitPort = GitRunnerPort;
+
+/**
+ * The composed, cached repository configuration of the Settings widget (the legacy
+ * `DataSource.getConfig` / `invalidateConfigCache` pair): the loadConfig handler serves identical
+ * requests from the cache, and a config-affecting write drops it.
+ */
+export interface RepoConfigPort {
+	/** The repository's composed configuration (the GitRepoConfig the response carries). */
+	load(repo: string, remotes: ReadonlyArray<string>): Promise<RepoConfigData>;
+	/** Drop the cached configuration of one repository (or every repository for NULL). */
+	invalidate(repo: string | null): void;
+}
+
+/**
+ * The one Gerrit write the view performs directly: deleting ALL locally fetched change refs with
+ * a single batched `update-ref --stdin` (a command fed on stdin, which no pure write op models
+ * yet — the runner carries it until the op table grows an input-feeding step).
+ */
+export interface GerritWritesPort {
+	clearLocalChanges(repo: string, remote: string): Promise<{ error: ErrorInfo; cleared: number }>;
 }
 
 /**

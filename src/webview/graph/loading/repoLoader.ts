@@ -39,6 +39,12 @@ export class RepoLoader {
 	private gerritFilterRefreshTimer: number | null = null;
 	/** The repositories whose pull requests were already requested (one request per repository). */
 	private readonly prStatusRepos: Set<string> = new Set();
+	/**
+	 * TRUE while the boot awaits the host's pushed `loadView` (the open path of task 4.7): the
+	 * repository switch the boot performs must not start the request chain — the data is already
+	 * in flight on the host side and arrives pushed.
+	 */
+	private bootPushExpected: boolean = false;
 
 	constructor(private readonly ctx: () => GraphContext) { }
 
@@ -47,7 +53,12 @@ export class RepoLoader {
 
 	/**
 	 * Load the first repository: restore what a webview reload keeps (the previous repository and
-	 * its scroll position), and request the data.
+	 * its scroll position), and wait for the pushed data.
+	 *
+	 * The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
+	 * `loadView` read when the panel was created and pushes the result as soon as the page
+	 * reports `ready` — which main.ts sends once this loader is composed. The boot sends NO
+	 * loadRepoInfo/loadCommits requests; the loading state shows until the push arrives.
 	 * @param prevState The state VS Code persisted for this webview (or the snapshot of a page left behind by an Extension Host restart).
 	 * @param lastActiveRepo The repository that was last active.
 	 * @param initialLoadViewTo Where the extension asked the view to load to.
@@ -66,9 +77,17 @@ export class RepoLoader {
 			ctx.viewport.restoreScrollTop = prevState.scrollTop;
 		}
 
-		if (!this.loadRepos(store.repos, lastActiveRepo, loadViewTo)) {
-			this.requestLoadRepoInfoAndCommits(false, false);
+		this.bootPushExpected = true;
+		this.loadRepos(store.repos, lastActiveRepo, loadViewTo);
+
+		// The pushed response finalises through the same response processing as a refresh's; the
+		// refresh state itself stays idle (the push is host-initiated, not a request cycle), and
+		// the loading skeleton shows until the pushed commits arrive.
+		store.refreshState.hard = false;
+		if (store.commits.length === 0) {
+			ctx.table.showLoadingSkeleton();
 		}
+
 		if (prevState && prevState.compareSourceHash !== null && prevState.compareSourceHash !== undefined
 			&& prevState.currentRepo === store.currentRepo) {
 			// Restore the "Select for Compare" selection after a webview reload, so it survives
@@ -135,7 +154,7 @@ export class RepoLoader {
 			store.commitPathFilter = loadViewTo !== null && typeof loadViewTo.filterPath === 'string' && loadViewTo.filterPath !== '' ? loadViewTo.filterPath : null;
 			ctx.controls.renderFilterButton();
 			ctx.dom.view.scrollTop = 0;
-			this.refresh(false);
+			this.finishRepoSwitchOrRefresh(false);
 			return false;
 		} else {
 			this.finaliseRepoLoad(false);
@@ -180,7 +199,20 @@ export class RepoLoader {
 		ctx.widgets.worktree.close();
 		ctx.widgets.statistics.close();
 		ctx.persistence.saveState();
-		this.refresh(true);
+		this.finishRepoSwitchOrRefresh(true);
+	}
+
+	/**
+	 * The trailing data load of a repository switch (or of a same-repo reload): the boot path
+	 * skips it — the data is already in flight on the host side and arrives with the pushed
+	 * `loadView` — while every later switch refreshes as before.
+	 */
+	private finishRepoSwitchOrRefresh(hard: boolean) {
+		if (this.bootPushExpected) {
+			this.bootPushExpected = false;
+			return;
+		}
+		this.refresh(hard);
 	}
 
 	private loadRepoInfo(branchOptions: ReadonlyArray<string>, branchHead: string | null, remotes: ReadonlyArray<string>, stashes: ReadonlyArray<GG.GitStash>, isRepo: boolean, remoteRefsPending: boolean = false) {
@@ -636,6 +668,47 @@ export class RepoLoader {
 
 
 	/* Responses */
+
+	/**
+	 * The pushed merged view of the open path (task 4.7): the repo info and the first commit page
+	 * in one message, followed by the same staged follow-ups the partial responses carry. Each
+	 * half routes through the processing of the corresponding partial response, so nothing about
+	 * the loading pipeline changes — only the boot's two round trips became zero.
+	 */
+	public processLoadView(msg: GG.ResponseLoadView) {
+		const ctx = this.ctx(), store = ctx.store;
+		this.bootPushExpected = false;
+		// Adopt the refresh id the host stamped the merged read with (it also rode the regenerated
+		// page's initialState): the staged follow-ups carry the same id and must be accepted,
+		// while anything older is dropped.
+		store.refreshState.loadRepoInfoRefreshId = msg.refreshId;
+		store.refreshState.loadCommitsRefreshId = msg.refreshId;
+		this.processLoadRepoInfoResponse({ command: 'loadRepoInfo', refreshId: msg.refreshId, ...msg.repoInfo });
+		this.processLoadCommitsResponse({ command: 'loadCommits', refreshId: msg.refreshId, ...msg.commits });
+		// The pushed page used the default view options (Show All branches, the extension's
+		// defaults): a repository whose own settings select specific branches, a Gerrit feed or a
+		// different ordering re-requests just the commits — one request instead of the two the
+		// old boot sent.
+		if (!this.pushedPageMatchesRepoSettings()) {
+			this.requestLoadRepoInfoAndCommits(false, true);
+		}
+	}
+
+	/** Whether the just-pushed default page matches this repository's own view settings. */
+	private pushedPageMatchesRepoSettings(): boolean {
+		const store = this.ctx().store, repoState = store.repoState, config = store.config;
+		// The pushed page showed all branches under the extension-level defaults; a repository
+		// whose own settings resolve to anything else must re-request under them.
+		const showAll = store.currentBranches !== null && store.currentBranches.length === 1 && store.currentBranches[0] === SHOW_ALL_BRANCHES;
+		const defaultsMatch =
+			getCommitOrdering(repoState.commitOrdering, config) === config.commitOrdering
+			&& getShowRemoteBranches(repoState.showRemoteBranchesV2, config) === config.showRemoteBranches
+			&& getShowTags(repoState.showTags, config) === config.showTags
+			&& getIncludeCommitsMentionedByReflogs(repoState.includeCommitsMentionedByReflogs, config) === config.includeCommitsMentionedByReflogs
+			&& getOnlyFollowFirstParent(repoState.onlyFollowFirstParent, config) === config.onlyFollowFirstParent
+			&& repoState.gerritFetchRefs !== true;
+		return showAll && defaultsMatch;
+	}
 
 	public processLoadRepoInfoResponse(msg: GG.ResponseLoadRepoInfo) {
 		const ctx = this.ctx();

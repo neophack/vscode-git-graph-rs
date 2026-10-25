@@ -97,7 +97,12 @@ function createManager(doubles, gitExecutable = { path: 'git', version: '2.45.0'
 	const onDidChangeConfiguration = new EventEmitter();
 	const logger = createLoggerStub();
 	const context = { extensionPath: root, subscriptions: [] };
-	const manager = new CommandManager(context, doubles.avatarManager, doubles.dataSource, doubles.extensionState, doubles.repoManager, gitExecutable, onDidChangeGitExecutable.subscribe, onDidChangeConfiguration.subscribe, logger);
+	// The view ports the panel consumes (task 3.6/4.4): structural fakes, since these tests
+	// exercise registration and dispatch, not the panel wiring behind them.
+	const viewRepo = { read: {}, write: { run: async () => null }, getOperationState: async () => ({ type: null, conflictedFiles: [], progress: null }) };
+	const gitRunner = { gitOutput: async () => '', runGitCommand: async () => null, runGitCommandWithInput: async () => null };
+	const legacyViews = { openCompareTab: () => { }, openBinaryCompare: () => { } };
+	const manager = new CommandManager(context, doubles.avatarManager, doubles.dataSource, viewRepo, gitRunner, legacyViews, doubles.extensionState, doubles.repoManager, gitExecutable, onDidChangeGitExecutable.subscribe, onDidChangeConfiguration.subscribe, logger);
 	return { manager, logger, onDidChangeGitExecutable, onDidChangeConfiguration };
 }
 
@@ -167,18 +172,18 @@ describe('git-graph-rs.view', () => {
 		await flush();
 		assert.equal(viewCalls.length, 1);
 		assert.equal(viewCalls[0][0], root);
-		assert.equal(viewCalls[0][6], null);
+		assert.equal(viewCalls[0][8], null);
 	});
 
 	it('loads the repository of the Source Control view argument, registering it when unknown', async () => {
 		doubles.repoManager.repos['/ws/known'] = { name: null };
 		vscode.runCommand('git-graph-rs.view', { rootUri: vscode.Uri.file('/ws/known') });
 		await flush();
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/known' });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/known' });
 
 		vscode.runCommand('git-graph-rs.view', { rootUri: vscode.Uri.file('/ws/new') });
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/new' });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/new' });
 		assert.ok(doubles.repoManager.repos['/ws/new']);
 	});
 
@@ -187,12 +192,12 @@ describe('git-graph-rs.view', () => {
 		vscode.window.activeTextEditor = { document: { uri: vscode.Uri.file('/ws/repo/src/a.ts') } };
 		vscode.runCommand('git-graph-rs.view');
 		await flush();
-		assert.equal(viewCalls[0][6], null);
+		assert.equal(viewCalls[0][8], null);
 
 		vscode.settings.openToTheRepoOfTheActiveTextEditorDocument = true;
 		vscode.runCommand('git-graph-rs.view');
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/repo' });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/repo' });
 	});
 });
 
@@ -202,22 +207,22 @@ describe('git-graph-rs.filterByFile', () => {
 	it('filters by the first selected file, relative to the repository root', async () => {
 		vscode.runCommand('git-graph-rs.filterByFile', [vscode.Uri.file('/ws/repo/src/a.ts'), { resourceUri: vscode.Uri.file('/ws/repo/src/b.ts') }, { uri: vscode.Uri.file('/ws/repo/src/a.ts') }]);
 		await flush();
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', filterPath: 'src/a.ts' });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/repo', filterPath: 'src/a.ts' });
 
 		vscode.runCommand('git-graph-rs.filterByFile', [vscode.Uri.file('/ws/other/b.ts'), vscode.Uri.file('/ws/repo/a.ts')]);
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/other', filterPath: 'b.ts' });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/other', filterPath: 'b.ts' });
 	});
 
 	it('uses "." for the repository root itself and falls back to the active editor', async () => {
 		vscode.runCommand('git-graph-rs.filterByFile', vscode.Uri.file('/ws/repo'));
 		await flush();
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', filterPath: '.' });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/repo', filterPath: '.' });
 
 		vscode.window.activeTextEditor = { document: { uri: vscode.Uri.file('/ws/repo/x.ts') } };
 		vscode.runCommand('git-graph-rs.filterByFile', undefined);
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/repo', filterPath: 'x.ts' });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/repo', filterPath: 'x.ts' });
 	});
 
 	it('reports when no file or a file outside any repository is given', async () => {
@@ -308,12 +313,12 @@ describe('git-graph-rs.fetch', () => {
 	it('opens the view directly with zero or one repository', async () => {
 		vscode.runCommand('git-graph-rs.fetch');
 		await flush();
-		assert.equal(viewCalls[0][6], null);
+		assert.equal(viewCalls[0][8], null);
 
 		doubles.repoManager.repos['/ws/only'] = { name: null };
 		vscode.runCommand('git-graph-rs.fetch');
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/only', runCommandOnLoad: 'fetch' });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/only', runCommandOnLoad: 'fetch' });
 	});
 
 	it('asks which repository to fetch, listing the last active repository first', async () => {
@@ -324,7 +329,7 @@ describe('git-graph-rs.fetch', () => {
 		vscode.runCommand('git-graph-rs.fetch');
 		await flush();
 		assert.deepEqual(vscode.callsTo('showQuickPick')[0].args[0].map((i) => i.description), ['/ws/b', '/ws/a']);
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/b', runCommandOnLoad: 'fetch' });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/b', runCommandOnLoad: 'fetch' });
 
 		vscode.responses.showQuickPick = [new Error('closed')];
 		vscode.runCommand('git-graph-rs.fetch');
@@ -393,11 +398,11 @@ describe('code review commands', () => {
 		vscode.responses.showQuickPick = [(items) => items[0], (items) => items[1], new Error('closed')];
 		vscode.runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', commitDetails: { commitHash: hashB, compareWithHash: hashA } });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/repo', commitDetails: { commitHash: hashB, compareWithHash: hashA } });
 
 		vscode.runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
-		assert.deepEqual(viewCalls[1][6], { repo: '/ws/repo', commitDetails: { commitHash: hashA, compareWithHash: null } });
+		assert.deepEqual(viewCalls[1][8], { repo: '/ws/repo', commitDetails: { commitHash: hashA, compareWithHash: null } });
 
 		vscode.runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
@@ -431,7 +436,7 @@ describe('git-graph-rs.version', () => {
 
 		manager.dispose();
 		({ manager } = createManager(doubles));
-		const broken = new CommandManager({ extensionPath: '/nope' }, doubles.avatarManager, doubles.dataSource, doubles.extensionState, doubles.repoManager, null, () => ({ dispose() {} }), () => ({ dispose() {} }), createLoggerStub());
+		const broken = new CommandManager({ extensionPath: '/nope' }, doubles.avatarManager, doubles.dataSource, { read: {}, write: { run: async () => null } }, { gitOutput: async () => '' }, { openCompareTab: () => { }, openBinaryCompare: () => { } }, doubles.extensionState, doubles.repoManager, null, () => ({ dispose() {} }), () => ({ dispose() {} }), createLoggerStub());
 		vscode.runCommand('git-graph-rs.version');
 		await flush();
 		assert.equal(lastError(), t('versionInfoError'));
@@ -451,7 +456,7 @@ describe('git-graph-rs.searchCommits', () => {
 		const items = vscode.callsTo('showQuickPick')[0].args[0];
 		assert.equal(items[0].label, 'cccccccc');
 		assert.equal(items[0].description, 'fix it');
-		assert.deepEqual(viewCalls[0][6], { repo: '/ws/repo', findCommitHash: 'c'.repeat(40) });
+		assert.deepEqual(viewCalls[0][8], { repo: '/ws/repo', findCommitHash: 'c'.repeat(40) });
 	});
 
 	it('asks for the repository when there are several, and stops on empty input or no results', async () => {

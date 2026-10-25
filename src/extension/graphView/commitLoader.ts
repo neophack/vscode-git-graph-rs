@@ -1,6 +1,7 @@
-import type { GitCommitData } from '../../dataSource';
+import type { AbortLike } from '../git/process/gitProcess';
+import type { GitCommitData, RefReadOptions } from '../git/read/types';
 import type {
-	CommitOrdering, ErrorInfo, GerritChangeState, GitCommit, GitStash, RequestLoadCommits, ResponseLoadCommits
+	CommitOrdering, ErrorInfo, GerritChangeState, GitCommit, GitOperationState, GitStash, RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView
 } from '../../types';
 import { CommitPageCache, commitPageCacheKey } from './caches/commitPageCache';
 import type { GerritCacheEntry } from './caches/gerritCache';
@@ -65,8 +66,26 @@ export interface CommitLoadQuery {
 
 /** The repository reads the pipeline needs, injected so unit tests run without Git. */
 export interface CommitDataPort {
-	getCommits(repo: string, query: CommitLoadQuery): Promise<GitCommitData>;
+	/** A page of the graph; the optional signal cancels a superseded walk (task 4.8's seam). */
+	getCommits(repo: string, query: CommitLoadQuery, signal?: AbortLike): Promise<GitCommitData>;
 	getUncommittedChanges(repo: string): Promise<number>;
+	/** The repository info the merged open-path response carries (the loadRepoInfo half). */
+	getRepoInfo(repo: string, options: RefReadOptions): Promise<RepoInfoHalf>;
+	/** The in-progress operation state the merged open-path response carries. */
+	getOperationState(repo: string): Promise<GitOperationState>;
+}
+
+/** The repo-info half of a merged loadView response (the loadRepoInfo response fields, minus its envelope). */
+export interface RepoInfoHalf {
+	readonly branches: ReadonlyArray<string>;
+	readonly head: string | null;
+	readonly remotes: ReadonlyArray<string>;
+	readonly stashes: ReadonlyArray<GitStash>;
+	readonly tags: ReadonlyArray<string>;
+	readonly error: ErrorInfo;
+	readonly isRepo: boolean;
+	readonly remoteRefsPending?: boolean;
+	readonly operationState: GitOperationState;
 }
 
 /** The Gerrit reads the pipeline needs (the surface of GerritDataSource it uses), injected. */
@@ -83,6 +102,22 @@ export interface GerritDataPort {
 export interface CommitLoaderLogger {
 	log(message: string): void;
 	logError(message: string): void;
+}
+
+/**
+ * One began merged open-path read (task 4.7): the promise settles with the merged response (NULL
+ * once a newer load of the repository superseded it — the caller pushes nothing), and the
+ * follow-up launcher runs the staged remote-refs / uncommitted-changes responses once the
+ * response was actually pushed to a webview.
+ */
+export interface LoadViewTicket {
+	readonly promise: Promise<ResponseLoadView | null>;
+	followUps(send: (response: ResponseLoadCommits) => void): void;
+}
+
+/** The configuration values the merged open-path read consults (a subset of GitGraphViewConfig). */
+interface LoaderConfig extends CommitLoaderConfig {
+	readonly showRemoteHeads: boolean;
 }
 
 /** The decision for one reading of the repository's uncommitted-change count. */
@@ -105,7 +140,7 @@ export interface UncommittedStabiliser {
 export interface CommitLoaderDeps {
 	readonly reads: CommitDataPort;
 	readonly gerrit: GerritDataPort;
-	readonly getConfig: () => CommitLoaderConfig;
+	readonly getConfig: () => LoaderConfig;
 	readonly logger: CommitLoaderLogger;
 	/**
 	 * The "Uncommitted Changes ({0})" row message (the live pipeline calls
@@ -148,6 +183,12 @@ export class CommitLoader implements CommitLoaderPort {
 	private readonly uncommittedRecheckMs: number;
 	/** The run of the CURRENT loadCommits request; a new request aborts it (see the header). */
 	private currentRun: AbortController | null = null;
+	/**
+	 * The in-flight read of each repository, keyed by repo path: a newer load of the same kind
+	 * (loadCommits or the merged loadView) cancels the older one's in-flight engine walk through
+	 * its signal — the cooperative cancellation seam of the read backend (task 2.9/4.8).
+	 */
+	private readonly activeLoads: Map<string, AbortController> = new Map();
 	private disposed = false;
 	/**
 	 * Whether the webview is currently RENDERING a commit list (set once a `loadCommits` response
@@ -184,13 +225,16 @@ export class CommitLoader implements CommitLoaderPort {
 	 */
 	public async loadCommits(msg: RequestLoadCommits, send: (response: ResponseLoadCommits) => void): Promise<void> {
 		if (this.disposed) return;
-		// A new request supersedes the previous one: abort its remaining follow-ups. Every stage
-		// below cooperatively checks `run.signal.aborted` before sending (the live pipeline
-		// compared `loadCommitsRefreshId !== msg.refreshId` instead; the signal is the same rule
-		// plus disposal, and it also covers a re-sent request id).
+		// A new request supersedes the previous one: abort its remaining follow-ups AND cancel its
+		// in-flight engine walk (a superseded page's result is never rendered, so its backend work
+		// is pure waste). Every stage below cooperatively checks `run.signal.aborted` before
+		// sending (the live pipeline compared `loadCommitsRefreshId !== msg.refreshId` instead; the
+		// signal is the same rule plus disposal, and it also covers a re-sent request id).
 		this.abortCurrentRun();
+		this.cancelActiveLoad(msg.repo);
 		const run = new AbortController();
 		this.currentRun = run;
+		this.activeLoads.set(msg.repo, run);
 
 		const startTime = this.deps.now();
 		// Remote-tracking refs dominate the ref scan on repositories with many of them, so the
@@ -251,6 +295,131 @@ export class CommitLoader implements CommitLoaderPort {
 		}
 	}
 
+	/* ---------- The merged open path (task 4.7) ---------- */
+
+	/**
+	 * Begin the merged open-path read of a repository: the repo info and the first commit page in
+	 * one answer, served while the webview is still booting. The panel calls this at creation,
+	 * keeps the ticket, and PUSHES the completed (or in-flight) result when the page reports
+	 * `ready` — the open path costs the webview zero loadRepoInfo/loadCommits round trips.
+	 *
+	 * The read registers under the same per-repository cancellation as `loadCommits`: a newer
+	 * load of the same repository cancels this one's in-flight walk.
+	 * @returns The ticket whose promise settles with the merged response (NULL once superseded —
+	 *          the caller must not push a stale view), and the launcher of the staged follow-ups
+	 *          (remote refs, the "Uncommitted Changes" row), which the caller starts only once the
+	 *          response was actually pushed.
+	 */
+	public beginLoadView(msg: RequestLoadView): LoadViewTicket {
+		if (this.disposed) {
+			return { promise: Promise.resolve(null), followUps: () => undefined };
+		}
+		// The follow-up machinery is typed against RequestLoadCommits; the merged request carries
+		// the same commit-page options (the Gerrit integration is not part of the open path).
+		const commitsMsg: RequestLoadCommits = {
+			command: 'loadCommits',
+			repo: msg.repo,
+			refreshId: msg.refreshId,
+			hard: msg.hard,
+			branches: msg.branches,
+			authors: msg.authors,
+			maxCommits: msg.maxCommits,
+			showTags: msg.showTags,
+			showRemoteBranches: msg.showRemoteBranches,
+			includeCommitsMentionedByReflogs: msg.includeCommitsMentionedByReflogs,
+			onlyFollowFirstParent: msg.onlyFollowFirstParent,
+			commitOrdering: msg.commitOrdering,
+			remotes: msg.remotes,
+			hideRemotes: msg.hideRemotes,
+			stashes: msg.stashes,
+			gerritFetchRefs: false,
+			gerritFetchLimit: null,
+			gerritStatusFilter: { new: true, merged: true, abandoned: true, wip: true },
+			filterPath: msg.filterPath === undefined ? null : msg.filterPath
+		};
+		this.abortCurrentRun();
+		this.cancelActiveLoad(msg.repo);
+		const run = new AbortController();
+		this.currentRun = run;
+		this.activeLoads.set(msg.repo, run);
+		const deferRemoteRefs = msg.showRemoteBranches && !this.renderingCommits;
+		const startTime = this.deps.now();
+		let page: GitCommitData | null = null;
+		const promise = (async (): Promise<ResponseLoadView | null> => {
+			page = await this.getCommitsCached(commitsMsg, null, true, msg.hard, deferRemoteRefs);
+			if (run.signal.aborted) return null; // superseded: the newer load owns the view
+			const repoInfo = await this.deps.reads.getRepoInfo(msg.repo, {
+				showRemoteBranches: msg.showRemoteBranches && !deferRemoteRefs,
+				showRemoteHeads: this.deps.getConfig().showRemoteHeads,
+				hideRemotes: msg.hideRemotes,
+				showChangeRefs: false,
+				showStashes: true
+			});
+			if (run.signal.aborted) return null;
+			if (page === null) return null;
+			this.deps.logger.log('Loaded the view of ' + msg.repo + ' (' + page.commits.length + ' commits) in ' + (this.deps.now() - startTime) + ' ms');
+			const merged: ResponseLoadView = {
+				command: 'loadView',
+				repo: msg.repo,
+				refreshId: msg.refreshId,
+				repoInfo: repoInfo,
+				commits: {
+					commits: page.commits,
+					head: page.head,
+					tags: page.tags,
+					moreCommitsAvailable: page.moreCommitsAvailable,
+					onlyFollowFirstParent: msg.onlyFollowFirstParent,
+					gerritStates: null, // the Gerrit pipeline is not part of the merged open path
+					uncommittedPending: true,
+					branches: page.branches ?? null,
+					error: page.error
+				}
+			};
+			return merged;
+		})().catch((error: unknown) => {
+			if (run.signal.aborted) return null;
+			this.deps.logger.logError('Failed to load the view of ' + msg.repo + ': ' + String(error));
+			const message = error instanceof Error ? error.message : String(error);
+			const failed: ResponseLoadView = {
+				command: 'loadView',
+				repo: msg.repo,
+				refreshId: msg.refreshId,
+				repoInfo: {
+					branches: [], head: null, remotes: [], stashes: [],
+					error: message, isRepo: false,
+					operationState: { type: null, conflictedFiles: [], progress: null }
+				},
+				commits: {
+					commits: [], head: null, tags: [], moreCommitsAvailable: false,
+					onlyFollowFirstParent: msg.onlyFollowFirstParent,
+					gerritStates: null, error: message
+				}
+			};
+			return failed;
+		});
+		const followUps = (send: (response: ResponseLoadCommits) => void) => {
+			if (run.signal.aborted || page === null) return;
+			this.launchFollowUps(commitsMsg, run, send, async () => {
+				const complete = await this.sendRemoteRefsFollowUp(commitsMsg, run, send, null, page as GitCommitData, null, true, msg.hard);
+				await this.sendUncommittedChangesFollowUp(commitsMsg, run, send, complete);
+			});
+		};
+		return { promise: promise, followUps: followUps };
+	}
+
+	/**
+	 * Serve a `loadView` request: begin the merged read and push its response through `send`,
+	 * then run the staged follow-ups. (The open path itself goes through `beginLoadView` + the
+	 * panel's `ready` push; this entry answers an explicit request, e.g. an automation replay.)
+	 */
+	public async loadView(msg: RequestLoadView, send: (response: ResponseLoadView | ResponseLoadCommits) => void): Promise<void> {
+		const ticket = this.beginLoadView(msg);
+		const response = await ticket.promise;
+		if (response === null) return; // superseded by a newer load: it answers instead
+		send(response);
+		ticket.followUps(send);
+	}
+
 	/** Mark the repository's cached Gerrit data stale: a fetch may have updated its change refs. */
 	public markGerritStale(repo: string): void {
 		this.gerritStore.markStale(repo);
@@ -302,10 +471,12 @@ export class CommitLoader implements CommitLoaderPort {
 		this.deps.stabiliser.reset();
 	}
 
-	/** Stop the loader: aborts the current run's follow-ups and refuses further loads. */
+	/** Stop the loader: cancels every in-flight read, aborts the current run's follow-ups and refuses further loads. */
 	public dispose(): void {
 		this.disposed = true;
 		this.abortCurrentRun();
+		for (const load of this.activeLoads.values()) load.abort();
+		this.activeLoads.clear();
 	}
 
 	/* ---------- Follow-up plumbing ---------- */
@@ -346,6 +517,19 @@ export class CommitLoader implements CommitLoaderPort {
 		if (this.currentRun !== null) {
 			this.currentRun.abort();
 			this.currentRun = null;
+		}
+	}
+
+	/**
+	 * Cancel the repository's in-flight read (the same-kind new request invalidates the old one):
+	 * the read backend's walk receives the abort through its signal and stops (the engine cancels
+	 * the request by id; the CLI kills the child process).
+	 */
+	private cancelActiveLoad(repo: string): void {
+		const previous = this.activeLoads.get(repo);
+		if (previous !== undefined) {
+			this.activeLoads.delete(repo);
+			previous.abort();
 		}
 	}
 
@@ -593,6 +777,6 @@ export class CommitLoader implements CommitLoaderPort {
 			filterPath: msg.filterPath === undefined ? null : msg.filterPath,
 			deferUncommittedChanges: deferUncommittedChanges,
 			deferRemoteRefs: deferRemoteRefs
-		}));
+		}, this.currentRun !== null ? this.currentRun.signal : undefined));
 	}
 }

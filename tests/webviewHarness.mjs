@@ -280,7 +280,18 @@ export async function bootView(total, options = {}) {
 		window.dispatchEvent(new window.MessageEvent('message', { data: message }));
 	};
 	const respond = async (message) => {
-		if (message.command === 'loadRepoInfo') {
+		if (message.command === 'ready') {
+			/* The push-based boot (REFACTOR-PLAN task 4.7): the page installs its router, sends
+			 * `ready` and waits for the host to push the merged loadView result. The pull
+			 * requests below stay answered for the refreshes that reuse them. */
+			const visibleHistory = state.window !== null ? state.history.slice(0, state.window) : state.history.slice();
+			const finalCommits = state.uncommitted === null ? visibleHistory : [uncommittedRow(state.head, state.uncommitted), ...visibleHistory];
+			dispatch({
+				command: 'loadView', repo: REPO, refreshId: 1,
+				repoInfo: { branches: ['main'], head: state.branchHead, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } },
+				commits: { commits: finalCommits, head: state.head, tags: [], moreCommitsAvailable: state.window !== null, onlyFollowFirstParent: false, gerritStates: null, uncommittedPending: false, error: null, uncommittedCount: state.uncommittedCount }
+			});
+		} else if (message.command === 'loadRepoInfo') {
 			dispatch({ command: 'loadRepoInfo', refreshId: message.refreshId, branches: ['main'], head: state.branchHead, remotes: [], stashes: [], isRepo: true, error: null, operationState: { type: null, conflictedFiles: [], progress: null } });
 		} else if (message.command === 'loadCommits') {
 			/* One merged response. The extension's real multi-stage delivery (a first response

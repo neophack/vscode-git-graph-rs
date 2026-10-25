@@ -222,6 +222,13 @@ export async function bootRealView(repo) {
 	const { AvatarManager } = require(path.join(rootDir, 'out', 'avatarManager.js'));
 	const { RepoManager } = require(path.join(rootDir, 'out', 'repoManager.js'));
 	const { GitGraphView } = require(path.join(rootDir, 'out', 'gitGraphView.js'));
+	// The new git layer the panel now runs on (extension/git/**): composed below exactly like
+	// the extension's activate() does, so the harness drives the real reader/writer/runner.
+	const { GitProcess } = require(path.join(rootDir, 'out', 'extension', 'git', 'process', 'gitProcess.js'));
+	const { GitWriter } = require(path.join(rootDir, 'out', 'extension', 'git', 'write', 'gitWriter.js'));
+	const { GitRepository } = require(path.join(rootDir, 'out', 'extension', 'git', 'gitRepository.js'));
+	const { createBackend } = require(path.join(rootDir, 'out', 'extension', 'git', 'read', 'backendIndex.js'));
+	const { createGitRunner } = require(path.join(rootDir, 'out', 'extension', 'graphView', 'gitRunner.js'));
 	// The automation server + bridge resolve 'vscode' and gitGraphView too: load them inside the
 	// stub window so tests can drive the real pipeline over the real socket protocol.
 	const { AutomationServer } = require(path.join(rootDir, 'out', 'automation', 'server.js'));
@@ -265,6 +272,16 @@ export async function bootRealView(repo) {
 	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
 	const repoManager = new RepoManager(dataSource, extensionState, configurationEmitter.subscribe, logger);
 
+	// The GitRepository facade the view reads and writes through, over the same real git binary
+	// (engine preferred, CLI fallback - createBackend decides), and the raw runner the editor-
+	// script flows use. Mirrors src/extension.ts composition-for-composition.
+	const gitProcess = new GitProcess(() => ({ path: 'git', version: '2.50.0' }));
+	const gitWriter = new GitWriter(gitProcess, () => ({ signCommits: false, signTags: false }), (key) => key);
+	const viewReader = createBackend({ gitPath: 'git' });
+	const viewRepo = new GitRepository(viewReader, gitWriter, runTextOf(gitProcess));
+	const gitRunner = createGitRunner(gitProcess, null, (key) => key);
+	const legacyViews = { openCompareTab: () => { }, openBinaryCompare: () => { } };
+
 	for (let i = 0; i < 600 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
 	assert.ok(Object.keys(repoManager.getRepos()).length > 0, 'the repository was discovered');
 
@@ -273,9 +290,9 @@ export async function bootRealView(repo) {
 	// CommandManager's handlers — command-mode automation actions (the contributed VS Code menus'
 	// commands, e.g. filterByFile, view, amendLastCommit) run the same code the editor's menus
 	// run, and the host bridge's openView keeps switching repositories as before.
-	const commandManager = new CommandManager(context, avatarManager, dataSource, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger);
+	const commandManager = new CommandManager(context, avatarManager, dataSource, viewRepo, gitRunner, legacyViews, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger);
 
-	GitGraphView.createOrShow(rootDir, dataSource, extensionState, avatarManager, repoManager, new Logger(), null);
+	GitGraphView.createOrShow(rootDir, viewRepo, gitRunner, legacyViews, extensionState, avatarManager, repoManager, new Logger(), null);
 	assert.ok(graphPanel.webview.html.length > 0, 'the webview html was generated');
 
 	// The extension (and its AskpassManager HTTP servers) is live from here on: anything that
@@ -292,6 +309,7 @@ export async function bootRealView(repo) {
 		// would otherwise hold the after-hook's cleanup hostage on Windows (EPERM past the whole
 		// bounded-removal budget).
 		for (const known of Object.keys(repoManager.getRepos())) repoManager.removeRepo(known);
+		try { viewReader.closeAllRepositories(); } catch (_) { /* nothing opened yet */ }
 		for (const server of createdServers.splice(0)) server.close();
 	};
 
@@ -363,3 +381,15 @@ export async function bootRealView(repo) {
 	return { window, document, viewElem, scrollTo, rows, GitGraphView, dispose, sleep, automation: { AutomationServer, HostBridge, suiteRunner, reportView } };
 }
 
+/** The facade's plain text runner (src/extension.ts runTextOf, mirrored for the compiled modules). */
+function runTextOf(process) {
+	const eol = new RegExp('\r\n|\r|\n');
+	return (argv, repo) => process.run(argv, { cwd: repo }).then((result) => {
+		if (result.code !== 0) {
+			const lines = (result.stderr + result.stdout.toString('utf8')).split(eol);
+			lines.pop();
+			throw lines.join('\n');
+		}
+		return result.stdout.toString('utf8');
+	});
+}

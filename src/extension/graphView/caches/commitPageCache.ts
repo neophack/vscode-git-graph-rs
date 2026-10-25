@@ -1,4 +1,4 @@
-import type { GitCommitData } from '../../../dataSource';
+import type { GitCommitData } from '../../git/read/types';
 import type { RequestLoadCommits } from '../../../types';
 
 /**

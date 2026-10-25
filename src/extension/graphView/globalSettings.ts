@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import type { DataSource } from '../../dataSource';
-import { GitConfigKey } from '../../dataSource';
+import type { ProductionGitRepository } from '../git/gitRepository';
+import { GitConfigKey } from '../git/write/ops/config';
+import { setConfigValue, unsetConfigValue } from '../git/write/ops/config';
 import { GitConfigLocation } from '../../types';
 import type { CommitAuthor, ErrorInfo } from '../../types';
 import { getConfig } from '../../config';
@@ -143,7 +144,10 @@ function formatGlobalAuthor(user: { name: string | null, email: string | null })
 
 /** The collaborators the global-setting save flow needs. */
 export interface GlobalSettingDeps {
-	readonly dataSource: DataSource;
+	/** The repository facade: the global identity read, the configuration writes. */
+	readonly repo: ProductionGitRepository;
+	/** The composed-configuration cache, invalidated when the global identity was rewritten. */
+	readonly repoConfig: { invalidate(repo: string | null): void };
 	/** The ExtensionState surface the flow reads and writes. */
 	readonly state: {
 		getGlobalAuthorWritten(): { name: string, email: string } | null;
@@ -222,7 +226,7 @@ export async function saveGlobalSetting(deps: GlobalSettingDeps, setting: string
  * @param authors The saved author identities.
  */
 async function applyDefaultGlobalAuthor(deps: GlobalSettingDeps, repo: string, authors: ReadonlyArray<{ name: string, email: string }>) {
-	const global = await deps.dataSource.getGlobalUserDetails(repo).catch(() => null);
+	const global = await deps.repo.read.getGlobalUserDetails(repo).catch(() => null);
 	if (global === null) return;
 	const decision = resolveGlobalAuthorWriteAction(authors, global, deps.state.getGlobalAuthorWritten());
 	if (decision.action === 'none' || decision.author === null) return;
@@ -235,8 +239,8 @@ async function applyDefaultGlobalAuthor(deps: GlobalSettingDeps, repo: string, a
 		);
 		if (overwrite !== t('globalAuthorTakeOverButton', formatGlobalAuthor(author))) return; // the existing identity stays
 	}
-	const nameError = await deps.dataSource.setConfigValue(repo, GitConfigKey.UserName, author.name, GitConfigLocation.Global);
-	const emailError = await deps.dataSource.setConfigValue(repo, GitConfigKey.UserEmail, author.email, GitConfigLocation.Global);
+	const nameError = await deps.repo.write.run(repo, setConfigValue({ key: GitConfigKey.UserName, value: author.name, location: GitConfigLocation.Global }));
+	const emailError = await deps.repo.write.run(repo, setConfigValue({ key: GitConfigKey.UserEmail, value: author.email, location: GitConfigLocation.Global }));
 	if (nameError !== null || emailError !== null) {
 		deps.logger.log('Defaulting the global author to the first author identity failed: ' + (nameError ?? emailError));
 	} else {
@@ -245,7 +249,7 @@ async function applyDefaultGlobalAuthor(deps: GlobalSettingDeps, repo: string, a
 	}
 	// The global Git configuration changed, which the repository's `.git/config` watcher
 	// cannot see: drop the cached config data so the next load reflects it
-	deps.dataSource.invalidateConfigCache(repo);
+	deps.repoConfig.invalidate(repo);
 }
 
 /**
@@ -267,7 +271,7 @@ async function applyDefaultGlobalAuthor(deps: GlobalSettingDeps, repo: string, a
  * @param previousAuthors The identities the list held before it was emptied.
  */
 async function clearGlobalAuthor(deps: GlobalSettingDeps, repo: string, previousAuthors: ReadonlyArray<{ name: string, email: string }>) {
-	const global = await deps.dataSource.getGlobalUserDetails(repo).catch(() => null);
+	const global = await deps.repo.read.getGlobalUserDetails(repo).catch(() => null);
 	const decision = resolveGlobalAuthorClearAction(global, deps.state.getGlobalAuthorWritten(), previousAuthors);
 	// A decision other than 'none' implies an identity is configured (resolveGlobalAuthorClearAction
 	// answers 'none' for an unset configuration), but the compiler cannot see through it: narrow here.
@@ -280,9 +284,9 @@ async function clearGlobalAuthor(deps: GlobalSettingDeps, repo: string, previous
 		);
 		if (remove !== t('globalAuthorRemoveButton', formatGlobalAuthor(global))) return; // the foreign identity stays
 	}
-	const guardError = await deps.dataSource.setConfigValue(repo, GitConfigKey.UseConfigOnly, 'true', GitConfigLocation.Global);
-	const nameError = global !== null && global.name !== null ? await deps.dataSource.unsetConfigValue(repo, GitConfigKey.UserName, GitConfigLocation.Global) : null;
-	const emailError = global !== null && global.email !== null ? await deps.dataSource.unsetConfigValue(repo, GitConfigKey.UserEmail, GitConfigLocation.Global) : null;
+	const guardError = await deps.repo.write.run(repo, setConfigValue({ key: GitConfigKey.UseConfigOnly, value: 'true', location: GitConfigLocation.Global }));
+	const nameError = global !== null && global.name !== null ? await deps.repo.write.run(repo, unsetConfigValue({ key: GitConfigKey.UserName, location: GitConfigLocation.Global })) : null;
+	const emailError = global !== null && global.email !== null ? await deps.repo.write.run(repo, unsetConfigValue({ key: GitConfigKey.UserEmail, location: GitConfigLocation.Global })) : null;
 	if (guardError !== null || nameError !== null || emailError !== null) {
 		deps.logger.log('Clearing the global author after the identity list was emptied failed: ' + (guardError ?? nameError ?? emailError));
 	} else {
@@ -290,5 +294,5 @@ async function clearGlobalAuthor(deps: GlobalSettingDeps, repo: string, previous
 	}
 	// The global Git configuration changed, which the repository's `.git/config` watcher
 	// cannot see: drop the cached config data so the next load reflects it
-	deps.dataSource.invalidateConfigCache(repo);
+	deps.repoConfig.invalidate(repo);
 }
