@@ -1,4 +1,7 @@
 node_modules/
+
+# Performance gate output (recorded baselines are per-machine; regenerate with --record)
+test/perf/results/
 out/
 target/
 coverage/
