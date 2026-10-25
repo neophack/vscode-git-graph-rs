@@ -5,6 +5,7 @@ import { hideHelpTooltip } from '../../common/helpTooltip';
 import { helpTooltipAttrs, html, joinHtml, SafeHtml, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { REF_INVALID_REGEX } from '../../common/util';
 import { SelectOption } from '../state/store';
@@ -373,6 +374,9 @@ export class Dialog {
 	}
 
 	private show(type: DialogType, message: DialogMessage, actionName: string | null, secondaryActionName: string, actioned: (() => void) | null, secondaryActioned: (() => void) | null, target: DialogTarget | null) {
+		// The dialog styles are on demand (task 5.9's CSS split): kick their chunk so the first
+		// dialog of a session is styled as soon as the (idle-prefetched) chunk arrives
+		ensureWidgetStyles(() => import('../../styles/onDemand'));
 		this.deps.closeDialogAndContextMenu();
 		// A dialog being replaced is fading out: remove it immediately so it doesn't overlap the new one
 		const closing = document.querySelectorAll('.dialog.closing');

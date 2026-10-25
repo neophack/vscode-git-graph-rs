@@ -1,6 +1,7 @@
 import { alterClass, CLASS_MOBILE_MODE, removeClassFromAll } from '../../common/dom';
 import { html, joinHtml, SafeHtml, setHtml } from '../../common/html';
 import { SVG_ICONS } from '../../common/icons';
+import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { ContextMenuTarget, TargetType } from '../state/types';
 
@@ -44,6 +45,9 @@ export class ContextMenu {
 	 * @param className An additional class name of the context menu.
 	 */
 	public show(actions: ContextMenuActions, checked: boolean, target: ContextMenuTarget | null, event: MouseEvent, frameElem: HTMLElement, onClose: (() => void) | null = null, className: string | null = null) {
+		// The menu's styles are on demand (task 5.9's CSS split): kick their chunk so the first
+		// menu of a session is styled as soon as the (idle-prefetched) chunk arrives
+		ensureWidgetStyles(() => import('../../styles/onDemand'));
 		const groups: SafeHtml[] = [], handlers: (() => void)[] = [];
 		this.close();
 

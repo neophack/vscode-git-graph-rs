@@ -1,0 +1,278 @@
+/* The Gerrit review info dialog (click on a change badge) - the on-demand half of the former
+ * gerrit.css (task 5.9's CSS split): this sheet loads with the other widget surfaces through
+ * src/webview/styles/onDemand.ts, because the dialog only appears after a user click. The row
+ * badge and the colour palette it shares stay critical in gerrit.css.
+ * Baseline is Chromium 69 (VS Code 1.38). */
+
+.gg-dialog {
+	display:block;
+	text-align:left;
+}
+
+/* Header: the Gerrit icon and change number, the status pill with the patchset
+   and owner, and the "Open in Gerrit" button along the right edge (kept clear
+   of the ✕ close icon, which sits above the padding-right). */
+.gg-head {
+	display:flex;
+	align-items:flex-start;
+	padding-right:26px;
+}
+
+.gg-head-icon {
+	flex:0 0 auto;
+	margin:1px 8px 0 0;
+}
+
+.gg-dialog .gg-head-icon svg {
+	width:20px;
+	height:20px;
+	fill:var(--gg-icon);
+	opacity:1;
+}
+
+.gg-head-main {
+	flex:1 1 auto;
+	min-width:0;
+}
+
+.gg-title {
+	font-size:14px;
+	font-weight:bold;
+	line-height:20px;
+}
+
+.gg-meta {
+	display:flex;
+	align-items:center;
+	flex-wrap:wrap;
+	margin-top:5px;
+}
+
+.gg-pill {
+	flex:0 0 auto;
+	margin:1px 8px 1px 0;
+	padding:1px 8px;
+	border:1px solid;
+	border-radius:9px;
+	font-size:11px;
+	font-weight:bold;
+	background-color:rgba(128,128,128,0.12);
+}
+
+.gg-pill.st-open{ color:var(--gg-open); border-color:var(--gg-open); }
+.gg-pill.st-merged{ color:var(--gg-merged); border-color:var(--gg-merged); }
+.gg-pill.st-abandoned{ color:var(--gg-rejected); border-color:var(--gg-rejected); }
+.gg-pill.st-wip{ color:var(--gg-disapproval-weak); border-color:var(--gg-disapproval-weak); }
+
+.gg-meta-item {
+	flex:0 1 auto;
+	min-width:0;
+	margin:1px 10px 1px 0;
+	font-size:12px;
+	color:var(--gg-muted-foreground);
+	white-space:nowrap;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+
+.gg-open-btn {
+	flex:0 0 auto;
+	display:inline-flex;
+	align-items:center;
+	margin:1px 0 0 8px;
+	padding:2px 10px;
+	border:1px solid var(--gg-muted-border);
+	border-radius:11px;
+	font-size:11px;
+	white-space:nowrap;
+	text-decoration:none;
+}
+
+.gg-open-btn:hover {
+	border-color:var(--vscode-focusBorder);
+	background-color:var(--vscode-menu-selectionBackground);
+	color:var(--vscode-menu-selectionForeground);
+	text-decoration:none;
+}
+
+.gg-dialog .gg-open-btn svg {
+	width:11px;
+	height:11px;
+	margin-right:5px;
+	fill:currentColor;
+	opacity:1;
+}
+
+/* Label scores: each label's current value as a chip in the label's colour,
+   the same colour language as the change badge (cr2..cr-2, v1..v-1). */
+.gg-scores {
+	display:flex;
+	flex-wrap:wrap;
+	margin-top:10px;
+}
+
+.gg-score {
+	display:flex;
+	align-items:center;
+	flex:0 0 auto;
+	margin:2px 8px 2px 0;
+	padding:4px 10px;
+	border:1px solid var(--gg-muted-border);
+	border-radius:6px;
+	background-color:var(--gg-muted-detail-background);
+}
+
+.gg-score-name {
+	margin-right:8px;
+	font-size:11px;
+	color:var(--gg-muted-foreground);
+}
+
+.gg-score-value {
+	display:inline-block;
+	box-sizing:border-box;
+	min-width:26px;
+	padding:1px 6px;
+	border-radius:4px;
+	text-align:center;
+	font-size:12px;
+	font-weight:bold;
+	font-variant-numeric:tabular-nums;
+	color:var(--vscode-menu-background);
+}
+
+.gg-score-value.cr2, .gg-score-value.v1{ background-color:var(--gg-approved); }
+.gg-score-value.cr1{ background-color:var(--gg-approval-weak); }
+.gg-score-value.cr0, .gg-score-value.v0{ background-color:var(--gg-neutral); }
+.gg-score-value.cr-1{ background-color:var(--gg-disapproval-weak); }
+.gg-score-value.cr-2, .gg-score-value.v-1{ background-color:var(--gg-rejected); }
+
+/* Timeline section: a divider with a label above the event list */
+.gg-section {
+	margin-top:12px;
+	padding-top:8px;
+	border-top:1px solid var(--gg-muted-border);
+	font-size:11px;
+	font-weight:bold;
+	color:var(--gg-muted-foreground);
+}
+
+.gg-hint {
+	display:block;
+	margin-top:8px;
+	font-size:11px;
+	opacity:0.7;
+}
+
+.gg-timeline {
+	margin-top:8px;
+	padding-left:4px;
+	border-left:2px dashed var(--gg-muted-border);
+}
+
+.gg-event {
+	position:relative;
+	padding:1px 0 1px 14px;
+	font-size:11px;
+	border-radius:3px;
+}
+
+.gg-event-expandable {
+	cursor:pointer;
+}
+
+.gg-event-expandable:hover {
+	background-color:var(--gg-muted-detail);
+}
+
+.gg-event::before {
+	content:'';
+	position:absolute;
+	left:-4px;
+	top:8px;
+	width:6px;
+	height:6px;
+	border-radius:3px;
+	background-color:var(--gg-muted-foreground);
+}
+
+.gg-event-row {
+	display:flex;
+	align-items:baseline;
+	white-space:nowrap;
+}
+
+.gg-event-toggle {
+	flex:0 0 auto;
+	width:12px;
+	height:12px;
+	margin-right:2px;
+	opacity:0.45;
+	transition:transform 0.1s ease-in;
+	transform:rotate(-90deg);
+}
+
+.gg-event-toggle svg {
+	width:12px;
+	height:12px;
+	fill:var(--gg-muted-foreground);
+	display:block;
+}
+
+.gg-event.expanded .gg-event-toggle {
+	transform:rotate(0deg);
+	opacity:0.8;
+}
+
+.gg-event-icon {
+	flex:0 0 auto;
+	margin-right:4px;
+	opacity:0.8;
+}
+
+.gg-event-text {
+	flex:1 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+
+.gg-event-reviewer {
+	flex:0 1 auto;
+	min-width:4em;
+	margin-left:6px;
+	text-align:right;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	opacity:0.7;
+	font-style:italic;
+}
+
+.gg-event-date {
+	flex:0 0 auto;
+	margin-left:6px;
+	min-width:8.5em;
+	text-align:right;
+	font-variant-numeric:tabular-nums;
+	opacity:0.6;
+}
+
+.gg-event-detail {
+	display:none;
+	margin:3px 0 4px 18px;
+	padding:5px 8px;
+	border-radius:3px;
+	background-color:var(--gg-muted-detail-background);
+	font-family:var(--vscode-editor-font-family, monospace);
+	font-size:10px;
+	line-height:1.45;
+	white-space:pre-wrap;
+	word-break:break-word;
+	user-select:text;
+	max-height:260px;
+	overflow-y:auto;
+}
+
+.gg-event.expanded .gg-event-detail {
+	display:block;
+}

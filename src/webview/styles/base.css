@@ -73,3 +73,35 @@ code{
 #eventCaptureElem.colResize{
 	cursor:col-resize;
 }
+
+/* The shared help tooltip (common/helpTooltip.ts): its targets sit on FIRST-PAINT rows (the
+   pinned-badge and branch indicators of commitRow.ts) and on dialog controls alike, so its
+   styles stay critical (moved out of fileTree.css when that sheet joined the on-demand chunk).
+   Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.gg-helpTooltip:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+.gg-helpTooltip:focus-visible{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+.gg-helpTooltipPopup{
+	position:fixed;
+	z-index:50;
+	/* Chromium 69 fallback: still bounds the tooltip to the viewport (helpTooltip.ts clamps its
+	   position to it); only the 360px cap is lost as enhancement */
+	max-width:calc(100vw - 16px);
+	max-width:min(360px, calc(100vw - 16px));
+	padding:4px 7px;
+	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));
+	border-radius:3px;
+	background-color:var(--vscode-editorWidget-background, var(--vscode-menu-background));
+	color:var(--vscode-editorWidget-foreground, var(--vscode-menu-foreground));
+	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	font-size:12px;
+	line-height:16px;
+	white-space:pre-wrap;
+	pointer-events:none;
+}

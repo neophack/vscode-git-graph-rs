@@ -11,6 +11,7 @@ import { generateSignatureHtml } from '../../common/gitNames';
 import { html, SafeHtml, setHtml } from '../../common/html';
 import { formatStr, markup, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
@@ -38,11 +39,20 @@ export class CommitDetails {
 
 	/* Opening & closing */
 
+	/**
+	 * The details view's styles are on demand (task 5.9's CSS split): opening is the first use,
+	 * so it kicks their chunk (idle-prefetched after the first paint) before anything renders.
+	 */
+	private ensureStyles() {
+		ensureWidgetStyles(() => import('../../styles/onDemand'));
+	}
+
 	/** Open the Commit Details View of the commit whose row is `commitElem`. */
 	public load(commitElem: HTMLElement) {
 		const commit = this.store.getCommitOfElem(commitElem);
 		if (commit === null) return;
 
+		this.ensureStyles();
 		this.close(false);
 		this.saveExpandedCommitLoading(parseInt(commitElem.dataset.id!), commit.hash, commitElem, null, null);
 		commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
@@ -157,6 +167,7 @@ export class CommitDetails {
 		const compareWithCommit = store.getCommitOfElem(compareWithElem);
 
 		if (commit !== null && compareWithCommit !== null) {
+			this.ensureStyles();
 			if (store.expandedCommit !== null) {
 				if (store.expandedCommit.commitHash !== commit.hash) {
 					this.close(false);

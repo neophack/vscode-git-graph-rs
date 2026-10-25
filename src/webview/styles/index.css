@@ -3,18 +3,17 @@
  * wide layout), then the overlay widgets. Bundled into media/out.min.css by scripts/build/webview.mjs.
  *
  * CRITICAL only (task 5.9): this file is the first paint's stylesheet - the table, the graph and
- * the control bar. The Find widget, the Settings widget, the Reflog view, the Worktree dialog and
- * the Statistics view load on demand, and their styles (findWidget.css, settingsWidget.css,
- * reflogView.css, worktreeDialog.css, statisticsView.css and the mobile panels rules those
- * overlays share) ride their chunks as text instead of sitting here
+ * the control bar. Everything that only a user action brings on screen loads on demand: the Find
+ * widget, the Settings widget, the Reflog view, the Worktree dialog and the Statistics view ride
+ * their module chunks as text, while the dialogs, the context menu, the commit details view (with
+ * its file tree) and the Gerrit review dialog - whose modules stay in the first-paint bundle -
+ * carry their styles in the on-demand chunk of src/webview/styles/onDemand.ts
  * (see src/webview/common/onDemandStyles.ts). */
 
 @import "./tokens.css";
 @import "./base.css";
 @import "./graph.css";
 @import "./commitTable.css";
-@import "./commitDetails.css";
-@import "./fileTree.css";
 @import "./commitEmphasis.css";
 @import "./refLabels.css";
 @import "./loader.css";
@@ -26,8 +25,6 @@
 @import "./badges.css";
 @import "./gerrit.css";
 @import "./conflictBanner.css";
-@import "./contextMenu.css";
-@import "./dialog.css";
 @import "./dropdown.css";
 @import "./mobile/base.css";
 @import "./mobile/appBar.css";
@@ -35,6 +32,3 @@
 @import "./mobile/overflowSheet.css";
 @import "./mobile/commitList.css";
 @import "./mobile/fastScroller.css";
-@import "./mobile/commitDetails.css";
-@import "./mobile/contextMenu.css";
-@import "./mobile/dialog.css";

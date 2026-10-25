@@ -203,15 +203,17 @@ window.addEventListener('load', () => {
 		// before anything listens for it.
 		bridge.send({ command: 'ready' });
 
-		// The on-demand modules prefetch while the user is idle after the first paint (task 5.9):
-		// the first open of any widget - or the first Markdown-rendering commit body - then
-		// resolves from the browser's module cache, not the network
+		// The on-demand modules and the widgets' stylesheet chunk prefetch while the user is idle
+		// after the first paint (task 5.9): the first open of any widget, the first dialog, the
+		// first context menu, the first commit details view - or the first Markdown-rendering
+		// commit body - then resolves from the browser's module cache, not the network
 		prefetchOnIdle([
 			() => import('./widgets/findWidget'),
 			() => import('./widgets/settings/settingsWidget'),
 			() => import('./widgets/reflogView'),
 			() => import('./widgets/worktreeDialog'),
 			() => import('./widgets/statisticsView'),
+			() => import('../styles/onDemand'),
 			loadMarkdown
 		]);
 	});
