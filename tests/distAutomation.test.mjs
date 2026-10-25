@@ -54,7 +54,7 @@ test('the automation bundle carries the automation modules', { skip: skipAutomat
 	for (const marker of [
 		'menu-commit/add-tag',
 		'control-bar/author-dropdown',
-		'native save dialog',
+		'ScriptedUiPort',
 		'Reset the fixture repository'
 	]) {
 		assert.ok(source.includes(marker), `the automation bundle must contain the marker "${marker}"`);

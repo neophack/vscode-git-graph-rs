@@ -47,12 +47,40 @@ function isMessageOptions<T extends MessageChoice>(value: MessageOptionsLike | T
 }
 
 /**
+ * The scripted-UiPort override (REFACTOR-PLAN task 4.10 / §6.8.2): the automation and E2E builds
+ * install a ScriptedUiPort over this seam so every native dialog the host raises is answered from
+ * a per-scenario script and recorded for assertions — the replacement for both the suite runner's
+ * `nativeSaveDialog` skip and the command-mode `vscode.window` monkey-patching. Production never
+ * installs one (this stays NULL and every method below takes its normal path), so the seam costs
+ * one null check per dialog; the implementation lives in src/automation/scriptedUiPort.ts and is
+ * absent from the default bundle entirely.
+ */
+let scriptedUiPort: UiPort | null = null;
+
+/**
+ * Install (or, with NULL, remove) the scripted UiPort override. Returns the previously installed
+ * port so a caller can restore it. The automation suite runner installs a defaults-answering
+ * port for the whole run; the E2E entry installs a strict per-scenario port around each scenario.
+ */
+export function setScriptedUiPort(port: UiPort | null): UiPort | null {
+	const previous = scriptedUiPort;
+	scriptedUiPort = port;
+	return previous;
+}
+
+/**
  * Show a message through the captured window, with or without the options overload. Without
  * options the platform Notifications adapter serves the call (its degradation contract: an
  * unavailable or rejected dialog answers UNDEFINED); the options-bearing (modal) form forwards
  * directly, preserving the caller's rejection handling.
  */
 function showMessage<T extends MessageChoice>(method: 'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage', message: string, optionsOrFirstItem: MessageOptionsLike | T | undefined, items: T[]): Promise<T | undefined> {
+	// The scripted override (automation/E2E builds) answers before the window is ever touched.
+	if (scriptedUiPort !== null) {
+		if (optionsOrFirstItem === undefined) return scriptedUiPort[method](message, ...items);
+		if (isMessageOptions(optionsOrFirstItem)) return scriptedUiPort[method](message, optionsOrFirstItem, ...items);
+		return scriptedUiPort[method](message, optionsOrFirstItem, ...items);
+	}
 	if (optionsOrFirstItem === undefined) {
 		const adapter = adapters().notifications[method] as (message: string, ...items: T[]) => Promise<T | undefined>;
 		return adapter(message, ...items);
@@ -92,11 +120,13 @@ class WindowUiPort implements UiPort {
 	}
 
 	public showInputBox(options?: InputBoxOptionsLike): Promise<string | undefined> {
+		if (scriptedUiPort !== null) return scriptedUiPort.showInputBox(options);
 		const showInputBox = adapters().window.showInputBox;
 		return typeof showInputBox === 'function' ? Promise.resolve(showInputBox(options)) : Promise.resolve(undefined);
 	}
 
 	public showQuickPick<T extends string | QuickPickItemLike>(items: ReadonlyArray<T>, options?: QuickPickOptionsLike): Promise<T | undefined> {
+		if (scriptedUiPort !== null) return scriptedUiPort.showQuickPick(items, options);
 		const showQuickPick = adapters().window.showQuickPick;
 		if (typeof showQuickPick !== 'function') return Promise.resolve(undefined);
 		// vscode.window satisfies this subset structurally; the cast bridges the QuickPickItem
@@ -106,18 +136,21 @@ class WindowUiPort implements UiPort {
 	}
 
 	public showSaveDialog(options: SaveDialogOptionsLike): Promise<UriLike | undefined> {
+		if (scriptedUiPort !== null) return scriptedUiPort.showSaveDialog(options);
 		const showSaveDialog = adapters().window.showSaveDialog;
 		if (typeof showSaveDialog !== 'function') return Promise.resolve(undefined);
 		return Promise.resolve(showSaveDialog(options as vscode.SaveDialogOptions));
 	}
 
 	public showOpenDialog(options: OpenDialogOptionsLike): Promise<ReadonlyArray<UriLike> | undefined> {
+		if (scriptedUiPort !== null) return scriptedUiPort.showOpenDialog(options);
 		const showOpenDialog = adapters().window.showOpenDialog;
 		if (typeof showOpenDialog !== 'function') return Promise.resolve(undefined);
 		return Promise.resolve(showOpenDialog(options as vscode.OpenDialogOptions));
 	}
 
 	public withProgress<R>(options: ProgressOptionsLike, task: (progress: ProgressLike, token: import('../extension/platform/uiPort').CancellationTokenLike) => Thenable<R>): Promise<R> {
+		if (scriptedUiPort !== null) return scriptedUiPort.withProgress(options, task);
 		// No degradation path here (unlike the dialogs): no host call site routes through the
 		// port yet (INVENTORY.md #27 stays with its owner), so an absent API should surface.
 		return Promise.resolve(adapters().window.withProgress(options as vscode.ProgressOptions, task));

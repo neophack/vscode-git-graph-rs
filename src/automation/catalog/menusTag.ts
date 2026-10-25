@@ -35,9 +35,8 @@ export const MENUS_TAG_ACTIONS: readonly AutomationAction[] = [
 		group: 'menu-tag',
 		tags: ['menu-tag', 'context-menu', 'dialog'],
 		mutable: true,
-		nativeSaveDialog: true,
-		// Confirming opens the editor's native save dialog (utils.archive's showSaveDialog) —
-		// the suite runner reports this action as skipped rather than stall the run on the modal.
+		// Confirming opens the editor's native save dialog — answered by the ScriptedUiPort the
+		// suite runner installs (task 4.10), so the action RUNS in every mode.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Create Archive', '创建归档') },

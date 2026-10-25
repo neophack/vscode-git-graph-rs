@@ -86,13 +86,6 @@ export interface AutomationAction {
 	/** Environment the action needs; the server skips the action when unavailable (`remote` => a configured remote; `stash` => at least one stash; `tag`/`annotatedTag` => tags in the loaded graph; `file` => a commit with (non-binary) file changes; `binaryFile`/`imageFile` => a commit that only changes a binary/image file (the fixture's dedicated `assets/` commits); `anotherBranch` => at least two branches; `anotherRepo` => at least two known repositories). */
 	readonly requires?: readonly ('remote' | 'stash' | 'tag' | 'annotatedTag' | 'file' | 'binaryFile' | 'imageFile' | 'anotherBranch' | 'anotherRepo')[];
 	/**
-	 * TRUE => confirming the action opens the editor's NATIVE save dialog (utils.archive's
-	 * showSaveDialog). A modal an automated run can neither drive nor dismiss — in the real
-	 * editor it stalls the whole suite until someone clicks it away — so the suite runner
-	 * reports the action as SKIPPED in every mode instead of running it.
-	 */
-	readonly nativeSaveDialog?: boolean;
-	/**
 	 * TRUE declares the action awaits no host response (a pure view-state change, or traffic the
 	 * host answers silently such as `setRepoState` / `openCompareTab`). Such actions MUST declare
 	 * `expect: { responses: [] }` — the run is complete once the page steps finish (or, in request

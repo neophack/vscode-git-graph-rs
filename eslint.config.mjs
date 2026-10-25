@@ -71,13 +71,12 @@ const NATIVE_UI_SELECTOR = "MemberExpression[object.object.name='vscode'][object
 
 // The files that still carry unabsorbed native-UI sites: their rule stays at warn until their
 // owners absorb the sites, then they join the error block. commands/context.ts (#18), graphView/
-// globalSettings.ts (#6/#7) and repos/repoManager.ts (#8) are INVENTORY.md-registered; graphView/
-// panelContext.ts picked up a new save-dialog site in the concurrent task 4.4 wave - its owner
-// routes it through the view's ui port (see INVENTORY.md).
+// globalSettings.ts (#6/#7) and repos/repoManager.ts (#8) are INVENTORY.md-registered.
+// graphView/panelContext.ts's archive save-dialog site was absorbed onto the UiPort by task
+// 4.10's ScriptedUiPort wave (scenarios answer it), so it left the carriers and is at error.
 const NATIVE_UI_CARRIERS = [
 	'src/extension/commands/context.ts',
 	'src/extension/graphView/globalSettings.ts',
-	'src/extension/graphView/panelContext.ts',
 	'src/extension/repos/repoManager.ts'
 ];
 

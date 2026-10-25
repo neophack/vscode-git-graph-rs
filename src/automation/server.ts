@@ -1,8 +1,9 @@
 import { performance } from 'perf_hooks';
 import { Logger } from '../logger';
 import { RequestMessage, ResponseMessage } from '../types';
-import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON, UiStep, expandTemplate, validateCatalog } from './catalog';
+import { AutomationAction, AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
 import { HostBridge, ShimResult } from './hostBridge';
+import { activeScriptedUiPort } from './scriptedUiPort';
 
 /**
  * The automation engine: the in-process half of the automation interface, driven directly by
@@ -45,6 +46,17 @@ export interface ActionStats {
 
 const DEFAULT_RUN_TIMEOUT_MS = 30000;
 const DEFAULT_QUERY_TIMEOUT_MS = 30000;
+
+/**
+ * The notifications one command-mode run captured: everything the window-level auto-answer
+ * intercepted plus everything the INSTALLED ScriptedUiPort recorded since the run's baseline
+ * (a dialog goes through exactly one of the two paths, so the merge double-counts nothing).
+ */
+function capturedNotifications(dialogs: { readonly messages: readonly string[] }, scriptedBaseline: number): readonly string[] {
+	const scripted = activeScriptedUiPort();
+	const fromScript = scripted !== null ? scripted.notificationRecords(scriptedBaseline).map((record) => record.title) : [];
+	return [...dialogs.messages, ...fromScript];
+}
 
 /**
  * The error payload a response carries (NULL when the operation succeeded). The host answers a
@@ -326,13 +338,6 @@ export class AutomationServer {
 		if (mode !== 'ui' && mode !== 'request' && mode !== 'command') throw new Error('mode must be "ui", "request" or "command"');
 		const action = CATALOG.find((a) => a.id === id);
 		if (action === undefined) throw new Error('Unknown action "' + id + '"');
-		if (action.nativeSaveDialog === true) {
-			// The engine-side backstop for the suite runner's skip: confirming this action opens
-			// the editor's native save dialog (utils.archive's showSaveDialog), a modal no
-			// automated run can drive or dismiss — in the real editor it stalls the whole run
-			// until someone clicks it away. No caller, in any mode, may ever execute it.
-			return { ok: false, skipped: true, reason: NATIVE_SAVE_DIALOG_SKIP_REASON };
-		}
 		const path = mode === 'ui' ? action.ui : mode === 'request' ? action.request : action.vscodeCommand;
 		if (path === undefined) return { ok: false, skipped: true, reason: 'Action "' + id + '" has no ' + mode + ' path' };
 		this.requireView();
@@ -390,6 +395,11 @@ export class AutomationServer {
 		// Command mode: native dialogs and notifications the command raises are intercepted
 		// (dialogs answered with their primary action, error toasts captured and suppressed)
 		// for the whole run window below — through the handler itself and the post-run steps.
+		// Notifications that route through the host's UiPort land in the INSTALLED SCRIPTED PORT
+		// instead (the suite runner installs one for the whole run, task 4.10): its records are
+		// sliced from this baseline and merged with the window-level capture, so every raised
+		// notification is seen exactly once regardless of which path took it.
+		const scriptedBaseline = activeScriptedUiPort()?.recordedCalls().length ?? 0;
 		let dialogs: ReturnType<HostBridge['installDialogAutoAnswer']> | null = null;
 		let tabsBefore: string[] | null = null;
 		try {
@@ -506,7 +516,7 @@ export class AutomationServer {
 				// The await above spanned the whole handler, so every notification the command raised
 				// is captured by now; a command whose outcome IS a notification is otherwise
 				// unverifiable (an empty expected-responses list passes even if it did nothing).
-				const captured = dialogs.messages;
+				const captured = capturedNotifications(dialogs, scriptedBaseline);
 				for (const needle of action.expectNotifications) {
 					if (!captured.some((message) => message.indexOf(needle) !== -1)) {
 						return this.record(action, mode, {
@@ -517,19 +527,22 @@ export class AutomationServer {
 					}
 				}
 			}
-			if (action.expectAnyNotification === true && dialogs !== null && dialogs.messages.length === 0) {
+			if (action.expectAnyNotification === true && dialogs !== null && capturedNotifications(dialogs, scriptedBaseline).length === 0) {
 				// The command's whole observable outcome is a (fully localized) notification: pin its
 				// presence when no language-invariant fragment exists to pin its text.
 				return this.record(action, mode, { ok: false, timings, error: 'the command raised no native notification' });
 			}
-			if (action.expectModal === true && dialogs !== null && dialogs.autoAnswered.length === 0) {
+			if (action.expectModal === true && dialogs !== null
+				&& dialogs.autoAnswered.length === 0 && (activeScriptedUiPort()?.answeredDialogCount(scriptedBaseline) ?? 0) === 0) {
 				// The command must have reached its confirmation point: a native modal the
-				// auto-answer answered (a silent no-op never got that far).
+				// auto-answer (or the scripted port) answered (a silent no-op never got that far).
 				return this.record(action, mode, { ok: false, timings, error: 'the command raised no confirmation modal' });
 			}
 			return this.record(action, mode, {
 				ok: true, timings,
-				notifications: dialogs !== null && dialogs.messages.length > 0 ? dialogs.messages : undefined
+				notifications: dialogs !== null && capturedNotifications(dialogs, scriptedBaseline).length > 0
+					? capturedNotifications(dialogs, scriptedBaseline)
+					: undefined
 			});
 		} finally {
 			this.activeRun = null;

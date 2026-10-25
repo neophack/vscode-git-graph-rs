@@ -218,19 +218,15 @@ test('actions whose view precondition is absent are skipped, not failed', async 
 	assert.ok((outcome.reason ?? '').includes('uncommittedChanges'), outcome.reason);
 });
 
-test('actions that open the native save dialog are refused by the engine itself', async () => {
-	// Create Archive confirms into vscode.window.showSaveDialog — a modal no automated run can
-	// drive or dismiss (in the real editor it stalls the whole run until clicked away). The suite
-	// runner filters these before dispatching; a DIRECT engine.run caller must hit the same wall,
-	// or the run would pop the OS save dialog instead of reporting a skip.
-	for (const id of ['menu-branch/create-archive', 'menu-remote-branch/create-archive', 'menu-tag/create-archive']) {
-		for (const mode of ['ui', 'request']) {
-			const outcome = await engine.run({ id, mode });
-			assert.equal(outcome.skipped, true, id + ' (' + mode + '): ' + JSON.stringify(outcome));
-			assert.equal(outcome.ok, false);
-			assert.match(outcome.reason ?? '', /native save dialog/, id + ' (' + mode + ')');
-		}
-	}
+test('the archive actions reach the flow (the engine no longer refuses them)', async () => {
+	// The former engine-side refusal is gone (task 4.10): the save dialog is answered by a
+	// ScriptedUiPort the SUITE RUNNER installs, so a direct engine.run caller without one takes
+	// the flow's own cancel path (the stubbed window resolves the dialog undefined, the flow
+	// answers its "no file name" error) — the run records whatever the flow really did, never a
+	// pre-flight skip.
+	const outcome = await engine.run({ id: 'menu-branch/create-archive', mode: 'request' });
+	assert.notEqual(outcome.skipped, true, 'the engine must not pre-flight skip: ' + JSON.stringify(outcome));
+	assert.equal(outcome.ok, false); // no scripted port installed: the flow's cancel path
 });
 
 test('stats aggregates the runs', async () => {

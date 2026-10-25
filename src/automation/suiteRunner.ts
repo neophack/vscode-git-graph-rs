@@ -2,11 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Logger } from '../logger';
-import { AutomationAction, AutomationMode, CATALOG, NATIVE_SAVE_DIALOG_SKIP_REASON } from './catalog';
+import { AutomationAction, AutomationMode, CATALOG } from './catalog';
 import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, git, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
 import { tabGroups } from '../extension/platform/vscodeCompat';
 import { AutomationServer } from './server';
+import { installScriptedUiPort, ScriptedUiPort, uninstallScriptedUiPort } from './scriptedUiPort';
 
 /**
  * The in-process automation suite runner — the "Run Automation Test" button's engine. It drives
@@ -533,6 +534,12 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 	const startedMs = Date.now();
 	const bridge = new HostBridge();
 	const server = new AutomationServer({ logger: options.logger, bridge, version: 'in-process' });
+	// The scripted UiPort of the whole run (task 4.10): every native dialog any action raises —
+	// the archive flows' save dialog above all — is answered from the lenient default script
+	// (primary button / first item / a generated save path) and recorded, replacing both the
+	// former nativeSaveDialog skip (those actions now RUN) and the stall a real modal would
+	// cause. Scenario runs (the E2E entry) install their own strict per-scenario port on top.
+	installScriptedUiPort(new ScriptedUiPort({ mode: 'lenient' }));
 	server.start();
 	try {
 		const timeoutMs = options.actionTimeoutMs ?? 30000;
@@ -622,19 +629,6 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				// Command actions run the VS Code command a contributed menu item runs; UI actions
 				// drive the real page controls; the rest inject requests into the host pipeline.
 				const mode: AutomationMode = action.vscodeCommand !== undefined ? 'command' : action.ui !== undefined ? 'ui' : 'request';
-				if (action.nativeSaveDialog === true) {
-					// Confirming this action opens the editor's native save dialog — a modal the
-					// run can neither drive nor dismiss (in the real editor it stalls the whole
-					// suite until clicked away). Report it as skipped in every mode; never run it.
-					// The engine refuses the same actions again (runCatalogAction's backstop).
-					runs.push({
-						id: action.id, title: action.title, group: action.group, mode,
-						ok: false, skipped: true, reason: NATIVE_SAVE_DIALOG_SKIP_REASON,
-						error: null, totalMs: null, responses: [], notifications: []
-					});
-					options.onProgress?.({ phase, index: i + 1, total: actions.length, actionId: action.id, mode });
-					continue;
-				}
 				// The webview panel can disappear mid-suite (for example a host action opening a
 				// document in the preview slot the view occupies); re-open it so one lost panel
 				// cannot fail the rest of the suite.
@@ -814,5 +808,6 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 		};
 	} finally {
 		server.stop();
+		uninstallScriptedUiPort();
 	}
 }
