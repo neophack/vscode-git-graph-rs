@@ -1,16 +1,38 @@
 /**
  * The call surfaces of the on-demand widgets (REFACTOR-PLAN task 5.9): what the rest of the view
- * may invoke on the Settings widget, the Reflog view, the Worktree dialog and the Statistics
- * view. Each widget class implements its surface (checked at compile time), and the view's
- * context holds LAZY facades implementing the same surface - the module loads through dynamic
- * import() on first use, so the surface is exactly the API that must work before, during and
- * after that load. A method that would need the widget to EXIST to mean anything (isVisible,
+ * may invoke on the Find widget, the Settings widget, the Reflog view, the Worktree dialog and
+ * the Statistics view. Each widget class implements its surface (checked at compile time), and
+ * the view's context holds LAZY facades implementing the same surface - the module loads through
+ * dynamic import() on first use, so the surface is exactly the API that must work before, during
+ * and after that load. A method that would need the widget to EXIST to mean anything (isVisible,
  * close, refresh, processResponse) is answered for a not-yet-loaded widget as "not open";
  * a method that opens the widget (show) triggers the load.
  */
 
 import type * as GG from '../../common/protocol';
-import type { SettingsWidgetState } from '../state/types';
+import type { FindWidgetState, SettingsWidgetState } from '../state/types';
+
+/**
+ * The Find widget's surface (see {@link FindWidget} for the implementation). The widget joins
+ * the view lazily (task 5.9's on-demand split), so a not-yet-loaded widget answers every
+ * existence question as "not open, not searching": no query can exist before the module does.
+ */
+export interface FindWidgetSurface {
+	show(transition: boolean): void;
+	close(): void;
+	/** Is a find query active (the view renders every row while this is TRUE)? */
+	isSearching(): boolean;
+	/** Refresh the matches after the commits changed (a no-op while closed). */
+	refresh(): void;
+	/** Set the CSS variables the match highlights read (works before the module loads). */
+	setColour(colour: string): void;
+	getState(): FindWidgetState;
+	getCurrentHash(): string | null;
+	restoreState(state: FindWidgetState): void;
+	isVisible(): boolean;
+	/** Is an incremental search still scanning the loaded commits? */
+	isScanning(): boolean;
+}
 
 /** The Settings widget's surface (see {@link SettingsWidget} for the implementation). */
 export interface SettingsWidgetSurface {

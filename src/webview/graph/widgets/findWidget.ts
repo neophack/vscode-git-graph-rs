@@ -8,11 +8,19 @@ import { alterClass, CLASS_ACTIVE, CLASS_DISABLED, CLASS_TRANSITION, getChildNod
 import { html, setHtml } from '../../common/html';
 import { strings, formatStr } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import { abbrevCommit, modifyColourOpacity, UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
 import { getBranchLabels } from '../layout/refLabels';
 import { cancelScheduledFrame, scheduleFrame } from '../render/scheduler';
 import { FindWidgetState } from '../state/types';
+import { FindWidgetSurface } from './surfaces';
+import findWidgetCss from '../../styles/findWidget.css';
+import mobileFindWidgetCss from '../../styles/mobile/findWidget.css';
+
+// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+injectOnDemandStyles(findWidgetCss);
+injectOnDemandStyles(mobileFindWidgetCss);
 
 const CLASS_FIND_CURRENT_COMMIT = 'findCurrentCommit';
 const CLASS_FIND_MATCH = 'findMatch';
@@ -20,7 +28,7 @@ const ATTR_ERROR = 'data-error';
 /** How many commits one search slice tests before yielding to the frame (task 5.10). */
 const FIND_SEARCH_SLICE = 500;
 
-export class FindWidget {
+export class FindWidget implements FindWidgetSurface {
 	private text: string = '';
 	private matches: { hash: string, elem: HTMLElement }[] = [];
 	private position: number = -1;

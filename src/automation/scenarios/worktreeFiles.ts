@@ -129,7 +129,14 @@ export const WORKTREE_FILE_SCENARIOS = [
 	}, {
 		ops: ['resetFileToRevision'],
 		then: {
-			git: [{ kind: 'worktreeStatus', clean: false }, { kind: 'headIs', name: 'main' }]
+			// `git checkout {{commitParent}} -- {{file}}` reverts AND stages exactly THAT file —
+			// the status names the reset file, not just any dirt (the file is untracked-clean
+			// otherwise, so the entry the reset created is the only modification there is).
+			git: [
+				{ kind: 'worktreeStatus', clean: false },
+				{ kind: 'worktreeStatus', contains: ['{{file}}'] },
+				{ kind: 'headIs', name: 'main' }
+			]
 		}
 	}),
 	scenario({

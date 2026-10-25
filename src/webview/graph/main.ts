@@ -38,8 +38,7 @@ import { TextFormatter } from './text/textFormatter';
 import { ConflictBanner } from './widgets/conflictBanner';
 import { ContextMenu } from './widgets/contextMenu';
 import { Dialog } from './widgets/dialog';
-import { FindWidget } from './widgets/findWidget';
-import { LazyReflogView, LazySettingsWidget, LazyStatisticsView, LazyWorktreeDialog, prefetchOnIdle } from './widgets/lazy';
+import { LazyFindWidget, LazyReflogView, LazySettingsWidget, LazyStatisticsView, LazyWorktreeDialog, prefetchOnIdle } from './widgets/lazy';
 
 /* The state the extension host renders into the page (inline script, before this bundle) */
 declare const initialState: GG.GitGraphViewInitialState;
@@ -126,11 +125,12 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 		store.commitPathFilter = prevState.commitPathFilter;
 	}
 
-	// The Settings widget, Reflog view, Worktree dialog and Statistics view are the LAZY half of
-	// the first-paint split (task 5.9): their facades load the real modules through dynamic
-	// import() on first use, so none of them sits in the first-paint bundle (widgets/lazy.ts)
+	// The Find widget, the Settings widget, the Reflog view, the Worktree dialog and the
+	// Statistics view are the LAZY half of the first-paint split (task 5.9): their facades load
+	// the real modules through dynamic import() on first use, so none of them sits in the
+	// first-paint bundle (widgets/lazy.ts)
 	ctx.widgets = {
-		find: new FindWidget(getContext),
+		find: new LazyFindWidget(getContext),
 		settings: new LazySettingsWidget(getContext),
 		conflictBanner: new ConflictBanner(getContext, dom.conflictBanner),
 		reflog: new LazyReflogView(getContext),
@@ -203,14 +203,17 @@ window.addEventListener('load', () => {
 		// before anything listens for it.
 		bridge.send({ command: 'ready' });
 
-		// The on-demand modules prefetch while the user is idle after the first paint (task 5.9):
-		// the first open of any widget - or the first Markdown-rendering commit body - then
-		// resolves from the browser's module cache, not the network
+		// The on-demand modules and the widgets' stylesheet chunk prefetch while the user is idle
+		// after the first paint (task 5.9): the first open of any widget, the first dialog, the
+		// first context menu, the first commit details view - or the first Markdown-rendering
+		// commit body - then resolves from the browser's module cache, not the network
 		prefetchOnIdle([
+			() => import('./widgets/findWidget'),
 			() => import('./widgets/settings/settingsWidget'),
 			() => import('./widgets/reflogView'),
 			() => import('./widgets/worktreeDialog'),
 			() => import('./widgets/statisticsView'),
+			() => import('../styles/onDemand'),
 			loadMarkdown
 		]);
 	});

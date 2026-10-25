@@ -19,7 +19,12 @@ export const REMOTES_CONFIG_SCENARIOS = [
 	scenario(byId(SETTINGS_ACTIONS, 'settings/add-remote'), {
 		ops: ['addRemote'],
 		then: {
-			git: [{ kind: 'remotePresent', name: 'automation-remote', url: '{{repo}}' }]
+			// The remote is listed AND fully wired: `git remote add` writes the default fetch
+			// refspec, so a later fetch of the remote works without any further configuration.
+			git: [
+				{ kind: 'remotePresent', name: 'automation-remote', url: '{{repo}}' },
+				{ kind: 'configValue', key: 'remote.automation-remote.fetch', value: '+refs/heads/*:refs/remotes/automation-remote/*' }
+			]
 		}
 	}),
 	scenario({
@@ -34,8 +39,13 @@ export const REMOTES_CONFIG_SCENARIOS = [
 	}, {
 		ops: ['addRemote'],
 		then: {
-			// origin keeps its ORIGINAL url (the fixture's bare remote) — the duplicate wrote nothing.
-			git: [{ kind: 'remotePresent', name: 'origin' }, { kind: 'headIs', name: 'main' }]
+			// origin keeps its ORIGINAL url (the fixture's bare remote) and its ORIGINAL fetch
+			// refspec — the refused duplicate wrote no half-added config under the taken name.
+			git: [
+				{ kind: 'remotePresent', name: 'origin' },
+				{ kind: 'configValue', key: 'remote.{{remote}}.fetch', value: '+refs/heads/*:refs/remotes/{{remote}}/*' },
+				{ kind: 'headIs', name: 'main' }
+			]
 		}
 	}),
 
@@ -43,7 +53,12 @@ export const REMOTES_CONFIG_SCENARIOS = [
 	scenario(byId(SETTINGS_ACTIONS, 'settings/delete-remote'), {
 		ops: ['deleteRemote'],
 		then: {
-			git: [{ kind: 'remoteAbsent', name: '{{remote}}' }]
+			// The remote is gone from the listing AND from the config: `git remote remove` drops
+			// the whole remote.<name> section, so no orphaned url key survives the removal.
+			git: [
+				{ kind: 'remoteAbsent', name: '{{remote}}' },
+				{ kind: 'configValue', key: 'remote.{{remote}}.url', value: null }
+			]
 		}
 	}),
 	scenario({
@@ -67,8 +82,12 @@ export const REMOTES_CONFIG_SCENARIOS = [
 		ops: ['editRemote'],
 		then: {
 			// The identity edit (same name, no url change): the remote keeps pointing at the
-			// fixture's bare clone.
-			git: [{ kind: 'remotePresent', name: '{{remote}}' }]
+			// fixture's bare clone, and its fetch refspec survives the rewrite untouched — an
+			// edit that lost the refspec would silently break every later fetch of the remote.
+			git: [
+				{ kind: 'remotePresent', name: '{{remote}}' },
+				{ kind: 'configValue', key: 'remote.{{remote}}.fetch', value: '+refs/heads/*:refs/remotes/{{remote}}/*' }
+			]
 		}
 	}),
 	scenario({
