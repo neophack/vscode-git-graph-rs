@@ -1,0 +1,240 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/extension/git/operationState.ts",
+    "to": "src/types/git.ts",
+    "unresolvedTo": "../../types/git",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/details.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/files.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/log.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/parse/status.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/process.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/stats.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/cli/tags.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/fallbackReader.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/read/signatures.ts",
+    "to": "src/backend/types.ts",
+    "unresolvedTo": "../../../backend/types",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/branches.ts",
+    "to": "src/types/git.ts",
+    "unresolvedTo": "../../../../types/git",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/branches.ts",
+    "to": "src/types/webview.ts",
+    "unresolvedTo": "../../../../types/webview",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/commits.ts",
+    "to": "src/types/git.ts",
+    "unresolvedTo": "../../../../types/git",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/mergeRebase.ts",
+    "to": "src/types/messages.ts",
+    "unresolvedTo": "../../../../types/messages",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/mergeRebase.ts",
+    "to": "src/types/webview.ts",
+    "unresolvedTo": "../../../../types/webview",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/write/ops/tags.ts",
+    "to": "src/types/webview.ts",
+    "unresolvedTo": "../../../../types/webview",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/webview/common/protocol.ts",
+    "to": "src/types/index.ts",
+    "unresolvedTo": "../../types/index",
+    "dependencyTypes": [
+      "local",
+      "export"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "webview-only-webview-shared"
+    }
+  }
+]

@@ -57,7 +57,8 @@
 		"analyze-log": "node scripts/analyze-log.mjs",
 		"test:automation:full": "node scripts/automation/full-test.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check",
-		"lint:js": "eslint src scripts"
+		"lint:js": "eslint src scripts",
+		"lint:deps": "depcruise src --config .dependency-cruiser.cjs"
 	},
 	"c8": {
 		"all": true,
