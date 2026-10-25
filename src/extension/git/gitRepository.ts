@@ -14,6 +14,8 @@
 
 import * as fs from 'fs';
 
+import type { GitBackend } from './read/gitReader';
+
 import { GitOperationState } from '../../types/git';
 import { detectOperationState, OperationStateEnv } from './operationState';
 import { GitWriter } from './write/gitWriter';
@@ -23,10 +25,10 @@ import { GitWriter } from './write/gitWriter';
  * reader (`read/gitReader.ts`), so no dependency on `src/backend` is created here.
  */
 export interface GitReaderLike {
-	openRepository(repo: string): Promise<void>;
+	openRepository(repo: string): Promise<string | void>;
 	closeRepository(repo: string): void;
 	/** The remotes of the repository, in configuration order. */
-	getRemotes(repo: string): Promise<string[]>;
+	getRemotes(repo: string): Promise<ReadonlyArray<string>>;
 	/** The checked-out branch's short name, or null when HEAD is detached. */
 	currentBranchName(repo: string): Promise<string | null>;
 }
@@ -34,9 +36,16 @@ export interface GitReaderLike {
 /** Runs a Git read in a repository, resolving its stdout; rejecting when it fails. */
 export type RepoTextRunner = (argv: ReadonlyArray<string>, repo: string) => Promise<string>;
 
-export class GitRepository {
+/**
+ * The facade as production composes it: the full backend (the engine with the CLI fallback) as
+ * the read face. Handlers and commands type their context against this alias, while tests keep
+ * substituting a narrow `GitReaderLike` fake.
+ */
+export type ProductionGitRepository = GitRepository<GitBackend>;
+
+export class GitRepository<R extends GitReaderLike = GitReaderLike> {
 	constructor(
-		public readonly read: GitReaderLike,
+		public readonly read: R,
 		public readonly write: GitWriter,
 		private readonly runText: RepoTextRunner
 	) {}
