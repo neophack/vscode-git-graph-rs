@@ -29,12 +29,20 @@ function readSource(relative) {
 	return fs.readFileSync(path.join(rootDir, ...relative.split('/')), 'utf8');
 }
 
-/** The commands the CommandManager registers (src/commands.ts). */
+/** The commands the CommandManager registers (src/extension/commands/, split by group in task 4.6). */
 function registeredCommands() {
-	const text = readSource('src/commands.ts');
 	const commands = new Set();
-	for (const match of text.matchAll(/registerCommand\('([^']+)'/g)) commands.add(match[1]);
+	for (const match of commandManagerSource().matchAll(/registerCommand\('([^']+)'/g)) commands.add(match[1]);
 	return commands;
+}
+
+/** The concatenation of the commands-split modules (the old src/commands.ts). */
+function commandManagerSource() {
+	const dir = path.join(rootDir, 'src', 'extension', 'commands');
+	return fs.readdirSync(dir)
+		.filter((entry) => entry.endsWith('.ts'))
+		.map((entry) => fs.readFileSync(path.join(dir, entry), 'utf8'))
+		.join('\n');
 }
 
 /** Context keys the when clauses may use: the ones the extension sets, plus VS Code built-ins. */
@@ -107,9 +115,9 @@ test('when clauses use only context keys the extension or VS Code itself provide
 		}
 	}
 	// The extension-set keys must really be set somewhere in the extension sources.
-	const commandsSource = readSource('src/commands.ts');
+	const commandsSource = commandManagerSource();
 	for (const key of EXTENSION_CONTEXT_KEYS) {
-		assert.ok(commandsSource.includes('"' + key + '"'), 'context key "' + key + '" must be set via setContext in src/commands.ts');
+		assert.ok(commandsSource.includes('"' + key + '"'), 'context key "' + key + '" must be set via setContext in src/extension/commands/');
 	}
 });
 

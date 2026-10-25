@@ -18,7 +18,10 @@ const vscode = createVscodeStub({ workspaceFolders: [{ path: '/ws' }] });
 /* GitGraphView recorder */
 const viewCalls = [];
 const gitGraphViewStub = { GitGraphView: { createOrShow: (...args) => { viewCalls.push(args); } } };
-installVscodeStub(vscode, { './gitGraphView': gitGraphViewStub });
+// The command handlers now live under src/extension/commands/, so the compiled modules require
+// GitGraphView as '../../gitGraphView' (the old src/commands.ts spelling is kept for out/ files
+// that still sit at the out/ root).
+installVscodeStub(vscode, { './gitGraphView': gitGraphViewStub, '../../gitGraphView': gitGraphViewStub });
 
 const { CommandManager } = await import('../out/commands.js');
 const { t } = await import('../out/i18n.js');
