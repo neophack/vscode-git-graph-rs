@@ -4,7 +4,7 @@
  * status where the comparison reaches the working tree.
  */
 
-import { parseGitSignatureOutput } from '../../../../backend/signatures';
+import { parseGitSignatureOutput } from '../signatures';
 import {
 	GitBackendError,
 	GitCommitDetails,

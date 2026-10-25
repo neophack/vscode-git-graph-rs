@@ -3,7 +3,7 @@
  * `for-each-ref` reports it, and verified through `git verify-tag --raw`.
  */
 
-import { parseGitSignatureOutput } from '../../../../backend/signatures';
+import { parseGitSignatureOutput } from '../signatures';
 import { GitBackendError, GitSignature, GitSignatureStatus, GitTagDetails } from '../../../../backend/types';
 import { EOL, GitCli, SEPARATOR } from './process';
 
