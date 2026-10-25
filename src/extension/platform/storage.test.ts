@@ -22,7 +22,8 @@ const vscodeMock = vi.hoisted(() => ({
 vi.mock('vscode', () => vscodeMock);
 
 import type { ExtensionContext } from 'vscode';
-import { DEFAULT_REPO_STATE, ExtensionState, MementoLike, Storage } from './storage';
+import { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, DEFAULT_REPO_STATE, ExtensionState, MementoLike, Storage } from './storage';
+import { STORAGE_STATE_VERSION, decodeVersionedState, encodeVersionedState } from './storageVersioned';
 import { BooleanOverride, GitGraphViewSnapshot } from '../../types';
 
 /** A memento fake recording every update and answering from a plain map. */
@@ -157,7 +158,7 @@ describe('ExtensionState (absorbed from src/extensionState.ts)', () => {
 		await state.setIgnoredRepos(['E:/ignored']);
 		await state.setLastActiveRepo('E:/repo');
 
-		expect(workspaceState.get('repoStates')).toEqual({ 'E:/repo': DEFAULT_REPO_STATE });
+		expect(workspaceState.get('repoStates')).toEqual({ version: STORAGE_STATE_VERSION, data: { 'E:/repo': DEFAULT_REPO_STATE } });
 		expect(state.getIgnoredRepos()).toEqual(['E:/ignored']);
 		expect(state.getLastActiveRepo()).toBe('E:/repo');
 	});
@@ -234,5 +235,144 @@ describe('ExtensionState (absorbed from src/extensionState.ts)', () => {
 	it('normalises the avatar storage path', () => {
 		expect(state.getAvatarStoragePath().indexOf('\\')).toBe(-1);
 		expect(state.getAvatarStoragePath().endsWith('/avatars')).toBe(true);
+	});
+});
+
+describe('versioned user data (REFACTOR-PLAN §3.7.2)', () => {
+	/** One sample directory per historical version: 1.0.27 (version 0), current (v1), v2-newer-writer. */
+	const USER_DATA = ['test', 'fixtures', 'user-data'];
+
+	interface MementoSample {
+		global: Record<string, unknown>;
+		workspace: Record<string, unknown>;
+	}
+
+	/** Load a `globalState.json` sample: the real memento keys of both scopes. */
+	function mementoSample(name: string): MementoSample {
+		return JSON.parse(fs.readFileSync(path.join(process.cwd(), ...USER_DATA, name), 'utf8')) as MementoSample;
+	}
+
+	/** An ExtensionState whose mementos are seeded from a sample's key/value pairs. */
+	function extensionStateOver(globalValues: Record<string, unknown>, workspaceValues: Record<string, unknown>) {
+		const global = new FakeMemento(globalValues);
+		const workspace = new FakeMemento(workspaceValues);
+		const context = {
+			globalState: global,
+			workspaceState: workspace,
+			globalStoragePath: fs.mkdtempSync(path.join(os.tmpdir(), 'gg-storage-'))
+		};
+		const onDidChangeGitExecutable = (): { dispose(): void } => ({ dispose: () => undefined });
+		return { global: global, workspace: workspace, state: new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable) };
+	}
+
+	it('reads the 1.0.27 sample (pre-versioning data) through the current readers', () => {
+		const sample = mementoSample('1.0.27/globalState.json');
+		const { state } = extensionStateOver(sample.global, sample.workspace);
+
+		const repos = state.getRepos();
+		// Every stored field of the project repo survives, merged over the defaults
+		expect(repos['E:\\dev\\project'].name).toBe('Project');
+		expect(repos['E:\\dev\\project'].commitOrdering).toBe('date');
+		expect(repos['E:\\dev\\project'].showRemoteBranchesV2).toBe(BooleanOverride.Default);
+		// The archive repo predates showRemoteBranchesV2: the reader migrates it against the
+		// configured default (TRUE per the vscode mock), so the explicitly-off repo is Disabled
+		expect(repos['E:\\dev\\archive'].showRemoteBranches).toBe(false);
+		expect(repos['E:\\dev\\archive'].showRemoteBranchesV2).toBe(BooleanOverride.Disabled);
+
+		expect(state.getGlobalViewState()).toEqual(sample.global.globalViewState);
+		expect(state.getWorkspaceViewState()).toEqual(sample.workspace.workspaceViewState);
+		expect(state.getLastActiveRepo()).toBe('E:\\dev\\project');
+		expect(state.getLastKnownGitPath()).toBe('C:\\Program Files\\Git\\cmd\\git.exe');
+		expect(state.getIgnoredRepos()).toEqual(['E:\\dev\\sandbox']);
+		expect(state.getGlobalAuthorWritten()).toEqual({ name: 'Dev User', email: 'dev@example.com' });
+		expect(Object.keys(state.getCodeReviews()['E:\\dev\\project'])).toEqual(['3f2a9c1e-4b2d-4f6a']);
+		expect(state.getViewSnapshot()).toEqual(sample.workspace.viewSnapshot);
+	});
+
+	it('round-trips the 1.0.27 sample: read, write (version stamped), read again', async () => {
+		const sample = mementoSample('1.0.27/globalState.json');
+		const { state, workspace } = extensionStateOver(sample.global, sample.workspace);
+
+		const repos = state.getRepos();
+		await state.saveRepos(repos);
+
+		// The strict write enveloped the raw 1.0.27 value with the current version
+		expect(workspace.get('repoStates')).toEqual({ version: STORAGE_STATE_VERSION, data: repos });
+		// Reading the rewritten value answers exactly what the first read answered
+		expect(state.getRepos()).toEqual(repos);
+
+		await state.saveRepos(state.getRepos());
+		expect(workspace.get('repoStates')).toEqual({ version: STORAGE_STATE_VERSION, data: repos });
+	});
+
+	it('leaves current-version (v1) data unchanged across a read-write cycle', async () => {
+		const sample = mementoSample('current/globalState.json');
+		const { state, workspace } = extensionStateOver(sample.global, sample.workspace);
+
+		const repos = state.getRepos();
+		await state.saveRepos(repos);
+
+		// No behavior change for current-version data: the stored envelope is what the sample held
+		expect(workspace.get('repoStates')).toEqual(sample.workspace.repoStates);
+		expect(state.getRepos()).toEqual(repos);
+	});
+
+	it('preserves the unknown fields of a newer writer (version+1) when reading and rewriting', async () => {
+		const sample = mementoSample('v2-newer-writer/globalState.json');
+		const { state, global, workspace } = extensionStateOver(sample.global, sample.workspace);
+
+		// The lenient read of version+1 data keeps the newer writer's unknown fields
+		const repos = state.getRepos();
+		expect((repos['E:\\dev\\project'] as unknown as Record<string, unknown>).compactRows).toBe(true);
+		const viewState = state.getGlobalViewState() as unknown as Record<string, unknown>;
+		expect(viewState.commitGraphStyle).toBe('linear');
+		const workspaceView = state.getWorkspaceViewState() as unknown as Record<string, unknown>;
+		expect(workspaceView.findFuzzy).toBe(true);
+
+		// Rewriting stamps the current version (strict write) while the fields survive
+		await state.saveRepos(repos);
+		const stored = workspace.get('repoStates') as { version: number; data: Record<string, Record<string, unknown>> };
+		expect(stored.version).toBe(STORAGE_STATE_VERSION);
+		expect(stored.data['E:\\dev\\project'].compactRows).toBe(true);
+		expect(state.getRepos()).toEqual(repos);
+
+		// Writing one key never disturbs a newer-writer key it did not touch
+		await state.setCodeReviews({});
+		expect(global.get('globalViewState')).toEqual(sample.global.globalViewState);
+	});
+
+	it('answers defaults for corrupt values instead of throwing', () => {
+		const { state } = extensionStateOver(
+			{ 'lastKnownGitPath': 42, 'avatarCache': 'garbage', 'globalViewState': 7, 'globalAuthorWritten': 'nope' },
+			{ 'repoStates': 'garbage', 'ignoredRepos': 42, 'lastActiveRepo': 3, 'codeReviews': [], 'viewSnapshot': 9 }
+		);
+
+		expect(state.getRepos()).toEqual({});
+		expect(state.getIgnoredRepos()).toEqual([]);
+		expect(state.getLastActiveRepo()).toBeNull();
+		expect(state.getLastKnownGitPath()).toBeNull();
+		expect(state.getAvatarCache()).toEqual({});
+		expect(state.getGlobalViewState()).toEqual(DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE);
+		expect(state.getCodeReviews()).toEqual({});
+		expect(state.getGlobalAuthorWritten()).toBeNull();
+		expect(state.getViewSnapshot()).toBe(9); // an opaque snapshot is passed through, never thrown on
+	});
+
+	it('envelopes are decoded idempotently and never strip unknown fields', () => {
+		const payload = { 'a': 1, 'unknownNewerField': true };
+		const encoded = encodeVersionedState(payload);
+
+		expect(encoded).toEqual({ version: STORAGE_STATE_VERSION, data: payload });
+		expect(decodeVersionedState(encoded)).toEqual(encoded);
+		expect(decodeVersionedState(encodeVersionedState(payload))).toEqual(encoded);
+
+		// A newer writer's envelope passes through untouched (downgrade support)
+		const newer = { version: STORAGE_STATE_VERSION + 1, data: payload };
+		expect(decodeVersionedState(newer)).toEqual(newer);
+
+		// Legacy raw values are version 0 data, migrated to the current version
+		expect(decodeVersionedState('raw 1.0.27 value')).toEqual({ version: STORAGE_STATE_VERSION, data: 'raw 1.0.27 value' });
+		expect(decodeVersionedState(undefined)).toBeNull();
+		expect(decodeVersionedState(null)).toEqual({ version: STORAGE_STATE_VERSION, data: null });
 	});
 });

@@ -1,0 +1,127 @@
+{
+	"global": {
+		"lastKnownGitPath": { "version": 1, "data": "C:\\Program Files\\Git\\cmd\\git.exe" },
+		"avatarCache": {
+			"version": 1,
+			"data": {
+				"dev@example.com": {
+					"image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+					"timestamp": 1755000000000,
+					"identicon": false
+				}
+			}
+		},
+		"globalViewState": {
+			"version": 1,
+			"data": {
+				"alwaysAcceptCheckoutCommit": false,
+				"issueLinkingConfig": null,
+				"pushTagSkipRemoteCheck": false
+			}
+		},
+		"globalAuthorWritten": {
+			"version": 1,
+			"data": { "name": "Dev User", "email": "dev@example.com" }
+		}
+	},
+	"workspace": {
+		"repoStates": {
+			"version": 1,
+			"data": {
+				"E:\\dev\\project": {
+					"pinnedBranches": ["main"],
+					"pinnedCommits": [
+						{
+							"hash": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+							"summary": "Add user data fixtures",
+							"author": "Dev User",
+							"email": "dev@example.com",
+							"date": 1755000123456
+						}
+					],
+					"cdvDivider": 0.5,
+					"cdvHeight": 250,
+					"columnWidths": [220, 150, 380],
+					"commitOrdering": "date",
+					"fileViewType": 1,
+					"gerritFetchRefs": false,
+					"gerritFetchLimit": null,
+					"gerritStatusFilter": { "new": true, "merged": false, "abandoned": false, "wip": false },
+					"hideRemotes": ["upstream"],
+					"includeCommitsMentionedByReflogs": 0,
+					"issueLinkingConfig": { "issue": "PROJ-", "url": "https://example.com/issues/" },
+					"lastImportAt": 1755000000000,
+					"name": "Project",
+					"onlyFollowFirstParent": 0,
+					"onRepoLoadShowCheckedOutBranch": 1,
+					"onRepoLoadShowSpecificBranches": null,
+					"pullRequestConfig": null,
+					"showRemoteBranches": true,
+					"showRemoteBranchesV2": 0,
+					"showStashes": 0,
+					"showTags": 0,
+					"workspaceFolderIndex": null
+				},
+				"E:\\dev\\archive": {
+					"pinnedBranches": [],
+					"pinnedCommits": [],
+					"cdvDivider": 0.5,
+					"cdvHeight": 250,
+					"columnWidths": null,
+					"commitOrdering": "default",
+					"fileViewType": 0,
+					"gerritFetchRefs": false,
+					"gerritFetchLimit": null,
+					"gerritStatusFilter": { "new": true, "merged": false, "abandoned": false, "wip": false },
+					"hideRemotes": [],
+					"includeCommitsMentionedByReflogs": 0,
+					"issueLinkingConfig": null,
+					"lastImportAt": 0,
+					"name": null,
+					"onlyFollowFirstParent": 0,
+					"onRepoLoadShowCheckedOutBranch": 0,
+					"onRepoLoadShowSpecificBranches": null,
+					"pullRequestConfig": null,
+					"showRemoteBranches": false,
+					"showRemoteBranchesV2": 2,
+					"showStashes": 0,
+					"showTags": 0,
+					"workspaceFolderIndex": null
+				}
+			}
+		},
+		"codeReviews": {
+			"version": 1,
+			"data": {
+				"E:\\dev\\project": {
+					"3f2a9c1e-4b2d-4f6a": {
+						"lastActive": 1755000200000,
+						"lastViewedFile": "src/app.ts",
+						"remainingFiles": ["src/app.ts", "src/util.ts"]
+					}
+				}
+			}
+		},
+		"ignoredRepos": { "version": 1, "data": ["E:\\dev\\sandbox"] },
+		"lastActiveRepo": { "version": 1, "data": "E:\\dev\\project" },
+		"viewSnapshot": {
+			"version": 1,
+			"data": {
+				"currentRepo": "E:\\dev\\project",
+				"scrollTop": 480,
+				"findWidget": { "text": "fix", "currentHash": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b", "visible": false },
+				"settingsWidget": { "currentRepo": "E:\\dev\\project", "scrollTop": 0, "repoColumnScrollTop": 0, "globalColumnScrollTop": 0 },
+				"commitPathFilter": "src/",
+				"compareSourceHash": null
+			}
+		},
+		"workspaceViewState": {
+			"version": 1,
+			"data": {
+				"findIsCaseSensitive": false,
+				"findIsRegex": true,
+				"findOpenCommitDetailsView": false
+			}
+		}
+	}
+}

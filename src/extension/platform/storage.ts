@@ -8,6 +8,9 @@ import { getPathFromStr } from '../../utils/paths';
 import { Disposable } from '../../utils/disposable';
 import { GgEvent } from '../../utils/event';
 import { getConfig } from './config';
+import { isStateRecord, readVersionedState, encodeVersionedState } from './storageVersioned';
+
+export { STORAGE_MIGRATIONS, STORAGE_STATE_VERSION } from './storageVersioned';
 
 /**
  * Platform storage adapter (REFACTOR-PLAN 3.3): the ONE storage module, unifying the
@@ -22,6 +25,10 @@ import { getConfig } from './config';
  * LENIENT: with no memento available (or a failing one) `get` answers the caller's default and
  * `undefined`, never throws. Writes report success as a boolean instead of rejecting, so state
  * bookkeeping can never take down a request path.
+ *
+ * The `ExtensionState` values are versioned user data (REFACTOR-PLAN §3.7.2): reads migrate
+ * older versions leniently and preserve newer writers' unknown fields, while every write
+ * stamps `STORAGE_STATE_VERSION` - see ./storageVersioned.ts for the envelope and migrations.
  */
 
 /** The `vscode.Memento` surface this adapter uses. */
@@ -205,7 +212,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The set of repositories.
 	 */
 	public getRepos() {
-		const repoSet = this.workspaceState.get<GitRepoSet>(REPO_STATES, {});
+		const repoSet = this.getWorkspaceState<GitRepoSet>(REPO_STATES, {});
+		if (!isStateRecord(repoSet)) return {};
 		const outputSet: GitRepoSet = {};
 		let showRemoteBranchesDefaultValue: boolean | null = null;
 		Object.keys(repoSet).forEach((repo) => {
@@ -256,8 +264,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The global state.
 	 */
 	public getGlobalViewState() {
-		const globalViewState = this.globalState.get<GitGraphViewGlobalState>(GLOBAL_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE);
-		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, globalViewState);
+		const globalViewState = this.getGlobalState<GitGraphViewGlobalState>(GLOBAL_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE);
+		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, isStateRecord(globalViewState) ? globalViewState : {});
 	}
 
 	/**
@@ -276,8 +284,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The workspace state.
 	 */
 	public getWorkspaceViewState() {
-		const workspaceViewState = this.workspaceState.get<GitGraphViewWorkspaceState>(WORKSPACE_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE);
-		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE, workspaceViewState);
+		const workspaceViewState = this.getWorkspaceState<GitGraphViewWorkspaceState>(WORKSPACE_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE);
+		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE, isStateRecord(workspaceViewState) ? workspaceViewState : {});
 	}
 
 	/**
@@ -296,7 +304,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The snapshot, or NULL if none was reported yet.
 	 */
 	public getViewSnapshot() {
-		return this.workspaceState.get<GitGraphViewSnapshot | null>(VIEW_SNAPSHOT, null);
+		return this.getWorkspaceState<GitGraphViewSnapshot | null>(VIEW_SNAPSHOT, null);
 	}
 
 	/**
@@ -315,7 +323,8 @@ export class ExtensionState extends Disposable {
 	 * @returns An array of the paths of ignored repositories.
 	 */
 	public getIgnoredRepos() {
-		return this.workspaceState.get<string[]>(IGNORED_REPOS, []);
+		const ignoredRepos = this.getWorkspaceState<unknown>(IGNORED_REPOS, []);
+		return Array.isArray(ignoredRepos) ? ignoredRepos as string[] : [];
 	}
 
 	/**
@@ -334,7 +343,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The path of the last active repository.
 	 */
 	public getLastActiveRepo() {
-		return this.workspaceState.get<string | null>(LAST_ACTIVE_REPO, null);
+		const repo = this.getWorkspaceState<unknown>(LAST_ACTIVE_REPO, null);
+		return typeof repo === 'string' || repo === null ? repo : null;
 	}
 
 	/**
@@ -353,7 +363,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The path of the Git executable.
 	 */
 	public getLastKnownGitPath() {
-		return this.globalState.get<string | null>(LAST_KNOWN_GIT_PATH, null);
+		const path = this.getGlobalState<unknown>(LAST_KNOWN_GIT_PATH, null);
+		return typeof path === 'string' || path === null ? path : null;
 	}
 
 	/**
@@ -374,7 +385,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The identity Git Graph wrote, or NULL.
 	 */
 	public getGlobalAuthorWritten(): WrittenGlobalAuthor | null {
-		const written = this.globalState.get<WrittenGlobalAuthor | null>(GLOBAL_AUTHOR_WRITTEN, null);
+		const written = this.getGlobalState<WrittenGlobalAuthor | null>(GLOBAL_AUTHOR_WRITTEN, null);
 		return written !== null && typeof written.name === 'string' && typeof written.email === 'string' ? written : null;
 	}
 
@@ -413,7 +424,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The avatar cache.
 	 */
 	public getAvatarCache() {
-		return this.globalState.get<AvatarCache>(AVATAR_CACHE, {});
+		const avatars = this.getGlobalState<AvatarCache>(AVATAR_CACHE, {});
+		return isStateRecord(avatars) ? avatars : {};
 	}
 
 	/**
@@ -576,7 +588,8 @@ export class ExtensionState extends Disposable {
 	 * @returns The set of Code Reviews.
 	 */
 	public getCodeReviews() {
-		return this.workspaceState.get<CodeReviews>(CODE_REVIEWS, {});
+		const reviews = this.getWorkspaceState<CodeReviews>(CODE_REVIEWS, {});
+		return isStateRecord(reviews) ? reviews : {};
 	}
 
 	/**
@@ -591,26 +604,49 @@ export class ExtensionState extends Disposable {
 	/* Update State Memento's */
 
 	/**
-	 * Update the Git Graph Global State with a new <key, value> pair.
+	 * Read a versioned value from the Git Graph Global State (lenient): the stored value migrated
+	 * to the current schema, or the fallback when absent, corrupt or unreadable.
+	 * @param key The key.
+	 * @param fallback The value to answer when the key holds nothing readable.
+	 * @returns The decoded value.
+	 */
+	private getGlobalState<T>(key: string, fallback: T): T {
+		return readVersionedState<T>(this.globalState, key, fallback);
+	}
+
+	/**
+	 * Read a versioned value from the Git Graph Workspace State (lenient, as getGlobalState).
+	 * @param key The key.
+	 * @param fallback The value to answer when the key holds nothing readable.
+	 * @returns The decoded value.
+	 */
+	private getWorkspaceState<T>(key: string, fallback: T): T {
+		return readVersionedState<T>(this.workspaceState, key, fallback);
+	}
+
+	/**
+	 * Update the Git Graph Global State with a new <key, value> pair. Values are stored in the
+	 * versioned envelope (strict write, §3.7.2); undefined removes the key.
 	 * @param key The key.
 	 * @param value The value.
 	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Global State.
 	 */
-	private updateGlobalState(key: string, value: any): Thenable<ErrorInfo> {
-		return this.globalState.update(key, value).then(
+	private updateGlobalState(key: string, value: unknown): Thenable<ErrorInfo> {
+		return this.globalState.update(key, encodeVersionedState(value)).then(
 			() => null,
 			() => 'Visual Studio Code was unable to save the Git Graph Global State Memento.'
 		);
 	}
 
 	/**
-	 * Update the Git Graph Workspace State with a new <key, value> pair.
+	 * Update the Git Graph Workspace State with a new <key, value> pair, versioned as the
+	 * Global State writes are.
 	 * @param key The key.
 	 * @param value The value.
 	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Workspace State.
 	 */
-	private updateWorkspaceState(key: string, value: any): Thenable<ErrorInfo> {
-		return this.workspaceState.update(key, value).then(
+	private updateWorkspaceState(key: string, value: unknown): Thenable<ErrorInfo> {
+		return this.workspaceState.update(key, encodeVersionedState(value)).then(
 			() => null,
 			() => 'Visual Studio Code was unable to save the Git Graph Workspace State Memento.'
 		);

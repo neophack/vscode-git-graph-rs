@@ -9,9 +9,28 @@ import { getPathFromStr } from '../../utils/paths';
  * §3.3 / Appendix A): everything that reads, writes, generates, validates and applies a
  * repository's `.vscode/git-graph-rs.json`. Extracted verbatim from the former flat
  * src/repoManager.ts so the file handling can be tested on its own.
+ *
+ * The file is versioned user data (REFACTOR-PLAN §3.7.2): readers are "lenient read, strict
+ * write" - every older version is readable (unversioned 1.0.27 files are version 0), unknown
+ * fields written by NEWER versions are preserved as-is so a downgrade can read them back, and
+ * every write stamps REPO_CONFIG_VERSION.
  */
 
 /** External Repo Config File */
+
+/** The schema version stamped onto every configuration file Git Graph writes. */
+export const REPO_CONFIG_VERSION = 1;
+
+/**
+ * Up-migrations of the configuration file schema, ordered by source version: the step at
+ * index i upgrades a version-i record to version i+1. Index 0 covers the pre-versioning
+ * 1.0.27 files, which carried exactly the current fields without a version stamp - the step
+ * is therefore a pass-through normalization. Add one step per released schema change, and
+ * spread unknown fields through every step so forward compatibility survives each migration.
+ */
+export const REPO_CONFIG_MIGRATIONS: ReadonlyArray<(record: Record<string, unknown>) => Record<string, unknown>> = [
+	(record) => record
+];
 
 export namespace ExternalRepoConfig {
 
@@ -48,6 +67,8 @@ export namespace ExternalRepoConfig {
 	export type PullRequestConfig = PullRequestConfigBuiltIn | PullRequestConfigCustom;
 
 	export interface File {
+		/** The schema version of the file (absent in pre-versioning 1.0.27 files). */
+		version?: number;
 		commitOrdering?: RepoCommitOrdering;
 		fileViewType?: FileViewType;
 		hideRemotes?: string[];
@@ -69,6 +90,36 @@ export namespace ExternalRepoConfig {
 }
 
 /**
+ * Leniently normalize a parsed configuration file record to the current schema (§3.7.2):
+ * a record without a version stamp is treated as version 0 (the pre-versioning 1.0.27
+ * format) and migrated; a record written by a NEWER version is kept as-is, unknown fields
+ * and its own version included, so a downgrade can read it back. Known fields are never
+ * dropped and unknown fields are never stripped.
+ * @param contents The parsed file contents.
+ * @returns The normalized record, or NULL when the contents are not a config record.
+ */
+export function normalizeExternalConfigFile(contents: unknown): Readonly<ExternalRepoConfig.File> | null {
+	if (!isConfigRecord(contents)) return null;
+	let version = typeof contents.version === 'number' && Number.isInteger(contents.version) && contents.version >= 0 ? contents.version : 0;
+	let record: Record<string, unknown> = contents;
+	if (version > REPO_CONFIG_VERSION) {
+		return { ...record };
+	}
+	while (version < REPO_CONFIG_VERSION) {
+		const migrate = REPO_CONFIG_MIGRATIONS[version];
+		if (typeof migrate !== 'function') return null;
+		record = migrate(record);
+		version++;
+	}
+	return { ...record, version: REPO_CONFIG_VERSION };
+}
+
+/** Whether the parsed contents are a non-null, non-array object (the config record shape). */
+function isConfigRecord(contents: unknown): contents is Record<string, unknown> {
+	return contents !== null && typeof contents === 'object' && !Array.isArray(contents);
+}
+
+/**
  * Reads the External Configuration File for a repository from the File System.
  * @param repo The path of the repository.
  * @returns A promise resolving to the parsed config file, or NULL if the file couldn't be read or parsed.
@@ -80,8 +131,7 @@ export function readExternalConfigFile(repo: string) {
 				resolve(null);
 			} else {
 				try {
-					const contents = JSON.parse(data.toString());
-					resolve(typeof contents === 'object' ? contents : null);
+					resolve(normalizeExternalConfigFile(JSON.parse(data.toString())));
 				} catch (_) {
 					resolve(null);
 				}
@@ -91,7 +141,9 @@ export function readExternalConfigFile(repo: string) {
 }
 
 /**
- * Writes the External Configuration File of a repository to the File System.
+ * Writes the External Configuration File of a repository to the File System. The file is
+ * always stamped with the current schema version (strict write, §3.7.2); fields unknown to
+ * this version are written back untouched.
  * @param repo The path of the repository.
  * @param file The file contents.
  * @returns A promise that resolves to a success message, or rejects to an error message.
@@ -102,7 +154,7 @@ export function writeExternalConfigFile(repo: string, file: ExternalRepoConfig.F
 		fs.mkdir(vscodePath, (err) => {
 			if (!err || err.code === 'EEXIST') {
 				const configPath = path.join(vscodePath, 'git-graph-rs.json');
-				fs.writeFile(configPath, JSON.stringify(file, null, 4), (err) => {
+				fs.writeFile(configPath, JSON.stringify({ ...file, version: REPO_CONFIG_VERSION }, null, 4), (err) => {
 					if (err) {
 						reject(t('writeRepoConfigFailed', getPathFromStr(configPath)));
 					} else {
@@ -197,6 +249,9 @@ export function generateExternalConfigFile(state: GitRepoState): Readonly<Extern
  * @returns NULL => Value, String => The first field that is invalid.
  */
 export function validateExternalConfigFile(file: Readonly<ExternalRepoConfig.File>) {
+	if (typeof file.version !== 'undefined' && typeof file.version !== 'number') {
+		return 'version';
+	}
 	if (typeof file.commitOrdering !== 'undefined' && file.commitOrdering !== RepoCommitOrdering.Date && file.commitOrdering !== RepoCommitOrdering.AuthorDate && file.commitOrdering !== RepoCommitOrdering.Topological) {
 		return 'commitOrdering';
 	}

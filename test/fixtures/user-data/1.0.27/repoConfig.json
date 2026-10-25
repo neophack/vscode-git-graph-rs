@@ -1,0 +1,19 @@
+{
+	"commitOrdering": "date",
+	"hideRemotes": ["upstream"],
+	"issueLinkingConfig": { "issue": "PROJ-", "url": "https://example.com/issues/" },
+	"name": "Project",
+	"onRepoLoadShowSpecificBranches": ["main", "dev"],
+	"pinnedBranches": ["main", "release"],
+	"pinnedCommits": [
+		{
+			"hash": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+			"summary": "Add user data fixtures",
+			"author": "Dev User",
+			"email": "dev@example.com",
+			"date": 1755000123456
+		}
+	],
+	"showRemoteBranches": false,
+	"exportedAt": 1755000000000
+}

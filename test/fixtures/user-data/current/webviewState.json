@@ -1,0 +1,96 @@
+{
+	"version": 1,
+	"currentRepo": "E:\\dev\\project",
+	"currentRepoLoading": false,
+	"gitRepos": {
+		"E:\\dev\\project": {
+			"pinnedBranches": [
+				"main"
+			],
+			"pinnedCommits": [
+				{
+					"hash": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+					"summary": "Add user data fixtures",
+					"author": "Dev User",
+					"email": "dev@example.com",
+					"date": 1755000123456
+				}
+			],
+			"cdvDivider": 0.5,
+			"cdvHeight": 250,
+			"columnWidths": [
+				220,
+				150,
+				380
+			],
+			"commitOrdering": "date",
+			"fileViewType": 1,
+			"gerritFetchRefs": false,
+			"gerritFetchLimit": null,
+			"gerritStatusFilter": {
+				"new": true,
+				"merged": false,
+				"abandoned": false,
+				"wip": false
+			},
+			"hideRemotes": [
+				"upstream"
+			],
+			"includeCommitsMentionedByReflogs": 0,
+			"issueLinkingConfig": {
+				"issue": "PROJ-",
+				"url": "https://example.com/issues/"
+			},
+			"lastImportAt": 1755000000000,
+			"name": "Project",
+			"onlyFollowFirstParent": 0,
+			"onRepoLoadShowCheckedOutBranch": 1,
+			"onRepoLoadShowSpecificBranches": null,
+			"pullRequestConfig": null,
+			"showRemoteBranches": true,
+			"showRemoteBranchesV2": 0,
+			"showStashes": 0,
+			"showTags": 0,
+			"workspaceFolderIndex": null
+		}
+	},
+	"gitBranches": [
+		"main",
+		"dev"
+	],
+	"gitBranchHead": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+	"gitConfig": null,
+	"gitRemotes": [
+		"origin"
+	],
+	"gitStashes": [],
+	"gitTags": [
+		"v1.0.0"
+	],
+	"commitHead": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+	"currentBranches": [
+		"main",
+		"dev",
+		"feature/fixtures"
+	],
+	"currentAuthors": [
+		"Dev User"
+	],
+	"moreCommitsAvailable": false,
+	"maxCommits": 2000,
+	"onlyFollowFirstParent": false,
+	"scrollTop": 480,
+	"findWidget": {
+		"text": "fix",
+		"currentHash": "3f2a9c1e8b2d4f6a7c0d1e2f3a4b5c6d7e8f9a0b",
+		"visible": false
+	},
+	"settingsWidget": {
+		"currentRepo": "E:\\dev\\project",
+		"scrollTop": 0,
+		"repoColumnScrollTop": 0,
+		"globalColumnScrollTop": 0
+	},
+	"commitPathFilter": "src/",
+	"compareSourceHash": null
+}
