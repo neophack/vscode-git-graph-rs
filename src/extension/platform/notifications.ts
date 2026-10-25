@@ -70,6 +70,24 @@ export class Notifications {
 		return this.show('showErrorMessage', message, items);
 	}
 
+	// --- vscode-named aliases: an instance structurally satisfies uiPort.ts's NotificationsPort
+	// (and the showErrorMessage member the wave-1 handler table declares for ctx.ui). ---
+
+	/** Alias of {@link information} under the vscode API's name. */
+	public showInformationMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined> {
+		return this.show('showInformationMessage', message, items);
+	}
+
+	/** Alias of {@link warning} under the vscode API's name. */
+	public showWarningMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined> {
+		return this.show('showWarningMessage', message, items);
+	}
+
+	/** Alias of {@link error} under the vscode API's name. */
+	public showErrorMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined> {
+		return this.show('showErrorMessage', message, items);
+	}
+
 	private show<T extends MessageChoice>(method: 'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage', message: string, items: T[]): Promise<T | undefined> {
 		const candidate: unknown = this.window === null ? undefined : this.window[method];
 		if (!isShowMessage(candidate)) return Promise.resolve(undefined);
