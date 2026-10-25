@@ -147,10 +147,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	/* ---------- The collaborators ---------- */
 
 	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
-	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
+	const avatarManager = new AvatarManager(reader, extensionState, logger);
 	const repoManager = new RepoManager(repo, gitRunner, extensionState, onDidChangeConfiguration, logger);
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
-	const diffDocProvider = new DiffDocProvider(dataSource);
+	const diffDocProvider = new DiffDocProvider(reader);
 
 	// The two auxiliary webviews still hold the legacy data source; composed here, where it
 	// lives, so no graphView module imports it.

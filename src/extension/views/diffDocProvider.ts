@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DataSource } from '../../dataSource';
+import type { GitBackend } from '../git/read/gitReader';
 import { t } from '../../i18n';
 import { GitFileStatus } from '../../types';
 import { UNCOMMITTED } from '../../utils/git';
@@ -17,17 +17,17 @@ export const enum DiffSide {
  */
 export class DiffDocProvider extends Disposable implements vscode.TextDocumentContentProvider {
 	public static scheme = 'git-graph-rs';
-	private readonly dataSource: DataSource;
+	private readonly read: Pick<GitBackend, 'getCommitFile'>;
 	private readonly docs = new Map<string, DiffDocument>();
 	private readonly onDidChangeEventEmitter = new vscode.EventEmitter<vscode.Uri>();
 
 	/**
 	 * Creates the Git Graph Diff Document Provider.
-	 * @param dataSource The Git Graph DataSource instance.
+	 * @param read The read face the file revisions resolve through (the repository facade's).
 	 */
-	constructor(dataSource: DataSource) {
+	constructor(read: Pick<GitBackend, 'getCommitFile'>) {
 		super();
-		this.dataSource = dataSource;
+		this.read = read;
 
 		this.registerDisposables(
 			vscode.workspace.onDidCloseTextDocument((doc) => this.docs.delete(doc.uri.toString())),
@@ -60,9 +60,9 @@ export class DiffDocProvider extends Disposable implements vscode.TextDocumentCo
 				return '';
 			}
 
-			return await this.dataSource.getCommitFile(request.repo, request.commit, request.filePath).then(
-				(contents) => {
-					const document = new DiffDocument(contents);
+			return await this.read.getCommitFile(request.repo, request.commit, request.filePath).then(
+				(file) => {
+					const document = new DiffDocument(file.contents !== null ? file.contents : '');
 					this.docs.set(uri.toString(), document);
 					return document.value;
 				},

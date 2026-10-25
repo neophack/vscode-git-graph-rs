@@ -4,7 +4,7 @@ import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import { getConfig } from '../../../config';
-import { DataSource } from '../../../dataSource';
+import type { GitBackend } from '../../git/read/gitReader';
 import { ExtensionState } from '../../../extensionState';
 import { Logger } from '../../../logger';
 import { Disposable, toDisposable } from '../../../utils/disposable';
@@ -22,7 +22,7 @@ const AVATAR_EXPIRY_MS = 15552000000; // 180 days x 24 hours x 60 minutes x 60 s
  * Manages fetching and caching Avatars.
  */
 export class AvatarManager extends Disposable {
-	private readonly dataSource: DataSource;
+	private readonly read: Pick<GitBackend, 'getRemoteUrl'>;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
 	private readonly avatarStorageFolder: string;
@@ -38,13 +38,13 @@ export class AvatarManager extends Disposable {
 
 	/**
 	 * Creates the Git Graph Avatar Manager.
-	 * @param dataSource The Git Graph DataSource instance.
+	 * @param read The read face the remote URLs resolve through (the repository facade's).
 	 * @param extensionState The Git Graph ExtensionState instance.
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(dataSource: DataSource, extensionState: ExtensionState, logger: Logger) {
+	constructor(read: Pick<GitBackend, 'getRemoteUrl'>, extensionState: ExtensionState, logger: Logger) {
 		super();
-		this.dataSource = dataSource;
+		this.read = read;
 		this.extensionState = extensionState;
 		this.logger = logger;
 		this.avatarStorageFolder = this.extensionState.getAvatarStoragePath();
@@ -241,7 +241,7 @@ export class AvatarManager extends Disposable {
 			// Fetch the remote repo source
 			let remoteSource: RemoteSource = { type: 'gravatar' };
 			if (avatarRequest.remote !== null) {
-				let remoteUrl = await this.dataSource.getRemoteUrl(avatarRequest.repo, avatarRequest.remote);
+				let remoteUrl = await this.read.getRemoteUrl(avatarRequest.repo, avatarRequest.remote).catch(() => null);
 				if (remoteUrl !== null) {
 					// Depending on the domain of the remote repo source, determine the type of source it is
 					let match;
