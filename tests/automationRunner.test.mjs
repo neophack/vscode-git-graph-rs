@@ -146,7 +146,9 @@ test('the archive actions run: their native save dialog is answered by the scrip
 		filter: (action) => action.id.endsWith('/create-archive'),
 		actionTimeoutMs: 180000
 	});
-	assert.equal(report.suites[1].runs.length, 3);
+	// The catalog lists one create-archive variant per context menu (branch, remote
+	// branch, tag, ...): assert every one of them RAN rather than a stale hard count.
+	assert.ok(report.suites[1].runs.length >= 3, 'the archive variants were selected: ' + report.suites[1].runs.length);
 	for (const run of report.suites[1].runs) {
 		assert.equal(run.skipped, false, run.id + ' must run, not be skipped: ' + JSON.stringify(run));
 	}
@@ -182,6 +184,15 @@ test('a widget a prior action left open is closed before the next action\'s clea
 	// closing step leaves behind: the widget open, independent of any specific catalog action's
 	// steps (a real button click, not the shim).
 	boot.window.document.getElementById('settingsBtn').click();
+	// Task 5.9 mounts the settings widget on demand: wait for the widget to appear
+	// and activate instead of asserting synchronously after the click.
+	const settingsWidget = boot.window.document.getElementById('settingsWidget');
+	await new Promise((resolve, reject) => {
+		const deadline = Date.now() + 10000;
+		const tick = () => (boot.window.document.getElementById('settingsWidget')?.classList.contains('active')
+			? resolve() : (Date.now() > deadline ? reject(new Error('the settings widget never opened')) : setTimeout(tick, 20)));
+		tick();
+	});
 	assert.equal(boot.window.document.getElementById('settingsWidget').classList.contains('active'), true,
 		'the settings widget is open before the suite runs');
 
