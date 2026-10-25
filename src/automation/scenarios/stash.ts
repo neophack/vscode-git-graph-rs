@@ -15,8 +15,14 @@ export const STASH_SCENARIOS = [
 	scenario(byId(MENUS_STASH_ACTIONS, 'menu-stash/apply'), {
 		ops: ['applyStash'],
 		then: {
-			// Applying keeps the stash list intact and re-creates its change in the worktree.
-			git: [{ kind: 'stashCount', count: 3, messageContains: 'fixture-stash' }, { kind: 'worktreeStatus', clean: false }]
+			// Applying keeps the stash list intact and re-creates its change in the worktree —
+			// as a MODIFICATION of the stashed file, not just any dirt (the stash substrate is a
+			// tracked file the apply re-modifies).
+			git: [
+				{ kind: 'stashCount', count: 3, messageContains: 'fixture-stash' },
+				{ kind: 'worktreeStatus', clean: false },
+				{ kind: 'worktreeStatus', contains: ['M '] }
+			]
 		}
 	}),
 	scenario({
@@ -64,7 +70,14 @@ export const STASH_SCENARIOS = [
 	scenario(byId(MENUS_STASH_ACTIONS, 'menu-stash/drop'), {
 		ops: ['dropStash'],
 		then: {
-			git: [{ kind: 'stashCount', count: 2 }]
+			// {{stash}} resolves to stash@{0}, the NEWEST of the three seeded stashes
+			// (fixture-stash-3 — git lists stashes newest-first). Dropping it must leave exactly
+			// the two older ones behind: BOTH remaining messages present pins that the newest
+			// was the dropped one (a wrong drop keeps a different pair).
+			git: [
+				{ kind: 'stashCount', count: 2, messageContains: 'fixture-stash-1' },
+				{ kind: 'stashCount', count: 2, messageContains: 'fixture-stash-2' }
+			]
 		}
 	}),
 	scenario({
@@ -103,7 +116,9 @@ export const STASH_SCENARIOS = [
 	}, {
 		ops: ['popStash'],
 		then: {
-			git: [{ kind: 'stashCount', count: 3 }]
+			// git's refusal left the repository entirely alone: the list keeps its three seeded
+			// entries and HEAD never moved (a half-run pop would have checked out first).
+			git: [{ kind: 'stashCount', count: 3 }, { kind: 'headIs', name: 'main' }]
 		}
 	}),
 
@@ -112,8 +127,13 @@ export const STASH_SCENARIOS = [
 		ops: ['pushStash'],
 		then: {
 			// The untracked fixture file rides along (includeUntracked): a fourth stash whose
-			// message is the flow's own, and the worktree loses the untracked entry.
-			git: [{ kind: 'stashCount', count: 4, messageContains: 'Automation stash' }]
+			// message is the flow's own, and the worktree loses the untracked entry — everything
+			// the seed dirtied went INTO the stash, so nothing at all remains (clean pins the
+			// includeUntracked wiring end to end, not just the stash-list count).
+			git: [
+				{ kind: 'stashCount', count: 4, messageContains: 'Automation stash' },
+				{ kind: 'worktreeStatus', clean: true }
+			]
 		}
 	}),
 	scenario({

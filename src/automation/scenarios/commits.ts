@@ -145,9 +145,11 @@ export const COMMIT_SCENARIOS = [
 		ops: ['resetToCommit'],
 		then: {
 			// The mixed reset to {{commit}} moves main back without touching the index — main is
-			// at the target and its commits are gone from the branch tip.
+			// at the target and its commits are gone from the branch tip, leaving main WITH no
+			// commit of its own over its upstream ({{commit}} is one of origin/main's commits).
 			git: [
 				{ kind: 'commitMessages', range: 'main -1', messages: ['{{commitSubject}}'] },
+				{ kind: 'commitCount', range: 'main --not origin/main', count: 0 },
 				{ kind: 'headIs', name: 'main' }
 			]
 		}
