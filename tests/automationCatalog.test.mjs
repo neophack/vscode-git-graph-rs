@@ -45,7 +45,7 @@ function extractProtocolCommands() {
 
 /** The ids the webview DOM is known to carry (programmatic assignment + inline HTML). */
 function extractDomIds() {
-	const files = sourceFiles(...webviewSources(), 'src/gitGraphView.ts');
+	const files = sourceFiles(...webviewSources(), 'src/extension/graphView/html.ts');
 	const ids = new Set();
 	for (const { text } of files) {
 		for (const re of [/\bgetElementById\('([^']+)'\)/g, /\bid = '([^']+)'/g, /\bid="([^"]+)"/g, /\bid='([^']+)'/g]) {

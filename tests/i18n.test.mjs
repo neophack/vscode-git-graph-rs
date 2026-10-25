@@ -1,26 +1,24 @@
 /**
- * The extension host's localisation: message lookup, placeholder substitution and language
- * selection.
+ * The extension host's language selection (src/config.ts's interfaceLanguage resolution and
+ * src/i18n.ts's t()/isZhCn()).
  *
  * The language is resolved at call time (`t()` re-reads the configuration on every message, so a
  * setting change applies immediately), which these tests pin by mutating the stubbed `vscode`
- * configuration between calls. The dictionary is the shared string table of src/shared/i18n
- * (merged with the webview's in task 6.3): key parity between the languages is enforced at
- * compile time (`satisfies SharedStrings`); these tests hold the table against the remaining,
- * runtime invariants — placeholder parity and well-formedness, and the round-trip the comparison
- * pages rely on (baking `{0}`/`{1}` back into a template so the webview can `.replace()` them
- * later) — the exact shape of the placeholder that once lost its closing brace and surfaced as
- * literal `{1` in the rendered page.
+ * configuration between calls.
+ *
+ * The remainder of the former file drained into the new tree (REFACTOR-PLAN Appendix B):
+ * placeholder substitution, the dictionary invariants (both languages answering every key,
+ * placeholder parity, well-formedness, the {N}-for-{N} round-trip) and the sources' round-trip
+ * literal scan now live in src/shared/i18n/format.test.ts against the shared tables directly;
+ * the webview's live language switch lives in src/webview/common/i18n/index.test.ts. What stays
+ * here is the host-side resolution — the explicitly configured language, "auto" following the VS
+ * Code display language, and unrecognised values falling back to "auto" — whose owning modules
+ * (src/config.ts, src/i18n.ts) are not yet covered by colocated tests of their own.
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import { Module } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /* The mutable stand-in for the extension host: settings and display language change per test. */
 const settings = { interfaceLanguage: 'auto' };
@@ -46,36 +44,6 @@ Module._load = function (request, parent, isMain) {
 };
 
 const { isZhCn, t } = await import('../out/i18n.js');
-const { STRINGS_EN } = await import('../out/shared/i18n/en.js');
-
-/** Every key of the shared dictionary, and the keys whose entry is a single string template. */
-const keys = Object.keys(STRINGS_EN);
-const textKeys = keys.filter((key) => typeof STRINGS_EN[key] === 'string');
-
-/** `t(key)` with no arguments leaves every placeholder in place, yielding the raw template. */
-const templateOf = (key) => {
-	settings.interfaceLanguage = 'en';
-	return t(key);
-};
-
-/** The placeholders of a template, in order of appearance. */
-const placeholdersOf = (template) => [...template.matchAll(/\{\d+\}/g)].map((match) => match[0]);
-
-describe('message substitution', () => {
-	it('substitutes string and number arguments in order', () => {
-		settings.interfaceLanguage = 'en';
-		assert.equal(t('nowUsingGit', '/usr/bin/git', '2.43.0'),
-			'Git Graph is now using /usr/bin/git (version: 2.43.0)');
-		assert.equal(t('compareFilesChanged', 3), '3 files changed');
-		assert.equal(t('uncommittedChangesRow', 7), 'Uncommitted Changes (7)');
-	});
-
-	it('keeps placeholders whose argument was not provided, and ignores extra arguments', () => {
-		settings.interfaceLanguage = 'en';
-		assert.equal(t('nowUsingGit', '/usr/bin/git'), 'Git Graph is now using /usr/bin/git (version: {1})');
-		assert.equal(t('compareOneFileChanged', 'unused', 'also unused'), '1 file changed');
-	});
-});
 
 describe('language selection', () => {
 	const tryLanguage = (setting, displayLanguage) => {
@@ -105,74 +73,5 @@ describe('language selection', () => {
 	it('treats any unrecognised value as "auto"', () => {
 		assert.deepEqual(tryLanguage('zh_CN', 'zh-cn'), { chinese: true, message: '1 个文件已更改' });
 		assert.deepEqual(tryLanguage('nonsense', 'en'), { chinese: false, message: '1 file changed' });
-	});
-});
-
-describe('the dictionaries', () => {
-	it('hold a full key list', () => {
-		assert.ok(keys.length >= 1000, `expected the merged host+webview dictionary, found ${keys.length} keys`);
-		assert.deepEqual([...new Set(keys)].sort(), keys.slice().sort(), 'keys must be unique');
-	});
-
-	it('answer every key in both languages (a missing ZH entry would throw)', () => {
-		settings.interfaceLanguage = 'zh-cn';
-		for (const key of textKeys) assert.ok(t(key).length > 0, `${key} has no zh-cn message`);
-		settings.interfaceLanguage = 'en';
-		for (const key of textKeys) assert.ok(t(key).length > 0, `${key} has no en message`);
-	});
-
-	it('give both languages the same placeholders for every key', () => {
-		settings.interfaceLanguage = 'en';
-		const en = new Map(textKeys.map((key) => [key, placeholdersOf(t(key))]));
-		settings.interfaceLanguage = 'zh-cn';
-		for (const [key, enPlaceholders] of en) {
-			assert.deepEqual(placeholdersOf(t(key)).sort(), [...enPlaceholders].sort(),
-				`${key} disagrees on its placeholders between en and zh-cn`);
-		}
-	});
-
-	it('only contains well-formed placeholders', () => {
-		for (const key of textKeys) {
-			for (const template of [templateOf(key), (() => { settings.interfaceLanguage = 'zh-cn'; return t(key); })()]) {
-				const remainder = template.replace(/\{\d+\}/g, '');
-				assert.ok(!/\{\d/.test(remainder),
-					`${key} contains a placeholder that lost its closing brace: ${template}`);
-			}
-		}
-	});
-
-	it('round-trips its placeholders: substituting {N} for {N} reproduces the template', () => {
-		// The comparison pages bake templates into the webview by calling t() with the literal
-		// placeholders as arguments (t(key, '{0}', '{1}')), for the page to .replace() later — the
-		// substitution must hand every placeholder back unchanged.
-		const passThrough = ['{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}', '{9}'];
-		for (const language of ['en', 'zh-cn']) {
-			settings.interfaceLanguage = language;
-			for (const key of textKeys) {
-				assert.equal(t(key, ...passThrough), t(key), `${key} does not survive the round-trip in ${language}`);
-			}
-		}
-	});
-});
-
-describe('the round-trip literals of the sources', () => {
-	/** Every *.ts file under a directory, recursively. */
-	function collect(dir) {
-		return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-			const full = path.join(dir, entry.name);
-			return entry.isDirectory() ? collect(full) : (entry.name.endsWith('.ts') ? [full] : []);
-		});
-	}
-
-	it('passes complete placeholders only (a literal like \'{1\' once baked itself into pages)', () => {
-		const malformed = [];
-		for (const file of [...collect(path.join(root, 'src')), ...collect(path.join(root, 'src', 'webview'))]) {
-			const source = fs.readFileSync(file, 'utf8');
-			for (const match of source.matchAll(/'\{\d+'/g)) {
-				malformed.push(`${path.relative(root, file)}: ${match[0]}`);
-			}
-		}
-		assert.deepEqual(malformed, [],
-			'these string literals are placeholders that lost their closing brace');
 	});
 });

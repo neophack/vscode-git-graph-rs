@@ -11,6 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import Module, { createRequire } from 'node:module';
 import path from 'node:path';
@@ -105,4 +106,69 @@ test('the askpass launchers ship beside the helper with LF endings', { skip }, (
 
 test('the emitted artifacts pass the ES2018 compatibility gate', { skip }, () => {
 	assert.deepEqual(checkCompat(), []);
+});
+
+test('the VSIX manifest contract: the packaged file list is exactly the allowlist (task 1.4)', { skip }, () => {
+	// The dry-run listing `vsce ls` prints is the exact set `npm run package` zips (both go
+	// through vsce's collect, the same .vscodeignore and the same package.json), so the
+	// contract can be asserted without paying for a full packaging run: dist/extension.js,
+	// the askpass launchers, the webview assets, the static resources and the engine binaries
+	// ship; sources (src/, *.ts), source maps, the legacy out/ tree, tooling, docs and the
+	// automation variant's files do not.
+	assert.equal(
+		JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).main,
+		'./dist/extension.js',
+		'package.json#main must point at the dist bundle'
+	);
+	const vsceEntry = require.resolve('@vscode/vsce/vsce');
+	const listed = execFileSync(process.execPath, [vsceEntry, 'ls'], { cwd: root, encoding: 'utf8' })
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		// Only real files on disk count; anything else vsce printed is noise.
+		.filter((line) => line.length > 0 && fs.existsSync(path.join(root, line)));
+	const set = new Set(listed);
+
+	for (const required of [
+		'dist/extension.js',
+		'dist/askpass/askpass.sh',
+		'dist/askpass/askpass-empty.sh',
+		'dist/askpass/askpassMain.js',
+		'media/out.min.js',
+		'media/out.min.css',
+		'resources/icon.png',
+		'package.json',
+		'package.nls.json',
+		'package.nls.zh-cn.json',
+		'LICENSE'
+	]) {
+		assert.ok(set.has(required), `${required} must ship in the VSIX`);
+	}
+	// The vendored webview assets and the engine binaries are build products; whichever are
+	// present on this machine must be packaged (a missing one would 404 or silently disable
+	// the engine in the shipped extension).
+	for (const vendor of ['markdown-it.min.js', 'highlight.min.js']) {
+		if (fs.existsSync(path.join(root, 'media', 'vendor', vendor))) {
+			assert.ok(set.has(`media/vendor/${vendor}`), `media/vendor/${vendor} must ship in the VSIX`);
+		}
+	}
+	const nativeDir = path.join(root, 'native');
+	if (fs.existsSync(nativeDir)) {
+		for (const entry of fs.readdirSync(nativeDir)) {
+			if (fs.existsSync(path.join(nativeDir, entry, 'git-graph.node'))) {
+				assert.ok(set.has(`native/${entry}/git-graph.node`), `native/${entry}/git-graph.node must ship in the VSIX`);
+			}
+		}
+	}
+	// At least one license text ships; nothing outside the allowlist does.
+	assert.ok([...set].some((file) => file.startsWith('licenses/')), 'the license texts must ship');
+	for (const file of listed) {
+		assert.ok(!/\.(ts|map)$/.test(file), `source artifacts must not ship: ${file}`);
+		assert.ok(
+			!/^(src|out|tests|test|scripts|docs|legacy|coverage|node_modules|target)\//.test(file),
+			`nothing under a source/tooling directory may ship: ${file}`
+		);
+		assert.ok(!file.startsWith('dist/automation/'), `the automation variant must not ship in the default VSIX: ${file}`);
+		assert.ok(!file.startsWith('resources/automation/'), `the automation shim must not ship in the default VSIX: ${file}`);
+		assert.ok(!file.startsWith('out/'), `the legacy out/ tree must not ship: ${file}`);
+	}
 });
