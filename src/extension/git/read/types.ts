@@ -50,6 +50,15 @@ export type {
 	RemoteConfig as GitRemoteConfig
 } from '../../../shared/engine/protocol';
 
+/**
+ * The read-only shapes the engine does not generate (no engine method answers them yet), defined
+ * once in `src/types/git.ts` beside the rest of the extension's data contract, imported here for
+ * the backend's own bags and re-exported so the backend's vocabulary stays one table.
+ */
+import type { GitReflogEntry } from '../../../types/git';
+
+export type { GitConflictPrediction, GitReflogEntry, GitWorktree } from '../../../types/git';
+
 /* ---------- Wire literals the extension names ---------- */
 
 /**
@@ -77,6 +86,17 @@ export const enum GitSignatureStatus {
 }
 
 /* ---------- Input-side option bags ---------- */
+
+/**
+ * A page of a reference's reflog, newest first, with the dangling commits flagged per entry
+ * ({@link GitReflogEntry}). The rejection of the read carries the failure, so unlike the view
+ * message that wraps this page there is no `error` field here.
+ */
+export interface GitReflogPage {
+	readonly entries: ReadonlyArray<GitReflogEntry>;
+	/** TRUE when the reference's reflog holds more entries beyond this page. */
+	readonly moreAvailable: boolean;
+}
 
 /** The ref-reading options a ref scan accepts; an omitted field means "the usual". */
 export interface RefReadOptions {

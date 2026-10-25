@@ -8,9 +8,13 @@
  * progress" — is unit-testable without a repository.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 
 import { GitOperationState, GitOperationType } from '../../types/git';
+
+/** Runs a Git read in a repository, resolving its stdout; rejecting when it fails. */
+export type RepoTextRunner = (argv: ReadonlyArray<string>, repo: string) => Promise<string>;
 
 /** The environment the detection runs against; the real one is `fs` plus a Git text runner. */
 export interface OperationStateEnv {
@@ -20,6 +24,27 @@ export interface OperationStateEnv {
 	readonly readIntFile: (file: string) => number | null;
 	/** Run a Git read, resolving its stdout; rejecting when it fails. */
 	readonly runText: (argv: ReadonlyArray<string>) => Promise<string>;
+}
+
+/**
+ * The production environment: the real filesystem for the state files, and the repository's Git
+ * text runner bound to the repo. The assembly used to sit in the facade's `getOperationState`;
+ * it lives here so everything `detectOperationState` needs to run is decided in one module,
+ * and the facade only composes.
+ */
+export function fsOperationStateEnv(repo: string, runText: RepoTextRunner): OperationStateEnv {
+	return {
+		exists: (file) => fs.existsSync(file),
+		readIntFile: (file) => {
+			try {
+				const value = parseInt(fs.readFileSync(file).toString().trim(), 10);
+				return isNaN(value) ? null : value;
+			} catch (_) {
+				return null;
+			}
+		},
+		runText: (argv) => runText(argv, repo)
+	};
 }
 
 /** The argv of the Git-directory probe. */

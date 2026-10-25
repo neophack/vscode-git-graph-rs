@@ -51,6 +51,35 @@ export async function getRefs(cli: GitCli, repo: string, options: RefReadOptions
 	return snapshot.refData;
 }
 
+/**
+ * A signature of everything at ref level that can change the commit graph: the resolved hash of
+ * HEAD, and the names AND hashes of every branch, tag, remote-tracking ref and stash. A change
+ * poller comparing name-only lists cannot see a new commit landing on an existing branch; reading
+ * the actual ref hashes is what makes it visible. Never rejects: a momentarily unreadable
+ * repository answers NULL.
+ */
+export async function getRepoChangeSignature(cli: GitCli, repo: string): Promise<string | null> {
+	try {
+		const [refs, stashes] = await Promise.all([getRefs(cli, repo, { showRemoteBranches: true }), getStashes(cli, repo)]);
+		return JSON.stringify([refs.head, refs.heads, refs.tags, refs.remotes, stashes]);
+	} catch (_) {
+		return null;
+	}
+}
+
+/** The local Gerrit change refs of a remote (`refs/remotes/<remote>/changes/**`), as `[refname, hash]` pairs. */
+export async function listChangeRefs(cli: GitCli, repo: string, remote: string): Promise<[string, string][]> {
+	const out = await cli.run(['for-each-ref', 'refs/remotes/' + remote + '/changes/', '--format=%(refname)%00%(objectname)'], repo);
+	const refs: [string, string][] = [];
+	for (const line of out.split(EOL)) {
+		const separator = line.indexOf('\0');
+		if (separator === -1) continue;
+		const ref = line.substring(0, separator);
+		if (ref !== '') refs.push([ref, line.substring(separator + 1)]);
+	}
+	return refs;
+}
+
 /** The stashes of a repository, newest first. */
 export async function getStashes(cli: GitCli, repo: string): Promise<GitStash[]> {
 	const format = ['%H', '%P', '%gD', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);

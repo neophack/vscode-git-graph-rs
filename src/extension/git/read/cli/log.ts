@@ -5,18 +5,20 @@
  */
 
 import {
+	GitBackendError,
 	GitCommitData,
 	GitCommitStash,
 	GitStash,
 	LogOptions,
 	UNCOMMITTED
 } from '../../../../backend/types';
+import type { AbortLike } from '../../process/gitProcess';
 import { EOL, GitCli, message, SEPARATOR } from './process';
 import { LogRecord, parseLogRecord } from './parse/log';
 import { getStashes, readRefs } from './refs';
 
-/** A page of the graph. */
-export async function getCommits(cli: GitCli, repo: string, options: LogOptions): Promise<GitCommitData> {
+/** A page of the graph. The optional signal cancels the log walk (see {@link AbortLike}). */
+export async function getCommits(cli: GitCli, repo: string, options: LogOptions, signal?: AbortLike): Promise<GitCommitData> {
 	try {
 		// A deferred load skips the remote-tracking refs, exactly as the engine does (see
 		// `LogOptions.deferRemoteRefs`): the log walks the local branches only, and the refs
@@ -27,7 +29,7 @@ export async function getCommits(cli: GitCli, repo: string, options: LogOptions)
 		// renders — the engine adds the same tips, see graph.rs, keeping the backends in
 		// parity), and the splice below reuses the same list.
 		const stashesPromise = getStashes(cli, repo).catch(() => [] as GitStash[]);
-		const logPromise = stashesPromise.then((stashes) => getLog(cli, repo, options, stashes.map((stash) => stash.baseHash)));
+		const logPromise = stashesPromise.then((stashes) => getLog(cli, repo, options, stashes.map((stash) => stash.baseHash), signal));
 		const refsPromise = readRefs(cli, repo, {
 			showRemoteBranches: options.showRemoteBranches ?? true,
 			showRemoteHeads: options.showRemoteHeads ?? false,
@@ -145,6 +147,10 @@ export async function getCommits(cli: GitCli, repo: string, options: LogOptions)
 			error: null
 		};
 	} catch (error) {
+		// A cancellation is not a graph answer: the caller cancelled the load on purpose, so it
+		// must see the cancellation rather than an empty page (the engine adapter rejects with
+		// the same kind).
+		if (error instanceof GitBackendError && error.kind === 'Cancelled') throw error;
 		return { commits: [], head: null, tags: [], moreCommitsAvailable: false, error: message(error) };
 	}
 }
@@ -158,7 +164,7 @@ export async function getUncommittedChangeCount(cli: GitCli, repo: string, inclu
 	return out.split(EOL).filter((line) => line !== '').length;
 }
 
-async function getLog(cli: GitCli, repo: string, options: LogOptions, stashBaseTips: ReadonlyArray<string> = []): Promise<LogRecord[]> {
+async function getLog(cli: GitCli, repo: string, options: LogOptions, stashBaseTips: ReadonlyArray<string> = [], signal?: AbortLike): Promise<LogRecord[]> {
 	const order = options.commitOrdering ?? 'date';
 	const format = ['%H', '%P', '%an', '%ae', '%ct', '%s'].join(SEPARATOR);
 	// One extra commit, so that the caller can tell whether the page was truncated.
@@ -213,7 +219,7 @@ async function getLog(cli: GitCli, repo: string, options: LogOptions, stashBaseT
 	if (paths.length > 0) args.push('--full-history', '--simplify-merges');
 	args.push('--', ...paths);
 
-	const out = await cli.run(args, repo);
+	const out = await cli.run(args, repo, signal);
 	const records: LogRecord[] = [];
 	for (const record of out.replace(/\0$/, '').split('\0')) {
 		const parsed = parseLogRecord(record);

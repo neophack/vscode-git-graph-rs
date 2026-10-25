@@ -20,25 +20,31 @@ import {
 	GitActivityCell,
 	GitAuthor,
 	GitAuthorStat,
+	GitBackendError,
 	GitCommitData,
 	GitCommitDetails,
 	GitCommitFile,
 	GitCommitStash,
 	GitCommitSummary,
+	GitConflictPrediction,
 	GitConfigSnapshot,
 	GitFileChange,
 	GitHistoryMatch,
 	GitLineCounts,
 	GitRefData,
+	GitReflogPage,
 	GitRepoInfo,
 	GitSignature,
 	GitStash,
 	GitTagDetails,
+	GitWorktree,
 	LogOptions,
 	RefReadOptions
-} from '../../../../backend/types';
+} from '../types';
+import { GerritChangeState } from '../../../../types';
+import type { AbortLike, GitSpawnFn } from '../../process/gitProcess';
 
-import { getConfig, getConfigList, getRemoteUrl } from './config';
+import { getConfig, getConfigList, getGlobalUserDetails, getRemoteUrl } from './config';
 import {
 	compareCommits,
 	getCommitDetails,
@@ -47,6 +53,7 @@ import {
 	getUncommittedDetails
 } from './details';
 import {
+	compareFileDiff,
 	getCommitBodies,
 	getCommitFile,
 	getCommitFileDiff,
@@ -59,14 +66,18 @@ import {
 } from './files';
 import { getCommits, getUncommittedChangeCount } from './log';
 import { GitCli } from './process';
+import { getReflog } from './reflog';
 import {
 	currentBranchName,
 	getCurrentBranchUpstream,
 	getRemotes,
+	getRepoChangeSignature,
 	getRepoInfo,
 	getRefs,
-	getStashes
+	getStashes,
+	listChangeRefs
 } from './refs';
+import { predictConflicts } from './conflicts';
 import {
 	countCommitsBefore,
 	getActivityHeatmap,
@@ -75,14 +86,21 @@ import {
 	getLineCounts
 } from './stats';
 import { getTagDetails, getTagSignature } from './tags';
+import { getWorktrees } from './worktrees';
 
 export class CliBackend implements GitBackend {
 	public readonly name = 'git-cli';
 
 	private readonly cli: GitCli;
 
-	constructor(gitPath: string = 'git') {
-		this.cli = new GitCli(gitPath);
+	constructor(
+		gitPath: string = 'git',
+		/** The Git version, when the host has looked it up; gates the versioned reads (merge-tree). */
+		private readonly gitVersion?: string,
+		/** The spawn implementation behind the cancellable runs; injected so tests fake the child. */
+		spawnFn?: GitSpawnFn
+	) {
+		this.cli = new GitCli(gitPath, spawnFn);
 	}
 
 	/* ---------- Lifecycle ---------- */
@@ -109,12 +127,16 @@ export class CliBackend implements GitBackend {
 		return getRepoInfo(this.cli, repo, options);
 	}
 
-	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
-		return getCommits(this.cli, repo, options);
+	public getCommits(repo: string, options: LogOptions, signal?: AbortLike): Promise<GitCommitData> {
+		return getCommits(this.cli, repo, options, signal);
 	}
 
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
 		return getRefs(this.cli, repo, options);
+	}
+
+	public getRepoChangeSignature(repo: string): Promise<string | null> {
+		return getRepoChangeSignature(this.cli, repo);
 	}
 
 	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
@@ -165,6 +187,10 @@ export class CliBackend implements GitBackend {
 		return getCommitFileDiff(this.cli, repo, hash, file);
 	}
 
+	public compareFileDiff(repo: string, from: string, to: string, oldFilePath: string, newFilePath: string): Promise<string> {
+		return compareFileDiff(this.cli, repo, from, to, oldFilePath, newFilePath);
+	}
+
 	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
 		return getCommitBodies(this.cli, repo, hashes);
 	}
@@ -182,6 +208,18 @@ export class CliBackend implements GitBackend {
 
 	public searchHistory(repo: string, query: string): Promise<GitHistoryMatch[]> {
 		return searchHistory(this.cli, repo, query);
+	}
+
+	public getReflog(repo: string, ref: string, limit: number): Promise<GitReflogPage> {
+		return getReflog(this.cli, repo, ref, limit);
+	}
+
+	public getWorktrees(repo: string): Promise<GitWorktree[]> {
+		return getWorktrees(this.cli, repo);
+	}
+
+	public predictConflicts(repo: string, ours: string, theirs: string): Promise<GitConflictPrediction | null> {
+		return predictConflicts(this.cli, repo, ours, theirs, this.gitVersion);
 	}
 
 	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
@@ -248,5 +286,23 @@ export class CliBackend implements GitBackend {
 
 	public currentBranchName(repo: string): Promise<string | null> {
 		return currentBranchName(this.cli, repo);
+	}
+
+	public getGlobalUserDetails(repo: string): Promise<{ name: string | null; email: string | null }> {
+		return getGlobalUserDetails(this.cli, repo);
+	}
+
+	public listChangeRefs(repo: string, remote: string): Promise<[string, string][]> {
+		return listChangeRefs(this.cli, repo, remote);
+	}
+
+	/**
+	 * The engine's one-pass meta parsing has no CLI counterpart here, by design: the meta parser
+	 * and its parse cache live with the Gerrit integration (whose own Git fallback serves the
+	 * read), and this tree must not import them. The decline keeps the method dispatchable
+	 * through the fallback reader while preserving the integration's null-degrade path.
+	 */
+	public parseGerritMetas(_repo: string, _remote: string, _changes: ReadonlyArray<number>, _urlBase: string | null): Promise<ReadonlyArray<GerritChangeState | null>> {
+		return Promise.reject(new GitBackendError('Unsupported', 'The Gerrit meta parsing over the git CLI is served by the Gerrit integration itself'));
 	}
 }

@@ -3,8 +3,8 @@
  * `DataSource` (REFACTOR-PLAN task 3.6). It composes the three faces of a repository —
  * reads, writes and in-progress-operation state — without owning any of them:
  *
- * - `read` is the structural `GitReaderLike` (the future engine/CLI reader satisfies it; this
- *   tree must not depend on `src/backend`, so the reader arrives as an interface);
+ * - `read` is the structural `GitReaderLike` (the engine/CLI reader satisfies it; this tree must
+ *   not depend on `src/backend`, so the reader arrives as an interface);
  * - `write` is the `GitWriter`;
  * - `getOperationState` is the ported detection over an injected text runner.
  *
@@ -12,12 +12,10 @@
  * the composition point they will land on.
  */
 
-import * as fs from 'fs';
-
 import type { GitBackend } from './read/gitReader';
 
 import { GitOperationState } from '../../types/git';
-import { detectOperationState, OperationStateEnv } from './operationState';
+import { detectOperationState, fsOperationStateEnv, RepoTextRunner } from './operationState';
 import { GitWriter } from './write/gitWriter';
 
 /**
@@ -34,7 +32,7 @@ export interface GitReaderLike {
 }
 
 /** Runs a Git read in a repository, resolving its stdout; rejecting when it fails. */
-export type RepoTextRunner = (argv: ReadonlyArray<string>, repo: string) => Promise<string>;
+export type { RepoTextRunner } from './operationState';
 
 /**
  * The facade as production composes it: the full backend (the engine with the CLI fallback) as
@@ -55,18 +53,6 @@ export class GitRepository<R extends GitReaderLike = GitReaderLike> {
 	 * and a rebase's step counter). Never rejects: a failure reads as "no operation in progress".
 	 */
 	getOperationState(repo: string): Promise<GitOperationState> {
-		const env: OperationStateEnv = {
-			exists: (file) => fs.existsSync(file),
-			readIntFile: (file) => {
-				try {
-					const value = parseInt(fs.readFileSync(file).toString().trim(), 10);
-					return isNaN(value) ? null : value;
-				} catch (_) {
-					return null;
-				}
-			},
-			runText: (argv) => this.runText(argv, repo)
-		};
-		return detectOperationState(repo, env);
+		return detectOperationState(repo, fsOperationStateEnv(repo, this.runText));
 	}
 }

@@ -77,6 +77,20 @@ export async function getCommitFileDiff(cli: GitCli, repo: string, hash: string,
 		.replace(/\n$/m, '');
 }
 
+/**
+ * The unified diff of one file between two revisions (the Commit Comparison view); an empty `to`
+ * compares against the working tree, and `oldFilePath`/`newFilePath` differ when the file was
+ * renamed between the two sides.
+ */
+export async function compareFileDiff(cli: GitCli, repo: string, from: string, to: string, oldFilePath: string, newFilePath: string): Promise<string> {
+	const args = ['diff', '--no-color', '--find-renames', from];
+	if (to !== '') args.push(to);
+	args.push('--');
+	if (oldFilePath !== newFilePath) args.push(oldFilePath);
+	args.push(newFilePath);
+	return cli.run(args, repo);
+}
+
 /** The full commit message of each of the given commits, keyed by hash. */
 export async function getCommitBodies(cli: GitCli, repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
 	// With no hashes there is nothing to ask for — and `git log --no-walk` with no revisions

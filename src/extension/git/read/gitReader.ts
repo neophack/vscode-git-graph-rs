@@ -9,6 +9,8 @@
 
 import { cancel, loadAddon, request } from './addonLoader';
 import { GerritChangeState } from '../../../types';
+import type { AbortLike } from '../process/gitProcess';
+import { isValidCommitHash } from '../write/argSafety';
 import {
 	GitActivityCell,
 	GitAuthor,
@@ -19,15 +21,18 @@ import {
 	GitCommitFile,
 	GitCommitStash,
 	GitCommitSummary,
+	GitConflictPrediction,
 	GitConfigSnapshot,
 	GitFileChange,
 	GitHistoryMatch,
 	GitLineCounts,
 	GitRefData,
+	GitReflogPage,
 	GitRepoInfo,
 	GitSignature,
 	GitStash,
 	GitTagDetails,
+	GitWorktree,
 	LogOptions,
 	RefReadOptions
 } from './types';
@@ -61,11 +66,22 @@ export interface GitBackend {
 	/** The branches, checked-out branch, tags, remotes and stashes the view opens with. */
 	getRepoInfo(repo: string, options?: RefReadOptions): Promise<GitRepoInfo>;
 
-	/** A page of the graph. */
-	getCommits(repo: string, options: LogOptions): Promise<GitCommitData>;
+	/** A page of the graph. The optional signal cancels the walk (see {@link AbortLike}). */
+	getCommits(repo: string, options: LogOptions, signal?: AbortLike): Promise<GitCommitData>;
 
 	/** The refs of a repository, without the commits. */
 	getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData>;
+
+	/**
+	 * A signature of everything at ref level that can change the commit graph: the resolved hash
+	 * of HEAD, and the names AND hashes of every branch, tag, remote-tracking ref and stash. A
+	 * change poller comparing name-only lists cannot see a new commit landing on an existing
+	 * branch; reading the actual ref hashes is what makes it visible.
+	 *
+	 * Never rejects: a momentarily unreadable repository answers NULL (the change that was made
+	 * while it was unreadable is picked up by the next successful read).
+	 */
+	getRepoChangeSignature(repo: string): Promise<string | null>;
 
 	/** One commit in full, with the files it changed — their statuses only, without line counts. */
 	getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails>;
@@ -108,6 +124,17 @@ export interface GitBackend {
 	/** The unified diff of one file in one commit (against its first parent). */
 	getCommitFileDiff(repo: string, hash: string, file: string): Promise<string>;
 
+	/**
+	 * The unified diff of one file between two revisions (the Commit Comparison view); an empty
+	 * `to` compares against the working tree. `oldFilePath` and `newFilePath` differ when the
+	 * file was renamed between the two sides.
+	 *
+	 * The engine answers the plain single-commit case (same path, `to` a commit hash, `from` its
+	 * parent) through its `fileDiff` method; everything else declines to the CLI, which runs the
+	 * general two-revision diff.
+	 */
+	compareFileDiff(repo: string, from: string, to: string, oldFilePath: string, newFilePath: string): Promise<string>;
+
 	/** The full commit message of each of the given commits, keyed by hash. */
 	getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }>;
 
@@ -122,6 +149,31 @@ export interface GitBackend {
 
 	/** The commits whose message matches a pattern (extended, case-insensitive), newest first. */
 	searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>>;
+
+	/**
+	 * A page of the reflog of a reference (defaulting to `HEAD`), newest first, with the dangling
+	 * (unreachable-from-any-ref) commits flagged.
+	 *
+	 * The engine has no reflog walk, so it declines and the CLI fallback answers.
+	 */
+	getReflog(repo: string, ref: string, limit: number): Promise<GitReflogPage>;
+
+	/**
+	 * The worktrees of a repository, in the order Git reports them (the first is always the
+	 * repository's own working directory). Never rejects: an unreadable list answers empty, as
+	 * the worktree list is an advisory panel rather than a load the view depends on.
+	 */
+	getWorktrees(repo: string): Promise<ReadonlyArray<GitWorktree>>;
+
+	/**
+	 * Predict whether merging `theirs` into `ours` would conflict, via a single
+	 * `git merge-tree --write-tree` probe (no working-tree side effects, so it is safe to run
+	 * ahead of a merge/rebase confirmation dialog). Requires Git 2.40+.
+	 *
+	 * NULL means "no prediction available" — an older Git, or a probe that failed without naming
+	 * conflicted files — since the prediction is advisory and must not block the action.
+	 */
+	predictConflicts(repo: string, ours: string, theirs: string): Promise<GitConflictPrediction | null>;
 
 	/** A tag in full: tagger, message, and whether it is signed. */
 	getTagDetails(repo: string, tagName: string): Promise<GitTagDetails>;
@@ -173,6 +225,30 @@ export interface GitBackend {
 
 	/** The checked-out branch's short name, or NULL when HEAD is detached. */
 	currentBranchName(repo: string): Promise<string | null>;
+
+	/**
+	 * The user identity of the global Git configuration (user.name / user.email); NULL members
+	 * mean the key is not set globally. The Author Identities feature matches it against the
+	 * configured authors to resolve the global author.
+	 */
+	getGlobalUserDetails(repo: string): Promise<{ name: string | null; email: string | null }>;
+
+	/**
+	 * The Gerrit NoteDb change states of the given changes, parsed over each change's meta
+	 * history, aligned with the input order; an entry is NULL when the change's meta ref is not
+	 * available locally.
+	 *
+	 * The engine answers this in one in-process pass over its warm repository handle. The CLI
+	 * adapter declines: the meta parser lives with the Gerrit integration (whose own Git fallback
+	 * serves it), and duplicating it here would only fork the two implementations.
+	 */
+	parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<ReadonlyArray<GerritChangeState | null>>;
+
+	/**
+	 * The local Gerrit change refs of a remote (`refs/remotes/<remote>/changes/**`), as
+	 * `[refname, hash]` pairs from one scan of the ref store.
+	 */
+	listChangeRefs(repo: string, remote: string): Promise<ReadonlyArray<readonly [string, string]>>;
 }
 
 /** The defaults a view load uses when the caller does not say otherwise. */
@@ -269,7 +345,7 @@ export class NativeBackend implements GitBackend {
 		return request(repo, 'loadRepoInfo', payload);
 	}
 
-	public getCommits(repo: string, options: LogOptions): Promise<GitCommitData> {
+	public getCommits(repo: string, options: LogOptions, signal?: AbortLike): Promise<GitCommitData> {
 		// Custom Branch Glob Patterns (`--glob=…`) cannot reach the engine's walk: its tip
 		// resolution skips what it cannot resolve, so a glob-only selection would come back as an
 		// empty graph without any error (count_commits_before declines the same request). Decline
@@ -283,14 +359,38 @@ export class NativeBackend implements GitBackend {
 		// would then quietly disagree on every remote branch, tag and label whenever a caller
 		// relies on "unset" meaning "on", the documented default everywhere else in this API.
 		const payload: LogOptions = { ...options, showRemoteBranches: options.showRemoteBranches ?? true };
-		// Omitted fields mean "the engine's default" on the wire (serde fills them in); ts-rs
-		// types the struct as all-required, so the cast only records that the input bag is partial.
-		return request(repo, 'loadCommits', payload as EngineMethods['loadCommits']['params']);
+		const params = payload as EngineMethods['loadCommits']['params'];
+		if (signal === undefined) {
+			return request(repo, 'loadCommits', params);
+		}
+		// The structural cancellation surface (task 2.9): an aborted signal cancels the in-flight
+		// request by id, and the promise rejects with kind `Cancelled` — the same outcome the CLI
+		// adapter produces by killing its child process.
+		const requestId = issueRequestId();
+		const onAbort = () => cancel(requestId);
+		signal.addEventListener('abort', onAbort);
+		return request(repo, 'loadCommits', params, undefined, { requestId }).finally(() => {
+			signal.removeEventListener('abort', onAbort);
+		});
 	}
 
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
 		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['loadRefs']['params'];
 		return request(repo, 'loadRefs', payload);
+	}
+
+	public async getRepoChangeSignature(repo: string): Promise<string | null> {
+		// The same composite the CLI adapter answers from its ref scan and stash reflog: the JSON
+		// of HEAD and of every ref list with its hashes, so the two backends poll identically.
+		try {
+			const [refs, stashes] = await Promise.all([this.getRefs(repo, { showRemoteBranches: true }), this.getStashes(repo)]);
+			return JSON.stringify([refs.head, refs.heads, refs.tags, refs.remotes, stashes]);
+		} catch (error) {
+			// A decline (Unsupported / NotARepository) must escape so the fallback reader routes
+			// the composite to the git CLI; only a genuine failure resolves to null.
+			if (error instanceof GitBackendError && error.isFallbackWorthy) throw error;
+			return null;
+		}
 	}
 
 	public getCommitDetails(repo: string, hash: string): Promise<GitCommitDetails> {
@@ -352,6 +452,16 @@ export class NativeBackend implements GitBackend {
 		return request(repo, 'fileDiff', { revision: hash, path: file });
 	}
 
+	public compareFileDiff(repo: string, from: string, to: string, oldFilePath: string, newFilePath: string): Promise<string> {
+		if (oldFilePath === newFilePath && to !== '' && isValidCommitHash(to) && from === to + '^') {
+			// The diff of a single file in a single commit: the engine's fileDiff answers it directly.
+			return request(repo, 'fileDiff', { revision: to, path: newFilePath });
+		}
+		// A diff between two arbitrary revisions (or against the working tree) has no engine
+		// method: decline, so the fallback serves the general CLI diff.
+		return Promise.reject(new GitBackendError('Unsupported', 'A file diff between two arbitrary revisions requires the git CLI backend'));
+	}
+
 	public getCommitBodies(repo: string, hashes: ReadonlyArray<string>): Promise<{ [hash: string]: string }> {
 		return request(repo, 'commitBodies', { hashes: [...hashes] });
 	}
@@ -369,6 +479,18 @@ export class NativeBackend implements GitBackend {
 
 	public searchHistory(repo: string, query: string): Promise<ReadonlyArray<GitHistoryMatch>> {
 		return request(repo, 'searchHistory', { query });
+	}
+
+	public getReflog(_repo: string, _ref: string, _limit: number): Promise<GitReflogPage> {
+		return Promise.reject(new GitBackendError('Unsupported', 'The reflog read requires the git CLI backend'));
+	}
+
+	public getWorktrees(_repo: string): Promise<ReadonlyArray<GitWorktree>> {
+		return Promise.reject(new GitBackendError('Unsupported', 'The worktree list requires the git CLI backend'));
+	}
+
+	public predictConflicts(_repo: string, _ours: string, _theirs: string): Promise<GitConflictPrediction | null> {
+		return Promise.reject(new GitBackendError('Unsupported', 'Conflict prediction (git merge-tree) requires the git CLI backend'));
 	}
 
 	public getTagDetails(repo: string, tagName: string): Promise<GitTagDetails> {
@@ -438,6 +560,13 @@ export class NativeBackend implements GitBackend {
 
 	public currentBranchName(repo: string): Promise<string | null> {
 		return request(repo, 'currentBranchName', {});
+	}
+
+	public getGlobalUserDetails(repo: string): Promise<{ name: string | null; email: string | null }> {
+		return this.getConfigList(repo, 'global').then((configs) => ({
+			name: configs['user.name'] ?? null,
+			email: configs['user.email'] ?? null
+		}));
 	}
 
 	/**

@@ -60,6 +60,15 @@ export async function getConfigList(cli: GitCli, repo: string, location: 'local'
 	return configs;
 }
 
+/** The user identity of the global Git configuration, or NULL members when a key is not set. */
+export async function getGlobalUserDetails(cli: GitCli, repo: string): Promise<{ name: string | null; email: string | null }> {
+	const configs = await getConfigList(cli, repo, 'global');
+	return {
+		name: configs['user.name'] ?? null,
+		email: configs['user.email'] ?? null
+	};
+}
+
 /** The fetch URL of a remote, or NULL when it is not configured. */
 export async function getRemoteUrl(cli: GitCli, repo: string, remote: string): Promise<string | null> {
 	try {
