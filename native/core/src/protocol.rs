@@ -29,10 +29,10 @@ use crate::error::{Error, Result};
 use crate::repository::{Repo, RepoManager};
 use crate::status::ScmChange;
 use crate::types::{
-    CommitFile, ConfigSnapshot, GerritChangeState, GitActivityCell, GitAuthor, GitAuthorStat,
-    GitCommitData, GitCommitDetails, GitCommitStash, GitCommitSummary, GitFileChange,
-    GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo, GitStash, GitTagDetails, GitViewData,
-    LogOptions, RefOptions,
+    AnnotateParams, AnnotateResult, CommitFile, ConfigSnapshot, GerritChangeState, GitActivityCell,
+    GitAuthor, GitAuthorStat, GitCommitData, GitCommitDetails, GitCommitStash, GitCommitSummary,
+    GitFileChange, GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo, GitStash,
+    GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot,
 };
 
 /// What a handler sees: the repository path the request names, a warm handle on demand, and the
@@ -157,6 +157,14 @@ protocol! {
     "loadRefs" => LoadRefs(RefOptions) -> GitRefData = |ctx, options| {
         crate::refs::read_refs(&*ctx.repo()?, &options.to_read_options()).map(|snapshot| snapshot.ref_data)
     };
+    /// Re-read the repository's refs — the refs-only refresh of the operate path (§3.8.3). One
+    /// scan, no commits walked and no stashes read; answers the branch/tag name lists and the
+    /// checked-out branch alongside the raw ref data, where `loadRefs` answers the raw data alone.
+    "refs" => Refs(RefOptions) -> RefSnapshot = |ctx, options| crate::refs::read_refs(&*ctx.repo()?, &options.to_read_options());
+    /// Re-annotate a commit list the caller already holds with freshly read refs, without
+    /// walking a single commit — the other half of the refs-only refresh. A full `loadCommits`
+    /// of the same options attaches the same labels to the same commits.
+    "annotate" => Annotate(AnnotateParams) -> AnnotateResult = |ctx, p| crate::graph::annotate(&*ctx.repo()?, &p);
     /// The working tree's changes, staged and unstaged halves apart.
     "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::status::scm_changes(&*ctx.repo()?, ctx.cancel());
     "countUncommittedChanges" => CountUncommittedChanges(UntrackedParams) -> usize = |ctx, p| {

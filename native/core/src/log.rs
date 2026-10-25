@@ -51,10 +51,35 @@ pub struct WalkOptions {
     pub cancel: Cancel,
 }
 
+/// A completed walk: the window it read, and the page cut from that window.
+#[derive(Debug, Clone, Default)]
+pub struct WalkResult {
+    /// Every commit the walk read, in walk order, after any filter re-parenting. This is the
+    /// unit the incremental cache ([`crate::incremental`]) stores and continues from: a later
+    /// load that only adds commits re-orders this list together with the new part, instead of
+    /// reading it again.
+    pub window: Vec<CommitRecord>,
+    /// The page: `window` topologically re-ordered and cut to `options.limit`.
+    pub ordered: Vec<CommitRecord>,
+}
+
+/// How many commits a plain (unfiltered) walk of `limit` reads, so that the topological
+/// re-ordering has enough of the graph to be exact over the page it returns. The incremental
+/// boundary walk caps itself with the same number, keeping its merged window identical to what
+/// a full traversal would have read.
+pub(crate) fn window_size(limit: usize) -> usize {
+    (limit * WINDOW_FACTOR).max(WINDOW_MINIMUM)
+}
+
 /// Walk from `tips` and return the page of commits the view should render.
 pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec<CommitRecord>> {
+    Ok(walk_windowed(repo, tips, options)?.ordered)
+}
+
+/// [`walk`], also answering the window the page was cut from.
+pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<WalkResult> {
     if options.limit == 0 || tips.is_empty() {
-        return Ok(Vec::new());
+        return Ok(WalkResult::default());
     }
     let git = repo.borrow();
     // An empty path and an empty author list are no filter at all, exactly as the CLI backend
@@ -82,7 +107,7 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
     let window = if searching {
         FILTERED_WALK_LIMIT
     } else {
-        (options.limit * WINDOW_FACTOR).max(WINDOW_MINIMUM)
+        window_size(options.limit)
     };
 
     let mut platform =
@@ -171,7 +196,11 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
 
     // The filtered page is ordered like any other, over its re-parented graph: the walk read it by
     // commit time alone, which is neither `--topo-order` nor topologically constrained.
-    Ok(order(records, options.ordering, options.limit))
+    let ordered = order_records(&records, options.ordering, options.limit);
+    Ok(WalkResult {
+        window: records,
+        ordered,
+    })
 }
 
 /// Read the fields the graph renders out of a commit object.
@@ -413,7 +442,15 @@ impl PartialOrd for Ready {
 }
 
 /// Topologically sort `records`, ranking the commits that are ready to be shown by `ordering`.
-fn order(records: Vec<CommitRecord>, ordering: CommitOrdering, limit: usize) -> Vec<CommitRecord> {
+///
+/// Public because the incremental traversal ([`crate::incremental`]) re-orders a merged window —
+/// the new records plus a cached one — through exactly this function, which is what makes its
+/// page the page a full walk would have produced.
+pub fn order_records(
+    records: &[CommitRecord],
+    ordering: CommitOrdering,
+    limit: usize,
+) -> Vec<CommitRecord> {
     let index_of: HashMap<&str, usize> = records
         .iter()
         .enumerate()
@@ -422,7 +459,7 @@ fn order(records: Vec<CommitRecord>, ordering: CommitOrdering, limit: usize) -> 
 
     // How many children inside the window each commit is still waiting for.
     let mut pending = vec![0usize; records.len()];
-    for record in &records {
+    for record in records {
         for parent in &record.parents {
             if let Some(&parent_index) = index_of.get(parent.as_str()) {
                 pending[parent_index] += 1;

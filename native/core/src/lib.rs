@@ -21,6 +21,7 @@ pub mod engine;
 pub mod error;
 pub mod gerrit;
 pub mod graph;
+pub mod incremental;
 pub mod log;
 pub mod protocol;
 pub mod refs;

@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use common::TestRepo;
 use git_graph_core::cancel::Registry;
+use git_graph_core::incremental;
 use git_graph_core::protocol;
 use serde_json::Value;
 
@@ -133,6 +134,12 @@ fn a_cancelled_request_reissues_identically_and_the_id_is_reusable() {
     );
 
     let handles_before = protocol::request(root, r#"{"method":"openCount","params":{}}"#);
+
+    // The reference load above cached its traversal (task 2.10): a repeat load of unchanged
+    // refs is answered from that cache in milliseconds and legitimately completes before any
+    // cancellation could arrive. This test's subject is cancelling a real walk, so the cached
+    // traversal is dropped first.
+    incremental::Store::global().invalidate(repo.path());
 
     // Cancel a run of the same request under id 202, then re-issue it under the SAME id — the
     // registry must not still carry the cancellation, or the id would be unusable.

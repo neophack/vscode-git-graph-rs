@@ -341,6 +341,11 @@ fn every_method_decodes_its_documented_shape() {
         ("loadRepoInfo", json!({})),
         ("loadCommits", json!({})),
         ("loadRefs", json!({})),
+        ("refs", json!({})),
+        (
+            "annotate",
+            json!({ "commits": [], "refs": {}, "showTags": true }),
+        ),
         ("status", json!({})),
         (
             "countUncommittedChanges",

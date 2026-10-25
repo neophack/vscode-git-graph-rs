@@ -409,7 +409,7 @@ pub struct GitStatusFiles {
 
 /* ---------- Log options ---------- */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum CommitOrdering {
     #[default]
@@ -497,6 +497,42 @@ impl RefOptions {
             show_change_refs: self.show_change_refs,
         }
     }
+}
+
+/* ---------- Refs re-annotation ---------- */
+
+/// The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
+/// the caller already holds on screen — plus which refs to annotate them with.
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotateParams {
+    /// The commits to re-annotate, newest first as the view shows them.
+    pub commits: Vec<String>,
+    /// Which refs to read and annotate with (the same options `loadRefs` takes).
+    pub refs: RefOptions,
+    /// Whether tags are annotated — the view's "Show Tags" setting, as `loadCommits` receives it.
+    pub show_tags: bool,
+}
+
+/// The refs of one commit, as a refs-only refresh re-annotates it: exactly the labels a full
+/// `loadCommits` of the same options would attach to that commit, in the same order.
+#[derive(Debug, Clone, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRefs {
+    pub hash: String,
+    pub heads: Vec<String>,
+    pub tags: Vec<GitCommitTag>,
+    pub remotes: Vec<GitCommitRemote>,
+}
+
+/// The answer of the `annotate` request: a freshly read HEAD together with the re-annotated
+/// commits, in the order they were given.
+#[derive(Debug, Clone, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotateResult {
+    /// The commit HEAD resolves to now — the page's `head` field, refreshed.
+    pub head: Option<String>,
+    pub commits: Vec<GitCommitRefs>,
 }
 
 /// Everything the view opens with, from one ref scan: the dropdown data and the first page.

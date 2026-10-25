@@ -51,12 +51,6 @@ showCommitsOnlyReferencedByTags: boolean,
  * CLI backend serves the mapped names.
  */
 useMailmap: boolean, };
-export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
-export type GitRepoInfo = { branches: Array<string>, 
-/**
- * The checked-out branch's short name, or `None` when HEAD is detached.
- */
-head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
 export type GitCommitTag = { name: string, annotated: boolean, };
 export type GitCommitRemote = { name: string, 
 /**
@@ -80,6 +74,12 @@ export type GitCommitData = { commits: Array<GitCommit>, head: string | null, ta
  * second scan. `None` on error (and for callers that did not ask for it).
  */
 branches?: Array<string> | null, moreCommitsAvailable: boolean, error: string | null, };
+export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
+export type GitRepoInfo = { branches: Array<string>, 
+/**
+ * The checked-out branch's short name, or `None` when HEAD is detached.
+ */
+head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
 /**
  * Everything the view opens with, from one ref scan: the dropdown data and the first page.
  * `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
@@ -90,18 +90,66 @@ export type GitViewData = { info: GitRepoInfo, commits: GitCommitData, };
  * The defaults are the ones a view load uses, so an omitted field means "the usual".
  */
 export type RefOptions = { showRemoteBranches: boolean, showRemoteHeads: boolean, hideRemotes: Array<string>, showChangeRefs: boolean, showStashes: boolean, };
-export type GitRef = { hash: string, name: string, };
 export type GitTagRef = { hash: string, name: string, 
 /**
  * True for the peeled record of an annotated tag, which points at the commit rather than at
  * the tag object.
  */
 annotated: boolean, };
+export type GitRef = { hash: string, name: string, };
 export type GitRefData = { 
 /**
  * The commit HEAD resolves to, or `None` when the repository has no commits.
  */
 head: string | null, heads: Array<GitRef>, tags: Array<GitTagRef>, remotes: Array<GitRef>, };
+/**
+ * One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
+ * requests of a single view load.
+ */
+export type RefSnapshot = { refData: GitRefData, 
+/**
+ * Local branch names, in the order the view lists them.
+ */
+branches: Array<string>, 
+/**
+ * The checked-out branch, or `None` when HEAD is detached.
+ */
+branchHead: string | null, 
+/**
+ * Tag names, excluding the duplicate peeled records of annotated tags.
+ */
+tagNames: Array<string>, };
+/**
+ * The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
+ * the caller already holds on screen — plus which refs to annotate them with.
+ */
+export type AnnotateParams = { 
+/**
+ * The commits to re-annotate, newest first as the view shows them.
+ */
+commits: Array<string>, 
+/**
+ * Which refs to read and annotate with (the same options `loadRefs` takes).
+ */
+refs: RefOptions, 
+/**
+ * Whether tags are annotated — the view's "Show Tags" setting, as `loadCommits` receives it.
+ */
+showTags: boolean, };
+/**
+ * The refs of one commit, as a refs-only refresh re-annotates it: exactly the labels a full
+ * `loadCommits` of the same options would attach to that commit, in the same order.
+ */
+export type GitCommitRefs = { hash: string, heads: Array<string>, tags: Array<GitCommitTag>, remotes: Array<GitCommitRemote>, };
+/**
+ * The answer of the `annotate` request: a freshly read HEAD together with the re-annotated
+ * commits, in the order they were given.
+ */
+export type AnnotateResult = { 
+/**
+ * The commit HEAD resolves to now — the page's `head` field, refreshed.
+ */
+head: string | null, commits: Array<GitCommitRefs>, };
 /**
  * One path as the Source Control view lists it: the staged and unstaged halves of its change
  * kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
@@ -276,6 +324,8 @@ export interface EngineMethods {
 	loadRepoInfo: { params: RefOptions; result: GitRepoInfo };
 	loadCommits: { params: LogOptions; result: GitCommitData };
 	loadRefs: { params: RefOptions; result: GitRefData };
+	refs: { params: RefOptions; result: RefSnapshot };
+	annotate: { params: AnnotateParams; result: AnnotateResult };
 	status: { params: NoParams; result: Array<ScmChange> };
 	countUncommittedChanges: { params: UntrackedParams; result: number };
 	commitDetails: { params: HashParams; result: GitCommitDetails };

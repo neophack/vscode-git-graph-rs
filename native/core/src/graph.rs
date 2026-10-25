@@ -12,14 +12,16 @@ use std::collections::HashMap;
 
 use crate::cancel::Cancel;
 use crate::error::Result;
+use crate::incremental;
 use crate::log::{self, WalkOptions};
 use crate::refs::read_refs;
 use crate::repository::Repo;
 use crate::stash::read_stashes;
 use crate::status;
 use crate::types::{
-    GitCommit, GitCommitData, GitCommitRemote, GitCommitStash, GitCommitTag, GitRefData,
-    GitRepoInfo, GitStash, GitViewData, LogOptions, RefReadOptions, UNCOMMITTED,
+    AnnotateParams, AnnotateResult, GitCommit, GitCommitData, GitCommitRefs, GitCommitRemote,
+    GitCommitStash, GitCommitTag, GitRefData, GitRepoInfo, GitStash, GitViewData, LogOptions,
+    RefReadOptions, UNCOMMITTED,
 };
 
 /// Everything the view's `loadRepoInfo` request needs.
@@ -78,6 +80,52 @@ pub fn load_view(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Gi
             error: None,
         },
         commits: page.data,
+    })
+}
+
+/// Re-annotate a commit list the caller already holds with freshly read refs (task 2.10).
+///
+/// The refs-only refresh of §3.8.3: after an operation that moves refs but rewrites no history —
+/// a fetch, a checkout, a branch or tag added elsewhere — the commits on screen are still the
+/// right commits, and only their labels are stale. One ref scan answers every label; no commit
+/// is walked. Each commit carries exactly the labels a full `loadCommits` of the same options
+/// would have attached, in the same order, with remote ownership resolved from the repository's
+/// own remotes as `Engine::graph` does (see `tests/incremental.rs`).
+pub fn annotate(repo: &Repo, params: &AnnotateParams) -> Result<AnnotateResult> {
+    let snapshot = read_refs(repo, &params.refs.to_read_options())?;
+    let options = LogOptions {
+        show_tags: params.show_tags,
+        remotes: repo.remote_names(),
+        ..Default::default()
+    };
+    let mut commits: Vec<GitCommit> = params
+        .commits
+        .iter()
+        .map(|hash| GitCommit {
+            hash: hash.clone(),
+            parents: Vec::new(),
+            author: String::new(),
+            email: String::new(),
+            date: 0,
+            message: String::new(),
+            heads: Vec::new(),
+            tags: Vec::new(),
+            remotes: Vec::new(),
+            stash: None,
+        })
+        .collect();
+    annotate_refs(&snapshot.ref_data, &options, &mut commits);
+    Ok(AnnotateResult {
+        head: snapshot.ref_data.head.clone(),
+        commits: commits
+            .into_iter()
+            .map(|commit| GitCommitRefs {
+                hash: commit.hash,
+                heads: commit.heads,
+                tags: commit.tags,
+                remotes: commit.remotes,
+            })
+            .collect(),
     })
 }
 
@@ -150,7 +198,26 @@ fn load_page(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Page> 
         filter_paths: options.filter_paths.clone(),
         cancel: cancel.clone(),
     };
-    let mut records = log::walk(repo, &tips, &walk_options)?;
+
+    // The incremental traversal (task 2.10): when the previous load of the same repository and
+    // options only needs commits added on top of what it already walked, walk just the new part
+    // and re-order it together with the cached window — `records` ends up the same list either
+    // way. Guard failures (history rewritten, fetched old dates, filtered walks) answer `None`
+    // and the full walk below takes over; see `crate::incremental` for the guarantees.
+    let key = incremental::CacheKey::of(options);
+    let cacheable = incremental::eligible(options);
+    let window = match cacheable
+        .then(|| incremental::try_walk(repo, &key, &tips, &walk_options))
+        .transpose()?
+        .flatten()
+    {
+        Some(window) => window,
+        None => log::walk_windowed(repo, &tips, &walk_options)?.window,
+    };
+    let mut records = log::order_records(&window, options.commit_ordering, walk_options.limit);
+    if cacheable {
+        incremental::remember(repo.root(), &key, &tips, window);
+    }
 
     let more_commits_available = records.len() > options.max_commits as usize;
     if more_commits_available {
