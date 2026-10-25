@@ -391,6 +391,26 @@ Foreign-OS targets use `cargo-zigbuild` (no Apple SDK needed); Windows arm64 lin
 against the Windows SDK. What the engine depends on is documented in
 [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
 
+## System requirements
+
+The full promise, with the measured values behind it, lives in
+[docs/compatibility.md](docs/compatibility.md); the short version:
+
+| Requirement | Floor | Notes |
+|---|---|---|
+| VS Code | **1.38.0** | `engines.vscode` stays `^1.38.0`; host artifacts target `node10.11`, the webview `chrome69` |
+| VS Code derivatives | VSCodium, Code - OSS, Git Graph Studio, other 1.38-based editors | Only 1.38-era APIs, feature-detected where newer |
+| Git | **2.0** for all reads | Writes are tiered by the capability table — below a threshold a feature degrades with a localized notice, the rest keeps working |
+| Windows | 7+ | The engine binary needs Windows 10; older Windows runs fully functional over the Git CLI |
+| macOS | 10.13+ | Engine binaries pin `MACOSX_DEPLOYMENT_TARGET=10.13` |
+| Linux | glibc 2.17+ (CentOS 7 era), or musl (Alpine) | Engine binaries pin the glibc floor via `cargo-zigbuild`; anything else falls back to the CLI |
+| Remote | Remote-SSH / WSL / Dev Containers / Codespaces | `extensionKind: workspace` — the host (and engine) runs on the remote side |
+
+The Rust engine is an optional acceleration layer: whenever it is unavailable — unsupported
+platform, old N-API, libc mismatch — the extension serves everything through the `git` CLI and
+shows why on the settings page. No requirement above is a hard failure without a working
+fallback.
+
 ## Supported platforms
 
 The engine is built for the six platforms VS Code itself ships for. The four common ones ship by
