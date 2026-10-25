@@ -13,14 +13,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-// markdown-it publishes no type declarations (a devDependency used through the vendored page
-// global in production); its shape is exactly what the module under test declares.
-// @ts-expect-error no declaration file for module 'markdown-it'
-import MarkdownIt from 'markdown-it';
 
-import { hasMarkdown, renderMarkdown } from './markdown';
+import { hasMarkdown, loadMarkdown, renderMarkdown } from './markdown';
 
-(globalThis as { markdownit?: unknown }).markdownit = new MarkdownIt({ html: false, linkify: false, breaks: true });
+// The renderer loads on demand (task 5.9): the same dynamic import the Commit Details View
+// triggers, constructing the same preconfigured instance (html disabled, so raw HTML in the
+// source is never even recognised as a distinct token type)
+await loadMarkdown();
 
 describe('hasMarkdown', () => {
 	it('is false for a typical plain-text commit message', () => {

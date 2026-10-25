@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { checkFiles } from './es2018.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const webviewBundle = path.join(root, 'media', 'out.min.js');
+const mediaDir = path.join(root, 'media');
 
 function walk(directory, extension) {
 	if (!fs.existsSync(directory)) return [];
@@ -47,12 +47,18 @@ export function checkCompat() {
 		problems.push('no build output found under dist/: run npm run build:dist first');
 		return problems;
 	}
-	if (!fs.existsSync(webviewBundle)) {
-		problems.push('media/out.min.js is missing: the webview build (scripts/build/webview.mjs) did not run');
-	} else {
-		scripts.push(webviewBundle);
+	// The webview's scripts (the first-paint entry, its on-demand chunks, the extracted pages)
+	// may use dynamic import(): Chromium 69 runs it natively and task 5.9's code splitting is
+	// built on it. The vendored media/vendor/*.js upstream builds stay excluded (see above).
+	const webviewScripts = walk(mediaDir, '.js').filter((file) => file.indexOf(path.join(mediaDir, 'vendor') + path.sep) === -1);
+	if (webviewScripts.length === 0) {
+		problems.push('no webview scripts found under media/: the webview build (scripts/build/webview.mjs) did not run');
 	}
-	return [...problems, ...checkFiles(scripts, root)];
+	return [
+		...problems,
+		...checkFiles(scripts, root),
+		...checkFiles(webviewScripts, root, { allowDynamicImport: true })
+	];
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

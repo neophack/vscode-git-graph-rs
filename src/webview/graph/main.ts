@@ -11,7 +11,7 @@ import { alterClass } from '../common/dom';
 import { EventOverlay } from '../common/eventOverlay';
 import { observeHelpTooltips } from '../common/helpTooltip';
 import { HostBridge } from '../common/host/bridge';
-import { setInterfaceLanguage } from '../common/i18n/index';
+import { ensureInterfaceLanguage } from '../common/i18n/index';
 import * as GG from '../common/protocol';
 import { ActionRunner } from './actions/runAction';
 import { CommitDetails } from './commitDetails/commitDetails';
@@ -33,15 +33,13 @@ import { createResponseRouter } from './responses';
 import { decodePersistedWebViewState, Persistence } from './state/persistence';
 import { Store } from './state/store';
 import { WebViewState } from './state/types';
+import { loadMarkdown } from './text/markdown';
 import { TextFormatter } from './text/textFormatter';
 import { ConflictBanner } from './widgets/conflictBanner';
 import { ContextMenu } from './widgets/contextMenu';
 import { Dialog } from './widgets/dialog';
 import { FindWidget } from './widgets/findWidget';
-import { ReflogView } from './widgets/reflogView';
-import { SettingsWidget } from './widgets/settings/settingsWidget';
-import { StatisticsView } from './widgets/statisticsView';
-import { WorktreeDialog } from './widgets/worktreeDialog';
+import { LazyReflogView, LazySettingsWidget, LazyStatisticsView, LazyWorktreeDialog, prefetchOnIdle } from './widgets/lazy';
 
 /* The state the extension host renders into the page (inline script, before this bundle) */
 declare const initialState: GG.GitGraphViewInitialState;
@@ -128,18 +126,24 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 		store.commitPathFilter = prevState.commitPathFilter;
 	}
 
+	// The Settings widget, Reflog view, Worktree dialog and Statistics view are the LAZY half of
+	// the first-paint split (task 5.9): their facades load the real modules through dynamic
+	// import() on first use, so none of them sits in the first-paint bundle (widgets/lazy.ts)
 	ctx.widgets = {
 		find: new FindWidget(getContext),
-		settings: new SettingsWidget(getContext),
+		settings: new LazySettingsWidget(getContext),
 		conflictBanner: new ConflictBanner(getContext, dom.conflictBanner),
-		reflog: new ReflogView(getContext),
-		worktree: new WorktreeDialog(getContext),
-		statistics: new StatisticsView(getContext)
+		reflog: new LazyReflogView(getContext),
+		worktree: new LazyWorktreeDialog(getContext),
+		statistics: new LazyStatisticsView(getContext)
 	};
 	ctx.persistence.setWidgets({
 		getFindWidgetState: () => ctx.widgets.find.getState(),
 		getSettingsWidgetState: () => ctx.widgets.settings.getState()
 	});
+	// The first-paint snapshot's capture reads the rendered row height and the viewport's height
+	// for its visible-window check (task 5.9; read at capture time, so layout changes apply)
+	ctx.persistence.setViewMetrics(() => ({ rowHeight: ctx.layout.getRowHeight(), viewHeight: dom.view.clientHeight }));
 
 	const config = store.config;
 	alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, config.referenceLabels.branchLabelsAlignedToGraph);
@@ -176,22 +180,38 @@ window.addEventListener('load', () => {
 	loaded = true;
 
 	TextFormatter.registerCustomEmojiMappings(initialState.config.customEmojiShortcodeMappings);
-	setInterfaceLanguage(initialState.config.interfaceLanguage);
-	observeHelpTooltips();
+	// The configured language's string table loads BEFORE anything renders: the zh-cn table is
+	// one of the on-demand chunks (task 5.9) and an English page skips the fetch entirely. The
+	// boot continues only once the active table is in - exactly the state the pre-split bundle
+	// was in when it ran, one module-fetch later for a Chinese page.
+	void ensureInterfaceLanguage(initialState.config.interfaceLanguage).then(() => {
+		observeHelpTooltips();
 
-	const dom = findViewDom();
-	if (dom === null) return;
+		const dom = findViewDom();
+		if (dom === null) return;
 
-	// A page replacing one left behind by an Extension Host restart has no state of its own yet:
-	// it reopens on the snapshot the old page reported (only the fields a reload restores)
-	const ctx = createView(dom, decodePersistedWebViewState(bridge.getState()) || <WebViewState | null>initialState.restoredSnapshot);
+		// A page replacing one left behind by an Extension Host restart has no state of its own yet:
+		// it reopens on the snapshot the old page reported (only the fields a reload restores)
+		const ctx = createView(dom, decodePersistedWebViewState(bridge.getState()) || <WebViewState | null>initialState.restoredSnapshot);
 
-	bridge.onMessage(createResponseRouter(ctx));
+		bridge.onMessage(createResponseRouter(ctx));
 
-	// The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
-	// `loadView` read when the panel was created and pushes the result now that this page's
-	// response router is installed — the boot sent no loadRepoInfo/loadCommits requests of its
-	// own. The handshake MUST follow the router registration above, or a fast push would arrive
-	// before anything listens for it.
-	bridge.send({ command: 'ready' });
+		// The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
+		// `loadView` read when the panel was created and pushes the result now that this page's
+		// response router is installed — the boot sent no loadRepoInfo/loadCommits requests of its
+		// own. The handshake MUST follow the router registration above, or a fast push would arrive
+		// before anything listens for it.
+		bridge.send({ command: 'ready' });
+
+		// The on-demand modules prefetch while the user is idle after the first paint (task 5.9):
+		// the first open of any widget - or the first Markdown-rendering commit body - then
+		// resolves from the browser's module cache, not the network
+		prefetchOnIdle([
+			() => import('./widgets/settings/settingsWidget'),
+			() => import('./widgets/reflogView'),
+			() => import('./widgets/worktreeDialog'),
+			() => import('./widgets/statisticsView'),
+			loadMarkdown
+		]);
+	});
 });

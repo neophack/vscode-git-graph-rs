@@ -1,6 +1,7 @@
 /* The state types of the Git Graph View (persisted state, the expanded commit, file trees). */
 
 import * as GG from '../../common/protocol';
+import type { FirstPaintSnapshot } from './firstPaint';
 
 /* Commit Details / Comparison View file tree */
 
@@ -128,11 +129,22 @@ export interface WebViewState {
 	readonly settingsWidget: SettingsWidgetState;
 	readonly commitPathFilter?: string | null; // only show commits that modified the file(s) at this path
 	readonly compareSourceHash?: string | null; // the commit selected via "Select for Compare"
+	/**
+	 * The first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9): the commits and layout
+	 * inputs a reopening view paints before the fresh data arrives. An ADDED field of the frozen
+	 * contract (§2.2: fields are only ever added) - readers written before it existed see an
+	 * absent optional and ignore it; the snapshot itself carries its own schema version
+	 * (state/firstPaint.ts) and the state's version was bumped with a migration that normalizes
+	 * the field to NULL (persistence.ts).
+	 */
+	readonly firstPaint?: FirstPaintSnapshot | null;
 }
 
 /** The refresh cycle of the current repository (loadRepoInfo → loadCommits → loadConfig). */
 export interface RefreshState {
 	inProgress: boolean;
+	/** TRUE while the view shows a first-paint snapshot whose fresh data has not arrived yet (D10): the refresh button spins for it, exactly as for an in-progress refresh, and the first loadCommits response clears it (its reconciliation replaces the snapshot rows). */
+	snapshotRefreshing: boolean;
 	hard: boolean;
 	loadRepoInfoRefreshId: number;
 	loadCommitsRefreshId: number;

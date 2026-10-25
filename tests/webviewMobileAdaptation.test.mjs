@@ -36,8 +36,11 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 	it('exposes the switch in the Settings Widget\'s Global Settings column, saving to the User Settings', async () => {
 		const h = await bootView(300);
 		h.document.getElementById('settingsBtn').click();
+		// Task 5.9 mounts the settings widget on demand: the click starts an async import, so
+		// the switch appears a tick later - wait for it instead of querying synchronously.
+		let toggle = null;
+		for (let i = 0; i < 100 && toggle === null; i++) { await sleep(10); toggle = h.document.getElementById('settingsMobileAdaptationCheckbox'); }
 
-		const toggle = h.document.getElementById('settingsMobileAdaptationCheckbox');
 		assert.ok(toggle !== null, 'the switch is rendered in the settings widget');
 		assert.ok(toggle.closest('#settingsGlobalColumn') !== null, 'the switch lives in the Global Settings column');
 		assert.equal(toggle.checked, false, 'the switch defaults to off');

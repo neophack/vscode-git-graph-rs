@@ -1426,6 +1426,11 @@
 					"default": true,
 					"description": "%config.git-graph-rs.gerrit.showReviewProgress.description%"
 				},
+				"git-graph-rs.snapshotFirstPaint": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.snapshotFirstPaint.description%"
+				},
 				"git-graph-rs.stickyHeader": {
 					"type": "boolean",
 					"default": true,

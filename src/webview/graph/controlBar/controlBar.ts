@@ -372,9 +372,10 @@ export class ControlBar {
 		setText('pinnedRowLabel', strings.pinnedLabel);
 	}
 
-	/** Reflect whether a refresh is in progress on the refresh button. */
+	/** Reflect whether a refresh is in progress on the refresh button (also while a painted first-paint snapshot awaits its fresh data, D10). */
 	public renderRefreshButton() {
-		const enabled = !this.ctx().store.refreshState.inProgress;
+		const refreshState = this.ctx().store.refreshState;
+		const enabled = !refreshState.inProgress && !refreshState.snapshotRefreshing;
 		this.refreshBtnElem.title = enabled ? strings.refreshTitle : strings.refreshingTitle;
 		setHtml(this.refreshBtnElem, enabled ? SVG_ICONS.refresh : SVG_ICONS.loading);
 		alterClass(this.refreshBtnElem, CLASS_REFRESHING, !enabled);

@@ -206,15 +206,23 @@ describe('GitGraphView panel', () => {
 		const col = fakeCollaborators();
 		const { panelIndex } = openView(col);
 		const html = vs.state.createdPanels[panelIndex].webview.html;
-		expect(html).toMatch(/<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src [^;]+ 'unsafe-inline'; script-src 'nonce-[A-Za-z0-9]{32}'(?:;|")/);
-		// The script-src directive carries ONLY the nonce (no unsafe-inline, and no unsafe-eval in
-		// the default build - the automation shim is not present under the test extension path)
+		expect(html).toMatch(/<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src [^;]+ 'unsafe-inline'; script-src 'nonce-[A-Za-z0-9]{32}' https?:[^;"]+(?:;|")/);
+		// The script-src directive carries the nonce plus the webview's own resource origin - the
+		// module chunks of task 5.9's code splitting load through relative dynamic import(), which
+		// a nonce cannot cover - but no unsafe-inline and no unsafe-eval (the automation shim is
+		// not present under the test extension path)
 		const scriptSrc = /script-src ([^;"]+)/.exec(html)![1];
-		expect(scriptSrc).toMatch(/^'nonce-[A-Za-z0-9]{32}'$/);
+		expect(scriptSrc).toMatch(/^'nonce-[A-Za-z0-9]{32}' https?:.+$/);
 		expect(scriptSrc).not.toContain('unsafe-eval');
+		expect(scriptSrc).not.toContain('unsafe-inline');
 		// Every inline script the page carries is nonce-tagged
 		expect(html).toMatch(/<script nonce="[A-Za-z0-9]{32}">var initialState =/);
 		expect(html.match(/<script(?![^>]*nonce=)/g)).toBeNull();
+		// The view's bundle loads as an ES MODULE (task 5.9): its on-demand chunks follow through
+		// relative dynamic import(). The Markdown renderer's vendor preload is gone with it - the
+		// renderer itself became one of those chunks.
+		expect(html).toMatch(/<script nonce="[A-Za-z0-9]{32}" type="module" src="[^"]*out\.min\.js\?v=/);
+		expect(html).not.toContain('vendor/markdown-it.min.js');
 	});
 
 	it('restore attaches a revived panel instead of creating a new one', () => {

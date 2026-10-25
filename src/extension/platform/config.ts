@@ -206,6 +206,7 @@ export interface ConfigSnapshot {
 	readonly openNewTabEditorGroup: OpenNewTabEditorGroupSetting;
 	readonly openToTheRepoOfTheActiveTextEditorDocument: boolean;
 	readonly prewarm: boolean;
+	readonly snapshotFirstPaint: boolean;
 
 	// --- Graph ---
 	readonly graphColours: ReadonlyArray<string>;
@@ -379,6 +380,7 @@ export function takeSnapshot(workspace: WorkspaceLike): ConfigSnapshot {
 		openNewTabEditorGroup: readWithMigrations(config, 'openNewTabEditorGroup', 'Active'),
 		openToTheRepoOfTheActiveTextEditorDocument: readWithMigrations(config, 'openToTheRepoOfTheActiveTextEditorDocument', false),
 		prewarm: readWithMigrations(config, 'prewarm', true),
+		snapshotFirstPaint: readWithMigrations(config, 'snapshotFirstPaint', true),
 
 		// --- Graph ---
 		graphColours: readWithMigrations(config, 'graph.colours', ['#0085d9', '#d9008f', '#00d90a', '#d98500', '#a300d9', '#ff0000', '#00d9cc', '#e138e8', '#85d900', '#dc5b23', '#6f24d6', '#ffcc00'] as ReadonlyArray<string>),
@@ -826,6 +828,13 @@ class Config {
 	 */
 	get markdown() {
 		return !!this.config.get('markdown', true);
+	}
+
+	/**
+	 * Get the value of the `git-graph-rs.snapshotFirstPaint` Extension Setting.
+	 */
+	get snapshotFirstPaint() {
+		return !!this.config.get('snapshotFirstPaint', true);
 	}
 
 	/**

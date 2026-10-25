@@ -127,6 +127,7 @@ export function getWebviewConfig(config: ReturnType<typeof getConfig>, avatarSto
 		showTags: config.showTags,
 		showUncommittedChanges: config.showUncommittedChanges,
 		showUntrackedFiles: config.showUntrackedFiles,
+		snapshotFirstPaint: config.snapshotFirstPaint,
 		trackRemoteTags: config.trackRemoteTags
 	};
 }
@@ -171,6 +172,12 @@ export interface GraphViewHtmlInputs {
  * variables derived from the configuration, the initial state script, and one of the three
  * bodies - the view itself, the "unable to load" page (no engine and no Git), or the
  * "no repositories found" page with its rescan button.
+ *
+ * The view's script loads as an ES MODULE (task 5.9): the first-paint bundle media/out.min.js
+ * imports its on-demand chunks (media/chunks/*.js) with relative dynamic import(), which the
+ * nonce cannot cover - a dynamically imported module carries no nonce - so the CSP's script-src
+ * allows the webview's own resource origin next to the nonce. The Markdown renderer is no
+ * longer preloaded here at all: it is one of those on-demand chunks.
  * @returns The HTML.
  */
 export function renderGraphViewHtml(inputs: GraphViewHtmlInputs): string {
@@ -234,8 +241,7 @@ export function renderGraphViewHtml(inputs: GraphViewHtmlInputs): string {
 		</div>
 		<script nonce="${nonce}">var initialState = ${encodeJsonForInlineScript(JSON.stringify(initialState))}, globalState = ${encodeJsonForInlineScript(JSON.stringify(inputs.globalState))}, workspaceState = ${encodeJsonForInlineScript(JSON.stringify(inputs.workspaceState))};</script>
 		<script nonce="${nonce}">${automationShimJs}</script>
-		<script nonce="${nonce}" src="${inputs.mediaUri('vendor/markdown-it.min.js')}?v=${getMediaCacheVersion(inputs.extensionPath)}"></script>
-		<script nonce="${nonce}" src="${inputs.mediaUri('out.min.js')}?v=${getMediaCacheVersion(inputs.extensionPath)}"></script>
+		<script nonce="${nonce}" type="module" src="${inputs.mediaUri('out.min.js')}?v=${getMediaCacheVersion(inputs.extensionPath)}"></script>
 		</body>`;
 	} else {
 		body = `<body class="unableToLoad">
@@ -257,7 +263,7 @@ export function renderGraphViewHtml(inputs: GraphViewHtmlInputs): string {
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8">
-			<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(inputs.cspSource)} 'unsafe-inline'; script-src 'nonce-${nonce}'${automationShimJs !== '' ? " 'unsafe-eval'" : ''}; img-src data: https:;">
+			<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(inputs.cspSource)} 'unsafe-inline'; script-src 'nonce-${nonce}' ${standardiseCspSource(inputs.cspSource)}${automationShimJs !== '' ? " 'unsafe-eval'" : ''}; img-src data: https:;">
 			<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 			<link rel="stylesheet" type="text/css" href="${inputs.mediaUri('out.min.css')}?v=${getMediaCacheVersion(inputs.extensionPath)}">
 			<title>Git Graph</title>

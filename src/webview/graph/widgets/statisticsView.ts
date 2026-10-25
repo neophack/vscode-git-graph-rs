@@ -8,12 +8,20 @@ import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
 import { html, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { GraphContext } from '../context';
+import { StatisticsViewSurface } from './surfaces';
+import statisticsCss from '../../styles/statisticsView.css';
+import panelsCss from '../../styles/mobile/panels.css';
+
+// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+injectOnDemandStyles(statisticsCss);
+injectOnDemandStyles(panelsCss);
 
 const STATISTICS_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export class StatisticsView {
+export class StatisticsView implements StatisticsViewSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;

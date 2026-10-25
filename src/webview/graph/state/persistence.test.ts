@@ -14,8 +14,10 @@ import type { WebViewState } from './types';
  * The versioned persistence of the Git Graph View's state (REFACTOR-PLAN §3.7.2 "User data").
  * The WebViewState FIELDS are a frozen public contract (§2.2), so the version travels as an
  * extra field on the persisted record. Samples come from test/fixtures/user-data/, one
- * directory per historical version: 1.0.27 (pre-versioning), current (v1) and a v2 record
- * written by a NEWER page (unknown fields, downgrade case).
+ * directory per historical version: 1.0.27 (pre-versioning), current (v2: carries the firstPaint
+ * snapshot field of task 5.9 / D10) and the newer-writer directory (a version 3 webview state
+ * from a NEWER page: unknown fields, downgrade case; the directory also carries the other
+ * user-data surfaces' own newer-writer samples, whose version counters are independent).
  */
 
 /** The webview tsconfig compiles without Node types; declare the Vite glob the loader uses. */
@@ -97,7 +99,21 @@ describe('versioned webview state (REFACTOR-PLAN §3.7.2)', () => {
 		const decoded = decodePersistedWebViewState(sample);
 		expect(decoded !== null && decoded.version).toBe(WEBVIEW_STATE_VERSION);
 		expect(decoded !== null && decoded.currentRepo).toBe(sample.currentRepo);
-		expect(decoded).toEqual(encodePersistedWebViewState(sample));
+		// The migration's end shape is the strict write of the same state with firstPaint
+		// normalized (the field the v1 -> v2 step introduces)
+		expect(decoded).toEqual(encodePersistedWebViewState({ ...sample, firstPaint: null }));
+	});
+
+	it('migrates a v1 record (the firstPaint field did not exist yet) by normalizing firstPaint to NULL', () => {
+		const sample = loadSample('current') as WebViewState & Record<string, unknown>;
+		const v1 = { ...sample, version: 1 } as Record<string, unknown>;
+		delete v1.firstPaint;
+
+		const decoded = decodePersistedWebViewState(v1);
+		expect(decoded !== null && decoded.version).toBe(WEBVIEW_STATE_VERSION);
+		// The migration step adds the new field as NULL: a page that never captured a snapshot
+		// reads the same absence it had, and the snapshot decoder treats NULL as nothing to paint
+		expect(decoded !== null && (decoded as unknown as Record<string, unknown>).firstPaint).toBeNull();
 	});
 
 	it('answers the current sample unchanged (no behavior change for current-version data)', () => {
@@ -125,8 +141,9 @@ describe('versioned webview state (REFACTOR-PLAN §3.7.2)', () => {
 		expect(decodePersistedWebViewState('{"truncated:')).toBeNull();
 		expect(decodePersistedWebViewState(42)).toBeNull();
 		expect(decodePersistedWebViewState(['not', 'a', 'record'])).toBeNull();
-		// A bare record survives leniently: never a throw, fields kept, version stamped
-		expect(decodePersistedWebViewState({})).toEqual({ version: WEBVIEW_STATE_VERSION });
+		// A bare record survives leniently: never a throw, fields kept, version stamped, the
+		// migration's firstPaint normalization applied
+		expect(decodePersistedWebViewState({})).toEqual({ firstPaint: null, version: WEBVIEW_STATE_VERSION });
 	});
 
 	it('saveState persists the state stamped with the current version (strict write)', () => {

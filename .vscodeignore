@@ -17,11 +17,14 @@
 !dist/askpass/askpass-empty.sh
 !dist/askpass/askpassMain.js
 
-# The webview bundle (scripts/build/webview.mjs output, kept at media/ this wave) and the
-# vendored libraries the view's HTML loads (scripts/package-highlight.js /
-# scripts/package-markdown.js). Source maps are dev-only and stay out.
+# The webview bundle (scripts/build/webview.mjs output, kept at media/ this wave): the
+# first-paint entry plus the on-demand chunks of task 5.9's code splitting (the entry reaches
+# them through relative dynamic import(), so a missing chunk breaks the first open of its
+# widget), and the vendored libraries the comparison pages load (scripts/package-highlight.js).
+# Source maps are dev-only and stay out.
 !media/out.min.js
 !media/out.min.css
+!media/chunks/*.js
 !media/comparison.min.js
 !media/comparison.min.css
 !media/binaryCompare.min.js
