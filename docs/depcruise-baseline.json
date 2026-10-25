@@ -225,6 +225,104 @@
   },
   {
     "type": "dependency",
+    "from": "src/extension/graphView/globalSettings.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/graphView/orphanedTabs.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/graphView/panelContext.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/repos/repoDiscovery.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/repos/repoFileWatcher.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/repos/repoManager.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/statusBar.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/webview/common/protocol.ts",
     "to": "src/types/index.ts",
     "unresolvedTo": "../../types/index",

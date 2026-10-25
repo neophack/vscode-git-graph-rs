@@ -8,23 +8,24 @@
  * or true by scripts/build/build.mjs), so the VSIX's dist/ tree is either automation-free
  * (dist/extension.js) or bundles the whole subsystem (dist/automation/extension.js).
  *
- * What remains of the v1.0 file substitution is the OUT/-tree half, needed exactly as long as
- * package.json's `main` points into out/: out/extension.js decides at RUNTIME (a load-when-
- * present require), so the default VSIX must not carry out/automation:
- *   - withAutomationExcluded(task): moves out/automation/ and resources/automation/ aside for
- *     the duration of a vsce run, then restores them. When packaging flips to dist as `main`
- *     (the wave-1 dist pipeline's plan), this is the piece task 6.2 deletes.
- *   - withAutomationContributions(task): temporarily adds the automation contributions (the
- *     Run Automation Test command + editor-title button, and the nls titles) to package.json /
- *     package.nls.json / package.nls.zh-cn.json, then restores the originals. This one stays in
- *     every world: declaring the command is a manifest concern, not a code concern.
+ * Since task 1.4 (package.json's `main` points at ./dist/extension.js and .vscodeignore is an
+ * allowlist) the variant needs no file substitution at all:
+ *   - the default VSIX is automation-free STATICALLY: the compile-time switch keeps the
+ *     subsystem out of dist/extension.js, and the allowlist re-includes neither dist/automation/
+ *     nor resources/automation/ (nor out/, which no longer packages). withAutomationExcluded
+ *     below is therefore a pass-through kept only until its remaining caller
+ *     (scripts/package-platforms.mjs) drops it.
+ *   - withAutomationContributions(task): temporarily makes the tree package the AUTOMATION
+ *     variant — `main` flipped to ./dist/automation/extension.js, .vscodeignore re-including
+ *     the variant's files instead of the default bundle, and the automation contributions (the
+ *     Run Automation Test command + editor-title button, and the nls titles) added to
+ *     package.json / package.nls.json / package.nls.zh-cn.json — then restores the originals.
  *
  * Both are self-healing: a leftover backup from a killed previous run is restored first.
  */
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -32,17 +33,30 @@ import { fileURLToPath } from 'node:url';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
-/** Directories whose absence defines the default (no-automation) build. */
-const AUTOMATION_DIRS = ['out/automation', 'resources/automation'];
+/** Files the automation build's patch touches (restored from <file>.automation-bak). */
+const CONTRIBUTION_FILES = ['package.json', 'package.nls.json', 'package.nls.zh-cn.json', '.vscodeignore'];
 /**
- * Entries of out/automation the default build KEEPS (task 6.2): graphViewPort.js is the view's
- * injected-port seam, imported by out/gitGraphView.js unconditionally — view plumbing, not
- * automation-suite code (no catalog, no server, no runner), so it stays while the suite's
- * modules move aside.
+ * The .vscodeignore negations of the DEFAULT bundle: the automation patch drops them (the
+ * variant's VSIX carries dist/automation/, not dist/extension.js) and re-includes the variant's
+ * files instead. Keep in sync with .vscodeignore.
  */
-const AUTOMATION_KEEP = /^graphViewPort\./;
-/** Files the automation build's contributions patch (restored from <file>.automation-bak). */
-const CONTRIBUTION_FILES = ['package.json', 'package.nls.json', 'package.nls.zh-cn.json'];
+const DEFAULT_BUNDLE_NEGATES = [
+	'!dist/extension.js',
+	'!dist/askpass/askpass.sh',
+	'!dist/askpass/askpass-empty.sh',
+	'!dist/askpass/askpassMain.js'
+];
+const AUTOMATION_NEGATES = [
+	'!dist/automation/extension.js',
+	'!dist/automation/askpass/askpass.sh',
+	'!dist/automation/askpass/askpass-empty.sh',
+	'!dist/automation/askpass/askpassMain.js',
+	'!resources/automation/shim.js'
+];
+/** package.json's `main` for the duration of the automation vsce run. */
+const AUTOMATION_MAIN = './dist/automation/extension.js';
+/** The vendored webview assets the packaged view loads (the allowlist ships media/vendor). */
+const VENDOR_SCRIPTS = ['package-highlight.js', 'package-markdown.js'];
 
 const CONTRIBUTIONS = {
 	command: {
@@ -85,54 +99,20 @@ export function restoreLeftoverBackups(root = rootDir) {
 	return restored;
 }
 
-function moveDir(source, target) {
-	try {
-		fs.renameSync(source, target);
-	} catch (_) {
-		// Cross-volume fallback: copy then remove.
-		fs.cpSync(source, target, { recursive: true });
-		fs.rmSync(source, { recursive: true, force: true });
-	}
-}
-
-/** Run `task` with the automation suite's modules absent from the working tree (restored after). */
-export async function withAutomationExcluded(task, root = rootDir) {
-	const stashRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-automation-stash-'));
-	const stashed = [];
-	try {
-		for (const dir of AUTOMATION_DIRS) {
-			const abs = path.join(root, dir);
-			if (!fs.existsSync(abs)) continue;
-			if (dir === 'out/automation') {
-				// The graphViewPort seam stays (see AUTOMATION_KEEP); everything else in the
-				// directory is the automation suite.
-				for (const entry of fs.readdirSync(abs)) {
-					if (AUTOMATION_KEEP.test(entry)) continue;
-					const entryAbs = path.join(abs, entry);
-					const aside = path.join(stashRoot, dir.replace(/\//g, '_') + '_' + entry);
-					moveDir(entryAbs, aside);
-					stashed.push({ abs: entryAbs, aside });
-				}
-			} else {
-				const aside = path.join(stashRoot, dir.replace(/\//g, '_'));
-				moveDir(abs, aside);
-				stashed.push({ abs, aside });
-			}
-		}
-		return await task();
-	} finally {
-		for (const { abs, aside } of stashed.reverse()) {
-			if (fs.existsSync(abs)) {
-				fs.rmSync(abs, { recursive: true, force: true });
-			}
-			moveDir(aside, abs);
-		}
-		fs.rmSync(stashRoot, { recursive: true, force: true });
-	}
+/**
+ * Run `task` with the working tree's automation files left exactly where they are. Since task
+ * 1.4 the default VSIX needs nothing moved: `main` points at the dist bundle (whose
+ * compile-time switch omits the subsystem) and the .vscodeignore allowlist never re-includes
+ * the variant's files. Retained as a pass-through for scripts/package-platforms.mjs until it
+ * drops the call.
+ */
+export async function withAutomationExcluded(task) {
+	return await task();
 }
 
 function applyContributions(root) {
 	const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+	pkg.main = AUTOMATION_MAIN;
 	pkg.contributes.commands.push({ ...CONTRIBUTIONS.command });
 	pkg.contributes.menus = pkg.contributes.menus ?? {};
 	pkg.contributes.menus['editor/title'] = [
@@ -145,9 +125,12 @@ function applyContributions(root) {
 		Object.assign(nls, keys);
 		fs.writeFileSync(path.join(root, file), JSON.stringify(nls, null, '\t') + '\n');
 	}
+	const ignoreFile = path.join(root, '.vscodeignore');
+	const lines = fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).filter((line) => !DEFAULT_BUNDLE_NEGATES.includes(line.trim()));
+	fs.writeFileSync(ignoreFile, [...lines, ...AUTOMATION_NEGATES].join('\n').replace(/\n*$/, '\n'));
 }
 
-/** Run `task` with the automation contributions present in package.json / nls (restored after). */
+/** Run `task` with the tree packaging the automation variant (originals restored after). */
 export async function withAutomationContributions(task, root = rootDir) {
 	restoreLeftoverBackups(root);
 	for (const file of CONTRIBUTION_FILES) {
@@ -162,17 +145,25 @@ export async function withAutomationContributions(task, root = rootDir) {
 }
 
 /**
- * Build the dist/ bundle in the given compile-time automation mode (task 6.2): false (the
- * default) emits dist/extension.js with every automation require eliminated; true emits
- * dist/automation/extension.js with the automation modules bundled in. Exits the process on a
- * build failure — packaging a stale bundle is worse than not packaging.
+ * Build the complete packaging input in the given compile-time automation mode (task 6.2):
+ * false (the default) emits dist/extension.js with every automation require eliminated; true
+ * emits dist/automation/extension.js with the automation modules bundled in. The vendored
+ * webview assets (media/vendor/*.min.js) are rebuilt too — the allowlist ships them and the
+ * view's HTML loads them, so a packaging run must never reuse a stale or missing copy. Exits
+ * the process on a build failure — packaging a stale bundle is worse than not packaging.
  */
 export function buildDist(automation = false) {
 	const args = [path.join(rootDir, 'scripts', 'build', 'build.mjs'), '--production'];
 	if (automation) args.push('--automation');
-	const result = spawnSync(process.execPath, args, { cwd: rootDir, stdio: 'inherit' });
+	let result = spawnSync(process.execPath, args, { cwd: rootDir, stdio: 'inherit' });
 	if (result.status !== 0) {
 		process.exit(result.status ?? 1);
+	}
+	for (const script of VENDOR_SCRIPTS) {
+		result = spawnSync(process.execPath, [path.join(rootDir, 'scripts', script)], { cwd: rootDir, stdio: 'inherit' });
+		if (result.status !== 0) {
+			process.exit(result.status ?? 1);
+		}
 	}
 }
 

@@ -57,7 +57,10 @@ function fail(title, problems) {
 	process.exit(1);
 }
 
-const sources = walk(webviewDir, '.ts');
+// The artifact gates below govern what ships to Chromium 69; colocated *.test.ts files never
+// enter a bundle and run on the dev-toolchain Node, so they are exempt from both the syntax
+// floor and the SafeHtml DOM-write scan (REFACTOR-PLAN §3.7.2 separates dev tool from runtime).
+const sources = walk(webviewDir, '.ts').filter((file) => !/\.test\.ts$/.test(file));
 
 if (TYPECHECK) {
 	const tsc = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc');

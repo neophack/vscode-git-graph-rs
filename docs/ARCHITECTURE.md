@@ -32,18 +32,23 @@ subsystem is still mid-migration, that is said explicitly rather than papered ov
 
 ## 2. The `src/` tree
 
-`src/` currently contains the **new layered tree** and, side by side, the **flat v1.0 host
-files** that have not been migrated yet. The flat files are the legacy half; they move into
-`src/extension/` (or are deleted) phase by phase. Nothing new should be added to `src/*.ts`.
+`src/` carries the **new layered tree** plus the remaining flat v1.0 host files. Most of the
+flat half has been migrated: the files listed in §2.4 as shims are compatibility re-exports
+kept only so legacy imports and the out/-compiled tests keep working; they drain as callers
+move. Nothing new should be added to `src/*.ts`.
 
 ### 2.1 `src/extension/` — the extension host layer (Node + vscode)
 
 | Directory | Contents |
 |---|---|
-| `extension/git/` | The git access layer: `process/` (GitProcess + errors), `executable/` (git capability detection), `read/cli/` (the CLI reader split by theme: log, details, files, config, parse/*), `read/fallbackReader.ts`, `read/signatures.ts`, `write/` (gitWriter, lossGuard, argSafety, `ops/`), `gitRepository.ts`, `operationState.ts` |
-| `extension/graphView/` | The main view's host side: `handlers/` (the exhaustive per-request handler table, §5), `commitLoader.ts`, `gerritSelection.ts`, `caches/` |
-| `extension/platform/` | `vscodeCompat.ts`: the single seam for version-optional VS Code APIs (e.g. `tabGroups`) |
+| `extension/git/` | The git access layer: `process/` (GitProcess + errors), `executable/` (git capability detection), `read/gitReader.ts` (the backend contract + Native adapter), `read/addonLoader.ts` (binary location/loading), `read/backendIndex.ts` (createBackend + fallback routing), `read/cli/` (the CLI reader split by theme: log, details, files, config, parse/*), `read/fallbackReader.ts`, `read/signatures.ts`, `write/` (gitWriter, lossGuard, argSafety, `ops/`), `gitRepository.ts`, `operationState.ts` |
+| `extension/graphView/` | The main view's host side (task 4.4): `panel.ts` (lifecycle, snapshot restore, orphaned tabs, message routing via the handler table), `html.ts` (HTML shell + CSP/nonce), `panelContext.ts` (the port wiring behind HandlerContext), `poller.ts`, `pullRequestFetch.ts`, `globalSettings.ts`, `orphanedTabs.ts`, `commitLoader.ts`, `gerritSelection.ts`, `gerritPipeline.ts`, `uncommittedStabiliser.ts`, `caches/`, `handlers/` (the exhaustive per-request handler table, §5) |
+| `extension/platform/` | The vscode adapters: `vscodeCompat.ts` (version-optional APIs), `config.ts` (+ ConfigSnapshot), `storage.ts` (globalState), `logger.ts`, `notifications.ts`, `terminal.ts`, `clipboard.ts`, `uiPort.ts` |
+| `extension/repos/` | `repoManager.ts` + the split-out `repoConfigFile.ts` (the `.vscode/git-graph-rs.json` seam) and `repoDiscovery.ts`, `repoFileWatcher.ts` |
+| `extension/views/` | Host controllers for the auxiliary panels: `comparison/viewController.ts`, `binaryCompare/` (viewController, binaryCompare, hexDiff + hexDiffSources), `diffDocProvider.ts` (frontends live in `webview/`) |
+| `extension/integrations/` | `gerrit/` (gerrit + gerritProtocol), `pullRequests.ts`, `avatars/avatarManager.ts` (+ avatarQueue) |
 | `extension/commands/` | The declarative command registry and the command manager (task 4.6): registry, commandManager, per-domain command modules |
+| `extension/statusBar.ts` | The status bar item |
 
 ### 2.2 `src/webview/` — the webview frontends (DOM; no vscode, no Node)
 
@@ -63,17 +68,21 @@ files** that have not been migrated yet. The flat files are the legacy half; the
 | `shared/engine/` | `protocol.ts` — **generated from Rust via ts-rs; never hand-edit**. Regenerate with `cargo test -p git-graph-core --test protocol` |
 | `shared/i18n/` | The single dictionary pair (`en.ts`, `zh-cn.ts`) shared by host and webview, `format.ts`, and the NLS parity test |
 
-### 2.4 The flat legacy host files (pending migration)
+### 2.4 The flat legacy host files
 
-Still at `src/*.ts`, compiling into the shipped host bundle: `extension.ts` (the entry point),
-`gitGraphView.ts` (the view's host side, including its per-message command dispatch),
-`dataSource.ts` (the repository facade every reader goes through), `commands.ts`,
-`repoManager.ts`, `config.ts`, `gerrit.ts` (Gerrit change-ref parsing + `GerritDataSource`),
-`comparisonView.ts`, `binaryCompare.ts` / `binaryCompareView.ts` / `hexDiff.ts`,
-`pullRequests.ts`, `avatarManager.ts`, `diffDocProvider.ts`, `extensionState.ts`,
-`statusBarItem.ts`, `repoFileWatcher.ts`, `logger.ts`, `i18n.ts` (re-exporting
-`shared/i18n`), plus the `askpass/`, `automation/`, `backend/` (§4), `types/` (the v1.0
+What is still real at `src/*.ts`: `extension.ts` (the entry point), `dataSource.ts` (the
+repository facade every reader goes through — its retirement onto `git/gitRepository.ts` is
+the remaining task 3.6 work), plus the `askpass/`, `automation/`, `types/` (the v1.0
 protocol/domain types the typed protocols are derived from) and `utils/` subtrees.
+Everything else at the flat root is now a **compatibility shim** re-exporting its migrated
+home: `gitGraphView.ts` → `extension/graphView/panel.ts`, `commands.ts` →
+`extension/commands/`, `repoManager.ts` / `repoFileWatcher.ts` / `statusBarItem.ts` →
+`extension/repos/` + `extension/statusBar.ts`, `config.ts` / `extensionState.ts` /
+`logger.ts` → `extension/platform/`, `gerrit.ts` / `pullRequests.ts` / `avatarManager.ts`
+→ `extension/integrations/`, `comparisonView.ts` / `binaryCompare.ts` /
+`binaryCompareView.ts` / `hexDiff.ts` / `diffDocProvider.ts` → `extension/views/`,
+`backend/` → `extension/git/read/`, and `i18n.ts` → `shared/i18n`. The shims exist so the
+out/-compiled legacy test suite keeps importing the old paths; they drain as the suite does.
 
 `legacy/` (the frozen v1.0 snapshot the migration started from) has been drained and removed;
 `git log --follow` reaches the pre-migration history through the renames.
@@ -150,21 +159,32 @@ non-feature, not an error.
 
 ## 6. Build pipelines
 
-Two host pipelines coexist while the refactor runs:
+The `dist/` pipeline is the packaging pipeline (task 1.4): `package.json#main` points at
+`./dist/extension.js`, and local, CI and release all package the same artifact through it.
+`npm run package` / `npm run package:automation` build the bundle first
+(`scripts/automation-packaging.mjs` → `scripts/build/build.mjs --production`) and then run vsce
+against the `.vscodeignore` allowlist, which re-includes exactly: `dist/extension.js`,
+`dist/askpass/**`, the webview bundle and vendored libraries under `media/`, the static
+resources under `resources/`, `licenses/**`, `native/**/git-graph.node`, the package/nls
+manifests and `LICENSE`. The automation variant (`dist/automation/extension.js` as `main`) is
+the same chain with `__AUTOMATION__` defined truthy plus a temporary manifest/allowlist patch
+during its vsce run — nothing is substituted on disk any more.
 
-| | The legacy `out/` pipeline (what ships today) | The `dist/` pipeline (the replacement) |
+| | The `dist/` pipeline (what ships) | The legacy `out/` pipeline (tests only) |
 |---|---|---|
-| Command | `npm run compile`, packaged by `npm run package` | `npm run build:dist` (`scripts/build/build.mjs`) |
-| Host output | `out/**` (tsc, per-file) | `dist/extension.js` (esbuild, one file on the **node10.11** target; only `vscode` and the optional automation modules stay external) |
-| Askpass | `out/askpass/` + `package-src.js` rewrites | `dist/extension.js` + `dist/askpass/*.sh` (launchers) and `askpassMain.js` |
-| Webview | `media/out.min.{js,css}` (`scripts/build/webview.mjs`) | same webview bundle, chained after the host build |
-| Compatibility gate | — | `scripts/build/compat.mjs` scans the artifacts and fails the build on post-ES2018 syntax (the es2018 promise, VS Code 1.38 floor) |
+| Command | `npm run build:dist` / `npm run package` (`scripts/build/build.mjs`) | `npm run compile-src`, or `npm run build:ts` (kept for the legacy suite; `npm run build` still appends it) |
+| Host output | `dist/extension.js` (esbuild, one file on the **node10.11** target; only `vscode` and `original-fs` stay external) | `out/**` (tsc, per-file, + `package-src.js` text rewriting) |
+| Askpass | `dist/askpass/*.sh` (launchers) and `askpassMain.js` | `out/askpass/` + `package-src.js` rewrites |
+| Webview | `media/out.min.{js,css}` + `media/vendor/*` (`scripts/build/webview.mjs`, chained after the host build; kept at `media/` this wave) | same webview bundle |
+| Compatibility gate | `scripts/build/compat.mjs` scans the artifacts and fails the build on post-ES2018 syntax (the es2018 promise, VS Code 1.38 floor) | — |
 
-The webview always builds to `media/` (out.min, comparison.min, binaryCompare.min + vendored
-assets); `resources/` and `licenses/` ship verbatim. `.vscodeignore` controls the VSIX contents,
-and `tests/distBuild.test.mjs` guards the dist pipeline's shape. The plan's Phase 1 exit
-criterion — no more `out/` or `media/` produced by regular builds — is **not yet reached**: the
-release workflow still packages through the legacy pipeline until the dist pipeline takes over.
+The `out/` tree survives only as the legacy test suite's import target (`tests/*.test.mjs`
+still require `../out/*.js`), which is why CI's integration job still runs `compile-src` after
+the dist build and `npm run build` appends `build:ts`; both drain with the suite and disappear
+in Phase 7. `tests/distBuild.test.mjs` guards the dist pipeline's shape, and its
+`vsce ls`-based manifest test asserts the VSIX contents contract (dist + media + resources, no
+src/, no `*.ts`, no `out/`). CI additionally runs `scripts/build/check-binary-compat.mjs` with
+`BINARY_COMPAT_REQUIRED=1` on every engine it builds (glibc / minos / static-CRT floors).
 
 `node scripts/dev/install.mjs` is the developer entry point for the full chain (deps → native
 addon → compile → tests → VSIX → install into VS Code; `--full`/`--only` build the engine's
@@ -207,7 +227,8 @@ baseline starts at `warn`.
 - The flat `src/*.ts` host files (§2.4) — `extension.ts`, `gitGraphView.ts`, `dataSource.ts`,
   `commands.ts` and the rest — including the view's message switch, which the handler table
   replaces as task 4.4 wires it in.
-- The `out/` + `package-src.js` production pipeline (§6), still what `npm run package` ships.
+- The `out/` + `package-src.js` tsc pipeline (§6) — no longer packaged anywhere, but still
+  built (`compile-src` / `build:ts`) as the legacy test suite's import target until Phase 7.
 - The `tests/*.test.mjs` legacy suite and its harnesses (`webviewHarness.mjs`,
   `webviewRealPipelineHarness.mjs`, `vscodeStub.mjs`).
 - The loose `scripts/*.mjs` packaging/bench/audit tooling that the plan consolidates into

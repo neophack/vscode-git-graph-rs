@@ -23,11 +23,11 @@
  *    `node:fs` bypasses the alias for the fallback itself. String literals that embed
  *    `require("fs")` (the temporary rebase editor scripts dataSource.ts writes) are untouched:
  *    an onResolve hook only ever sees real module specifiers, never literal contents.
- * 2. src/backend/addon.ts resolves the extension root as `path.join(__dirname, '..', '..')`
- *    because it compiles to out/backend/addon.js. Bundled at dist/extension.js the root is one
- *    level up, so the three default parameters are rewritten to a single '..'. `__dirname`
- *    itself survives bundling unchanged under format cjs - it stays a real Node global there,
- *    evaluating to dist/ at runtime.
+ * 2. src/extension/git/read/addonLoader.ts resolves the extension root as four `..` segments
+ *    because it compiles to out/extension/git/read/addonLoader.js. Bundled at dist/extension.js
+ *    the root is one level up, so the three default parameters are rewritten to a single '..'.
+ *    `__dirname` itself survives bundling unchanged under format cjs - it stays a real Node
+ *    global there, evaluating to dist/ at runtime.
  * 3. src/askpass/askpassManager.ts expects askpass.sh, askpass-empty.sh and askpassMain.js
  *    beside itself (out/askpass/). In the bundle `__dirname` is dist/ while the files live in
  *    dist/askpass/, so each of its five `__dirname` uses is rewritten to
@@ -92,9 +92,9 @@ const hostAdapter = {
 			contents: "module.exports = (() => { try { return require('original-fs'); } catch (_) { return require('node:fs'); } })();"
 		}));
 		const rewrite = (contents, search, replacement) => contents.split(search).join(replacement);
-		builder.onLoad({ filter: /[\\/]src[\\/]backend[\\/]addon\.ts$/ }, (args) => {
+		builder.onLoad({ filter: /[\\/]src[\\/]extension[\\/]git[\\/]read[\\/]addonLoader\.ts$/ }, (args) => {
 			const source = fs.readFileSync(args.path, 'utf8');
-			const expected = "path.join(__dirname, '..', '..')";
+			const expected = "path.join(__dirname, '..', '..', '..', '..')";
 			const count = source.split(expected).length - 1;
 			if (count !== 3) {
 				return { errors: [{ text: `expected 3 extension-root defaults in ${path.relative(root, args.path)}, found ${count}: update the patch in scripts/build/build.mjs` }] };

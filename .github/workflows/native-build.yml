@@ -129,6 +129,15 @@ jobs:
       - name: Build the addon
         run: node scripts/build-addon.mjs --release --target ${{ matrix.target }}
 
+      # The binary-compatibility gate (glibc floor on Linux, minos on macOS, static CRT on
+      # Windows; scripts/build/check-binary-compat.mjs): run against the engine this matrix leg
+      # just built, on its native runner, with the tool skips promoted to failures.
+      - name: Check the binary compatibility floors
+        env:
+          BINARY_COMPAT_REQUIRED: '1'
+        run: node scripts/build/check-binary-compat.mjs native/${{ matrix.directory }}
+        shell: bash
+
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.directory }}
@@ -165,13 +174,20 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Build the TypeScript
-        run: npm run build:ts
+      # The canonical pipeline (task 1.4): one esbuild bundle on the VS Code 1.38 floor
+      # (Node 10.11), the askpass launchers, the webview assets, and the ES2018 compat gate
+      # inside build.mjs. This is the same chain `npm run package` ships.
+      - name: Build the extension bundle (dist pipeline)
+        run: |
+          npm run build:dist -- --production
+          node scripts/package-highlight.js
+          node scripts/package-markdown.js
 
-      # The jsdom webview tests load media/out.min.js; it is a build product (media/ is
-      # gitignored), so it must be compiled here too or those tests fail on CI.
-      - name: Build the webview assets
-        run: npm run compile-web
+      # The legacy node:test suite still imports out/*.js (build products; out/ is
+      # gitignored), so the legacy tsc pipeline keeps running here until the suite drains
+      # into Vitest (plan Phase 7). The dist bundle above does not produce out/.
+      - name: Build the legacy out/ tree for the legacy test suite
+        run: npm run compile-src
 
       # c8 collects V8 coverage through run-tests.mjs's child processes (it propagates
       # NODE_V8_COVERAGE in the environment) and remaps out/*.js to src/*.ts through the
@@ -220,20 +236,21 @@ jobs:
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Build the TypeScript
-        run: npm run build:ts
-
-      # media/out.min.js and out.min.css are what the webview loads. They are build products
-      # (media/ is gitignored) and nothing else in this pipeline produces them, so a release
-      # assembled without this step ships a VSIX whose view 404s on both files.
-      - name: Build the webview assets
-        run: npm run compile-web
+      # The canonical pipeline (task 1.4): the dist bundle + the webview assets are what the
+      # VSIX packages (package.json's main points at dist/extension.js). media/vendor/*.min.js
+      # are build products too (media/ is gitignored) and the packaged view's HTML loads them,
+      # so a run assembled without those steps would ship a VSIX whose view 404s on them.
+      - name: Build the extension bundle (dist pipeline)
+        run: |
+          npm run build:dist -- --production
+          node scripts/package-highlight.js
+          node scripts/package-markdown.js
 
       - uses: actions/upload-artifact@v4
         with:
           name: git-graph-rs
           path: |
-            out/
+            dist/
             media/
             native/*/git-graph.node
             package.json

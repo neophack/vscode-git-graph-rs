@@ -1,31 +1,52 @@
- .vscode/**
-resources/upstream/**
-resources/rust-crab.svg
-resources/notification/*.svg
-.github/**
-scripts/**
-src/**
-tests/**
-target/**
-node_modules/**
-out/**/*.ts
-dist/**/*.map
-native/core/**
-native/node/src/**
-native/node/build.rs
-native/node/Cargo.toml
-native/node/Cargo.lock
-Cargo.toml
-Cargo.lock
-*.vsix
-*.log
-*.automation-bak
-**/*.held-*
-tsconfig.json
-vitest.config.ts
-jest.config.js
-GAPS.md
-.editorconfig
-.gitignore
-.zcode/**
-napi.conf.json
+# VSIX allowlist (REFACTOR-PLAN §4.1, task 1.4): everything is ignored unless re-included
+# below. vsce's negations override ignores, so what ships is exactly this list — when the
+# extension starts loading a new file at runtime, add it here; anything forgotten stays out
+# (and is caught by the manifest test in tests/distBuild.test.mjs) rather than leaking in.
+**
+
+# The dist pipeline's output (scripts/build/build.mjs): the host bundle, and the askpass
+# launchers + helper git's credential prompts run (enumerated rather than !dist/askpass/** so a
+# development build's source maps can never slip into a package). dist/automation/ (the
+# --automation variant) is deliberately NOT re-included here: the default VSIX carries no
+# automation code — the compile-time switch keeps it out of dist/extension.js, and this list
+# keeps the variant's files out even when a previous local automation build left them in the
+# tree. The automation VSIX run (scripts/automation-packaging.mjs) patches this file to swap
+# the two.
+!dist/extension.js
+!dist/askpass/askpass.sh
+!dist/askpass/askpass-empty.sh
+!dist/askpass/askpassMain.js
+
+# The webview bundle (scripts/build/webview.mjs output, kept at media/ this wave) and the
+# vendored libraries the view's HTML loads (scripts/package-highlight.js /
+# scripts/package-markdown.js). Source maps are dev-only and stay out.
+!media/out.min.js
+!media/out.min.css
+!media/comparison.min.js
+!media/comparison.min.css
+!media/binaryCompare.min.js
+!media/binaryCompare.min.css
+!media/vendor/**
+
+# Static assets: the marketplace icon, the command icons package.json contributes, the view
+# icons gitGraphView.ts references, the data-loss-warning mascot and the notification logos.
+# resources/automation/ (the in-page shim) ships only in the automation VSIX.
+!resources/icon.png
+!resources/git-graph-rs-cmd-icon-*.svg
+!resources/git-graph-rs-webview-icon*.svg
+!resources/feidudu.webp
+!resources/notification/*.png
+
+# Third-party license texts.
+!licenses/**
+
+# The prebuilt engine binaries, one per platform directory under native/ (the sources, build
+# scripts and Cargo files above them stay out).
+!native/**/git-graph.node
+
+# The manifest (vsce force-includes package.json and README.md regardless) and the localized
+# string tables the %...% placeholders resolve against.
+!package.json
+!package.nls.json
+!package.nls.zh-cn.json
+!LICENSE

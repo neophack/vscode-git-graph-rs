@@ -65,8 +65,11 @@ jobs:
         with:
           node-version: 20
 
-      # The packaged artifact (out/, native/*/git-graph.node, package.json) is laid over the
-      # checkout, so the VSIX is assembled from exactly the binaries this run built and tested.
+      # The packaged artifact (dist/, media/, native/*/git-graph.node, package.json) is laid
+      # over the checkout, so the VSIX is assembled from exactly the binaries this run built
+      # and tested. `npm run package` then packages through the same dist pipeline as CI
+      # (task 1.4): it rebuilds dist/ and media/ from the checked-out sources and runs vsce
+      # against the overlaid engine binaries.
       - uses: actions/download-artifact@v4
         with:
           name: git-graph-rs
