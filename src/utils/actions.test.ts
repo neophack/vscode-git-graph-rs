@@ -94,7 +94,7 @@ const vscodeMock = vi.hoisted(() => {
 
 vi.mock('vscode', () => vscodeMock);
 
-import { DataSource } from '../dataSource';
+import type { WriteOp } from '../extension/git/write/ops/index';
 import { decodeDiffDocUri } from '../diffDocProvider';
 import { t } from '../i18n';
 import { GitFileStatus, PullRequestProvider } from '../types';
@@ -112,36 +112,45 @@ afterAll(() => {
 	fs.rmSync(workspaceRoot, { recursive: true, force: true });
 });
 
-/** A DataSource double recording the calls it serves (NULL ErrorInfo everywhere). */
-function fakeDataSource(overrides: { archive?: unknown, getNewPathOfRenamedFile?: (filePath: string) => string | null } = {}) {
-	const archived: unknown[][] = [];
-	const dataSource = {
-		archive: async (...args: unknown[]) => {
-			archived.push(args);
+/** A writer double recording the write ops it runs (NULL ErrorInfo everywhere). */
+function fakeWriter() {
+	const runs: Array<[string, WriteOp]> = [];
+	const writer = {
+		run: async (repo: string, op: WriteOp) => {
+			runs.push([repo, op]);
 			return null;
-		},
+		}
+	};
+	return { writer: writer, runs: runs };
+}
+
+/** A rename-resolution reader double (NULL everywhere unless the case overrides it). */
+function fakeRenames(overrides: { getNewPathOfRenamedFile?: (filePath: string) => string | null } = {}) {
+	return {
 		getNewPathOfRenamedFile: async (_repo: string, _hash: string, filePath: string) =>
 			overrides.getNewPathOfRenamedFile ? overrides.getNewPathOfRenamedFile(filePath) : null
 	};
-	return { dataSource: dataSource as unknown as DataSource, archived: archived };
 }
 
 describe('the Visual Studio Code command wrappers', () => {
-	it('archive passes the chosen file to the DataSource, and reports bad extensions / cancellation', async () => {
-		const { dataSource, archived } = fakeDataSource();
+	it('archive passes the chosen file to the writer as the archive op, and reports bad extensions / cancellation', async () => {
+		const { writer, runs } = fakeWriter();
 
 		vscodeMock.responses['showSaveDialog'] = [vscodeMock.makeUri('/out/x.zip')];
-		expect(await archive(repo, 'main', dataSource)).toBe(null);
-		expect(archived).toEqual([[repo, 'main', '/out/x.zip', 'zip']]);
+		expect(await archive(repo, 'main', writer)).toBe(null);
+		expect(runs.length).toBe(1);
+		expect(runs[0][0]).toBe(repo);
+		expect(runs[0][1].steps.map((step) => step.argv)).toEqual([['archive', '--format=zip', '-o', '/out/x.zip', 'main']]);
 
 		vscodeMock.responses['showSaveDialog'] = [vscodeMock.makeUri('/out/x.rar')];
-		expect(await archive(repo, 'main', dataSource)).toBe(t('archiveInvalidExtension', 'rar'));
+		expect(await archive(repo, 'main', writer)).toBe(t('archiveInvalidExtension', 'rar'));
+		expect(runs.length).toBe(1);
 
 		vscodeMock.responses['showSaveDialog'] = [undefined];
-		expect(await archive(repo, 'main', dataSource)).toBe(t('archiveNoFileName'));
+		expect(await archive(repo, 'main', writer)).toBe(t('archiveNoFileName'));
 
 		vscodeMock.responses['showSaveDialog'] = [new Error('no dialog')];
-		expect(await archive(repo, 'main', dataSource)).toBe(t('archiveNoSaveDialog'));
+		expect(await archive(repo, 'main', writer)).toBe(t('archiveNoSaveDialog'));
 	});
 
 	it('copies to the clipboard (relative and absolute file paths) and reports write failures', async () => {
@@ -220,12 +229,12 @@ describe('the Visual Studio Code command wrappers', () => {
 		expect(await openFile(repo, 'dir/new.txt', null, null, <never>vscodeMock.ViewColumn.Two)).toBe(null);
 		expect((<{ viewColumn: number }>vscodeMock.callsTo('executeCommand:vscode.open')[0][2]).viewColumn).toBe(vscodeMock.ViewColumn.Two);
 
-		const { dataSource } = fakeDataSource({ getNewPathOfRenamedFile: (filePath) => filePath === 'dir/old.txt' ? 'dir/new.txt' : null });
+		const renames = fakeRenames({ getNewPathOfRenamedFile: (filePath) => filePath === 'dir/old.txt' ? 'dir/new.txt' : null });
 		vscodeMock.resetCalls();
-		expect(await openFile(repo, 'dir/old.txt', 'abc123', dataSource)).toBe(null);
+		expect(await openFile(repo, 'dir/old.txt', 'abc123', renames)).toBe(null);
 		expect((<FakeUri>vscodeMock.callsTo('executeCommand:vscode.open')[0][1]).fsPath).toBe(path.join(repo, 'dir/new.txt'));
 
-		expect(await openFile(repo, 'dir/gone.txt', 'abc123', dataSource)).toBe(t('fileNotInRepo', 'dir/gone.txt'));
+		expect(await openFile(repo, 'dir/gone.txt', 'abc123', renames)).toBe(t('fileNotInRepo', 'dir/gone.txt'));
 		expect(await openFile(repo, 'dir/gone.txt')).toBe(t('fileNotInRepo', 'dir/gone.txt'));
 
 		vscodeMock.responses['executeCommand:vscode.open'] = [new Error('x')];
@@ -296,10 +305,10 @@ describe('the Visual Studio Code command wrappers', () => {
 		vscodeMock.responses['executeCommand:vscode.diff'] = [];
 		vscodeMock.responses['executeCommand:vscode.open'] = [];
 		const hash = '3333333333333333333333333333333333333333';
-		const { dataSource } = fakeDataSource({ getNewPathOfRenamedFile: (filePath) => filePath === 'dir/renamed-from.txt' ? 'dir/new.txt' : null });
+		const renames = fakeRenames({ getNewPathOfRenamedFile: (filePath) => filePath === 'dir/renamed-from.txt' ? 'dir/new.txt' : null });
 		const run = async (filePath: string) => {
 			vscodeMock.resetCalls();
-			expect(await viewDiffWithWorkingFile(repo, hash, filePath, dataSource)).toBe(null);
+			expect(await viewDiffWithWorkingFile(repo, hash, filePath, renames)).toBe(null);
 			return vscodeMock.callsTo('executeCommand:vscode.diff')[0];
 		};
 

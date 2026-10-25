@@ -105,11 +105,11 @@ function stdoutFor(args: string[]): string {
 	}
 }
 
-/** A CommandHost double whose DataSource records the git calls it serves. */
+/** A CommandHost double whose runner records the git calls it serves. */
 function fakeHost(pushStderr: string, pushError: string | null = null) {
 	const gitCalls: Array<{ args: string[], repo: string }> = [];
 	const runCalls: Array<{ args: string[], repo: string }> = [];
-	const dataSource = {
+	const gitRunner = {
 		gitOutput: async (args: string[], _repo: string, map: (stdout: string) => unknown) => map(stdoutFor(args)),
 		gitOutputWithStderr: async (args: string[], repo: string, map: (stdout: string, stderr: string) => unknown) => {
 			gitCalls.push({ args: args, repo: repo });
@@ -124,7 +124,8 @@ function fakeHost(pushStderr: string, pushError: string | null = null) {
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
-		dataSource: dataSource,
+		gitRunner: gitRunner,
+		gerrit: { installHook: async () => ({ error: null, installed: true }) },
 		extensionState: {},
 		logger: { log: () => { }, logError: () => { } },
 		repoManager: {

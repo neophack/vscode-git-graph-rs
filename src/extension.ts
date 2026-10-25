@@ -15,6 +15,7 @@ import { GitProcess } from './extension/git/process/gitProcess';
 import type { GitExecutable } from './extension/git/process/gitProcess';
 import { GitRepository } from './extension/git/gitRepository';
 import type { ProductionGitRepository } from './extension/git/gitRepository';
+import { gerritDataSourceOver } from './extension/integrations/gerrit/gerrit';
 import { createBackend, NativeBackend } from './extension/git/read/backendIndex';
 import type { GitBackend } from './extension/git/read/backendIndex';
 import { GitWriter } from './extension/git/write/gitWriter';
@@ -166,7 +167,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
-	const commandManager = new CommandManager(context, avatarManager, dataSource, repo, gitRunner, legacyViews, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
+	// The Gerrit integration the gerrit commands run (the hook install of `gerritFetchCommitMsgHook`),
+	// over the same runner the view's pipeline uses.
+	const commandGerrit = gerritDataSourceOver(gitRunner);
+
+	const commandManager = new CommandManager(context, avatarManager, repo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
 
 	// Prewarming (task 4.9): 2 s after activation, open engine handles and prefetch the first
 	// page of recently-opened repositories, one at a time. The reader rides the same

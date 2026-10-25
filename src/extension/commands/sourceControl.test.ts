@@ -96,15 +96,19 @@ function fakeHost(upstream: string | null, resetResult: ErrorInfo = null, amendR
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
-		dataSource: {
-			getCurrentBranchUpstream: async () => upstream,
-			resetCurrentBranchToRemote: async (repo: string) => {
-				resets.push(repo);
-				return resetResult;
-			},
-			amendLastCommit: async (repo: string) => {
-				amends.push(repo);
-				return amendResult;
+		repo: {
+			read: { getCurrentBranchUpstream: async () => upstream },
+			write: {
+				policies: { signCommits: false, signTags: false },
+				run: async (_repo: string, op: { steps?: { argv?: string[] }[] }) => {
+					const argv = (op.steps ?? []).map((step) => step.argv ?? []).flat();
+					if (argv.includes('--amend')) {
+						amends.push(argv.join(' '));
+						return amendResult;
+					}
+					resets.push(argv.join(' '));
+					return resetResult;
+				}
 			}
 		},
 		extensionState: {},
@@ -151,7 +155,7 @@ describe('resetCurrentBranchToRemote', () => {
 
 		await resetCurrentBranchToRemote(host, undefined, ui as unknown as UiPort);
 
-		expect(resets).toEqual(['/repo']);
+		expect(resets).toEqual([['reset', '--soft', '@{upstream}'].join(' ')]);
 		expect(vscodeMock.callsTo('showInformationMessage')).toEqual([[t('resetToRemoteDone', 'origin/main')]]);
 	});
 
@@ -170,7 +174,7 @@ describe('amendLastCommit', () => {
 	it('amends the last commit of the repository and confirms, or reports the failure', async () => {
 		const success = fakeHost('origin/main');
 		await amendLastCommit(success.host, undefined);
-		expect(success.amends).toEqual(['/repo']);
+		expect(success.amends).toEqual([['commit', '--amend', '--no-edit'].join(' ')]);
 		expect(vscodeMock.callsTo('showInformationMessage')).toEqual([[t('amendedLastCommit', 'repo')]]);
 
 		vscodeMock.resetCalls();

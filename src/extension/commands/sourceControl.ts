@@ -3,6 +3,7 @@ import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/ac
 import { UiPort } from '../../extension/platform/uiPort';
 import { getRepoName } from '../../utils/paths';
 import { unableToFindGitMsg } from '../../utils/findGit';
+import { amendLastCommit as amendLastCommitOp, resetCurrentBranchToRemote as resetCurrentBranchToRemoteOp } from '../git/write/ops/commits';
 import { resolveRepoFromCommandArg, type CommandHost } from './context';
 
 /**
@@ -27,7 +28,7 @@ export async function amendLastCommit(host: CommandHost, arg: unknown) {
 	const repo = await resolveRepoFromCommandArg(host, arg);
 	if (repo === null) return;
 
-	const errorInfo = await host.dataSource.amendLastCommit(repo);
+	const errorInfo = await host.repo.write.run(repo, amendLastCommitOp({ sign: host.repo.write.policies.signCommits }));
 	if (errorInfo !== null) {
 		showErrorMessage(t('unableToAmendLastCommit', errorInfo));
 	} else {
@@ -52,7 +53,7 @@ export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown
 	const repo = await resolveRepoFromCommandArg(host, arg);
 	if (repo === null) return;
 
-	const upstream = await host.dataSource.getCurrentBranchUpstream(repo);
+	const upstream = await host.repo.read.getCurrentBranchUpstream(repo).catch(() => null);
 	if (upstream === null) {
 		showErrorMessage(t('noUpstreamBranch'));
 		return;
@@ -65,7 +66,7 @@ export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown
 	);
 	if (confirmed !== t('resetToRemoteButton')) return;
 
-	const errorInfo = await host.dataSource.resetCurrentBranchToRemote(repo);
+	const errorInfo = await host.repo.write.run(repo, resetCurrentBranchToRemoteOp());
 	if (errorInfo !== null) {
 		showErrorMessage(t('unableToResetToRemote', errorInfo));
 	} else {

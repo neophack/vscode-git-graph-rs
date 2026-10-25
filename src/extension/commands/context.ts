@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AvatarManager } from '../../avatarManager';
-import { DataSource } from '../../dataSource';
+import type { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../../extensionState';
@@ -22,11 +22,12 @@ import { getPathFromUri, getRepoName } from '../../utils/paths';
 export interface CommandHost {
 	readonly context: vscode.ExtensionContext;
 	readonly avatarManager: AvatarManager;
-	readonly dataSource: DataSource;
-	/** The facade the Git Graph view runs on (the composition root's `GitRepository`). */
+	/** The repository facade: reads on `.read`, writes through the GitWriter (task 3.6). */
 	readonly repo: ProductionGitRepository;
 	/** The view's raw git runner (editor-script flows the ops do not model). */
 	readonly gitRunner: GitRunnerPort;
+	/** The Gerrit integration over the same runner (the `gerritPushRef` command's hook flow). */
+	readonly gerrit: GerritDataSource;
 	/** The auxiliary views the panel hands off to (comparison, binary compare, diff doc). */
 	readonly legacyViews: LegacyViewPort;
 	readonly extensionState: ExtensionState;

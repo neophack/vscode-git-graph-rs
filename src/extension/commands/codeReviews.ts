@@ -117,7 +117,7 @@ function getCodeReviewQuickPickItems(host: CommandHost, codeReviews: CodeReviews
 		});
 	});
 
-	return Promise.all(fetchCommits.map((fetch) => host.dataSource.getCommitSubject(fetch.repo, fetch.commitHash))).then(
+	return Promise.all(fetchCommits.map((fetch) => host.repo.read.getCommitSubject(fetch.repo, fetch.commitHash).catch(() => null))).then(
 		(subjects) => {
 			const commitSubjects: { [repo: string]: { [commitHash: string]: string } } = {};
 			subjects.forEach((subject, i) => {

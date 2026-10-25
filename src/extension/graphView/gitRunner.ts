@@ -15,6 +15,12 @@ import type { GerritChangeState, ErrorInfo } from '../../types';
 export interface GitRunnerPort {
 	/** Spawn Git, resolving the value parsed out of its stdout; rejecting when it fails. */
 	gitOutput<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string) => T): Promise<T>;
+	/**
+	 * Spawn Git, resolving the value parsed out of its combined stdout AND stderr; rejecting when
+	 * it fails. `git push` writes its human-readable report — including a Gerrit change URL — to
+	 * stderr, so callers that mine both streams need this form.
+	 */
+	gitOutputWithStderr<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string, stderr: string) => T): Promise<T>;
 	/** Run a Git command, resolving the legacy `ErrorInfo` (NULL => success). */
 	runGitCommand(args: ReadonlyArray<string>, repo: string): Promise<ErrorInfo>;
 	/** Run a Git command fed a command stream on stdin (e.g. `update-ref --stdin`). */
@@ -60,6 +66,13 @@ export function createGitRunner(process: GitProcess, engine: GitRunnerParseMetas
 			(result) => {
 				if (result.code !== 0) throw commandFailure(result);
 				return resolveValue(result.stdout.toString('utf8'));
+			},
+			(error) => { throw isNoGit(error) ? new Error(t('unableToFindGit')) : new Error(spawnFailure(error)); }
+		),
+		gitOutputWithStderr: <T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string, stderr: string) => T) => process.run(args, { cwd: repo }).then(
+			(result) => {
+				if (result.code !== 0) throw commandFailure(result);
+				return resolveValue(result.stdout.toString('utf8'), result.stderr);
 			},
 			(error) => { throw isNoGit(error) ? new Error(t('unableToFindGit')) : new Error(spawnFailure(error)); }
 		),

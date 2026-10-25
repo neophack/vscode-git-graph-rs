@@ -41,7 +41,7 @@ export async function searchCommits(host: CommandHost, ui: UiPort = uiPort) {
 	if (typeof query !== 'string' || query.trim() === '') return;
 
 	try {
-		const commits = await host.dataSource.searchHistory(repo, query.trim());
+		const commits = await host.repo.read.searchHistory(repo, query.trim());
 		if (commits.length === 0) {
 			showInformationMessage(t('noCommitsFound'));
 			return;

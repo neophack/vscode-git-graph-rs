@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AvatarManager } from '../../avatarManager';
-import { DataSource } from '../../dataSource';
+import type { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../../extensionState';
@@ -33,8 +33,8 @@ import { fetch, filterByFile, view } from './view';
 export class CommandManager extends Disposable implements CommandHost {
 	public readonly context: vscode.ExtensionContext;
 	public readonly avatarManager: AvatarManager;
-	public readonly dataSource: DataSource;
 	public readonly repo: ProductionGitRepository;
+	public readonly gerrit: GerritDataSource;
 	public readonly gitRunner: GitRunnerPort;
 	public readonly legacyViews: LegacyViewPort;
 	public readonly extensionState: ExtensionState;
@@ -46,8 +46,9 @@ export class CommandManager extends Disposable implements CommandHost {
 	 * Creates the Git Graph Command Manager.
 	 * @param extensionPath The absolute file path of the directory containing the extension.
 	 * @param avatarManager The Git Graph AvatarManager instance.
-	 * @param dataSource The Git Graph DataSource instance.
-	 * @param repo The GitRepository facade the Git Graph view runs on.
+	 * @param repo The GitRepository facade the commands read and write through.
+	 * @param gitRunner The view's raw git runner (editor-script flows the ops do not model).
+	 * @param gerrit The Gerrit integration over the same runner.
 	 * @param gitRunner The view's raw git runner (editor-script flows the ops do not model).
 	 * @param legacyViews The auxiliary views the panel hands off to.
 	 * @param extensionState The Git Graph ExtensionState instance.
@@ -57,12 +58,12 @@ export class CommandManager extends Disposable implements CommandHost {
 	 * @param onDidChangeConfiguration The Event emitting Visual Studio Code Configuration Change Events.
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, dataSource: DataSource, repo: ProductionGitRepository, gitRunner: GitRunnerPort, legacyViews: LegacyViewPort, extensionState: ExtensionState, repoManager: RepoManager, gitExecutable: GitExecutable | null, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, repo: ProductionGitRepository, gitRunner: GitRunnerPort, gerrit: GerritDataSource, legacyViews: LegacyViewPort, extensionState: ExtensionState, repoManager: RepoManager, gitExecutable: GitExecutable | null, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
 		super();
 		this.context = context;
 		this.avatarManager = avatarManager;
-		this.dataSource = dataSource;
 		this.repo = repo;
+		this.gerrit = gerrit;
 		this.gitRunner = gitRunner;
 		this.legacyViews = legacyViews;
 		this.extensionState = extensionState;

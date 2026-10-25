@@ -93,6 +93,48 @@ function downloadFile(url: string, redirectsRemaining: number): Promise<Buffer> 
 	});
 }
 
+/** The engine fast paths a shared runner carries, in their array-shaped form. */
+export interface RunnerEngineFastPaths {
+	/** The Rust-engine NoteDb meta parser (array-shaped, one entry per requested change). */
+	parseGerritMetas(repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null): Promise<ReadonlyArray<GerritChangeState | null>>;
+	/** The Rust-engine change-ref scan, as `[refname, hash]` pairs. */
+	listChangeRefs(repo: string, remote: string): Promise<ReadonlyArray<readonly [string, string]>>;
+}
+
+/**
+ * A Gerrit data source over the shared raw runner (the graph view's `GitRunnerPort`, taken
+ * structurally so this module does not depend on `graphView/`): the runner's engine fast paths
+ * answer in array shapes, which the `GitRunner` seam above consumes as Maps, so the two results
+ * are adapted here (REFACTOR-PLAN task 3.6 — the same adaptation the panel performs inline).
+ */
+export function gerritDataSourceOver(runner: {
+	gitOutput: GitRunner['gitOutput'];
+	runGitCommand: GitRunner['runGitCommand'];
+	runGitCommandWithInput: GitRunner['runGitCommandWithInput'];
+	parseGerritMetas: RunnerEngineFastPaths['parseGerritMetas'] | null;
+	listChangeRefs: RunnerEngineFastPaths['listChangeRefs'] | null;
+}): GerritDataSource {
+	const engineMetas = runner.parseGerritMetas;
+	const engineChangeRefs = runner.listChangeRefs;
+	return new GerritDataSource({
+		gitOutput: runner.gitOutput,
+		runGitCommand: runner.runGitCommand,
+		runGitCommandWithInput: runner.runGitCommandWithInput,
+		parseGerritMetas: engineMetas === null ? undefined : async (repo, remote, changes, urlBase) => {
+			const states = await engineMetas(repo, remote, changes, urlBase);
+			const parsed = new Map<number, GerritChangeState | null>();
+			states.forEach((state, index) => parsed.set(changes[index], state));
+			return parsed;
+		},
+		listChangeRefHashes: engineChangeRefs === null ? undefined : async (repo, remote) => {
+			const refs = await engineChangeRefs(repo, remote);
+			const hashes = new Map<string, string>();
+			for (const [ref, hash] of refs) hashes.set(ref, hash);
+			return hashes;
+		}
+	});
+}
+
 export class GerritDataSource {
 	private readonly git: GitRunner;
 	private readonly remoteTimeoutMs: number;

@@ -102,10 +102,12 @@ function fakeHost(repos: { [repo: string]: { name: string } }, commits: Array<{ 
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
-		dataSource: {
-			searchHistory: async (repo: string, query: string) => {
-				searches.push([repo, query]);
-				return commits;
+		repo: {
+			read: {
+				searchHistory: async (repo: string, query: string) => {
+					searches.push([repo, query]);
+					return commits;
+				}
 			}
 		},
 		extensionState: {},
