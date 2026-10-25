@@ -186,11 +186,17 @@ test('deterministic refusal commands assert their captured notifications', () =>
 });
 
 test('command-mode entries execute commands the extension actually contributes', () => {
-	const commandsSource = fs.readFileSync(path.join(rootDir, 'src', 'commands.ts'), 'utf8');
+	// The CommandManager split by command group in task 4.6: the registration sites live under
+	// src/extension/commands/ (the old src/commands.ts is a thin re-export shim).
+	const commandsDir = path.join(rootDir, 'src', 'extension', 'commands');
+	const commandsSource = fs.readdirSync(commandsDir)
+		.filter((entry) => entry.endsWith('.ts'))
+		.map((entry) => fs.readFileSync(path.join(commandsDir, entry), 'utf8'))
+		.join('\n');
 	const registered = new Set([...commandsSource.matchAll(/registerCommand\('([^']+)'/g)].map((m) => m[1]));
 	for (const action of CATALOG) {
 		if (action.vscodeCommand === undefined) continue;
-		assert.ok(registered.has(action.vscodeCommand.command), action.id + ': VS Code command "' + action.vscodeCommand.command + '" is not registered in src/commands.ts');
+		assert.ok(registered.has(action.vscodeCommand.command), action.id + ': VS Code command "' + action.vscodeCommand.command + '" is not registered in src/extension/commands/');
 		assert.ok(['uri', 'rootUri', 'resourceStates', 'diffUri'].includes(action.vscodeCommand.arg?.kind ?? '') || action.vscodeCommand.arg === undefined,
 			action.id + ': unknown command argument kind');
 	}

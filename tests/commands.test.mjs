@@ -1,5 +1,6 @@
 /**
- * The CommandManager (src/commands.ts): every `git-graph-rs.*` command registered with the
+ * The CommandManager (src/extension/commands/, split by group in task 4.6 and re-exported
+ * through the src/commands.ts shim): every `git-graph-rs.*` command registered with the
  * editor, driven through the recording `vscode` stub with hand-rolled DataSource / RepoManager /
  * ExtensionState / AvatarManager doubles. GitGraphView is replaced by a recorder (the real view
  * is covered by the webview harness tests), so each command is checked for the repository it

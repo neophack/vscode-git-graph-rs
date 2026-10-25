@@ -1,10 +1,12 @@
 /**
- * Static contract tests: the pieces that only meet at runtime.
+ * Static contract tests: the pieces that only meet at runtime — here, the contributed icon set.
  *
- * The webview protocol, the command registrations and the contributed icons are three lists that
- * no compiler reconciles — a message type without a handler, a contributed command nothing
- * registers, or an icon path that points at nothing, all fail silently until a user hits them.
- * These tests hold the lists against each other.
+ * The other lists this file used to hold against each other are compiler- or test-guaranteed
+ * since task 4.1/4.2/4.6: the webview request protocol is guaranteed by the compile-time
+ * assertions of src/shared/protocol/graphView.ts (every Request* command equals RequestCommand,
+ * and the exhaustive handler table of src/extension/graphView/handlers/index.ts satisfies it),
+ * and the contributed commands and menus are compared bidirectionally against package.json by
+ * src/extension/commands/registry.test.ts.
  */
 
 import assert from 'node:assert/strict';
@@ -15,111 +17,6 @@ import { describe, it } from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
-
-/* ---------- The webview request protocol ---------- */
-
-describe('the webview message protocol', () => {
-	/**
-	 * Every `Request*` interface in types/messages.ts, paired with the command literal it declares. The
-	 * responses (`Response*`) go the other way and are produced by the extension, so they are not
-	 * expected to appear in the receiving switch.
-	 */
-	function requestCommands() {
-		const types = read('src', 'types', 'messages.ts');
-		const blocks = types.match(/interface\s+Request\w+\s+extends[^{]*\{[\s\S]*?\n\}/g) ?? [];
-		const commands = blocks.flatMap(
-			(block) => [...block.matchAll(/command: '([a-zA-Z]+)'/g)].map((match) => match[1])
-		);
-		assert.ok(commands.length > 50, `expected a full protocol, found only ${commands.length} requests`);
-		return new Set(commands);
-	}
-
-	it('handles every request the webview can send', () => {
-		const requests = requestCommands();
-		const cases = new Set(
-			[...read('src', 'gitGraphView.ts').matchAll(/case '([a-zA-Z]+)':/g)].map((m) => m[1])
-		);
-		assert.deepEqual(
-			[...requests].filter((command) => !cases.has(command)).sort(),
-			[],
-			'these requests would reach the default case and never be answered'
-		);
-	});
-
-	it('handles no message the webview cannot send', () => {
-		const requests = requestCommands();
-		const cases = new Set(
-			[...read('src', 'gitGraphView.ts').matchAll(/case '([a-zA-Z]+)':/g)].map((m) => m[1])
-		);
-		assert.deepEqual(
-			[...cases].filter((command) => !requests.has(command)).sort(),
-			[],
-			'these cases are dead code: no request carries their command'
-		);
-	});
-});
-
-/* ---------- The contributed commands ---------- */
-
-// Commands the AUTOMATION build registers: the default package.json deliberately does not
-// contribute them — scripts/package-with-automation.mjs injects the contribution (button,
-// palette entry, setting) only when packaging that variant, and tests/automationPackaging.test.mjs
-// asserts both package shapes.
-const AUTOMATION_BUILD_COMMANDS = new Set(['git-graph-rs.runAutomationTest']);
-
-describe('the contributed commands', () => {
-	function registeredCommands() {
-		const registered = [
-			...read('src', 'commands.ts').matchAll(/registerCommand\('([^']+)'/g),
-			...read('src', 'extension.ts').matchAll(/registerCommand\('([^']+)'/g)
-		].map((match) => match[1]);
-		return new Set(registered);
-	}
-
-	function contributedCommands() {
-		const pkg = JSON.parse(read('package.json'));
-		return new Set(pkg.contributes.commands.map((command) => command.command));
-	}
-
-	// "registers every command it contributes" and "points every menu entry at an existing
-	// command" used to live here; contributedMenus.test.mjs asserts both with the same (or a
-	// stronger) source set, so they were duplicates.
-	it('contributes every command it registers', () => {
-		const contributed = contributedCommands();
-		assert.deepEqual(
-			[...registeredCommands()].filter((command) => !contributed.has(command) && !AUTOMATION_BUILD_COMMANDS.has(command)).sort(),
-			[],
-			'these commands are implemented but cannot be invoked from the UI'
-		);
-	});
-
-	it('activates on every contributed command', () => {
-		const pkg = JSON.parse(read('package.json'));
-		const activationEvents = pkg.activationEvents.filter((event) => event.startsWith('onCommand:'));
-		assert.ok(activationEvents.length > 0, 'expected command activation events');
-		const contributed = contributedCommands();
-		const activated = new Set(activationEvents.map((event) => event.slice('onCommand:'.length)));
-		assert.deepEqual(
-			[...activated].filter((command) => !contributed.has(command)).sort(),
-			[],
-			'these activation events point at commands that do not exist'
-		);
-
-		// Commands that show in the palette unconditionally need an activation event; the ones
-		// gated by a `when` clause (openFile inside a diff editor) only ever run once the
-		// extension is active already, exactly as in the original extension.
-		const palette = pkg.contributes.menus['commandPalette'] ?? [];
-		const unconditioned = palette
-			.filter((entry) => entry.when === undefined)
-			.map((entry) => entry.command);
-		assert.deepEqual(
-			unconditioned.filter((command) => !activated.has(command)).sort(),
-			[],
-			'these commands are always visible in the palette but would not activate the extension'
-		);
-	});
-
-});
 
 /* ---------- The icon set ---------- */
 
