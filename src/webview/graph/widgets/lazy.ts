@@ -14,13 +14,17 @@
  *   - show() (and the Settings widget's state restore) loads the module and forwards.
  */
 
+import { modifyColourOpacity } from '../../common/util';
 import type * as GG from '../../common/protocol';
 import type { GraphContext } from '../context';
-import type { SettingsWidgetState } from '../state/types';
-import type { ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './surfaces';
+import type { FindWidgetState, SettingsWidgetState } from '../state/types';
+import type { FindWidgetSurface, ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './surfaces';
 
 /** The fallback Settings widget state reported before the module has loaded. */
 const SETTINGS_STATE_DEFAULT: SettingsWidgetState = { currentRepo: null, scrollTop: 0, repoColumnScrollTop: 0, globalColumnScrollTop: 0 };
+
+/** The fallback Find widget state reported before the module has loaded. */
+const FIND_STATE_DEFAULT: FindWidgetState = { text: '', currentHash: null, visible: false };
 
 /**
  * The shared machinery of one lazily loaded widget: the instance appears when the module first
@@ -102,6 +106,78 @@ export class LazySettingsWidget extends LazyWidget<SettingsWidgetSurface> implem
 	public isVisible(): boolean {
 		const w = this.loaded();
 		return w !== null && w.isVisible();
+	}
+}
+
+/** The Find widget, loaded on first use (its chunk also carries its stylesheet). */
+export class LazyFindWidget extends LazyWidget<FindWidgetSurface> implements FindWidgetSurface {
+	private restoredState: FindWidgetState | null = null;
+
+	constructor(getContext: () => GraphContext) {
+		super(() => import('./findWidget').then((m) => new m.FindWidget(getContext)));
+	}
+
+	public show(transition: boolean): void {
+		this.ensureAndCall((w) => w.show(transition));
+	}
+
+	public close(): void {
+		const w = this.loaded();
+		if (w !== null) w.close();
+	}
+
+	public isSearching(): boolean {
+		const w = this.loaded();
+		return w !== null && w.isSearching();
+	}
+
+	public refresh(): void {
+		const w = this.loaded();
+		if (w !== null) w.refresh();
+	}
+
+	/**
+	 * The highlights read two CSS VARIABLES off the body, not widget state: setting them needs no
+	 * module load (and must not trigger one - the theme observers call this at boot).
+	 */
+	public setColour(colour: string): void {
+		document.body.style.setProperty('--git-graph-findMatch', colour);
+		document.body.style.setProperty('--git-graph-findMatchCommit', modifyColourOpacity(colour, 0.5));
+	}
+
+	public getState(): FindWidgetState {
+		const w = this.loaded();
+		if (w !== null) return w.getState();
+		// Not loaded: no query can exist, so the staged restore (or the default) is exactly what
+		// a loaded instance would report.
+		return this.restoredState !== null ? this.restoredState : FIND_STATE_DEFAULT;
+	}
+
+	public getCurrentHash(): string | null {
+		const w = this.loaded();
+		return w !== null ? w.getCurrentHash() : null;
+	}
+
+	public restoreState(state: FindWidgetState): void {
+		this.restoredState = state;
+		const w = this.loaded();
+		if (w !== null) {
+			w.restoreState(state);
+			return;
+		}
+		// A restored state that left the widget VISIBLE must reopen it after a webview reload -
+		// that reopen is the first use, so it triggers the load (warm after the idle prefetch).
+		if (state.visible) this.ensureAndCall((widget) => widget.restoreState(state));
+	}
+
+	public isVisible(): boolean {
+		const w = this.loaded();
+		return w !== null && w.isVisible();
+	}
+
+	public isScanning(): boolean {
+		const w = this.loaded();
+		return w !== null && w.isScanning();
 	}
 }
 

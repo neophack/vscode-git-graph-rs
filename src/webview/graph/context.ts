@@ -25,8 +25,7 @@ import type { WebViewState } from './state/types';
 import type { ConflictBanner } from './widgets/conflictBanner';
 import type { ContextMenu } from './widgets/contextMenu';
 import type { Dialog } from './widgets/dialog';
-import type { FindWidget } from './widgets/findWidget';
-import type { ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './widgets/surfaces';
+import type { FindWidgetSurface, ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './widgets/surfaces';
 
 /** The static skeleton of the view, rendered by the extension host. */
 export interface ViewDom {
@@ -41,13 +40,13 @@ export interface ViewDom {
 }
 
 /**
- * The view's widgets. The Settings widget, Reflog view, Worktree dialog and Statistics view are
- * LAZY (task 5.9): the context holds their facades, which load the real modules through dynamic
- * import() on first use (widgets/lazy.ts) - only the Find widget and the Conflict banner sit in
- * the first-paint bundle with the table, the graph and the control bar.
+ * The view's widgets. The Find widget, the Settings widget, the Reflog view, the Worktree dialog
+ * and the Statistics view are LAZY (task 5.9): the context holds their facades, which load the
+ * real modules through dynamic import() on first use - only the Conflict banner sits in the
+ * first-paint bundle with the table, the graph and the control bar.
  */
 export interface Widgets {
-	readonly find: FindWidget;
+	readonly find: FindWidgetSurface;
 	readonly settings: SettingsWidgetSurface;
 	readonly conflictBanner: ConflictBanner;
 	readonly reflog: ReflogViewSurface;

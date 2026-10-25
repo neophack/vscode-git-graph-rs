@@ -3,10 +3,11 @@
  * wide layout), then the overlay widgets. Bundled into media/out.min.css by scripts/build/webview.mjs.
  *
  * CRITICAL only (task 5.9): this file is the first paint's stylesheet - the table, the graph and
- * the control bar. The Settings widget, Reflog view, Worktree dialog and Statistics view load on
- * demand, and their styles (settingsWidget.css, reflogView.css, worktreeDialog.css,
- * statisticsView.css and the mobile panels rules those overlays share) ride their chunks as text
- * instead of sitting here (see src/webview/common/onDemandStyles.ts). */
+ * the control bar. The Find widget, the Settings widget, the Reflog view, the Worktree dialog and
+ * the Statistics view load on demand, and their styles (findWidget.css, settingsWidget.css,
+ * reflogView.css, worktreeDialog.css, statisticsView.css and the mobile panels rules those
+ * overlays share) ride their chunks as text instead of sitting here
+ * (see src/webview/common/onDemandStyles.ts). */
 
 @import "./tokens.css";
 @import "./base.css";
@@ -28,7 +29,6 @@
 @import "./contextMenu.css";
 @import "./dialog.css";
 @import "./dropdown.css";
-@import "./findWidget.css";
 @import "./mobile/base.css";
 @import "./mobile/appBar.css";
 @import "./mobile/dropdown.css";
@@ -38,4 +38,3 @@
 @import "./mobile/commitDetails.css";
 @import "./mobile/contextMenu.css";
 @import "./mobile/dialog.css";
-@import "./mobile/findWidget.css";
