@@ -5,7 +5,7 @@
 //! parameter parsing. The answer is an envelope: `{"ok": <the method's result>}` or
 //! `{"error": {"kind": "notFound", "message": "…"}}`.
 //!
-//! The one [`protocol!`] table below declares, per method, its wire name, its parameter type,
+//! The one `protocol!` table below declares, per method, its wire name, its parameter type,
 //! its result type and its handler. The same table generates the TypeScript method map
 //! ([`typescript`]), so adding a method here is the whole job: the Node binding forwards any
 //! method unchanged, and the host's types regenerate from `cargo test` (see `tests/protocol.rs`).
@@ -30,9 +30,9 @@ use crate::model::{
     AnnotateParams, AnnotateResult, CommitFile, ConfigSnapshot, GerritChangeState, GitActivityCell,
     GitAuthor, GitAuthorStat, GitCommitData, GitCommitDetails, GitCommitStash, GitCommitSummary,
     GitFileChange, GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo, GitStash,
-    GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot,
+    GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot, ScmChange,
 };
-use crate::read::status::ScmChange;
+use crate::read::status;
 use crate::repository::{Repo, RepoManager};
 
 /// What a handler sees: the repository path the request names, a warm handle on demand, and the
@@ -175,7 +175,7 @@ protocol! {
     /// of the same options attaches the same labels to the same commits.
     "annotate" => Annotate(AnnotateParams) -> AnnotateResult = |ctx, p| crate::read::graph::annotate(&*ctx.repo()?, &p);
     /// The working tree's changes, staged and unstaged halves apart.
-    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::read::status::scm_changes(&*ctx.repo()?, ctx.cancel());
+    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| status::scm_changes(&*ctx.repo()?, ctx.cancel());
     "countUncommittedChanges" => CountUncommittedChanges(UntrackedParams) -> usize = |ctx, p| {
         crate::read::status::count_changes(&*ctx.repo()?, p.include_untracked, ctx.cancel())
     };
@@ -266,6 +266,35 @@ pub fn request(repo_path: &str, request_json: &str) -> String {
 pub fn request_with_id(repo_path: &str, request_json: &str, request_id: u32) -> String {
     let guard = Registry::global().register(request_id);
     answer(repo_path, request_json, guard.token())
+}
+
+/// Cancel the request registered under `request_id` — the out-of-band half of
+/// [`request_with_id`], for a native host (the Node binding above all) whose cancel call arrives
+/// from another thread than the request.
+///
+/// Everything this does is what the binding's `cancel(requestId)` needs: flag the id so the
+/// request's loops unwind at their next checkpoint, or — when the cancellation races ahead of the
+/// request — remember it for the request that later runs under that id. Cancelling an unknown or
+/// finished id affects nothing.
+pub fn cancel(request_id: u32) {
+    Registry::global().cancel(request_id);
+}
+
+/// Drop the cached handle of the repository containing `repo_path` — the Rust-side form of the
+/// protocol's `close` method, for a native host that manages handles without a JSON round trip.
+pub fn close(repo_path: &str) {
+    RepoManager::global().close(repo_path);
+}
+
+/// Drop every cached handle — the Rust-side form of the protocol's `closeAll` method.
+pub fn close_all() {
+    RepoManager::global().close_all();
+}
+
+/// How many repository handles are open — the Rust-side form of the protocol's `openCount`
+/// method, exposed for the binding's tests and diagnostics.
+pub fn open_count() -> usize {
+    RepoManager::global().open_count()
 }
 
 fn answer(repo_path: &str, request_json: &str, cancel: Cancel) -> String {

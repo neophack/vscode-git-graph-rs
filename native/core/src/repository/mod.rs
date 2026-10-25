@@ -36,13 +36,6 @@ impl Repo {
             .map_err(|e| Error::not_a_repository(format!("{}: {e}", path.display())))?;
         Repo::from_gix(repo)
     }
-    /// Open the repository rooted exactly at `path`, without searching upwards.
-    pub fn open(path: impl AsRef<Path>) -> Result<Repo> {
-        let path = path.as_ref();
-        let repo = gix::open(path)
-            .map_err(|e| Error::not_a_repository(format!("{}: {e}", path.display())))?;
-        Repo::from_gix(repo)
-    }
 
     fn from_gix(repo: gix::Repository) -> Result<Repo> {
         let git_dir = repo.git_dir().to_path_buf();

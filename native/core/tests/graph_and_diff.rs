@@ -3,16 +3,17 @@
 #[macro_use]
 mod common;
 
-use git_graph_core::cancel::Cancel;
-
-use git_graph_core::model::{GitFileStatus, LogOptions, RefReadOptions, UNCOMMITTED};
-use git_graph_core::read::{details, diff, graph, stash, status};
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::Engine;
+use git_graph_core::model::{
+    GitCommitData, GitCommitDetails, GitCommitStash, GitFileChange, GitFileStatus, GitLineCounts,
+    LogOptions, RefOptions, UNCOMMITTED,
+};
+use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 
-fn open(repo: &TestRepo) -> Repo {
-    Repo::discover(repo.path()).expect("could not open the fixture repository")
+fn open(repo: &TestRepo) -> Engine {
+    Engine::open(repo.path()).expect("could not open the fixture repository")
 }
 
 /// The options a default view load sends.
@@ -27,6 +28,69 @@ fn view_options(max_commits: u32) -> LogOptions {
     }
 }
 
+/// One page of the graph, through the request the view itself sends.
+fn load(repo: &TestRepo, options: &LogOptions) -> GitCommitData {
+    common::ask(repo, "loadCommits", options)
+}
+
+/// The `+N/-M` counts of paths between a revision and its first parent (or an explicit `from`).
+fn line_counts(
+    repo: &TestRepo,
+    from: Option<&str>,
+    to: &str,
+    paths: &[String],
+) -> std::collections::BTreeMap<String, GitLineCounts> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        from: Option<&'a str>,
+        to: &'a str,
+        paths: &'a [String],
+    }
+    common::ask(repo, "lineCounts", Params { from, to, paths })
+}
+
+/// How many uncommitted changes there are, as the "Uncommitted Changes (N)" row counts them.
+fn count_changes(repo: &TestRepo, include_untracked: bool) -> usize {
+    common::ask(
+        repo,
+        "countUncommittedChanges",
+        serde_json::json!({ "includeUntracked": include_untracked }),
+    )
+}
+
+/// The uncommitted file changes, staged and unstaged together.
+fn uncommitted_changes(repo: &TestRepo) -> Vec<GitFileChange> {
+    let details: GitCommitDetails = common::ask(repo, "uncommittedDetails", serde_json::json!({}));
+    details.file_changes
+}
+
+/// The details of one stash entry, through the request the stash dialogue sends.
+fn stash_details(repo: &TestRepo, stash: &GitCommitStash, hash: &str) -> GitCommitDetails {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        hash: &'a str,
+        stash: &'a GitCommitStash,
+    }
+    common::ask(repo, "stashDetails", Params { hash, stash })
+}
+
+/// The paths the working tree scan reports as deleted (either half) and as untracked.
+fn deleted_and_untracked(engine: &Engine) -> (Vec<String>, Vec<String>) {
+    let mut deleted = Vec::new();
+    let mut untracked = Vec::new();
+    for change in engine.status().unwrap() {
+        if change.staged == Some("deleted") || change.unstaged == Some("deleted") {
+            deleted.push(change.path.clone());
+        }
+        if change.untracked {
+            untracked.push(change.path);
+        }
+    }
+    (deleted, untracked)
+}
+
 #[test]
 fn assembles_a_graph_with_its_branch_and_tag_labels() {
     require_git!();
@@ -36,8 +100,7 @@ fn assembles_a_graph_with_its_branch_and_tag_labels() {
     repo.git(&["checkout", "--quiet", "-b", "feature"]);
     let second = repo.commit_file("b.txt", "2", "second");
 
-    let engine = open(&repo);
-    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(100));
 
     assert_eq!(data.head.as_deref(), Some(second.as_str()));
     assert!(!data.more_commits_available);
@@ -61,9 +124,7 @@ fn reports_when_more_commits_are_available() {
         repo.commit_file("a.txt", &index.to_string(), &format!("commit {index}"));
     }
 
-    let engine = open(&repo);
-
-    let data = graph::load_commits(&engine, &view_options(4), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(4));
     assert_eq!(
         data.commits.len(),
         4,
@@ -71,7 +132,7 @@ fn reports_when_more_commits_are_available() {
     );
     assert!(data.more_commits_available);
 
-    let data = graph::load_commits(&engine, &view_options(50), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(50));
     assert_eq!(data.commits.len(), 10);
     assert!(!data.more_commits_available);
 }
@@ -92,14 +153,13 @@ fn keeps_the_injected_gerrit_change_commits_on_the_page() {
     repo.git(&["branch", "--quiet", "-D", "change"]);
     repo.update_ref("refs/remotes/origin/changes/45/12345/1", &patchset);
 
-    let engine = open(&repo);
     let change_ref = "refs/remotes/origin/changes/45/12345/1".to_string();
 
     // A page of 4 holds the 4 newest branch commits: the change's patchset is older than all of
     // them, so the page cut would drop it — and with it the badge the fetch limit promised
     let mut options = view_options(4);
     options.gerrit_refs = Some(vec![change_ref.clone()]);
-    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let data = load(&repo, &options);
     assert!(data.more_commits_available);
     let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
     assert_eq!(
@@ -116,7 +176,7 @@ fn keeps_the_injected_gerrit_change_commits_on_the_page() {
     // A page holding the change's patchset anyway neither duplicates nor moves it
     let mut options = view_options(50);
     options.gerrit_refs = Some(vec![change_ref]);
-    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let data = load(&repo, &options);
     let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
     assert_eq!(hashes.len(), 12);
     assert_eq!(hashes.iter().filter(|h| **h == patchset).count(), 1);
@@ -130,12 +190,11 @@ fn declines_graphs_that_include_reflog_commits() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "first", "first");
 
-    let engine = open(&repo);
     let mut options = view_options(100);
     options.include_commits_mentioned_by_reflogs = true;
 
-    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
-    assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
+    let error = common::ask_error(&repo, "loadCommits", &options);
+    assert_eq!(error.kind, ErrorKind::Unsupported);
 }
 
 #[test]
@@ -144,12 +203,11 @@ fn allows_branch_filtered_graphs_with_reflog_option() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "first", "first");
 
-    let engine = open(&repo);
     let mut options = view_options(100);
     options.branches = Some(vec!["main".to_string()]);
     options.include_commits_mentioned_by_reflogs = true;
 
-    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let data = load(&repo, &options);
     assert_eq!(data.commits.len(), 1);
 }
 
@@ -159,30 +217,25 @@ fn declines_mailmapped_graphs_only_when_a_mailmap_exists() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "first", "first");
 
-    let engine = open(&repo);
-
     // The option alone changes nothing: without a `.mailmap` there is nothing to apply, so the
     // page is served exactly as it is without it.
     let mut options = view_options(100);
     options.use_mailmap = true;
-    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let data = load(&repo, &options);
     assert_eq!(
         data.commits.len(),
-        graph::load_commits(&engine, &view_options(100), Cancel::none())
-            .unwrap()
-            .commits
-            .len()
+        load(&repo, &view_options(100)).commits.len()
     );
 
     repo.write(
         ".mailmap",
         "Proper Name <proper@example.com> <first@example.com>\n",
     );
-    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
-    assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
+    let error = common::ask_error(&repo, "loadCommits", &options);
+    assert_eq!(error.kind, ErrorKind::Unsupported);
 
     // Without the option the engine serves the graph, as it always has.
-    graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
+    load(&repo, &view_options(100));
 }
 
 #[test]
@@ -191,16 +244,14 @@ fn adds_an_uncommitted_changes_row_above_head() {
     let mut repo = TestRepo::new();
     let head = repo.commit_file("a.txt", "1", "first");
 
-    let engine = open(&repo);
-
     // Nothing uncommitted: no row.
-    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(100));
     assert!(data.commits.iter().all(|commit| commit.hash != UNCOMMITTED));
 
     repo.write("a.txt", "changed");
     repo.write("untracked.txt", "new");
 
-    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(100));
     let row = &data.commits[0];
     assert_eq!(row.hash, UNCOMMITTED);
     assert_eq!(row.message, "Uncommitted Changes (2)");
@@ -215,12 +266,11 @@ fn skips_the_uncommitted_row_when_the_view_defers_it() {
     repo.commit_file("a.txt", "1", "first");
     repo.write("a.txt", "changed");
 
-    let engine = open(&repo);
     let options = LogOptions {
         defer_uncommitted_changes: true,
         ..view_options(100)
     };
-    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let data = load(&repo, &options);
 
     // Deferring lets the graph render before the working tree has been scanned.
     assert!(data.commits.iter().all(|commit| commit.hash != UNCOMMITTED));
@@ -239,24 +289,17 @@ fn counts_uncommitted_changes_the_way_git_status_does() {
     repo.write("d.txt", "staged");
     repo.git(&["add", "d.txt"]);
 
-    let engine = open(&repo);
     let expected = repo
         .git(&["status", "--porcelain", "--untracked-files=all"])
         .lines()
         .count();
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        expected
-    );
+    assert_eq!(count_changes(&repo, true), expected);
 
     let expected_no_untracked = repo
         .git(&["status", "--porcelain", "--untracked-files=no"])
         .lines()
         .count();
-    assert_eq!(
-        status::count_changes(&engine, false, Cancel::none()).unwrap(),
-        expected_no_untracked
-    );
+    assert_eq!(count_changes(&repo, false), expected_no_untracked);
 }
 
 #[test]
@@ -281,17 +324,13 @@ fn reports_a_dirty_submodule_as_a_modification() {
     // this is exactly what gix's `SubmoduleModification` status entry covers.
     repo.write("sub/s.txt", "changed");
 
-    let engine = open(&repo);
     let expected = repo
         .git(&["status", "--porcelain", "--untracked-files=all"])
         .lines()
         .count();
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        expected
-    );
+    assert_eq!(count_changes(&repo, true), expected);
 
-    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
+    let changes = uncommitted_changes(&repo);
     let submodule_change = changes
         .iter()
         .find(|change| change.new_file_path == "sub")
@@ -309,10 +348,10 @@ fn reports_the_untracked_and_deleted_files() {
     repo.write("c.txt", "untracked");
 
     let engine = open(&repo);
-    let files = status::status_files(&engine, true, Cancel::none()).unwrap();
+    let (deleted, untracked) = deleted_and_untracked(&engine);
 
-    assert_eq!(files.deleted, vec!["b.txt"]);
-    assert_eq!(files.untracked, vec!["c.txt"]);
+    assert_eq!(deleted, vec!["b.txt"]);
+    assert_eq!(untracked, vec!["c.txt"]);
 }
 
 #[test]
@@ -328,7 +367,7 @@ fn lists_the_files_a_commit_changed() {
     let hash = repo.commit("third");
 
     let engine = open(&repo);
-    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    let changes = engine.commit_files(&hash).unwrap();
 
     let by_path = |path: &str| {
         changes
@@ -348,13 +387,7 @@ fn lists_the_files_a_commit_changed() {
     assert_eq!(modified.deletions, None);
 
     // The deferred counts of a subset of paths, as the view asks for them.
-    let counts = diff::line_counts(
-        &engine,
-        None,
-        &hash,
-        &["keep.txt".into(), "added.txt".into()],
-    )
-    .unwrap();
+    let counts = line_counts(&repo, None, &hash, &["keep.txt".into(), "added.txt".into()]);
     assert_eq!(counts.len(), 2, "only the asked-for paths are settled");
     let keep = counts.get("keep.txt").copied().unwrap_or_default();
     assert_eq!(keep.additions, Some(1));
@@ -373,17 +406,16 @@ fn counts_only_the_paths_asked_for() {
     repo.write("b.bin", "\u{0}\u{1}\u{2}\n");
     let second = repo.commit("second");
 
-    let engine = open(&repo);
     // An explicit `from` is the comparison-view spelling; the binary file reports null counts,
     // exactly as `git diff --numstat` prints a dash for it.
-    let counts = diff::line_counts(&engine, Some(&first), &second, &["b.bin".into()]).unwrap();
+    let counts = line_counts(&repo, Some(&first), &second, &["b.bin".into()]);
     assert_eq!(counts.len(), 1);
     let binary = counts.get("b.bin").copied().unwrap_or_default();
     assert_eq!(binary.additions, None);
     assert_eq!(binary.deletions, None);
 
     // A path the diff does not touch simply does not appear.
-    let counts = diff::line_counts(&engine, None, &second, &["not-there.txt".into()]).unwrap();
+    let counts = line_counts(&repo, None, &second, &["not-there.txt".into()]);
     assert!(counts.is_empty());
 }
 
@@ -398,16 +430,16 @@ fn settles_the_line_counts_of_a_stash_against_its_base() {
     let stash_hash = repo.rev_parse("refs/stash");
 
     let engine = open(&repo);
-    let stashes = stash::read_stashes(&engine).unwrap();
+    let stashes = engine.stashes().unwrap();
     assert_eq!(stashes[0].base_hash, base);
 
     // The stash's own file list arrives as statuses only, like every other details load.
-    let commit_stash = git_graph_core::model::GitCommitStash {
+    let commit_stash = GitCommitStash {
         selector: stashes[0].selector.clone(),
         base_hash: stashes[0].base_hash.clone(),
         untracked_files_hash: None,
     };
-    let details = details::stash_details(&engine, &stashes[0].hash, &commit_stash).unwrap();
+    let details = stash_details(&repo, &commit_stash, &stashes[0].hash);
     let modified = details
         .file_changes
         .iter()
@@ -419,13 +451,12 @@ fn settles_the_line_counts_of_a_stash_against_its_base() {
 
     // The stash spelling of the deferred counts: `from` is the commit the stash was taken from,
     // not the stash commit's own first parent.
-    let counts = diff::line_counts(
-        &engine,
+    let counts = line_counts(
+        &repo,
         Some(&stashes[0].base_hash),
         &stash_hash,
         &["a.txt".into()],
-    )
-    .unwrap();
+    );
     assert_eq!(counts.len(), 1);
     let settled = counts.get("a.txt").copied().unwrap_or_default();
     assert_eq!(settled.additions, Some(1));
@@ -449,14 +480,12 @@ fn counts_the_files_under_a_renamed_directory() {
     );
     let hash = repo.commit("move the folder");
 
-    let engine = open(&repo);
-    let counts = diff::line_counts(
-        &engine,
+    let counts = line_counts(
+        &repo,
         None,
         &hash,
         &["new/guide.txt".into(), "new/notes.txt".into()],
-    )
-    .unwrap();
+    );
     assert_eq!(counts.len(), 2, "both moved files are settled: {counts:?}");
     let guide = counts.get("new/guide.txt").copied().unwrap_or_default();
     assert_eq!(guide.additions, Some(0));
@@ -467,13 +496,12 @@ fn counts_the_files_under_a_renamed_directory() {
 
     // The pre-move paths are consumed by the renames, and the directory itself — which the
     // rewrite tracker also pairs — settles nothing.
-    let none = diff::line_counts(
-        &engine,
+    let none = line_counts(
+        &repo,
         None,
         &hash,
         &["old/guide.txt".into(), "old/notes.txt".into(), "new".into()],
-    )
-    .unwrap();
+    );
     assert!(
         none.is_empty(),
         "nothing but the new paths are settled: {none:?}"
@@ -490,7 +518,7 @@ fn reports_statuses_only_against_the_working_tree() {
     repo.write("c.txt", "uncommitted\n");
 
     let engine = open(&repo);
-    let changes = diff::diff_revisions(&engine, &first, UNCOMMITTED).unwrap();
+    let changes = engine.diff(&first, UNCOMMITTED).unwrap();
 
     // Counting a worktree-touched file means hashing the file on disk, so a comparison against
     // the working tree reports no counts at all rather than exact ones beside uncounted ones.
@@ -526,7 +554,7 @@ fn drops_a_type_change_like_the_cli_filter_does() {
     let hash = repo.head();
 
     let engine = open(&repo);
-    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    let changes = engine.commit_files(&hash).unwrap();
     assert!(
         !changes
             .iter()
@@ -546,7 +574,7 @@ fn detects_renames() {
     let hash = repo.commit("rename it");
 
     let engine = open(&repo);
-    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    let changes = engine.commit_files(&hash).unwrap();
 
     assert_eq!(
         changes.len(),
@@ -568,8 +596,7 @@ fn detects_a_staged_but_uncommitted_rename() {
     // `git mv` both renames on disk and stages the rename - nothing is committed.
     repo.git(&["mv", "original.txt", "renamed.txt"]);
 
-    let engine = open(&repo);
-    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
+    let changes = uncommitted_changes(&repo);
 
     assert_eq!(
         changes.len(),
@@ -593,7 +620,7 @@ fn does_not_list_a_renamed_directory_as_a_file() {
     let hash = repo.commit("rename the folder");
 
     let engine = open(&repo);
-    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    let changes = engine.commit_files(&hash).unwrap();
 
     // The rewrite tracker pairs the deleted `old` tree with the added `new` tree as a rewrite of
     // the directory itself, and a directory path in the list would collide with the entries under
@@ -623,7 +650,7 @@ fn shows_the_first_commit_as_adding_its_files() {
     let hash = repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let changes = diff::diff_commit(&engine, &hash).unwrap();
+    let changes = engine.commit_files(&hash).unwrap();
 
     // A root commit has no parent, so it is compared against the empty tree.
     assert_eq!(changes.len(), 1);
@@ -638,7 +665,7 @@ fn reads_the_full_commit_message_and_both_signatures() {
     let hash = repo.commit_file("a.txt", "1", "the subject\n\nthe body goes here");
 
     let engine = open(&repo);
-    let details = details::commit_details(&engine, &hash).unwrap();
+    let details = engine.commit(&hash).unwrap();
 
     assert_eq!(details.hash, hash);
     assert_eq!(details.author, "Test User");
@@ -663,7 +690,7 @@ fn reads_stashes_with_their_selectors_and_base_commits() {
     repo.git(&["stash", "push", "--quiet", "-m", "second stash"]);
 
     let engine = open(&repo);
-    let stashes = stash::read_stashes(&engine).unwrap();
+    let stashes = engine.stashes().unwrap();
 
     assert_eq!(stashes.len(), 2);
     // Newest first, as `git stash list` reports them.
@@ -690,7 +717,7 @@ fn records_the_untracked_files_of_a_stash_taken_with_them() {
     ]);
 
     let engine = open(&repo);
-    let stashes = stash::read_stashes(&engine).unwrap();
+    let stashes = engine.stashes().unwrap();
 
     assert_eq!(stashes.len(), 1);
     let untracked_hash = stashes[0]
@@ -699,12 +726,12 @@ fn records_the_untracked_files_of_a_stash_taken_with_them() {
         .expect("the third parent recording the untracked files is missing");
 
     // The untracked file is listed as untracked, not as an addition.
-    let commit_stash = git_graph_core::model::GitCommitStash {
+    let commit_stash = GitCommitStash {
         selector: stashes[0].selector.clone(),
         base_hash: stashes[0].base_hash.clone(),
         untracked_files_hash: Some(untracked_hash),
     };
-    let details = details::stash_details(&engine, &stashes[0].hash, &commit_stash).unwrap();
+    let details = stash_details(&repo, &commit_stash, &stashes[0].hash);
     let untracked = details
         .file_changes
         .iter()
@@ -721,8 +748,7 @@ fn hangs_a_stash_row_off_the_commit_it_was_taken_from() {
     repo.write("a.txt", "stashed");
     repo.git(&["stash", "push", "--quiet", "-m", "the stash"]);
 
-    let engine = open(&repo);
-    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
+    let data = load(&repo, &view_options(100));
 
     // The stash commit is not reachable from any branch, so it only appears because the graph
     // splices it in above its base commit.
@@ -749,12 +775,11 @@ fn reports_the_repository_info_the_view_opens_with() {
     repo.git(&["tag", "v1.0"]);
     repo.add_fake_remote("origin", "main", &head);
 
-    let engine = open(&repo);
-    let options = RefReadOptions {
+    let options = RefOptions {
         show_remote_branches: true,
         ..Default::default()
     };
-    let info = graph::repo_info(&engine, &options, true).unwrap();
+    let info: git_graph_core::model::GitRepoInfo = common::ask(&repo, "loadRepoInfo", &options);
 
     assert_eq!(info.head.as_deref(), Some("main"));
     assert_eq!(info.remotes, vec!["origin"]);
@@ -773,7 +798,7 @@ fn compares_two_commits() {
     let third = repo.commit_file("c.txt", "three\n", "third");
 
     let engine = open(&repo);
-    let changes = diff::diff_revisions(&engine, &first, &third).unwrap();
+    let changes = engine.diff(&first, &third).unwrap();
 
     let mut paths: Vec<&str> = changes.iter().map(|c| c.new_file_path.as_str()).collect();
     paths.sort();
@@ -792,31 +817,12 @@ fn compares_a_commit_against_the_working_tree() {
     repo.write("c.txt", "uncommitted\n");
 
     let engine = open(&repo);
-    let changes = diff::diff_revisions(&engine, &first, UNCOMMITTED).unwrap();
+    let changes = engine.diff(&first, UNCOMMITTED).unwrap();
 
     let mut paths: Vec<&str> = changes.iter().map(|c| c.new_file_path.as_str()).collect();
     paths.sort();
     // Both the committed change and the untracked file are part of the difference.
     assert_eq!(paths, vec!["b.txt", "c.txt"]);
-}
-
-#[test]
-fn keeps_repository_handles_open_across_requests() {
-    require_git!();
-    let mut repo = TestRepo::new();
-    repo.commit_file("a.txt", "1", "first");
-
-    let manager = git_graph_core::repository::RepoManager::new();
-    let first = manager.get(repo.path()).unwrap();
-    let second = manager.get(repo.path()).unwrap();
-
-    // The whole point of the manager: the second request reuses the warm handle rather than
-    // re-reading the pack indexes.
-    assert_eq!(manager.open_count(), 1);
-    assert!(std::sync::Arc::ptr_eq(&first, &second));
-
-    manager.close(repo.path());
-    assert_eq!(manager.open_count(), 0);
 }
 
 #[test]
@@ -834,7 +840,7 @@ fn flags_the_unmerged_paths_of_a_stopped_merge() {
     repo.git_allow_failure(&["merge", "feature"]);
 
     let engine = open(&repo);
-    let changes = status::scm_changes(&engine, Cancel::none()).unwrap();
+    let changes = engine.status().unwrap();
     let by_path = |path: &str| {
         changes
             .iter()

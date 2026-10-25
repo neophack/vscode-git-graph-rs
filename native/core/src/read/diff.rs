@@ -13,7 +13,7 @@ use bstr::ByteSlice;
 
 use crate::cancel::Cancel;
 use crate::error::{Error, Result, ResultExt};
-use crate::model::{GitFileChange, GitFileStatus, GitLineCounts, GitStatusFiles, UNCOMMITTED};
+use crate::model::{GitFileChange, GitFileStatus, GitLineCounts, UNCOMMITTED};
 use crate::repository::Repo;
 
 /// The similarity below which two files are no longer considered a rename. Matches git's default
@@ -176,37 +176,6 @@ fn layer_uncommitted(changes: &mut Vec<GitFileChange>, change: GitFileChange) {
         // Deleted since the revision, then added back to the index: the path exists on both sides.
         (GitFileStatus::Deleted, _) => existing.kind = GitFileStatus::Modified,
         (_, kind) => existing.kind = kind,
-    }
-}
-
-/// Layer the untracked and deleted files of the working tree onto a diff.
-///
-/// A file deleted in the working tree but still in the index shows as deleted rather than
-/// unchanged, and untracked files are appended — neither is visible to a tree-to-tree diff.
-pub fn apply_worktree_status(changes: &mut Vec<GitFileChange>, status: &GitStatusFiles) {
-    for path in &status.deleted {
-        match changes
-            .iter_mut()
-            .find(|change| &change.new_file_path == path)
-        {
-            Some(change) => change.kind = GitFileStatus::Deleted,
-            None => changes.push(GitFileChange {
-                old_file_path: path.clone(),
-                new_file_path: path.clone(),
-                kind: GitFileStatus::Deleted,
-                additions: None,
-                deletions: None,
-            }),
-        }
-    }
-    for path in &status.untracked {
-        changes.push(GitFileChange {
-            old_file_path: path.clone(),
-            new_file_path: path.clone(),
-            kind: GitFileStatus::Untracked,
-            additions: None,
-            deletions: None,
-        });
     }
 }
 

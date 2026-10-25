@@ -24,7 +24,7 @@
 //!   (commit, push, checkout, …) are the host's business, through the git CLI or its own code.
 //! - **Plain data in, plain data out.** Every result type derives `Serialize`, so it can cross
 //!   any boundary (JSON over IPC, NAPI, a Tauri command) unchanged.
-//! - **Warm handles.** [`Engine::open`] goes through the process-wide [`RepoManager`], so opening
+//! - **Warm handles.** [`Engine::open`] goes through the process-wide handle cache, so opening
 //!   the same repository twice shares one parsed object database and one ref cache.
 //! - **Every call is safe to run from any thread**; the engine takes care of its own locking.
 
@@ -37,9 +37,8 @@ use crate::error::Result;
 use crate::model::{
     CommitFile, CommitOrdering, ConfigSnapshot, GitActivityCell, GitAuthor, GitAuthorStat,
     GitCommitData, GitCommitDetails, GitFileChange, GitHistoryMatch, GitRepoInfo, GitStash,
-    GitTagDetails, LogOptions, RefReadOptions, RefSnapshot,
+    GitTagDetails, GitViewData, LogOptions, RefReadOptions, RefSnapshot, ScmChange,
 };
-use crate::read::status::ScmChange;
 use crate::repository::{Repo, RepoManager};
 use serde::Deserialize;
 
@@ -124,7 +123,7 @@ pub const WORKING_TREE: &str = crate::model::UNCOMMITTED;
 pub const INDEX: &str = ":index";
 
 /// One open repository. Cheap to clone (it is a handle); drop it when done, or keep it for the
-/// session - the underlying repository stays warm in the [`RepoManager`] either way.
+/// session - the underlying repository stays warm in the handle cache either way.
 #[derive(Clone)]
 pub struct Engine {
     repo: Arc<Repo>,
@@ -154,11 +153,6 @@ impl Engine {
         self.repo.is_bare()
     }
 
-    /// The underlying handle, for callers that need the module-level functions directly.
-    pub fn repo(&self) -> &Repo {
-        &self.repo
-    }
-
     /// Forget the cached handle of this repository (after it was deleted or moved on disk).
     pub fn close(self) {
         RepoManager::global().close(self.repo.root());
@@ -180,6 +174,13 @@ impl Engine {
             &options.to_log_options(remotes),
             Cancel::none(),
         )
+    }
+
+    /// The view's opening load — the dropdown data and the first page of the graph from one ref
+    /// scan, where [`Engine::info`] followed by [`Engine::graph`] would scan the refs twice.
+    pub fn view(&self, options: &GraphOptions) -> Result<GitViewData> {
+        let remotes = self.repo.remote_names();
+        crate::read::graph::load_view(&self.repo, &options.to_log_options(remotes), Cancel::none())
     }
 
     /// Every ref the graph annotates commits with, plus the branch and tag name lists.
@@ -267,7 +268,8 @@ impl Engine {
     }
 
     /// Whether anything in the tracked files is uncommitted (a cheaper question than
-    /// [`Engine::status`]; untracked files do not count — see [`crate::read::status::is_dirty`]).
+    /// [`Engine::status`]; untracked files do not count — a caller that must see untracked-only
+    /// repositories as dirty wants [`Engine::status`] instead).
     pub fn is_dirty(&self) -> Result<bool> {
         crate::read::status::is_dirty(&self.repo)
     }

@@ -9,8 +9,8 @@
 #[macro_use]
 mod common;
 
+use git_graph_core::engine::Engine;
 use git_graph_core::error::ErrorKind;
-use git_graph_core::repository::Repo;
 
 use std::process::Command;
 
@@ -42,7 +42,7 @@ fn a_reftable_repository_is_declined_as_unsupported() {
     let head = repo.rev_parse("refs/heads/main");
     assert_eq!(head, repo.head());
 
-    let error = match Repo::discover(repo.path()) {
+    let error = match Engine::open(repo.path()) {
         Err(error) => error,
         Ok(_) => {
             panic!("the engine must decline a reftable repository instead of showing it empty")
@@ -59,5 +59,5 @@ fn a_files_repository_is_not_mistaken_for_reftable() {
 
     // A plain files-backend repository opens exactly as before, including one with packed refs.
     repo.git(&["pack-refs", "--all"]);
-    Repo::discover(repo.path()).expect("a files repository must still open");
+    Engine::open(repo.path()).expect("a files repository must still open");
 }

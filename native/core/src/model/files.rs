@@ -49,8 +49,19 @@ pub struct CommitFile {
     pub binary: bool,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct GitStatusFiles {
-    pub deleted: Vec<String>,
-    pub untracked: Vec<String>,
+/// One path as the Source Control view lists it: the staged and unstaged halves of its change
+/// kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ScmChange {
+    pub path: String,
+    pub old_path: Option<String>,
+    #[ts(type = "string | null")]
+    pub staged: Option<&'static str>,
+    #[ts(type = "string | null")]
+    pub unstaged: Option<&'static str>,
+    pub untracked: bool,
+    /// The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control
+    /// view lists it under "Merge Changes" and opens it in the merge editor.
+    pub conflicted: bool,
 }

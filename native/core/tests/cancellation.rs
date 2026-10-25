@@ -13,9 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use common::TestRepo;
-use git_graph_core::cancel::Registry;
 use git_graph_core::protocol;
-use git_graph_core::read::incremental;
+use git_graph_core::IncrementalStore;
 use serde_json::Value;
 
 /// These tests share the process-global registries (repository handles, cancellation ids) with
@@ -75,7 +74,7 @@ where
     let worker = thread::spawn(move || request().into());
     thread::sleep(delay);
     let cancelled_at = Instant::now();
-    Registry::global().cancel(id);
+    protocol::cancel(id);
     let reply = worker.join().expect("the request thread panicked");
     (reply, cancelled_at.elapsed())
 }
@@ -139,8 +138,7 @@ fn a_cancelled_request_reissues_identically_and_the_id_is_reusable() {
     // refs is answered from that cache in milliseconds and legitimately completes before any
     // cancellation could arrive. This test's subject is cancelling a real walk, so the cached
     // traversal is dropped first.
-    incremental::Store::global().invalidate(repo.path());
-
+    IncrementalStore::global().invalidate(repo.path());
     // Cancel a run of the same request under id 202, then re-issue it under the SAME id — the
     // registry must not still carry the cancellation, or the id would be unusable.
     let (reply, _) = cancel_while_running(
@@ -182,7 +180,7 @@ fn a_cancellation_ahead_of_its_request_is_honored_and_a_stray_one_harms_nothing(
 
     // Cancelling an id no request carries is remembered for the request that later runs under
     // it: the host scheduler's "cancel, then issue" ordering must not run unwanted work.
-    Registry::global().cancel(3000);
+    protocol::cancel(3000);
     let reply = ask_cancellable(&repo, "loadCommits", params.clone(), 3000);
     assert_eq!(error_kind(&reply), "cancelled");
 

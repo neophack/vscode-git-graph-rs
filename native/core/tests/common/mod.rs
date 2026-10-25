@@ -240,3 +240,79 @@ macro_rules! require_git {
 pub fn repo_root(repo: &TestRepo) -> PathBuf {
     repo.path().to_path_buf()
 }
+
+/* ---------- Protocol helpers ----------
+The integration tests drive the engine through its public surface — `Engine` and the request
+protocol — exactly as an outside integration would; these helpers send one protocol request
+against a fixture and decode the typed answer (or the structured error) back out of the
+envelope. */
+
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+/// The `ok` answer of one protocol request against `repo`, decoded into `T`.
+pub fn ask<T: DeserializeOwned>(repo: &TestRepo, method: &str, params: impl Serialize) -> T {
+    ask_at::<T>(repo.path().to_str().unwrap(), method, params)
+}
+
+/// [`ask`], against an arbitrary path inside a repository (a sub-directory, a bare clone, …).
+pub fn ask_at<T: DeserializeOwned>(repo_path: &str, method: &str, params: impl Serialize) -> T {
+    let answer = ask_value_at(repo_path, method, params);
+    serde_json::from_value(answer).unwrap_or_else(|error| {
+        panic!(
+            "{method}: could not decode the answer as {}: {error}",
+            type_name::<T>()
+        )
+    })
+}
+
+/// The `ok` answer of one protocol request as raw JSON.
+pub fn ask_value(repo: &TestRepo, method: &str, params: impl Serialize) -> serde_json::Value {
+    ask_value_at(repo.path().to_str().unwrap(), method, params)
+}
+
+fn ask_value_at(repo_path: &str, method: &str, params: impl Serialize) -> serde_json::Value {
+    let request = serde_json::json!({
+        "method": method,
+        "params": serde_json::to_value(&params).expect("the parameters serialise"),
+    });
+    let answer = git_graph_core::protocol::request(repo_path, &request.to_string());
+    let answer: serde_json::Value =
+        serde_json::from_str(&answer).expect("the protocol always answers JSON");
+    answer
+        .get("ok")
+        .cloned()
+        .unwrap_or_else(|| panic!("{method} failed: {answer}"))
+}
+
+/// The structured error of one protocol request that must fail.
+pub fn ask_error(repo: &TestRepo, method: &str, params: impl Serialize) -> git_graph_core::Error {
+    ask_error_at(repo.path().to_str().unwrap(), method, params)
+}
+
+/// [`ask_error`], against an arbitrary path inside (or outside) a repository.
+pub fn ask_error_at(
+    repo_path: &str,
+    method: &str,
+    params: impl Serialize,
+) -> git_graph_core::Error {
+    let request = serde_json::json!({
+        "method": method,
+        "params": serde_json::to_value(&params).expect("the parameters serialise"),
+    });
+    let answer = git_graph_core::protocol::request(repo_path, &request.to_string());
+    let answer: serde_json::Value =
+        serde_json::from_str(&answer).expect("the protocol always answers JSON");
+    serde_json::from_value(
+        answer
+            .get("error")
+            .cloned()
+            .unwrap_or_else(|| panic!("{method} unexpectedly succeeded")),
+    )
+    .expect("the error envelope decodes")
+}
+
+/// The type name for a decoding failure message (stable on every toolchain in use).
+fn type_name<T: ?Sized>() -> &'static str {
+    std::any::type_name::<T>()
+}

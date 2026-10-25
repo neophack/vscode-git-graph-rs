@@ -3,13 +3,13 @@
 #[macro_use]
 mod common;
 
-use git_graph_core::read::{blob, config};
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::{Engine, INDEX};
+use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 
-fn open(repo: &TestRepo) -> Repo {
-    Repo::discover(repo.path()).expect("could not open the fixture repository")
+fn open(repo: &TestRepo) -> Engine {
+    Engine::open(repo.path()).expect("could not open the fixture repository")
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn reads_the_identity_remotes_and_diff_tools() {
     repo.git(&["config", "diff.tool", "vscode"]);
 
     let engine = open(&repo);
-    let snapshot = config::read_config(&engine).unwrap();
+    let snapshot = engine.config().unwrap();
 
     assert_eq!(snapshot.user_name.as_deref(), Some("Test User"));
     assert_eq!(snapshot.user_email.as_deref(), Some("test@example.com"));
@@ -72,7 +72,7 @@ fn reports_absent_configuration_as_none() {
     std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
 
     let engine = open(&repo);
-    let snapshot = config::read_config(&engine).unwrap();
+    let snapshot = engine.config().unwrap();
 
     std::env::remove_var("GIT_CONFIG_GLOBAL");
     std::env::remove_var("GIT_CONFIG_NOSYSTEM");
@@ -109,7 +109,7 @@ fn resolves_remote_fields_independently_across_config_files() {
     std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
 
     let engine = open(&repo);
-    let snapshot = config::read_config(&engine).unwrap();
+    let snapshot = engine.config().unwrap();
 
     std::env::remove_var("GIT_CONFIG_GLOBAL");
     std::env::remove_var("GIT_CONFIG_NOSYSTEM");
@@ -133,7 +133,7 @@ fn reads_a_text_file_at_a_revision() {
     let hash = repo.commit_file("a.txt", "one\ntwo\nthree\n", "second");
 
     let engine = open(&repo);
-    let file = blob::commit_file(&engine, &hash, "a.txt").unwrap();
+    let file = engine.file(&hash, "a.txt").unwrap();
 
     assert!(!file.binary);
     assert_eq!(file.contents.as_deref(), Some("one\ntwo\nthree\n"));
@@ -147,7 +147,7 @@ fn reports_a_binary_file_as_binary() {
     let hash = repo.commit("add a binary file");
 
     let engine = open(&repo);
-    let file = blob::commit_file(&engine, &hash, "blob.bin").unwrap();
+    let file = engine.file(&hash, "blob.bin").unwrap();
 
     assert!(file.binary);
     assert_eq!(file.contents, None);
@@ -160,12 +160,12 @@ fn a_missing_path_is_not_found() {
     let hash = repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = blob::commit_file(&engine, &hash, "no-such.txt").unwrap_err();
+    let error = engine.file(&hash, "no-such.txt").unwrap_err();
 
-    assert_eq!(error.kind, git_graph_core::ErrorKind::NotFound);
+    assert_eq!(error.kind, ErrorKind::NotFound);
 }
 
-/// Unlike `commit_file`, the raw-byte read hands a binary blob's bytes back instead of
+/// Unlike `Engine::file`, the raw-byte read hands a binary blob's bytes back instead of
 /// discarding them - the hex/byte-level comparison views need the content precisely because
 /// it is not text.
 #[test]
@@ -175,8 +175,9 @@ fn commit_file_bytes_returns_binary_content_verbatim() {
     repo.write("blob.bin", "text\0with a nul\n");
     let hash = repo.commit("add a binary file");
 
-    let engine = open(&repo);
-    let bytes = blob::commit_file_bytes(&engine, &hash, "blob.bin").unwrap();
+    let bytes =
+        git_graph_core::protocol::file_bytes(repo.path().to_str().unwrap(), &hash, "blob.bin")
+            .unwrap();
 
     assert_eq!(bytes.as_deref(), Some("text\0with a nul\n".as_bytes()));
 }
@@ -189,14 +190,15 @@ fn commit_file_bytes_of_a_missing_path_is_none() {
     let mut repo = TestRepo::new();
     let hash = repo.commit_file("a.txt", "1\n", "first");
 
-    let engine = open(&repo);
-    let bytes = blob::commit_file_bytes(&engine, &hash, "no-such.bin").unwrap();
+    let bytes =
+        git_graph_core::protocol::file_bytes(repo.path().to_str().unwrap(), &hash, "no-such.bin")
+            .unwrap();
 
     assert_eq!(bytes, None);
 }
 
 /// The staged copy's raw bytes, between "Modified" and "Staged" - the same content
-/// `index_file` reports as binary without handing back.
+/// `Engine::file(INDEX, …)` reports as binary without handing back.
 #[test]
 fn index_file_bytes_reads_the_staged_binary_copy() {
     require_git!();
@@ -205,12 +207,12 @@ fn index_file_bytes_reads_the_staged_binary_copy() {
     repo.write("staged.bin", "one\0two\n");
     repo.git(&["add", "staged.bin"]);
 
-    let engine = open(&repo);
-    let bytes = blob::index_file_bytes(&engine, "staged.bin").unwrap();
+    let root = repo.path().to_str().unwrap();
+    let bytes = git_graph_core::protocol::file_bytes(root, INDEX, "staged.bin").unwrap();
 
     assert_eq!(bytes.as_deref(), Some("one\0two\n".as_bytes()));
     assert_eq!(
-        blob::index_file_bytes(&engine, "no-such.bin").unwrap(),
+        git_graph_core::protocol::file_bytes(root, INDEX, "no-such.bin").unwrap(),
         None
     );
 }
@@ -224,7 +226,7 @@ fn diffs_a_modified_file_against_its_parent() {
     let hash = repo.commit_file("a.txt", "one\nthree\n", "third");
 
     let engine = open(&repo);
-    let diff = blob::commit_file_diff(&engine, &hash, "a.txt").unwrap();
+    let diff = engine.file_diff(&hash, "a.txt").unwrap();
 
     assert!(diff.contains("a.txt"));
     assert!(diff.contains("-two"));
@@ -238,7 +240,7 @@ fn diffs_a_file_added_by_a_root_commit() {
     let hash = repo.commit_file("a.txt", "one\n", "first");
 
     let engine = open(&repo);
-    let diff = blob::commit_file_diff(&engine, &hash, "a.txt").unwrap();
+    let diff = engine.file_diff(&hash, "a.txt").unwrap();
 
     assert!(diff.contains("a.txt"));
     assert!(diff.contains("+one"));
@@ -255,7 +257,7 @@ fn diffs_a_renamed_file_across_the_rename() {
     let hash = repo.commit("rename it");
 
     let engine = open(&repo);
-    let diff = blob::commit_file_diff(&engine, &hash, "renamed.txt").unwrap();
+    let diff = engine.file_diff(&hash, "renamed.txt").unwrap();
 
     assert!(!diff.is_empty());
     assert!(diff.contains("renamed.txt") || diff.contains("original.txt"));
@@ -269,7 +271,7 @@ fn an_untouched_file_diffs_to_nothing() {
     let hash = repo.commit_file("b.txt", "two\n", "second");
 
     let engine = open(&repo);
-    let diff = blob::commit_file_diff(&engine, &hash, "a.txt").unwrap();
+    let diff = engine.file_diff(&hash, "a.txt").unwrap();
 
     assert_eq!(diff, "");
 }
@@ -283,7 +285,7 @@ fn a_deleted_file_diffs_against_the_empty_side() {
     let hash = repo.commit("remove it");
 
     let engine = open(&repo);
-    let diff = blob::commit_file_diff(&engine, &hash, "a.txt").unwrap();
+    let diff = engine.file_diff(&hash, "a.txt").unwrap();
 
     assert!(diff.contains("a.txt"));
     assert!(diff.contains("-one"));

@@ -11,8 +11,41 @@ mod common;
 use std::process::Command;
 
 use common::TestRepo;
-use git_graph_core::read::gerrit::{list_change_refs, parse_gerrit_metas};
-use git_graph_core::repository::Repo;
+use git_graph_core::model::GerritChangeState;
+
+/// The parsed states of a batch of changes, through the request the badge column sends.
+fn parse_gerrit_metas(
+    repo: &TestRepo,
+    remote: &str,
+    changes: &[i64],
+    url_base: Option<&str>,
+) -> Vec<Option<GerritChangeState>> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        remote: &'a str,
+        changes: &'a [i64],
+        url_base: Option<&'a str>,
+    }
+    common::ask(
+        repo,
+        "parseGerritMetas",
+        Params {
+            remote,
+            changes,
+            url_base,
+        },
+    )
+}
+
+/// `(change ref, hash)` pairs below the remote's `changes/` namespace.
+fn list_change_refs(repo: &TestRepo, remote: &str) -> Vec<(String, String)> {
+    common::ask(
+        repo,
+        "listChangeRefs",
+        serde_json::json!({ "remote": remote }),
+    )
+}
 
 /* ---------- The repository walk ---------- */
 
@@ -101,14 +134,12 @@ fn parses_the_meta_histories_the_refs_point_at() {
     );
     repo.update_ref("refs/remotes/origin/changes/05/5/meta", &wip);
 
-    let engine = Repo::discover(repo.path()).expect("could not open the fixture repository");
     let states = parse_gerrit_metas(
-        &engine,
+        &repo,
         "origin",
         &[41466, 5, 99999, 0],
         Some("https://gerrit.example.com/c/repo/+/"),
-    )
-    .expect("the meta histories are readable");
+    );
 
     assert_eq!(states.len(), 4);
     let state = states[0].as_ref().expect("the merged change has a state");
@@ -154,9 +185,7 @@ fn joins_the_url_base_when_there_is_none() {
     );
     repo.update_ref("refs/remotes/origin/changes/07/7/meta", &tip);
 
-    let engine = Repo::discover(repo.path()).expect("could not open the fixture repository");
-    let states =
-        parse_gerrit_metas(&engine, "origin", &[7], None).expect("the meta history is readable");
+    let states = parse_gerrit_metas(&repo, "origin", &[7], None);
     let state = states[0].as_ref().expect("the change has a state");
     assert_eq!(state.url, None);
     assert_eq!(state.status, "new");
@@ -196,9 +225,7 @@ fn lists_the_local_change_refs_with_their_hashes() {
     repo.update_ref("refs/remotes/upstream/changes/34/1234/1", &ps1);
     repo.update_ref("refs/heads/main", &ps1);
 
-    let engine = Repo::discover(repo.path()).expect("could not open the fixture repository");
-    let refs = list_change_refs(&engine, "origin").expect("the change refs are readable");
-    let mut refs = refs;
+    let mut refs = list_change_refs(&repo, "origin");
     refs.sort();
     assert_eq!(
         refs,
@@ -210,6 +237,6 @@ fn lists_the_local_change_refs_with_their_hashes() {
     );
 
     // A remote with no change refs yields an empty listing (not an error)
-    let empty = list_change_refs(&engine, "other").expect("any remote is scannable");
+    let empty = list_change_refs(&repo, "other");
     assert!(empty.is_empty());
 }

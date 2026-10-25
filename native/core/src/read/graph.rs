@@ -192,7 +192,6 @@ fn load_page(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Page> 
     // needed, without a second query to find out.
     let walk_options = WalkOptions {
         limit: options.max_commits as usize + 1,
-        ordering: options.commit_ordering,
         first_parent_only: options.only_follow_first_parent,
         authors: options.authors.clone(),
         filter_paths: options.filter_paths.clone(),

@@ -133,8 +133,8 @@ impl CachedWalk {
 }
 
 /// The traversals of every open repository, process-wide — the same shape as
-/// [`crate::repository::RepoManager`]: a cache keyed by repository, guarded (not invalidated) by the walks
-/// themselves, bounded by [`MAX_ENTRIES`].
+/// the repository handle cache: a cache keyed by repository, guarded (not invalidated) by
+/// the walks themselves, bounded by a fixed entry count.
 #[derive(Default)]
 pub struct Store {
     entries: Mutex<HashMap<(PathBuf, CacheKey), Arc<CachedWalk>>>,

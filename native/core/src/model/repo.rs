@@ -32,7 +32,7 @@ pub struct GitStash {
 
 /// Everything the view opens with, from one ref scan: the dropdown data and the first page.
 /// `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
-#[derive(Debug, Clone, Default, Serialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitViewData {
     pub info: GitRepoInfo,

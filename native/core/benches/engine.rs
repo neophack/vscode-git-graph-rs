@@ -21,10 +21,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use git_graph_core::cancel::Cancel;
-use git_graph_core::model::{CommitOrdering, LogOptions, RefReadOptions};
-use git_graph_core::read::{details, graph, incremental, refs, stats, status};
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::{Engine, GraphOptions};
+use git_graph_core::IncrementalStore;
 
 /* ---------- The fixtures ---------- */
 
@@ -158,15 +156,9 @@ fn run_git(dir: &Path, args: &[&str], date: Option<&str>) -> String {
 /* ---------- The benchmarks ---------- */
 
 /// The options a default view load sends.
-fn view_options(max_commits: u32) -> LogOptions {
-    LogOptions {
+fn view_options(max_commits: u32) -> GraphOptions {
+    GraphOptions {
         max_commits,
-        show_tags: true,
-        show_remote_branches: true,
-        show_commits_only_referenced_by_tags: true,
-        show_uncommitted_changes: true,
-        show_untracked_files: true,
-        commit_ordering: CommitOrdering::Date,
         ..Default::default()
     }
 }
@@ -175,21 +167,21 @@ fn bench_engine(c: &mut Criterion) {
     let sizes = [("S_1k", 1_000usize), ("M_10k", 10_000)];
     for (label, commits) in sizes {
         let fixture = Fixture::build(label, commits, false);
-        let repo = Repo::discover(fixture.dir.path()).expect("could not open the fixture");
-        let store = incremental::Store::global();
+        let engine = Engine::open(fixture.dir.path()).expect("could not open the fixture");
+        let store = IncrementalStore::global();
         let first_page = view_options(300);
         let more = view_options(900);
 
         c.bench_function(&format!("traversal/first_page/{label}"), |b| {
             b.iter(|| {
-                store.invalidate(repo.root());
-                graph::load_commits(&repo, &first_page, Cancel::none()).unwrap()
+                store.invalidate(engine.root());
+                engine.graph(&first_page).unwrap()
             })
         });
         c.bench_function(&format!("traversal/load_more/{label}"), |b| {
             b.iter(|| {
-                store.invalidate(repo.root());
-                graph::load_commits(&repo, &more, Cancel::none()).unwrap()
+                store.invalidate(engine.root());
+                engine.graph(&more).unwrap()
             })
         });
         c.bench_function(&format!("traversal/incremental_refresh/{label}"), |b| {
@@ -199,8 +191,8 @@ fn bench_engine(c: &mut Criterion) {
                 &["update-ref", "refs/heads/main", &fixture.tip],
                 None,
             );
-            store.invalidate(repo.root());
-            graph::load_commits(&repo, &first_page, Cancel::none()).unwrap();
+            store.invalidate(engine.root());
+            engine.graph(&first_page).unwrap();
 
             // Prove the timed load really goes the incremental way before measuring it.
             let hits_before = store.stats().0;
@@ -209,7 +201,7 @@ fn bench_engine(c: &mut Criterion) {
                 &["update-ref", "refs/heads/main", &fixture.extra],
                 None,
             );
-            graph::load_commits(&repo, &first_page, Cancel::none()).unwrap();
+            engine.graph(&first_page).unwrap();
             let served = store.stats().0 - hits_before;
             assert!(
                 served >= 1,
@@ -220,8 +212,8 @@ fn bench_engine(c: &mut Criterion) {
                 &["update-ref", "refs/heads/main", &fixture.tip],
                 None,
             );
-            store.invalidate(repo.root());
-            graph::load_commits(&repo, &first_page, Cancel::none()).unwrap();
+            store.invalidate(engine.root());
+            engine.graph(&first_page).unwrap();
 
             b.iter_custom(|iters| {
                 let mut timed = Duration::ZERO;
@@ -233,7 +225,7 @@ fn bench_engine(c: &mut Criterion) {
                         None,
                     );
                     let start = Instant::now();
-                    graph::load_commits(&repo, &first_page, Cancel::none()).unwrap();
+                    engine.graph(&first_page).unwrap();
                     timed += start.elapsed();
                     // The restore (untimed): move back and re-walk in full, so the next
                     // iteration advances onto the same arrival from a fresh traversal again.
@@ -242,41 +234,32 @@ fn bench_engine(c: &mut Criterion) {
                         &["update-ref", "refs/heads/main", &fixture.tip],
                         None,
                     );
-                    store.invalidate(repo.root());
-                    graph::load_commits(&repo, &first_page, Cancel::none()).unwrap();
+                    store.invalidate(engine.root());
+                    engine.graph(&first_page).unwrap();
                 }
                 timed
             })
         });
         c.bench_function(&format!("loadView/{label}"), |b| {
             b.iter(|| {
-                store.invalidate(repo.root());
-                graph::load_view(&repo, &first_page, Cancel::none()).unwrap()
+                store.invalidate(engine.root());
+                engine.view(&first_page).unwrap()
             })
         });
         c.bench_function(&format!("refs/{label}"), |b| {
-            b.iter(|| {
-                refs::read_refs(
-                    &repo,
-                    &RefReadOptions {
-                        show_remote_branches: true,
-                        ..Default::default()
-                    },
-                )
-                .unwrap()
-            })
+            b.iter(|| engine.refs(&first_page).unwrap())
         });
         c.bench_function(&format!("commitDetails/{label}"), |b| {
-            b.iter(|| details::commit_details(&repo, &fixture.tip).unwrap())
+            b.iter(|| engine.commit(&fixture.tip).unwrap())
         });
         c.bench_function(&format!("status/{label}"), |b| {
-            b.iter(|| status::scm_changes(&repo, Cancel::none()).unwrap())
+            b.iter(|| engine.status().unwrap())
         });
         c.bench_function(&format!("statistics/authorStats/{label}"), |b| {
-            b.iter(|| stats::author_stats(&repo, Cancel::none()).unwrap())
+            b.iter(|| engine.author_stats().unwrap())
         });
         c.bench_function(&format!("statistics/activityHeatmap/{label}"), |b| {
-            b.iter(|| stats::activity_heatmap(&repo, Cancel::none()).unwrap())
+            b.iter(|| engine.activity().unwrap())
         });
     }
 
@@ -289,12 +272,12 @@ fn bench_engine(c: &mut Criterion) {
         ("without_commit_graph", &plain),
         ("with_commit_graph", &with_graph),
     ] {
-        let repo = Repo::discover(fixture.dir.path()).unwrap();
-        let store = incremental::Store::global();
+        let engine = Engine::open(fixture.dir.path()).unwrap();
+        let store = IncrementalStore::global();
         c.bench_function(&format!("traversal/first_page/{label}/M_10k"), |b| {
             b.iter(|| {
-                store.invalidate(repo.root());
-                graph::load_commits(&repo, &first_page, Cancel::none()).unwrap()
+                store.invalidate(engine.root());
+                engine.graph(&first_page).unwrap()
             })
         });
     }
