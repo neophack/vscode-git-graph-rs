@@ -30,6 +30,7 @@ function getMediaCacheVersion(extensionPath: string): string {
 }
 
 import { AvatarManager } from './avatarManager';
+import { deliverAutomationHostMessage, deliverAutomationShimResult, setLiveGraphView } from './automation/graphViewPort';
 import { describeCapabilities } from './backend';
 import { hasEngineForPlatform } from './backend/addon';
 import { BinaryCompareView } from './binaryCompareView';
@@ -296,13 +297,11 @@ interface GerritCacheEntry {
 export class GitGraphView extends Disposable {
 	public static currentPanel: GitGraphView | undefined;
 	/**
-	 * Automation hooks (owned by the automation server). STATIC, not per-instance: the view can
-	 * be disposed and recreated (e.g. a comparison view taking over the singleton panel slot in
-	 * tests), and the server — which may start before any view exists — must keep observing the
-	 * replacement without re-subscribing.
+	 * Automation observes the view through the injected GraphViewPort (src/automation/graphViewPort.ts):
+	 * the port's live-view reference is published below at every point this singleton panel
+	 * reference changes, and the two message taps live in the port module — so this class holds no
+	 * automation state of its own.
 	 */
-	private static automationTap: ((msg: ResponseMessage) => void) | null = null;
-	private static automationShimListener: ((result: unknown) => void) | null = null;
 
 	private readonly panel: vscode.WebviewPanel;
 	private readonly extensionPath: string;
@@ -448,6 +447,7 @@ export class GitGraphView extends Disposable {
 		} else {
 			// If Git Graph panel doesn't already exist
 			GitGraphView.currentPanel = new GitGraphView(extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, loadViewTo, column);
+			setLiveGraphView(GitGraphView.currentPanel);
 		}
 	}
 
@@ -468,6 +468,7 @@ export class GitGraphView extends Disposable {
 			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
 		};
 		GitGraphView.currentPanel = new GitGraphView(extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, null, panel.viewColumn, panel);
+		setLiveGraphView(GitGraphView.currentPanel);
 	}
 
 	/**
@@ -536,6 +537,7 @@ export class GitGraphView extends Disposable {
 				// with every bit of data loaded afresh from this Extension Host
 				logger.log('Refreshing a Git Graph tab left behind by an Extension Host restart in place');
 				GitGraphView.currentPanel = new GitGraphView(extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, null, { viewColumn: group.viewColumn, preserveFocus: !group.isActive }, undefined, extensionState.getViewSnapshot());
+				setLiveGraphView(GitGraphView.currentPanel);
 				try {
 					await tabGroups.close(tab, true);
 				} catch (_) { /* the dead tab is already gone: the replacement is up either way */ }
@@ -602,6 +604,7 @@ export class GitGraphView extends Disposable {
 			// Dispose Git Graph View resources when disposed
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
+				setLiveGraphView(null);
 				this.repoFileWatcher.stop();
 				if (this.backgroundRefreshTimer !== null) {
 					clearInterval(this.backgroundRefreshTimer);
@@ -779,16 +782,6 @@ export class GitGraphView extends Disposable {
 		}
 	}
 
-	/** Observe every ResponseMessage leaving for the webview (timing tap). NULL clears. */
-	public static setAutomationTap(tap: ((msg: ResponseMessage) => void) | null): void {
-		GitGraphView.automationTap = tap;
-	}
-
-	/** Observe automation shim results posted from the page. NULL clears. */
-	public static setAutomationShimListener(listener: ((result: unknown) => void) | null): void {
-		GitGraphView.automationShimListener = listener;
-	}
-
 	/**
 	 * The automation shim source, inlined into the page (with its CSP nonce) so it needs no
 	 * change to the Content-Security-Policy sources. Cached per instance; empty on read failure.
@@ -810,14 +803,11 @@ export class GitGraphView extends Disposable {
 
 	private onDidReceiveWebviewMessage(msg: unknown): void {
 		// Results from the in-page automation shim are not RequestMessages: route them to the
-		// server and keep them away from the message handler's command switch.
+		// port (which forwards to the installed listener, if any) and keep them away from the
+		// message handler's command switch.
 		if (typeof msg === 'object' && msg !== null
 			&& (msg as { __ggAutomationResult?: unknown }).__ggAutomationResult !== undefined) {
-			if (GitGraphView.automationShimListener !== null) {
-				try {
-					GitGraphView.automationShimListener((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
-				} catch (_) { /* the listener must never break message handling */ }
-			}
+			deliverAutomationShimResult((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
 			return;
 		}
 		void this.respondToMessage(msg as RequestMessage);
@@ -1646,11 +1636,7 @@ export class GitGraphView extends Disposable {
 			this.logger.log('The Git Graph View has already been disposed, ignored sending "' + msg.command + '" message.');
 		} else {
 			// The automation server's timing tap: observes the exact traffic the webview receives.
-			if (GitGraphView.automationTap !== null) {
-				try {
-					GitGraphView.automationTap(msg);
-				} catch (_) { /* a tap must never break message delivery */ }
-			}
+			deliverAutomationHostMessage(msg);
 			this.panel.webview.postMessage(msg).then(
 				() => { },
 				() => {

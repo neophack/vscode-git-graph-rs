@@ -3,18 +3,17 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CommandStep } from './catalog';
 import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
-import { GitGraphView } from '../gitGraphView';
+import { GraphViewState, graphViewPort } from './graphViewPort';
 import { GitFileStatus } from '../types/git';
 import { RequestMessage, ResponseMessage } from '../types';
 import { tabGroups } from '../extension/platform/vscodeCompat';
 
 /**
- * The narrow seam the automation server drives. It touches Git Graph only through the three
- * public automation hooks on GitGraphView — the same entry point the webview's own messages
- * take (respondToMessage) and the same exit (sendMessage) — so a request-mode run exercises
- * exactly the path a button click does, no mocks in between. Command-mode runs additionally go
- * through `vscode.commands.executeCommand`, the same dispatch a contributed menu item's click
- * takes.
+ * The narrow seam the automation server drives. It touches the view ONLY through the injected
+ * GraphViewPort (graphViewPort.ts) — the same entry point the webview's own messages take
+ * (injectRequest) and the same exit (onHostMessage) — so a request-mode run exercises exactly the
+ * path a button click does, no mocks in between. Command-mode runs additionally go through
+ * `vscode.commands.executeCommand`, the same dispatch a contributed menu item's click takes.
  */
 
 /** The result of one shim step batch, as posted back by the in-page shim. */
@@ -32,11 +31,8 @@ export interface ShimResult {
 	readonly error?: string;
 }
 
-export interface ViewState {
-	readonly viewLoaded: boolean;
-	readonly currentRepo: string | null;
-	readonly repos: string[];
-}
+/** Snapshot of the view and repository state (gg.status / gg.query repos) — the port's state shape. */
+export type ViewState = GraphViewState;
 
 /**
  * Identify a tab by its content (view type and/or document URIs) so a before/after snapshot can
@@ -81,25 +77,21 @@ export class HostBridge {
 
 	/** Is a Git Graph view currently open? */
 	public hasView(): boolean {
-		return GitGraphView.currentPanel !== undefined;
+		return graphViewPort.hasView();
 	}
 
 	/** Snapshot of the view and repository state (gg.status / gg.query repos). */
 	public viewState(): ViewState {
-		const panel = GitGraphView.currentPanel;
-		return panel === undefined
-			? { viewLoaded: false, currentRepo: null, repos: [] }
-			: panel.automationState();
+		return graphViewPort.viewState();
 	}
 
 	/**
 	 * Inject a request into the extension host as if the webview had sent it. Fire-and-forget:
-	 * respondToMessage reports its own errors; the outcome is observed through the host-message
+	 * the view's own handler reports its errors; the outcome is observed through the host-message
 	 * tap.
 	 */
 	public inject(message: RequestMessage): void {
-		const panel = GitGraphView.currentPanel;
-		if (panel !== undefined) panel.runAutomationRequest(message);
+		graphViewPort.injectRequest(message);
 	}
 
 	/**
@@ -108,23 +100,22 @@ export class HostBridge {
 	 * open — nothing holds the repository then.
 	 */
 	public closeRepository(repo: string): void {
-		const panel = GitGraphView.currentPanel;
-		if (panel !== undefined) panel.automationCloseRepository(repo);
+		graphViewPort.closeRepository(repo);
 	}
 
 	/**
 	 * Observe every message the host sends to the webview. Returns the unsubscribe function.
-	 * The tap is a static hook: it stays installed across view recreations and works even when
-	 * no view is open yet (messages simply don't flow until one opens).
+	 * The tap is held by the port: it stays installed across view recreations and works even
+	 * when no view is open yet (messages simply don't flow until one opens).
 	 */
 	public onHostMessage(listener: (msg: ResponseMessage) => void): () => void {
 		this.hostMessageListener = listener;
-		GitGraphView.setAutomationTap(listener);
+		graphViewPort.onHostMessage(listener);
 		return () => {
 			// Only clear the tap if it is still ours (a newer subscriber would have replaced it)
 			if (this.hostMessageListener === listener) {
 				this.hostMessageListener = null;
-				GitGraphView.setAutomationTap(null);
+				graphViewPort.onHostMessage(null);
 			}
 		};
 	}
@@ -133,19 +124,18 @@ export class HostBridge {
 	public onShimResult(listener: (result: ShimResult) => void): () => void {
 		const wrapped = (result: unknown) => listener(result as ShimResult);
 		this.shimResultListener = wrapped;
-		GitGraphView.setAutomationShimListener(wrapped);
+		graphViewPort.onShimResult(wrapped);
 		return () => {
 			if (this.shimResultListener === wrapped) {
 				this.shimResultListener = null;
-				GitGraphView.setAutomationShimListener(null);
+				graphViewPort.onShimResult(null);
 			}
 		};
 	}
 
 	/** Send a message to the page shim (not a ResponseMessage — the bundle ignores it). */
 	public postToWebview(message: unknown): void {
-		const panel = GitGraphView.currentPanel;
-		if (panel !== undefined) panel.postAutomationMessage(message);
+		graphViewPort.postToWebview(message);
 	}
 
 	/** Open (or reveal) the Git Graph view on the given repository, registering it if unknown. */
