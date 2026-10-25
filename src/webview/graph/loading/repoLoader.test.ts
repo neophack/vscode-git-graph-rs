@@ -92,7 +92,9 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 	const noop = () => undefined;
 	const ctx = {
 		store: store,
-		renderScheduler: new RenderScheduler(noop),
+		// Route the scheduler's render through the (per-test stubbed) fake table, so render-count
+		// assertions observe the passes the loader asks for (task 5.10's renderSync integration).
+		renderScheduler: new RenderScheduler(() => { ctx.table.render(); }),
 		bridge: {
 			send: (message: unknown) => { sent.push(message as SentMessage); }
 		},

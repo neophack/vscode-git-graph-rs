@@ -107,7 +107,7 @@ function makeView() {
 	const ctx = <{ -readonly [K in keyof GraphContext]: GraphContext[K] }>{};
 	ctx.store = store;
 	ctx.bridge = { send: noop } as unknown as GraphContext['bridge'];
-	ctx.persistence = { saveState: noop, saveRepoStateValue: noop, updateWorkspaceViewState: noop } as unknown as GraphContext['persistence'];
+	ctx.persistence = { saveState: noop, saveRepoStateValue: noop, updateWorkspaceViewState: noop, scheduleFirstPaintCapture: noop } as unknown as GraphContext['persistence'];
 	ctx.closeDialogAndContextMenu = noop;
 	ctx.dialog = { closeActionRunning: noop, isTargetDynamicSource: () => false, showError: noop } as unknown as GraphContext['dialog'];
 	ctx.contextMenu = { isTargetDynamicSource: () => false } as unknown as GraphContext['contextMenu'];
