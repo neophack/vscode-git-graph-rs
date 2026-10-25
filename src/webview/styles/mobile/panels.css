@@ -105,6 +105,10 @@ body.mobileMode .gg-helpTooltipPopup{
 		padding-left:8px;
 		padding-left:max(8px, env(safe-area-inset-left));
 	}
+	/* chrome69: margin fallback matching the tighter gap above (see mobile/appBar.css) */
+	@supports not (appearance: none){
+		body.mobileMode #controls > * + * { margin-left: 4px; }
+	}
 	body.mobileMode #controlBtns > div{
 		width:40px !important;
 	}

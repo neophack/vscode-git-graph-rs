@@ -14,6 +14,12 @@
 	margin-left:8px;
 	cursor:help;
 }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.gg-helpTooltip:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .gg-helpTooltip:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:1px;
@@ -47,6 +53,13 @@
 }
 .fileTreeFileAction.viewGitFileAtRevision, .fileTreeFileAction.openGitFile{
 	margin-left:6px;
+}
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline (and the reveal) on 69. */
+.fileTreeFileAction:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+	opacity:1;
 }
 .fileTreeFileAction:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);

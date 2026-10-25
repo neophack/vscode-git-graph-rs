@@ -13,6 +13,7 @@ body.mobileMode .findWidget{
 	/* Chromium 69 fallback (min()/max() need Chrome 79) */
 	padding:4px 4px 4px 10px;
 	padding:4px max(4px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+	padding-top:4px;
 	padding-top:max(4px, env(safe-area-inset-top));
 	border:none;
 	border-bottom:0.5px solid var(--m-sep);

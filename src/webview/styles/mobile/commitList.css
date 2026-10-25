@@ -41,6 +41,12 @@ body.mobileMode #commitTable tr.commit span.description{
 	height:20px;
 	line-height:20px;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap —
+   hidden items make no gap slot on modern and carry no margins here either) */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable tr.commit span.description > * + * { margin-left: 8px; }
+}
 body.mobileMode #commitTable tr.commit span.description .text{
 	flex:1 1 auto;
 	min-width:0;
@@ -83,12 +89,24 @@ body.mobileMode #commitTable .pinnedBadge{
 	overflow:hidden;
 	white-space:nowrap;
 }
+/* chrome69: margin fallback for flex gap (see the span.description rule); the hash's own
+   margin-left:auto is re-asserted after the generic rule so it keeps winning on 69 */
+@supports not (appearance: none) {
+	.mobileMeta > * + * { margin-left: 6px; }
+	.mobileMeta > .mobileMetaHash { margin-left: auto; }
+}
 .mobileRefs{
 	flex:0 1 auto;
 	min-width:0;
 	display:flex;
 	gap:4px;
 	overflow:hidden;
+}
+/* chrome69: margin fallback for flex gap (see the span.description rule); carries the #commitTable
+   id because the .gitRef margin reset (body.mobileMode #commitTable .gitRef) outranks a plain
+   class chain and would otherwise zero the fallback's margin-left */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable .mobileRefs > .gitRef + .gitRef { margin-left: 4px; }
 }
 .mobileMetaAuthor{
 	flex:0 1 auto;

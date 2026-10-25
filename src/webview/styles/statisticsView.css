@@ -107,10 +107,19 @@
 	flex-direction:column;
 	gap:2px;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	.statisticsHeatmap > * + * { margin-top: 2px; }
+}
 .statisticsHeatmapRow{
 	display:flex;
 	align-items:center;
 	gap:2px;
+}
+/* chrome69: margin fallback for flex gap (see the .statisticsHeatmap rule) */
+@supports not (appearance: none) {
+	.statisticsHeatmapRow > * + * { margin-left: 2px; }
 }
 .statisticsHeatmapLabel{
 	width:28px;

@@ -89,6 +89,12 @@
 	font:inherit;
 	color:inherit;
 }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.findWidget button:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .findWidget button:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:1px;

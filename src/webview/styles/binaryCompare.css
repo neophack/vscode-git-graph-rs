@@ -28,6 +28,14 @@ body.binaryComparePage #header {
 	border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
 	flex-shrink: 0;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84). The appearance probe is a
+   Chrome-version fence: unprefixed `appearance` only parses from Chrome 84, so on the 69 baseline
+   the `not` block applies while the gap itself is ignored, and on modern Chromium the block never
+   matches - the fallback composes exactly like the gap it replaces (adjacent margins sum, as the
+   gap slots do), never stacking on top of a supported gap. Same pattern at every flex-gap site. */
+@supports not (appearance: none) {
+	body.binaryComparePage #header > * + * { margin-left: 8px; }
+}
 body.binaryComparePage #header .letter {
 	font-weight: 600;
 	width: 13px;
@@ -57,6 +65,12 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #diffArea.hexMode { overflow: hidden; display: flex; }
 #hexWrap { --hcols: 10ch; flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #hexToolbar, #imgToolbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; font-size: 12px; }
+/* chrome69: margin fallback for flex gap (see the #header rule) */
+@supports not (appearance: none) {
+	#hexToolbar > * + *, #imgToolbar > * + * { margin-left: 8px; }
+	/* the image toolbar wraps: the gap's row component too (8px below every child on 69 only) */
+	#imgToolbar > * { margin-bottom: 8px; }
+}
 #hexToolbar .hxSpacer, #imgToolbar .hxSpacer { flex: 1; }
 #hexToolbar button, #imgToolbar button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; }
 #hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
@@ -70,6 +84,10 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); border-bottom: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
 #hexCaps { display: flex; font-size: 12px; color: var(--vscode-descriptionForeground, rgba(128,128,128,0.9)); }
 .hcap { flex: 1 1 50%; min-width: 0; display: flex; justify-content: space-between; gap: 2ch; padding: 4px 12px 2px; white-space: nowrap; overflow: hidden; }
+/* chrome69: margin fallback for flex gap (see the #header rule) */
+@supports not (appearance: none) {
+	.hcap > * + * { margin-left: 2ch; }
+}
 .hcap:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
 .hcap .hxSize { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
 #hexRuler { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
@@ -80,6 +98,7 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
    on a row across the panes; a wash of the foreground so it suits any theme. */
 /* Chromium 69 fallback (color-mix() needs Chrome 111): a neutral translucent wash */
 .hrow.hxOdd { background: rgba(128,128,128,0.06); }
+/* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rgba rule above is the Chromium 69 twin */
 .hrow.hxOdd { background: color-mix(in srgb, var(--vscode-editor-foreground, #ccc) 6%, transparent); }
 /* Each side is a grid over the template the script builds (offset | bytes | gutter |
    ASCII), sized in ch so the ruler's digits sit exactly over their byte columns. A rule
@@ -99,8 +118,10 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
    on the old side and its added green on the new — over the hex and ASCII cell alike. */
 /* Chromium 69 fallback (color-mix() needs Chrome 111): the theme colours at a fixed translucency */
 .hb.hxo, .ha.hxo { background: rgba(244,135,113,0.24); }
+/* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rgba rule above is the Chromium 69 twin */
 .hb.hxo, .ha.hxo { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #f48771) 24%, transparent); }
 .hb.hxn, .ha.hxn { background: rgba(129,184,139,0.24); }
+/* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rgba rule above is the Chromium 69 twin */
 .hb.hxn, .ha.hxn { background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #81b88b) 24%, transparent); }
 .ha.hxo { color: var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
 .ha.hxn { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
@@ -128,7 +149,17 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #imgToolbar { flex-wrap: wrap; }
 #imgStats { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #imgControls { width: 100%; display: flex; align-items: center; gap: 16px; font-size: 11px; opacity: 0.9; flex-wrap: wrap; }
+/* chrome69: margin fallback for flex gap (see the #header rule) */
+@supports not (appearance: none) {
+	#imgControls > * + * { margin-left: 16px; }
+	/* the controls wrap: the gap's row component too (16px below every child on 69 only) */
+	#imgControls > * { margin-bottom: 16px; }
+}
 #imgControls label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* chrome69: margin fallback for flex gap (see the #header rule) */
+@supports not (appearance: none) {
+	#imgControls label > * + * { margin-left: 5px; }
+}
 #imgControls .hidden { display: none; }
 #imgControls select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.4)); border-radius: 2px; font-size: 11px; padding: 1px 4px; }
 /* Chromium 69 baseline: accent-color (Chrome 93) is progressive enhancement only — 69 and
@@ -136,6 +167,10 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #imgControls input[type=range] { width: 90px; accent-color: var(--vscode-button-background, #007acc); }
 #imgScroller { flex: 1; overflow: auto; }
 #imgRow { display: flex; align-items: flex-start; gap: 14px; padding: 14px; width: max-content; margin: 0 auto; }
+/* chrome69: margin fallback for flex gap (see the #header rule) */
+@supports not (appearance: none) {
+	#imgRow > * + * { margin-left: 14px; }
+}
 .imgPane { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: 4px; overflow: hidden; background: var(--vscode-editor-background); flex-shrink: 0; }
 .imgCaption { font-size: 11px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); opacity: 0.85; white-space: nowrap; }
 .imgHolder { padding: 8px; }

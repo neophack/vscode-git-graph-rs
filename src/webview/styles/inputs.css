@@ -28,6 +28,12 @@
 .roundedBtn:active{
 	transform:scale(0.97);
 }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.roundedBtn:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .roundedBtn:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:1px;

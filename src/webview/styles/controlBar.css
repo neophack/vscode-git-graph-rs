@@ -74,6 +74,12 @@
 #currentBtn:active, #findBtn:active, #filterBtn:active, #statisticsBtn:active, #terminalBtn:active, #settingsBtn:active, #fetchBtn:active{
 	transform:scale(0.88);
 }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+#currentBtn:focus, #findBtn:focus, #filterBtn:focus, #statisticsBtn:focus, #terminalBtn:focus, #settingsBtn:focus, #fetchBtn:focus, #refreshBtn:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:2px;
+}
 #currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #statisticsBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:2px;

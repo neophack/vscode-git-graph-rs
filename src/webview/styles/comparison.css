@@ -28,6 +28,11 @@ body {
 .commitCard[data-role="base"] { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
 .commitCard[data-role="compare"] { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
 .commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	.commitCard .firstLine > * + * { margin-left: 7px; }
+}
 .commitCard.hasMessage .firstLine { cursor: pointer; margin: -3px -6px; padding: 3px 6px; border-radius: 3px; }
 .commitCard.hasMessage .firstLine:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
 .commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
@@ -41,6 +46,10 @@ body {
 .commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
 #commitCards:not(.expanded) .commitCard.hasMessage .message { display: none; margin: 0; padding: 0; border: none; }
 .compareDivider { flex-shrink: 0; width: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; border-radius: 4px; padding: 4px 2px; }
+/* chrome69: margin fallback for flex gap (column layout, so the gap is vertical) */
+@supports not (appearance: none) {
+	.compareDivider > * + * { margin-top: 3px; }
+}
 .compareDivider:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
 .compareDivider .arrow { font-size: 13px; opacity: 0.55; line-height: 1; }
 .compareDivider .count { font-size: 10px; line-height: 14px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit); border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
@@ -65,6 +74,10 @@ body {
 .letter { width: 13px; margin-right: 5px; text-align: center; font-weight: 600; flex-shrink: 0; }
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; gap: 8px; }
+/* chrome69: margin fallback for flex gap (see the .firstLine rule) */
+@supports not (appearance: none) {
+	#fileHeader > * + * { margin-left: 8px; }
+}
 #fileHeader:empty { display: none; }
 #filePath { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 #fileHeader button {
@@ -99,7 +112,9 @@ table.diff td { padding: 0 8px; vertical-align: top; }
 table.diff td.code { white-space: pre-wrap; }
 /* Chromium 69 fallback (overflow-wrap:anywhere needs Chrome 80): break-word is the nearest
    safe value */
+/* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: extends the td.code base rule above */
 table.diff td.code { overflow-wrap: break-word; word-break: break-all; }
+/* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rule above is the Chromium 69 twin */
 table.diff td.code { overflow-wrap: anywhere; word-break: break-all; }
 td.ln { width: 46px; text-align: right; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); user-select: none; border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25)); background: rgba(128,128,128,0.06); }
 tr.ctx td.code { background: var(--vscode-editor-background); }

@@ -44,10 +44,10 @@ body.vscode-high-contrast #commitTable tr.commit.findCurrentCommit{
 	animation:flash-commit 0.75s var(--gg-ease);
 }
 @keyframes flash-commit{
-	0%   {}
+	0%   { /* start on the row's own background: no extra keyframe colour */ }
 	20%  {background-color:var(--git-graph-flashPrimary);}
 	35%  {background-color:var(--git-graph-flashSecondary);}
 	50%  {background-color:var(--git-graph-flashPrimary);}
 	65%  {background-color:var(--git-graph-flashPrimary);}
-	100% {}
+	100% { /* end back on the row's own background */ }
 }

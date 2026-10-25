@@ -45,6 +45,7 @@ body.mobileMode #cdvControls{
 	/* Chromium 69 fallback (min()/max() need Chrome 79) */
 	padding:4px;
 	padding:4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+	padding-top:4px;
 	padding-top:max(4px, env(safe-area-inset-top));
 	border-bottom:0.5px solid var(--m-sep);
 	background-color:var(--m-bg);
@@ -126,6 +127,11 @@ body.mobileMode #cdvLoading{
 	gap:10px;
 	margin-top:14px;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	.cdvmByline > * + * { margin-left: 10px; }
+}
 .cdvmAvatar{
 	flex:none;
 	display:inline-flex;
@@ -194,6 +200,10 @@ body.mobileMode #cdvLoading{
 	min-height:24px;
 	padding:10px 0;
 }
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	.cdvmFact > * + * { margin-left: 12px; }
+}
 .cdvmFact + .cdvmFact{
 	box-shadow:0 -0.5px 0 var(--m-sep);
 }
@@ -212,6 +222,12 @@ body.mobileMode #cdvLoading{
 	/* Chromium 69 fallback: break-word is the nearest safe value (anywhere needs Chrome 80) */
 	overflow-wrap:break-word;
 	overflow-wrap:anywhere;
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule); the value wraps, so the
+   gap's row component is a bottom margin too (2px below every child on 69 only) */
+@supports not (appearance: none) {
+	.cdvmFactValue > * + * { margin-left: 6px; }
+	.cdvmFactValue > * { margin-bottom: 2px; }
 }
 .cdvmMono{
 	display:block;
@@ -249,6 +265,10 @@ body.mobileMode #cdvFilesHeader{
 	padding:6px 8px 2px 16px;
 	padding:6px max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
 }
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	body.mobileMode #cdvFilesHeader > * + * { margin-left: 8px; }
+}
 .cdvmFilesCount{
 	flex:0 1 auto;
 	min-width:0;
@@ -268,6 +288,10 @@ body.mobileMode #cdvFilesHeader{
 	font-family:var(--m-mono);
 	font-size:12px;
 	font-weight:600;
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	.cdvmFilesStat > * + * { margin-left: 6px; }
 }
 .cdvmAdd{ color:var(--m-add); }
 .cdvmDel{ color:var(--m-del); }

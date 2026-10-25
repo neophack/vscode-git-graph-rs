@@ -10,6 +10,14 @@
 	color:var(--vscode-inputValidation-warningForeground, inherit);
 	font-size:13px;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap).
+   The banner wraps, so the gap's row component is a bottom margin too - on 69 the banner grows
+   8px taller than the modern rendering, the cost of emulating row-gap without it. */
+@supports not (appearance: none) {
+	#conflictBanner > * + * { margin-left: 12px; }
+	#conflictBanner > * { margin-bottom: 8px; }
+}
 .conflictBannerIcon{
 	display:flex;
 	flex-shrink:0;

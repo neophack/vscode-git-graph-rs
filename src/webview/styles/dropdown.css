@@ -29,6 +29,12 @@
 .dropdownCurrentValue:hover{
 	background-color:rgba(128,128,128,0.2);
 }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.dropdownCurrentValue:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
 .dropdownCurrentValue:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
 	outline-offset:1px;

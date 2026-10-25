@@ -31,12 +31,18 @@ body.mobileMode #controls{
 	/* Chromium 69 fallback (min()/max() need Chrome 79) */
 	padding:4px 4px 4px 12px;
 	padding:4px max(4px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+	padding-top:4px;
 	padding-top:max(4px, env(safe-area-inset-top));
 	border-bottom:0.5px solid var(--m-sep);
 	line-height:normal;
 	text-align:left;
 	white-space:nowrap;
 	font-weight:normal;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	body.mobileMode #controls > * + * { margin-left: 6px; }
 }
 body.mobileMode #repoControl, body.mobileMode #branchControl{
 	display:flex;
@@ -171,10 +177,11 @@ body.mobileMode #mobileMoreBtn svg{
 }
 
 body.mobileMode #pinnedControls{
-	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	/* Chromium 69 fallback (min()/max() need Chrome 79): each axis pairs its
+	   literal with its max() refinement */
 	padding-left:12px;
-	padding-right:12px;
 	padding-left:max(12px, env(safe-area-inset-left));
+	padding-right:12px;
 	padding-right:max(12px, env(safe-area-inset-right));
 	padding-top:8px;
 	padding-bottom:8px;

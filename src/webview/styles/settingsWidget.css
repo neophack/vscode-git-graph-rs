@@ -44,6 +44,11 @@
 	align-items:flex-start;
 	gap:10px;
 }
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	#settingsColumns > * + * { margin-left: 10px; }
+}
 .settingsColumn{
 	flex:1 1 0;
 	min-width:0;
@@ -430,6 +435,12 @@
 }
 .settingsSection > table tr.authorSwitchRow.active:hover td{
 	background-color:transparent;
+}
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+.settingsSectionButtons > div:focus, .settingsSection > table td.btns > div:focus, .hideRemoteBtn:focus, .authorSwitchRow:focus, #settingsClose:focus{
+	outline:1px solid var(--vscode-focusBorder);
+	outline-offset:1px;
 }
 .settingsSectionButtons > div:focus-visible, .settingsSection > table td.btns > div:focus-visible, .hideRemoteBtn:focus-visible, .authorSwitchRow:focus-visible, #settingsClose:focus-visible{
 	outline:1px solid var(--vscode-focusBorder);
