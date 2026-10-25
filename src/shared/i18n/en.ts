@@ -1,7 +1,9 @@
 /**
- * The English string table: plain data, one literal per key. The entries listed in MARKUP_KEYS
- * (the webview's i18n module, src/webview/common/i18n/index.ts) are markup templates; every other
- * entry is text.
+ * The English string table — the single dictionary shared by the webview and the extension host
+ * (REFACTOR-PLAN task 6.3): plain data, one literal per key, organized in domain sections. The
+ * first sections serve the webview UI; the later ones the extension host (notifications, quick
+ * picks, dialogs and the fallback pages). The entries listed in MARKUP_KEYS (the webview's i18n
+ * module, src/webview/common/i18n/index.ts) are markup templates; every other entry is text.
  */
 
 export const STRINGS_EN = {
@@ -908,7 +910,234 @@ export const STRINGS_EN = {
 	creatingFixupCommit: 'Creating Fixup Commit...',
 	creatingSquashCommit: 'Creating Squash Commit...',
 	autosquashRebaseCheckbox: 'Automatically Squash Commits',
-	autosquashRebaseInfo: 'Fold fixup!/squash! commits into their target commits (--autosquash). Only applies when Launch Interactive Rebase in new Terminal is also enabled.'
+	autosquashRebaseInfo: 'Fold fixup!/squash! commits into their target commits (--autosquash). Only applies when Launch Interactive Rebase in new Terminal is also enabled.',
+
+	/* ====== Extension host: notifications, quick picks, dialogs and fallback pages ====== */
+
+	/* Git executable & version requirements */
+	unableToFindGit: 'Unable to find a Git executable. Either: Set the Visual Studio Code Setting "git.path" to the path and filename of an existing Git executable, or install Git and restart Visual Studio Code.',
+	nowUsingGit: 'Git Graph is now using {0} (version: {1})',
+	gitPathInvalid: 'The new value of "git.path" ("{0}") does not {1} the path and filename of a valid Git executable.',
+	gitPathInvalidMatch: 'match',
+	gitPathInvalidContain: 'contain a string that matches',
+	incompatibleGitVersion: 'A newer version of Git (>= {0}) is required for {1}. Git {2} is currently installed. Please install a newer version of Git to use this feature.',
+	thisFeature: 'this feature',
+	featurePruningTagsWhenFetching: 'pruning tags when fetching',
+
+	/* Start-up notices */
+	noEngineForPlatform: 'Git Graph RS: no native engine is available for this system ({0}), so it runs over the git CLI instead (full functionality, original-extension read speed).',
+	noGitRunsOnEngine: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).',
+
+	/* Command palette / quick picks & notifications */
+	automationTestRunning: 'Running the automation test suite — the Git Graph view drives itself; the report opens when it finishes.',
+	automationTestFailedToStart: 'Unable to run the automation test suite: {0}',
+	selectRepoForCommand: 'Select the repository to run the command on:',
+	leavingCommitsBehind: 'Data loss risk: HEAD is currently detached with {0} commit(s) that no branch, tag, remote or stash keeps reachable. Switching now leaves them behind, recoverable from the local reflog only until git gc prunes them. Create a branch at HEAD to keep them (a stash made on them keeps them too).',
+	leavingCommitsBehindProceed: 'Switch Anyway',
+	hardResetLosesChanges: 'Data loss risk: a hard reset discards all uncommitted changes in the working tree, and they cannot be recovered — uncommitted contents are recorded in no reflog, and at most previously staged versions might be found with git fsck.',
+	hardResetLosesChangesProceed: 'Discard Changes',
+	forcePushOverwrites: 'Data loss risk: force pushing "{0}" rewrites the branch\'s history on "{1}"; commits the remote has that this push does not contain become unreachable there. Whether they can be recovered depends on the remote — hosted services usually only keep them accessible by hash, for a while.',
+	forcePushOverwritesProceed: 'Force Push',
+	unableToAmendLastCommit: 'Unable to Amend Last Commit: {0}',
+	amendedLastCommit: 'Amended the last commit in "{0}".',
+	noUpstreamBranch: 'Unable to Reset to Remote: The current branch has no upstream (remote tracking) branch.',
+	resetToRemoteConfirm: 'Reset the current branch to "{0}"?\n\nAll commits ahead of the remote will be undone (soft reset), and their changes will be kept staged.',
+	resetToRemoteButton: 'Reset to Remote',
+	unableToResetToRemote: 'Unable to Reset Current Branch to Remote: {0}',
+	resetToRemoteDone: 'Reset the current branch to "{0}" (soft reset).',
+
+	/* Gerrit integration (Source Control menu commands) */
+	gerritNoCommits: 'Unable to Push to Gerrit Ref: The repository has no commits yet.',
+	gerritDetachedHead: 'Unable to Push to Gerrit Ref: HEAD is detached, so there is no current branch. Check out a branch first.',
+	gerritInvalidBranch: 'Unable to Push to Gerrit Ref: The current branch name "{0}" is not a valid reference name.',
+	gerritAmendConfirm: 'HEAD doesn\'t have a Gerrit Change-Id. Amend it with Change-Id {0}... before submitting for review?',
+	gerritAmendAndPushButton: 'Yes, amend and push',
+	gerritCancel: 'Cancel',
+	gerritAmendAborted: 'Aborted: HEAD has no Change-Id.',
+	gerritChangeIdPushedError: 'HEAD doesn\'t have a Change-Id, but has already been pushed to a remote ({0}). Add the Change-Id manually (e.g. with the Gerrit commit-msg hook) and try again.',
+	gerritPushFailed: 'Unable to Push to Gerrit Ref: {0}',
+	gerritPushed: 'Pushed HEAD to refs/for/{0} on "{1}" for review.',
+	gerritPushedWithUrl: 'Successfully submitted for review: {0}',
+	gerritOpenChange: 'Open Change',
+	gerritHookInstalled: 'Installed the Gerrit commit-msg hook into the repository\'s hooks directory.',
+	gerritHookUpToDate: 'The Gerrit commit-msg hook is already installed (an identical hook was found).',
+	gerritHookFailed: 'Unable to fetch the commit-msg hook: {0}',
+
+	filterByFileUndetermined: 'Unable to determine the file to filter the Git Graph view by.',
+	filterByFileNotInRepo: 'The file "{0}" is not within a repository known to Git Graph.',
+	repoAdded: 'The repository "{0}" was added to Git Graph.',
+	repoAddFailed: '{0} Therefore it could not be added to Git Graph.',
+	folderNotInWorkspace: 'The folder "{0}" is not within the opened Visual Studio Code workspace, and therefore could not be added to Git Graph.',
+	selectRepoToRemove: 'Select a repository to remove from Git Graph RS:',
+	repoRemoved: 'The repository "{0}" was removed from Git Graph.',
+	repoNotKnown: 'The repository "{0}" is not known to Git Graph.',
+	avatarCacheCleared: 'The Avatar Cache was successfully cleared.',
+	unexpectedErrorInCommand: 'An unexpected error occurred while running the command "{0}".',
+	selectRepoToFetch: 'Select the repository you want to open in Git Graph, and fetch from remote(s):',
+	endedAllCodeReviews: 'Ended All Code Reviews in Workspace',
+	noCodeReviewsInProgress: 'There are no Code Reviews in progress within the current workspace.',
+	selectCodeReviewToEnd: 'Select the Code Review you want to end:',
+	endedCodeReview: 'Successfully ended Code Review "{0}".',
+	selectCodeReviewToResume: 'Select the Code Review you want to resume:',
+	selectRepoToSearch: 'Select the repository to search in',
+	searchCommitsPrompt: 'Search commit history by message, author, or hash (supports regex)',
+	searchCommitsPlaceholder: 'Enter your search query',
+	noCommitsFound: 'No commits found matching the query.',
+	selectCommitToView: 'Select a commit to view in Git Graph RS',
+	searchCommitsError: 'Error searching commit history.',
+	versionInfo: 'Git Graph RS: {0}\nVisual Studio Code: {1}\nOS: {2}\nGit: {3}',
+	copyButton: 'Copy',
+	versionInfoError: 'An unexpected error occurred while retrieving version information.',
+	unableToOpenFile: 'Unable to Open File: {0}',
+	openFileMissingArgs: 'Unable to Open File: The command was not called with the required arguments.',
+	unknownCommitSubject: '<Unknown Commit Subject>',
+
+	/* View & actions */
+	actionHandlingError: 'Git Graph RS encountered an error while handling this action.',
+	noReposInWorkspace: 'No Git repositories were found in the current workspace.',
+	interfaceLanguageInvalid: 'The interface language must be "auto", "en" or "zh-cn".',
+	settingNotWritable: 'The setting "{0}" cannot be changed from the Settings page.',
+	settingValueInvalid: 'The value provided for the setting "{0}" is invalid.',
+	settingSaveNeedsReload: 'The setting "{0}" could not be saved because this window is still running the earlier version of the extension that does not register it yet (it was installed or updated while Visual Studio Code was open). Reload the window with the command "Developer: Reload Window" and try again.',
+	globalAuthorTakeOverConfirm: 'The global Git author is currently "{0}", which Git Graph did not write and which is not in the Author Identities list you saved. Replace it with the list\'s default author "{1}"?',
+	globalAuthorTakeOverButton: 'Replace with "{1}"',
+	globalAuthorRemoveConfirm: 'Emptying the Author Identities list can also remove the global Git author "{0}", which Git Graph did not write. Remove it too? Keeping it lets repositories that follow the global configuration keep committing with it.',
+	globalAuthorRemoveButton: 'Remove "{0}"',
+	noLogRecorded: 'No log is being recorded for this session. Enable the "git-graph-rs.enableLog" setting to record one.',
+	viewGitGraphRs: 'View Git Graph RS',
+	codeReviewNotFound: 'The Code Review could not be found.',
+
+	/* Webview fallback pages */
+	unableToLoadGitGraph: 'Unable to load Git Graph',
+	noReposWhenLastScanned: 'No Git repositories were found in the current workspace when it was last scanned by Git Graph.',
+	noReposHint: 'If your repositories are in subfolders of the open workspace folder(s), make sure you have set the Git Graph Setting "git-graph-rs.maxDepthOfRepoSearch" appropriately (read the <a href="{0}" target="_blank">documentation</a> for more information).',
+	rescanForReposButton: 'Re-scan the current workspace for repositories',
+
+	/* Repository configuration import/export */
+	newerRepoConfigDetected: 'A newer Git Graph Repository Configuration File has been detected for the repository "{0}". Would you like to override your current repository configuration with the new changes?',
+	yesButton: 'Yes',
+	noButton: 'No',
+	repoConfigImported: 'Git Graph Repository Configuration was successfully imported for the repository "{0}".',
+	repoConfigInvalidValue: 'The value for "{0}" in the configuration file "{1}" is invalid.',
+	writeRepoConfigFailed: 'Failed to write the Git Graph Repository Configuration File to "{0}".',
+	repoConfigExported: 'Successfully exported the Git Graph Repository Configuration to "{0}".',
+	checkVscodeDirFailed: 'An unexpected error occurred while checking if the "{0}" directory exists. This directory is used to store the Git Graph Repository Configuration file.',
+
+	/* Data source messages */
+	invalidCommitHash: 'Invalid commit hash was provided for "{0}"',
+	invalidStashSelector: 'Invalid stash selector was provided for "{0}"',
+	invalidUrl: 'Invalid URL was provided for "{0}"',
+	invalidRefName: 'Invalid reference name was provided for "{0}"',
+	unsafeForTerminal: 'The name "{0}" cannot be safely passed to the configured terminal shell. Use the non-interactive variant of this action instead.',
+	pruneTagsRequiresPrune: 'In order to Prune Tags, pruning must also be enabled when fetching from remote(s).',
+	amendNotAncestor: 'Only commits in the current branch\'s history can have their message edited. Checkout a branch containing this commit and try again.',
+	amendMergeCommit: 'The commit message of a merge commit cannot be edited.',
+	amendPushedCommit: 'This commit has already been pushed to the following remotes and can therefore not be edited: {0}',
+
+	/* File / diff / terminal helpers */
+	archiveSaveLabel: 'Create Archive',
+	archiveTarFilter: 'TAR Archive',
+	archiveZipFilter: 'ZIP Archive',
+	archiveInvalidExtension: 'Invalid file extension "*.{0}". The archive file must have a *.tar or *.zip extension.',
+	archiveNoFileName: 'No file name was provided for the archive.',
+	archiveNoSaveDialog: 'Visual Studio Code was unable to display the save dialog.',
+	clipboardWriteFailed: 'Visual Studio Code was unable to write to the Clipboard.',
+	pullRequestUrlType: 'Pull Request URL',
+	externalUrlType: 'External URL',
+	openUrlFailed: 'Visual Studio Code was unable to open the {0}: {1}',
+	openExtensionSettingsFailed: 'Visual Studio Code was unable to open the Git Graph Extension Settings.',
+	openFileFailed: 'Visual Studio Code was unable to open {0}.',
+	fileNotInRepo: 'The file {0} doesn\'t currently exist in this repository.',
+	diffTitlePresent: 'Present',
+	diffTitleUncommitted: 'Uncommitted',
+	diffTitleAddedIn: 'Added in {0}',
+	diffTitleDeletedIn: 'Deleted in {0}',
+	diffTitleChanged: '{0} \u2194 {1}',
+	diffTitleChangedWithParent: '{0}^ \u2194 {1}',
+	diffTitleAddedBetween: 'Added between {0} & {1}',
+	diffTitleDeletedBetween: 'Deleted between {0} & {1}',
+	diffEditorFailed: 'Visual Studio Code was unable to load the diff editor for {0}.',
+	viewFileAtRevisionFailed: 'Visual Studio Code was unable to open {0} at commit {1}.',
+	openScmFailed: 'Visual Studio Code was unable to open the Source Control View.',
+	terminalName: 'Git Graph RS: {0}',
+	openExternalDirDiffTerminalName: 'Open External Directory Diff',
+	unableToRetrieveFile: 'Unable to retrieve file: {0}',
+	malformedDiffDocUri: 'Unable to decode the Git Graph RS diff document URI: the data is malformed.',
+
+	/* Commit Comparison View */
+	commitPanelTitle: 'Commit {0}',
+	comparePanelTitle: 'Compare {0} \u2194 {1}',
+	comparePresentLabel: 'Present',
+	compareUncommittedLabel: 'Uncommitted changes',
+	compareWorkingTreeLabel: 'The current working tree',
+	compareErrorLabel: 'Error',
+	compareFilesChangedLabel: 'Files changed',
+	compareLoadingChanges: 'Loading changes&hellip;',
+	compareNoChanges: 'No changes between these commits.',
+	compareOneFileChanged: '1 file changed',
+	compareFilesChanged: '{0} files changed',
+	compareCommitsBetweenOne: '1 commit',
+	compareCommitsBetween: '{0} commits',
+	compareToggleMessagesTitle: 'Show/hide commit messages',
+	compareStatsAdditions: ' with <span class="additions">+{0}</span>',
+	compareStatsDeletions: ' <span class="deletions">&minus;{0}</span>',
+	compareOpenDiffInEditor: 'Open Diff in Editor',
+	compareLoadingDiff: 'Loading diff&hellip;',
+	compareBinaryFile: 'Binary file &mdash; the diff cannot be displayed.',
+	compareNoTextualChanges: 'No textual changes.',
+	compareHexPrevDiff: 'Previous difference',
+	compareHexNextDiff: 'Next difference',
+	compareHexDiffStatus: 'Difference {0} of {1}',
+	compareHexNoDifferences: 'No differences',
+	compareHexAnalysing: 'Analysing&hellip;',
+	compareHexLoadError: 'Unable to load the binary contents: {0}',
+	compareHexToggleButton: 'Hex',
+	/* The hex comparison's selection & copy: a drag (or Shift+click) picks bytes by their grid
+	   position, painted identically on both panes since the two sides can hold different bytes
+	   at that position; the right-click menu copies whichever side it lands on. */
+	compareHexMenuCopy: 'Copy',
+	compareHexMenuCopyHex: 'Copy as Hex',
+	compareHexMenuCopyText: 'Copy as Text',
+	compareHexMenuCopyC: 'Copy as C Array',
+	compareHexMenuCopyBase64: 'Copy as Base64',
+	compareHexMenuCopyAddress: 'Copy Address',
+	compareHexMenuClearSelection: 'Clear Selection',
+	compareHexCopyDone: 'Copied ({0})',
+	compareHexCopyDoneAddress: 'Copied the address',
+	compareHexCopyTooLarge: 'The selection ({0} bytes) is too large to copy.',
+	compareHexCopyReadFailed: 'The selected bytes could not be read.',
+	compareImageToggleButton: 'Picture',
+	compareImageCaptionOld: 'Original',
+	compareImageCaptionDiff: 'Difference',
+	compareImageCaptionNew: 'Modified',
+	compareImageDiffPixels: '{0}% of the pixels differ',
+	compareImageStatsTpl: '{0} pixels ({1}%) differ &middot; max {2} &middot; avg {3} &middot; MSE {4} &middot; PSNR {5} dB',
+	compareImageModeEnhanced: 'Difference enhanced',
+	compareImageModeDifference: 'Difference',
+	compareImageModeBlend: 'Blend',
+	compareImageModeHighlight: 'Highlight',
+	compareImageModeBlink: 'Blink',
+	compareImageAmplify: 'Amplify',
+	compareImageBlendAlpha: 'Blend',
+	compareImageTolerance: 'Tolerance',
+	compareImageNoDifferences: 'The images are identical',
+	compareImageTooLarge: 'The image is too large to compare here ({0} > {1} bytes) &mdash; the hex view is still available.',
+	compareImageUnsupportedType: 'This file type cannot be rendered as a picture.',
+	compareImageDecodeError: 'The image could not be decoded.',
+	compareImageZoomFit: 'Fit',
+	compareImageZoomIn: 'Zoom in',
+	compareImageZoomOut: 'Zoom out',
+	binaryCompareTitle: '{0} ({1} \u2194 {2})'
 };
 
-export type WebviewStrings = typeof STRINGS_EN;
+/** The type of the shared string table (one entry per key). */
+export type SharedStrings = typeof STRINGS_EN;
+
+/** Every key of the shared dictionary. */
+export type MessageKey = keyof SharedStrings;
+
+/**
+ * The keys whose entry is a single string template — every key except the weekday-name array
+ * (mobileWeekdays). These are the keys the `{0}`, `{1}`, ... substitution of format.ts applies to.
+ */
+export type TextMessageKey = { [K in MessageKey]: SharedStrings[K] extends string ? K : never }[MessageKey];

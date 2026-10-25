@@ -4,11 +4,13 @@
  *
  * The language is resolved at call time (`t()` re-reads the configuration on every message, so a
  * setting change applies immediately), which these tests pin by mutating the stubbed `vscode`
- * configuration between calls. The dictionaries themselves are held against three invariants —
- * key and placeholder parity between the languages, well-formed placeholders, and the round-trip
- * the comparison pages rely on (baking `{0}`/`{1}` back into a template so the webview can
- * `.replace()` them later) — the exact shape of the placeholder that once lost its closing brace
- * and surfaced as literal `{1` in the rendered page.
+ * configuration between calls. The dictionary is the shared string table of src/shared/i18n
+ * (merged with the webview's in task 6.3): key parity between the languages is enforced at
+ * compile time (`satisfies SharedStrings`); these tests hold the table against the remaining,
+ * runtime invariants — placeholder parity and well-formedness, and the round-trip the comparison
+ * pages rely on (baking `{0}`/`{1}` back into a template so the webview can `.replace()` them
+ * later) — the exact shape of the placeholder that once lost its closing brace and surfaced as
+ * literal `{1` in the rendered page.
  */
 
 import assert from 'node:assert/strict';
@@ -44,13 +46,11 @@ Module._load = function (request, parent, isMain) {
 };
 
 const { isZhCn, t } = await import('../out/i18n.js');
+const { STRINGS_EN } = await import('../out/shared/i18n/en.js');
 
-/** The message keys, scraped from the EN dictionary block of the source (mirrors the parity script). */
-function messageKeys() {
-	const source = fs.readFileSync(path.join(root, 'src', 'i18n.ts'), 'utf8');
-	const block = source.slice(source.indexOf('const EN = {'), source.indexOf('type MessageKey'));
-	return [...block.matchAll(/\n\t([a-zA-Z0-9]+): '/g)].map((match) => match[1]);
-}
+/** Every key of the shared dictionary, and the keys whose entry is a single string template. */
+const keys = Object.keys(STRINGS_EN);
+const textKeys = keys.filter((key) => typeof STRINGS_EN[key] === 'string');
 
 /** `t(key)` with no arguments leaves every placeholder in place, yielding the raw template. */
 const templateOf = (key) => {
@@ -109,23 +109,21 @@ describe('language selection', () => {
 });
 
 describe('the dictionaries', () => {
-	const keys = messageKeys();
-
 	it('hold a full key list', () => {
-		assert.ok(keys.length >= 150, `expected a complete dictionary, found ${keys.length} keys`);
+		assert.ok(keys.length >= 1000, `expected the merged host+webview dictionary, found ${keys.length} keys`);
 		assert.deepEqual([...new Set(keys)].sort(), keys.slice().sort(), 'keys must be unique');
 	});
 
 	it('answer every key in both languages (a missing ZH entry would throw)', () => {
 		settings.interfaceLanguage = 'zh-cn';
-		for (const key of keys) assert.ok(t(key).length > 0, `${key} has no zh-cn message`);
+		for (const key of textKeys) assert.ok(t(key).length > 0, `${key} has no zh-cn message`);
 		settings.interfaceLanguage = 'en';
-		for (const key of keys) assert.ok(t(key).length > 0, `${key} has no en message`);
+		for (const key of textKeys) assert.ok(t(key).length > 0, `${key} has no en message`);
 	});
 
 	it('give both languages the same placeholders for every key', () => {
 		settings.interfaceLanguage = 'en';
-		const en = new Map(keys.map((key) => [key, placeholdersOf(t(key))]));
+		const en = new Map(textKeys.map((key) => [key, placeholdersOf(t(key))]));
 		settings.interfaceLanguage = 'zh-cn';
 		for (const [key, enPlaceholders] of en) {
 			assert.deepEqual(placeholdersOf(t(key)).sort(), [...enPlaceholders].sort(),
@@ -134,7 +132,7 @@ describe('the dictionaries', () => {
 	});
 
 	it('only contains well-formed placeholders', () => {
-		for (const key of keys) {
+		for (const key of textKeys) {
 			for (const template of [templateOf(key), (() => { settings.interfaceLanguage = 'zh-cn'; return t(key); })()]) {
 				const remainder = template.replace(/\{\d+\}/g, '');
 				assert.ok(!/\{\d/.test(remainder),
@@ -150,7 +148,7 @@ describe('the dictionaries', () => {
 		const passThrough = ['{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}', '{9}'];
 		for (const language of ['en', 'zh-cn']) {
 			settings.interfaceLanguage = language;
-			for (const key of keys) {
+			for (const key of textKeys) {
 				assert.equal(t(key, ...passThrough), t(key), `${key} does not survive the round-trip in ${language}`);
 			}
 		}

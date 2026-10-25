@@ -19,7 +19,7 @@
 export * from '../../../shared/i18n';
 
 import { escapeHtml, isSafeHtml, raw, SafeHtml } from '../html';
-import { STRINGS_EN, WebviewStrings } from '../../../shared/i18n';
+import { STRINGS_EN, SharedStrings } from '../../../shared/i18n';
 import { STRINGS_ZH_CN } from '../../../shared/i18n';
 import { substitutePlaceholders } from '../../../shared/i18n';
 
@@ -51,12 +51,12 @@ export const MARKUP_KEYS = [
 export type MarkupKey = typeof MARKUP_KEYS[number];
 
 /** The text entries of a string table. */
-export type TextStrings = Readonly<Omit<WebviewStrings, MarkupKey>>;
+export type TextStrings = Readonly<Omit<SharedStrings, MarkupKey>>;
 
 /** The markup entries of a string table. */
 export type MarkupStrings = { readonly [K in MarkupKey]: SafeHtml };
 
-function markupOf(table: WebviewStrings): MarkupStrings {
+function markupOf(table: SharedStrings): MarkupStrings {
 	const result: { [key: string]: SafeHtml } = {};
 	for (let i = 0; i < MARKUP_KEYS.length; i++) result[MARKUP_KEYS[i]] = raw(table[MARKUP_KEYS[i]]);
 	return <MarkupStrings><unknown>result;
