@@ -59,7 +59,9 @@ describe('the automation build variant (build.mjs --automation)', () => {
 		for (const marker of [
 			'menu-commit/add-tag',
 			'control-bar/author-dropdown',
-			'ScriptedUiPort',
+			// A string literal of scriptedUiPort.ts (the lenient save-dialog default path):
+			// the CLASS name does not survive --production minification.
+			'automation-archive-',
 			'Reset the fixture repository'
 		]) {
 			assert.ok(source.includes(marker), `the automation bundle must contain the marker "${marker}"`);
