@@ -4,7 +4,8 @@ An inventory of `vscode-git-graph` (the TypeScript original, 26,500 lines) again
 `vscode-git-graph-rs` (this project).
 
 The short version: **this project is now a VS Code extension.** The webview and extension host
-layer are ported over (with the Gerrit integration of the original deliberately removed), every
+layer are ported over (with the Gerrit integration of the original re-ported in part — its
+display and fetch path is here, the interactive controls are not), every
 repository read runs through the `GitBackend` interface with the Rust engine serving it (and the
 `git` CLI answering wherever the engine does not reach), and the write operations run over the
 `git` CLI exactly as the original did. What remains is the write path on the engine, and a few
@@ -73,7 +74,7 @@ the roadmap phase that would add them:
 | Working tree | `cleanUntrackedFiles` `resetFileToRevision` |
 | Other | `archive` `setConfigValue` `unsetConfigValue` `openExternalDirDiff` `openGitTerminal` |
 
-## 3. The extension layer — ported, Gerrit removed
+## 3. The extension layer — ported, Gerrit in part
 
 `web/` (the whole webview), `gitGraphView.ts`, `repoManager.ts`, `commands.ts`, `config.ts`,
 `utils.ts`, `avatarManager.ts`, `extensionState.ts`, `comparisonView.ts`, `types/`,
@@ -85,7 +86,7 @@ compile clean, under the `git-graph-rs` prefix.
 this project now carries its display and fetch path — `src/gerrit.ts` (change ref parsing, the
 status filter, and `GerritDataSource`, whose NoteDb meta parsing runs on the Rust engine in one
 call — one `git log` process per change is the CLI fallback), the change
-badge + review info dialog (`web/gerritView.ts`), and a Repository Settings section holding the
+badge + review info dialog (`src/webview/graph/integrations/gerrit.ts`), and a Repository Settings section holding the
 per-repository "Fetch Gerrit change refs" checkbox (unchecking deletes the locally fetched change
 refs and stops the fetching) and the open/merged/abandoned/WIP status filter. The engine's
 `gerritRefs` / `showChangeRefs` graph parameters are live again for this. Still not ported: the
