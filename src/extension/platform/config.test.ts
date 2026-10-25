@@ -460,4 +460,39 @@ describe('getConfig (the legacy per-repository reader, absorbed from src/config.
 		});
 		expect(getConfig().gitPaths).toEqual(['C:/tools/git/bin/git.exe']);
 	});
+
+	it('commitAuthors returns the configured author identities', () => {
+		configure({
+			'commitAuthors': [
+				{ name: 'Alice (Work)', email: 'alice@corp.example' },
+				{ name: 'alice-oss', email: 'alice@example.com' }
+			]
+		});
+		expect(getConfig().commitAuthors).toEqual([
+			{ name: 'Alice (Work)', email: 'alice@corp.example' },
+			{ name: 'alice-oss', email: 'alice@example.com' }
+		]);
+	});
+
+	it('commitAuthors returns an empty array when the setting is not an array', () => {
+		configure({ 'commitAuthors': 'Alice <alice@example.com>' });
+		expect(getConfig().commitAuthors).toEqual([]);
+	});
+
+	it('commitAuthors drops entries whose name or email is missing, not a string, or blank', () => {
+		configure({
+			'commitAuthors': [
+				{ name: 'Alice', email: 'alice@example.com' },
+				{ name: 'No Email' },
+				{ name: '', email: 'blank-name@example.com' },
+				{ name: 'Blank Email', email: '   ' },
+				{ name: 7, email: 'number-name@example.com' },
+				'not an object',
+				null
+			]
+		});
+		expect(getConfig().commitAuthors).toEqual([
+			{ name: 'Alice', email: 'alice@example.com' }
+		]);
+	});
 });
