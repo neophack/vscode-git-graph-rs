@@ -48,8 +48,9 @@
 		"compile": "npm run clean && npm run compile-src && npm run compile-web",
 		"package": "node scripts/package-without-automation.mjs",
 		"package:automation": "node scripts/package-with-automation.mjs",
-		"test": "npm run test:rust && npm run test:node",
+		"test": "npm run test:rust && npm run test:unit && npm run test:node",
 		"test:rust": "cargo test --workspace",
+		"test:unit": "vitest run",
 		"test:node": "node scripts/run-tests.mjs",
 		"test:node:cov": "c8 node scripts/run-tests.mjs",
 		"bench": "node scripts/bench.mjs",
@@ -58,7 +59,9 @@
 		"test:automation:full": "node scripts/automation/full-test.mjs",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check",
 		"lint:js": "eslint src scripts",
-		"lint:deps": "depcruise src --config .dependency-cruiser.cjs"
+		"lint:css": "stylelint \"src/webview/styles/**/*.css\"",
+		"lint:deps": "depcruise src --config .dependency-cruiser.cjs",
+		"baseline": "node scripts/dev/baseline.mjs"
 	},
 	"c8": {
 		"all": true,
@@ -93,6 +96,7 @@
 		"browserslist": "^4.29.4",
 		"c8": "^12.0.0",
 		"dependency-cruiser": "^18.7.0",
+		"es-check": "^9.8.1",
 		"esbuild": "^0.25.12",
 		"eslint": "^10.13.0",
 		"eslint-plugin-compat": "^7.0.2",
@@ -101,6 +105,8 @@
 		"jsdom": "^29.1.1",
 		"markdown-it": "^12.3.2",
 		"sharp": "^0.35.3",
+		"stylelint": "^17.16.0",
+		"stylelint-no-unsupported-browser-features": "^8.1.2",
 		"typescript": "^5.4.0",
 		"typescript-eslint": "^8.72.0",
 		"vitest": "^3.2.7"
@@ -1175,6 +1181,11 @@
 					"type": "boolean",
 					"default": false,
 					"description": "%config.git-graph-rs.openToTheRepoOfTheActiveTextEditorDocument.description%"
+				},
+				"git-graph-rs.prewarm": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.git-graph-rs.prewarm.description%"
 				},
 				"git-graph-rs.referenceLabels.alignment": {
 					"type": "string",

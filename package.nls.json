@@ -195,6 +195,7 @@
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription9": "Open the new tab in the Eighth Editor Group.",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription10": "Open the new tab in the Ninth Editor Group.",
 	"config.git-graph-rs.openToTheRepoOfTheActiveTextEditorDocument.description": "Open the Git Graph View to the repository containing the active Text Editor document.",
+	"config.git-graph-rs.prewarm.description": "Prewarm the engine when the extension activates, so the first read of a repository does not pay the startup cost.",
 	"config.git-graph-rs.referenceLabels.alignment.description": "Specifies how branch and tag reference labels are aligned for each commit.",
 	"config.git-graph-rs.referenceLabels.alignment.enumDescription0": "Show branch & tag labels on the left of the commit message in the 'Description' column.",
 	"config.git-graph-rs.referenceLabels.alignment.enumDescription1": "Show branch labels on the left of the commit message in the 'Description' column, and tag labels on the right.",

@@ -199,6 +199,7 @@
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription9": "在第八个编辑器组中打开新标签页。",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription10": "在第九个编辑器组中打开新标签页。",
 	"config.git-graph-rs.openToTheRepoOfTheActiveTextEditorDocument.description": "将 Git Graph 视图打开到当前活动文本编辑器文档所在的仓库。",
+	"config.git-graph-rs.prewarm.description": "在扩展激活时预热引擎，使仓库的首次读取无需承担启动开销。",
 	"config.git-graph-rs.referenceLabels.alignment.description": "指定每个提交的分支和标签引用标签的对齐方式。",
 	"config.git-graph-rs.referenceLabels.alignment.enumDescription0": "分支和标签引用显示在\"描述\"列中提交信息的左侧。",
 	"config.git-graph-rs.referenceLabels.alignment.enumDescription1": "分支标签显示在\"描述\"列中提交信息的左侧，标签标签显示在右侧。",

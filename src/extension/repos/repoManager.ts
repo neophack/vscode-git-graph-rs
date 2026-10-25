@@ -41,6 +41,38 @@ export interface RepoChangeEvent {
 	readonly loadRepo: string | null;
 }
 
+/** The maximum length of the most-recently-opened list RepoManager keeps (REFACTOR-PLAN 3.8.2 D11: prewarming covers at most 3 repositories). */
+export const MAX_RECENT_REPOS = 3;
+
+/**
+ * Move `repo` to the front of a most-recently-opened list, dropping its previous entry and
+ * capping the length. Pure, so the ordering policy is testable without a RepoManager.
+ * @param recent The current most-recently-opened list (most recent first).
+ * @param repo The repository that was just opened.
+ * @param max The maximum list length to keep.
+ * @returns The updated list (most recent first).
+ */
+export function bumpRecentRepos(recent: ReadonlyArray<string>, repo: string, max: number): string[] {
+	return [repo, ...recent.filter((known) => known !== repo)].slice(0, Math.max(0, max));
+}
+
+/**
+ * The recently-opened repositories a consumer (the PrewarmController) should see: the opens
+ * recorded this session, filtered to repositories still known, with the previous session's
+ * last-active repository appended until an open is recorded. Pure, so the merge policy is
+ * testable without a RepoManager.
+ * @param recorded The opens recorded this session (most recent first).
+ * @param lastActive The last-active repository of the previous session, or NULL when there is none.
+ * @param isKnown Answers whether a repository is still known (and may be prewarmed).
+ * @returns The recently-opened repositories, most recent first.
+ */
+export function recentReposList(recorded: ReadonlyArray<string>, lastActive: string | null, isKnown: (repo: string) => boolean): string[] {
+	const known = recorded.filter((repo) => isKnown(repo));
+	// Recorded opens are strictly more recent than the persisted one, so it joins at the end
+	if (lastActive !== null && isKnown(lastActive) && !known.includes(lastActive)) return [...known, lastActive];
+	return known;
+}
+
 /**
  * Detects and manages repositories in Git Graph.
  */
@@ -52,6 +84,10 @@ export class RepoManager extends Disposable {
 	private repos: GitRepoSet;
 	private ignoredRepos: string[];
 	private maxDepthOfRepoSearch: number;
+	// The repositories opened in the Git Graph View this session, most recent first (the
+	// PrewarmController's candidate order); the previous session's last-active repository is
+	// merged in by getRecentRepos rather than stored here
+	private recentRepos: string[] = [];
 	private readonly pinsWriteInFlight: Set<string> = new Set(); // repos whose pinned branches/commits are currently being persisted to the External Configuration File
 
 	private readonly folderWatchers: { [workspace: string]: vscode.FileSystemWatcher } = {};
@@ -85,6 +121,10 @@ export class RepoManager extends Disposable {
 		}
 		this.ignoredRepos = extensionState.getIgnoredRepos().map((repo) => getPathFromStr(repo)).filter((repo, i, repos) => repos.indexOf(repo) === i);
 		this.maxDepthOfRepoSearch = getConfig().maxDepthOfRepoSearch;
+		// Seed the recently-opened list from the previous session, so prewarming (which reads it
+		// 2 s after activation) has the most likely re-open as its first candidate
+		const lastActiveRepo = extensionState.getLastActiveRepo();
+		if (lastActiveRepo !== null) this.recentRepos = bumpRecentRepos(this.recentRepos, lastActiveRepo, MAX_RECENT_REPOS);
 
 		this.configWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/git-graph-rs.json');
 		this.configWatcher.onDidCreate(this.onConfigWatcherCreateOrChange.bind(this));
@@ -280,6 +320,27 @@ export class RepoManager extends Disposable {
 	}
 
 	/**
+	 * Record that a repository was opened in the Git Graph View, making it the most-recently-opened
+	 * one. The PrewarmController (REFACTOR-PLAN task 4.9) serves its candidates in this order.
+	 * @param repo The path of the repository that was opened.
+	 */
+	public recordRepoOpened(repo: string) {
+		if (!this.isKnownRepo(repo)) return;
+		this.recentRepos = bumpRecentRepos(this.recentRepos, repo, MAX_RECENT_REPOS);
+	}
+
+	/**
+	 * Get the recently-opened repositories, most recent first: the opens recorded this session,
+	 * with the previous session's last-active repository filling in until one is recorded. Only
+	 * repositories still known are listed. Pure data (no vscode), so the PrewarmController can
+	 * consume it through an injected provider.
+	 * @returns The recently-opened repository paths.
+	 */
+	public getRecentRepos(): readonly string[] {
+		return recentReposList(this.recentRepos, this.extensionState.getLastActiveRepo(), (repo) => this.isKnownRepo(repo));
+	}
+
+	/**
 	 * Get the repository that contains the specified file.
 	 * @param path The path of the file.
 	 * @returns The path of the repository containing the file, or NULL if no known repository contains the file.
@@ -366,6 +427,7 @@ export class RepoManager extends Disposable {
 	 */
 	private removeRepo(repo: string) {
 		delete this.repos[repo];
+		this.recentRepos = this.recentRepos.filter((known) => known !== repo);
 		// Release the engine's handle and the cached config data of the removed repository: both
 		// would otherwise stay resident for the rest of the editor session
 		this.dataSource.closeRepository(repo);
@@ -404,6 +466,8 @@ export class RepoManager extends Disposable {
 	 * @param loadRepo The optional path of a repository to load in the Git Graph View.
 	 */
 	private sendRepos(loadRepo: string | null = null) {
+		// A repo handed to the view is an open: it heads the recently-opened list
+		if (loadRepo !== null) this.recordRepoOpened(loadRepo);
 		this.repoEventEmitter.emit({
 			repos: this.getRepos(),
 			numRepos: this.getNumRepos(),
@@ -517,6 +581,7 @@ export class RepoManager extends Disposable {
 		delete this.repos[oldRepo];
 		// The old path no longer names the repository, so its engine handle must not stay resident
 		this.dataSource.closeRepository(oldRepo);
+		this.recentRepos = this.recentRepos.map((repo) => repo === oldRepo ? newRepo : repo);
 		this.updateReposWorkspaceFolderIndex(newRepo);
 		this.extensionState.saveRepos(this.repos);
 		this.extensionState.transferRepo(oldRepo, newRepo);

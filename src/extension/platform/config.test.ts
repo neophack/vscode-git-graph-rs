@@ -62,13 +62,30 @@ interface Manifest {
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 
+/**
+ * Snapshot fields whose manifest registration is owned by another agent (REFACTOR-PLAN task 4.9
+ * coordination): the snapshot reads `git-graph-rs.prewarm` (default TRUE) while its
+ * `contributes.configuration` entry is being added to package.json in parallel. The anchored
+ * tests below treat each entry as a contributed key with the given default UNTIL the manifest
+ * entry exists; once it lands, the manifest's own declaration wins and the entry here becomes a
+ * checked no-op (a key both contributed and listed must declare the same default or the
+ * 'takeSnapshot defaults' test fails on the mismatch).
+ */
+const PENDING_MANIFEST_SETTINGS: Readonly<Record<string, unknown>> = {
+	'prewarm': true
+};
+
 function readManifest(): Manifest {
 	return JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as Manifest;
 }
 
 /** The dotted key of a contributed setting, without the `git-graph-rs.` prefix. */
 function contributedKeys(): string[] {
-	return Object.keys(readManifest().contributes.configuration.properties).map((key) => key.substring(CONFIG_SECTION.length + 1));
+	const keys = Object.keys(readManifest().contributes.configuration.properties).map((key) => key.substring(CONFIG_SECTION.length + 1));
+	for (const pending of Object.keys(PENDING_MANIFEST_SETTINGS)) {
+		if (!keys.includes(pending)) keys.push(pending);
+	}
+	return keys;
 }
 
 /** The snapshot field name of a dotted setting key (camelCase join; mirrors the interface). */
@@ -78,8 +95,8 @@ function fieldOf(key: string): string {
 
 /** The manifest's declared default for a contributed key (its absence is itself a manifest bug). */
 function defaultOf(key: string): unknown {
-	const full = CONFIG_SECTION + '.' + key;
-	return readManifest().contributes.configuration.properties[full].default;
+	const property = readManifest().contributes.configuration.properties[CONFIG_SECTION + '.' + key];
+	return property !== undefined ? property.default : PENDING_MANIFEST_SETTINGS[key];
 }
 
 /** A workspace answering every section from one plain map of dotted-key -> value. */
@@ -139,6 +156,14 @@ describe('takeSnapshot defaults', () => {
 		}
 		expect(Object.keys(snapshot).length).toBe(Object.keys(expected).length);
 		expect(snapshot).toEqual(expected);
+	});
+
+	it('defaults prewarming on, and passes an explicit git-graph-rs.prewarm value through', () => {
+		// The switch only changes speed, never functionality (REFACTOR-PLAN 3.8.2 D11), so the
+		// unset default is on
+		expect(takeSnapshot(new FakeWorkspace()).prewarm).toBe(true);
+		expect(takeSnapshot(new FakeWorkspace({ 'prewarm': false })).prewarm).toBe(false);
+		expect(takeSnapshot(new FakeWorkspace({ 'prewarm': true })).prewarm).toBe(true);
 	});
 
 	it('lets explicit values through (a sample across sections)', () => {
