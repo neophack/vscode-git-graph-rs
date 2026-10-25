@@ -45,7 +45,7 @@ This is where every obstacle this project hit on Windows came from — each one 
 | `could not open legacy_stdio_definitions.lib` | rustc passes that import library unconditionally; its ARM64 variant ships only in the full VS ARM64 component — nothing in a pure-Rust addon imports from it, so an empty archive satisfies it |
 
 `scripts/build-addon.mjs` routes around all four (see `buildWindowsArm64Locally` and
-`buildEnvironment`); `build-rust.bat` drives all six targets in one command.
+`buildEnvironment`); `node scripts/dev/install.mjs --full` drives all six targets in one command.
 
 ## The Rust dependencies
 
