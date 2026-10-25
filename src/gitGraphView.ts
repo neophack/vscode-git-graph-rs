@@ -1598,7 +1598,7 @@ export class GitGraphView extends Disposable {
 			case 'viewDiffBinary':
 				// The native Diff View can't show a binary/image file (both panes would be
 				// empty): the same standalone tab the Commit Comparison View opens for one does.
-				BinaryCompareView.open(this.dataSource, msg.repo, resolveDiffFromHash(msg.fromHash, msg.toHash), msg.toHash, {
+				BinaryCompareView.open(this.extensionPath, this.dataSource, msg.repo, resolveDiffFromHash(msg.fromHash, msg.toHash), msg.toHash, {
 					oldFilePath: msg.oldFilePath,
 					newFilePath: msg.newFilePath,
 					type: msg.type,

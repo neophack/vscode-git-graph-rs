@@ -1,0 +1,143 @@
+/* The styles of the embedded hex / picture comparison area, shared by the Commit Comparison
+ * View's diff area and the standalone Binary Compare tab (REFACTOR-PLAN task 6.1: moved out of
+ * the binaryCompareCss() template string of src/binaryCompare.ts). The standalone page's own
+ * chrome (its body layout and header) is scoped under body.binaryComparePage, so the same file
+ * serves both pages: only the standalone shell sets that class.
+ *
+ * Baseline is Chromium 69 (VS Code 1.38): every feature newer than it carries a fallback
+ * declaration immediately before the modern one, which stays as progressive enhancement. Flex
+ * `gap` (Chrome 84) sites are moved as authored, matching the established practice of the other
+ * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css). */
+
+/* The standalone page's chrome: a slim header naming the file and the two revisions. */
+body.binaryComparePage {
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size, 13px);
+	color: var(--vscode-foreground);
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	overflow: hidden;
+}
+body.binaryComparePage #header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 16px;
+	border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
+	flex-shrink: 0;
+}
+body.binaryComparePage #header .letter {
+	font-weight: 600;
+	width: 13px;
+	text-align: center;
+	flex-shrink: 0;
+}
+body.binaryComparePage #header .path {
+	font-family: var(--vscode-editor-font-family, monospace);
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+body.binaryComparePage #header .refs {
+	font-size: 11px;
+	opacity: 0.75;
+	margin-left: auto;
+	flex-shrink: 0;
+	font-family: var(--vscode-editor-font-family, monospace);
+}
+body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
+.status { padding: 16px; opacity: 0.8; }
+
+/* Hex comparison view (binary files): two panes side by side, each the hex editor's
+   offset | bytes | gutter | ASCII grid — the same table Git Graph Studio's hex viewer
+   draws, so the comparison reads like the viewer it sits next to. */
+#diffArea.hexMode { overflow: hidden; display: flex; }
+#hexWrap { --hcols: 10ch; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#hexToolbar, #imgToolbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; font-size: 12px; }
+#hexToolbar .hxSpacer, #imgToolbar .hxSpacer { flex: 1; }
+#hexToolbar button, #imgToolbar button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; }
+#hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
+/* The ruler and the rows share one font: the ch-based grid tracks only line up when
+   both measure the same monospace glyph. */
+#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: var(--vscode-editor-font-size, 13px); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+#hexInner { display: inline-block; min-width: 100%; }
+/* The sticky head: each pane's caption (which side, how many bytes) over the column
+   ruler — one hex digit above every byte column and again above the ASCII pane, so a
+   character reads back to its byte. */
+#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); border-bottom: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+#hexCaps { display: flex; font-size: 12px; color: var(--vscode-descriptionForeground, rgba(128,128,128,0.9)); }
+.hcap { flex: 1 1 50%; min-width: 0; display: flex; justify-content: space-between; gap: 2ch; padding: 4px 12px 2px; white-space: nowrap; overflow: hidden; }
+.hcap:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+.hcap .hxSize { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
+#hexRuler { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
+#hexSpacer { position: relative; }
+#hexView { position: absolute; top: 0; left: 0; right: 0; }
+.hrow { display: flex; height: 19px; line-height: 19px; white-space: pre; }
+/* Every other row is faintly tinted, the zebra banding hex editors use to keep the eye
+   on a row across the panes; a wash of the foreground so it suits any theme. */
+/* Chromium 69 fallback (color-mix() needs Chrome 111): a neutral translucent wash */
+.hrow.hxOdd { background: rgba(128,128,128,0.06); }
+.hrow.hxOdd { background: color-mix(in srgb, var(--vscode-editor-foreground, #ccc) 6%, transparent); }
+/* Each side is a grid over the template the script builds (offset | bytes | gutter |
+   ASCII), sized in ch so the ruler's digits sit exactly over their byte columns. A rule
+   down the middle keeps the sides apart the way the offset and gutter rules do. */
+.hside { display: grid; grid-template-columns: var(--hcols); flex: 1 1 50%; min-width: 0; padding: 0 12px; user-select: none; }
+.hside:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+.hoff { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); padding-right: 1ch; border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+.hb, .ha { text-align: center; }
+/* .hbg is the dedicated 1ch track hexColsTemplate opens between byte groups - a blank
+   spacer, styled by nothing here. It keeps the group gap a single gap between two
+   bytes, not extra width folded into the group's first byte cell (which would center
+   that byte in the middle of its own widened column, splitting the gap into two
+   smaller, unevenly-sized ones straddling the byte instead). */
+/* The gutter's rule sits in its middle, 1.5ch clear of the last byte and the first char. */
+.hg { border-left: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); margin-left: 1.5ch; }
+/* A differing byte reads as a tinted cell on both sides — the diff editor's removed red
+   on the old side and its added green on the new — over the hex and ASCII cell alike. */
+/* Chromium 69 fallback (color-mix() needs Chrome 111): the theme colours at a fixed translucency */
+.hb.hxo, .ha.hxo { background: rgba(244,135,113,0.24); }
+.hb.hxo, .ha.hxo { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #f48771) 24%, transparent); }
+.hb.hxn, .ha.hxn { background: rgba(129,184,139,0.24); }
+.hb.hxn, .ha.hxn { background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #81b88b) 24%, transparent); }
+.ha.hxo { color: var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
+.ha.hxn { color: var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
+/* A selection is one shared span of grid position (row, column), painted identically on
+   both sides — the same position can hold different bytes on each side, so this marks
+   "the same spot in the comparison", not "the same file address". Layered under the diff
+   tint (later in the sheet), so a selected changed byte keeps its red/green and gains the
+   selection's outline. */
+.hb.hxSel, .ha.hxSel { background: var(--vscode-editor-selectionBackground, #264f78); }
+.hb.hxSel.hxo, .ha.hxSel.hxo { box-shadow: inset 0 0 0 1px var(--vscode-gitDecoration-deletedResourceForeground, #f48771); }
+.hb.hxSel.hxn, .ha.hxSel.hxn { box-shadow: inset 0 0 0 1px var(--vscode-gitDecoration-addedResourceForeground, #81b88b); }
+.hxCopyStatus { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+/* The right-click menu: a minimal VS Code-styled popup, since this page has none of the
+   main Git Graph view's bundled menu component. */
+#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, rgba(128,128,128,0.35))); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
+.hexMenuItem { padding: 4px 14px; cursor: pointer; white-space: nowrap; }
+.hexMenuItem:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
+.hexMenuItem.disabled { opacity: 0.45; cursor: default; }
+.hexMenuItem.disabled:hover { background: none; }
+.hexMenuSep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+
+/* Image comparison view: old picture | pixel difference | new picture */
+#diffArea.imgMode { overflow: hidden; display: flex; }
+#imgWrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#imgToolbar { flex-wrap: wrap; }
+#imgStats { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#imgControls { width: 100%; display: flex; align-items: center; gap: 16px; font-size: 11px; opacity: 0.9; flex-wrap: wrap; }
+#imgControls label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+#imgControls .hidden { display: none; }
+#imgControls select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.4)); border-radius: 2px; font-size: 11px; padding: 1px 4px; }
+/* Chromium 69 baseline: accent-color (Chrome 93) is progressive enhancement only — 69 and
+   up to 92 render the range inputs with their default accent, which is the fallback. */
+#imgControls input[type=range] { width: 90px; accent-color: var(--vscode-button-background, #007acc); }
+#imgScroller { flex: 1; overflow: auto; }
+#imgRow { display: flex; align-items: flex-start; gap: 14px; padding: 14px; width: max-content; margin: 0 auto; }
+.imgPane { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: 4px; overflow: hidden; background: var(--vscode-editor-background); flex-shrink: 0; }
+.imgCaption { font-size: 11px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); opacity: 0.85; white-space: nowrap; }
+.imgHolder { padding: 8px; }
+.imgHolder img, .imgHolder canvas { display: block; }
+#imgRow.zoomed img, #imgRow.zoomed canvas { image-rendering: pixelated; }

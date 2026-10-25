@@ -1,0 +1,135 @@
+/* The Commit Comparison View's styles (REFACTOR-PLAN task 6.1: moved out of the <style> template
+ * string of src/comparisonView.ts), bundled into media/comparison.min.css by
+ * scripts/build/webview.mjs. It also inlines the shared binary comparison area's styles, which
+ * the view embeds for binary files.
+ *
+ * Baseline is Chromium 69 (VS Code 1.38): every feature newer than it carries a fallback
+ * declaration immediately before the modern one, which stays as progressive enhancement. Flex
+ * `gap` (Chrome 84) sites are moved as authored, matching the established practice of the other
+ * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css). */
+
+@import "./binaryCompare.css";
+
+body {
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size, 13px);
+	color: var(--vscode-foreground);
+	margin: 0;
+	padding: 0 2px;
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	overflow: hidden;
+	box-sizing: border-box;
+}
+#header { padding: 2px 0px 2px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; }
+#commitCards { display: flex; align-items: stretch; gap: 0; margin-bottom: 0px; }
+.commitCard { flex: 1; min-width: 0; background: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.06)); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128,128,128,0.35))); border-radius: 4px; padding: 10px 10px; transition: background-color 0.1s ease; }
+.commitCard[data-role="base"] { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+.commitCard[data-role="compare"] { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+.commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
+.commitCard.hasMessage .firstLine { cursor: pointer; margin: -3px -6px; padding: 3px 6px; border-radius: 3px; }
+.commitCard.hasMessage .firstLine:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
+.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
+/* The single-commit card's subject line: takes whatever width the window leaves between the
+   fixed chip/author/date and truncates with an ellipsis, so it always fits. */
+.commitCard .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 0; min-width: 0; opacity: 0.9; }
+.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 0; }
+.commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
+#commitCards.expanded .toggle { transform: rotate(90deg); }
+.commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
+#commitCards:not(.expanded) .commitCard.hasMessage .message { display: none; margin: 0; padding: 0; border: none; }
+.compareDivider { flex-shrink: 0; width: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; border-radius: 4px; padding: 4px 2px; }
+.compareDivider:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
+.compareDivider .arrow { font-size: 13px; opacity: 0.55; line-height: 1; }
+.compareDivider .count { font-size: 10px; line-height: 14px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit); border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
+.compareDivider .count:empty { display: none; }
+#body { display: flex; flex: 1; min-height: 0; }
+#sidebar { width: 280px; flex-shrink: 0; overflow: auto; padding: 6px 0; --indent-guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128,128,128,0.3)); }
+#sidebarResizer { flex-shrink: 0; width: 4px; margin-left: -2px; position: relative; z-index: 1; cursor: col-resize; border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); }
+#sidebarResizer:hover, #sidebarResizer.resizing { border-right-color: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder)); }
+#sidebar h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.7; margin: 4px 12px; }
+#sidebar h2 .additions { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }
+#sidebar h2 .deletions { color: var(--vscode-gitDecoration-deletedResourceForeground, #b31d28); }
+.treeRow { display: flex; align-items: center; padding: 3px 12px 3px 8px; cursor: pointer; white-space: nowrap; user-select: none; }
+.treeRow:hover { background: var(--vscode-list-hoverBackground); }
+.treeRow.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.treeRow .arrow { width: 14px; text-align: center; flex-shrink: 0; opacity: 0.8; }
+.treeRow .name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.treeRow .counts { font-size: 11px; margin-left: 8px; flex-shrink: 0; }
+.counts .additions { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }
+.counts .deletions { color: var(--vscode-gitDecoration-deletedResourceForeground, #b31d28); }
+/* The &hellip; placeholder shown while a file's line counts are still being computed */
+.counts.pending { opacity: 0.6; }
+.letter { width: 13px; margin-right: 5px; text-align: center; font-weight: 600; flex-shrink: 0; }
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; gap: 8px; }
+#fileHeader:empty { display: none; }
+#filePath { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+#fileHeader button {
+	/* VS Code secondary button, using the exact token pair VS Code's own .monaco-button.secondary
+	   uses: secondaryForeground rides on secondaryBackground (dark text on the light/white
+	   secondary backgrounds of light and high-contrast-light themes, light text elsewhere), so
+	   the label stays readable in every theme (a UA-default button renders as a light grey
+	   3D block with black text that clashes with every theme). */
+	flex-shrink: 0;
+	box-sizing: border-box;
+	padding: 3px 12px;
+	border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
+	border-radius: 2px;
+	background: var(--vscode-button-secondaryBackground, #3a3d41);
+	color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground, #ffffff));
+	font-family: inherit;
+	font-size: 12px;
+	line-height: 17px;
+	cursor: pointer;
+	user-select: none;
+	transition: background-color 100ms ease;
+}
+#fileHeader button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground, #45494e)); }
+#fileHeader button:active { opacity: 0.85; }
+/* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the focus outline on 69. */
+#fileHeader button:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+#fileHeader button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+#diffArea { flex: 1; overflow: auto; }
+table.diff { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 19px; }
+table.diff td { padding: 0 8px; vertical-align: top; }
+table.diff td.code { white-space: pre-wrap; }
+/* Chromium 69 fallback (overflow-wrap:anywhere needs Chrome 80): break-word is the nearest
+   safe value */
+table.diff td.code { overflow-wrap: break-word; word-break: break-all; }
+table.diff td.code { overflow-wrap: anywhere; word-break: break-all; }
+td.ln { width: 46px; text-align: right; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); user-select: none; border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25)); background: rgba(128,128,128,0.06); }
+tr.ctx td.code { background: var(--vscode-editor-background); }
+/* A pure addition/deletion tints the whole line; a modified (paired) row tints its old side
+   like a deletion and its new side like an addition, the same two-tier convention (line tint +
+   a stronger tint on the exact changed text, via the "mark" rule below) VS Code's own diff
+   editor uses for its diffEditor.*Line/TextBackground colours. */
+tr.add td.new.code, tr.add td.new.ln, tr.mod td.new.code, tr.mod td.new.ln { background: var(--vscode-diffEditor-insertedLineBackground, rgba(46,160,67,0.15)); }
+tr.del td.old.code, tr.del td.old.ln, tr.mod td.old.code, tr.mod td.old.ln { background: var(--vscode-diffEditor-removedLineBackground, rgba(248,81,73,0.15)); }
+td.new mark { background: var(--vscode-diffEditor-insertedTextBackground, rgba(46,160,67,0.45)); }
+td.old mark { background: var(--vscode-diffEditor-removedTextBackground, rgba(248,81,73,0.45)); }
+table.diff mark { color: inherit; border-radius: 2px; }
+tr.hunk td { background: var(--vscode-editorInlayHint-background, rgba(127,127,127,0.15)); color: var(--vscode-editorInlayHint-foreground, inherit); padding: 2px 8px; font-size: 11px; }
+/* Syntax highlighting token colours: highlight.js classes, approximating VS Code's default
+   dark/light theme token colours (there is no API to read the user's actual TextMate theme
+   from a plain webview, so this is a fixed, reasonable approximation - the same tradeoff
+   VS Code's own built-in Markdown preview makes for fenced code blocks). */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-link { color: #569cd6; }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-regexp, .hljs-meta .hljs-string { color: #ce9178; }
+.hljs-title, .hljs-title.function_ { color: #dcdcaa; }
+.hljs-title.class_, .hljs-type, .hljs-built_in { color: #4ec9b0; }
+.hljs-comment, .hljs-quote { color: #6a9955; font-style: italic; }
+.hljs-number { color: #b5cea8; }
+.hljs-variable, .hljs-attribute, .hljs-params { color: #9cdcfe; }
+.hljs-symbol, .hljs-bullet { color: #d7ba7d; }
+body.vscode-light .hljs-keyword, body.vscode-light .hljs-selector-tag, body.vscode-light .hljs-literal, body.vscode-light .hljs-section, body.vscode-light .hljs-link { color: #0000ff; }
+body.vscode-light .hljs-string, body.vscode-light .hljs-attr, body.vscode-light .hljs-template-tag, body.vscode-light .hljs-regexp, body.vscode-light .hljs-meta .hljs-string { color: #a31515; }
+body.vscode-light .hljs-title, body.vscode-light .hljs-title.function_ { color: #795e26; }
+body.vscode-light .hljs-title.class_, body.vscode-light .hljs-type, body.vscode-light .hljs-built_in { color: #267f99; }
+body.vscode-light .hljs-comment, body.vscode-light .hljs-quote { color: #008000; }
+body.vscode-light .hljs-number { color: #098658; }
+body.vscode-light .hljs-variable, body.vscode-light .hljs-attribute, body.vscode-light .hljs-params { color: #001080; }
+body.vscode-light .hljs-symbol, body.vscode-light .hljs-bullet { color: #795e26; }

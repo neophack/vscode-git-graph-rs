@@ -24,6 +24,9 @@ export interface ComparisonInitResponse {
 	readonly command: 'init';
 	/** The compared file changes (empty when the comparison failed). */
 	readonly changes: ReadonlyArray<GitFileChange>;
+	/** The two ends of the comparison (UNCOMMITTED '*' or '' for the working tree). */
+	readonly fromHash: string;
+	readonly toHash: string;
 	/** Whether the +N/-M line counts can be requested at all (false against the working tree). */
 	readonly countsPossible: boolean;
 	/** Whether the header presents the changes as those of `toHash` alone (the "Open Changes"

@@ -80,29 +80,47 @@ if (htmlProblems.length > 0) fail('innerHTML / outerHTML / insertAdjacentHTML ma
 fs.mkdirSync(mediaDir, { recursive: true });
 const outJs = path.join(mediaDir, 'out.min.js');
 const outCss = path.join(mediaDir, 'out.min.css');
+/* The extracted comparison frontends (REFACTOR-PLAN task 6.1): each page gets its own entry,
+   bundled by the same rules as the main view. The comparison stylesheet inlines the shared
+   binary-compare styles (its page embeds that area); the binary-compare stylesheet stands
+   alone for the standalone tab. */
+const jsEntries = [
+	{ entry: path.join(webviewDir, 'graph', 'main.ts'), out: outJs },
+	{ entry: path.join(webviewDir, 'comparison', 'main.ts'), out: path.join(mediaDir, 'comparison.min.js') },
+	{ entry: path.join(webviewDir, 'binaryCompare', 'main.ts'), out: path.join(mediaDir, 'binaryCompare.min.js') }
+];
+const cssEntries = [
+	{ entry: path.join(webviewDir, 'styles', 'index.css'), out: outCss },
+	{ entry: path.join(webviewDir, 'styles', 'comparison.css'), out: path.join(mediaDir, 'comparison.min.css') },
+	{ entry: path.join(webviewDir, 'styles', 'binaryCompare.css'), out: path.join(mediaDir, 'binaryCompare.min.css') }
+];
 try {
-	esbuild.buildSync({
-		entryPoints: [path.join(webviewDir, 'graph', 'main.ts')],
-		outfile: outJs,
-		bundle: true,
-		format: 'iife',
-		target: ['es2018', 'chrome69'],
-		minify: !DEBUG,
-		sourcemap: DEBUG ? false : 'linked',
-		sourcesContent: true,
-		legalComments: 'none',
-		tsconfig: path.join(webviewDir, 'tsconfig.json'),
-		logLevel: 'warning'
-	});
-	esbuild.buildSync({
-		entryPoints: [path.join(webviewDir, 'styles', 'index.css')],
-		outfile: outCss,
-		bundle: true,
-		target: ['chrome69'],
-		minify: !DEBUG,
-		legalComments: 'none',
-		logLevel: 'warning'
-	});
+	for (const { entry, out } of jsEntries) {
+		esbuild.buildSync({
+			entryPoints: [entry],
+			outfile: out,
+			bundle: true,
+			format: 'iife',
+			target: ['es2018', 'chrome69'],
+			minify: !DEBUG,
+			sourcemap: DEBUG ? false : 'linked',
+			sourcesContent: true,
+			legalComments: 'none',
+			tsconfig: path.join(webviewDir, 'tsconfig.json'),
+			logLevel: 'warning'
+		});
+	}
+	for (const { entry, out } of cssEntries) {
+		esbuild.buildSync({
+			entryPoints: [entry],
+			outfile: out,
+			bundle: true,
+			target: ['chrome69'],
+			minify: !DEBUG,
+			legalComments: 'none',
+			logLevel: 'warning'
+		});
+	}
 } catch (error) {
 	fail('Webview bundling failed:', [String(error)]);
 }
@@ -110,7 +128,9 @@ try {
 // map never ships next to a bundle it does not describe
 if (DEBUG && fs.existsSync(outJs + '.map')) fs.unlinkSync(outJs + '.map');
 
-const outputProblems = checkFiles([outJs], root);
+const outputProblems = checkFiles(jsEntries.map(({ out }) => out), root);
 if (outputProblems.length > 0) fail('The webview bundle contains syntax newer than ES2018:', outputProblems);
 
-console.log('Webview built (' + (DEBUG ? 'debug' : 'production') + '): ' + relative(outJs) + ' ' + Math.round(fs.statSync(outJs).size / 1024) + ' KB, ' + relative(outCss) + ' ' + Math.round(fs.statSync(outCss).size / 1024) + ' KB');
+console.log('Webview built (' + (DEBUG ? 'debug' : 'production') + '): ' + jsEntries.concat(cssEntries)
+	.map(({ out }) => relative(out) + ' ' + Math.round(fs.statSync(out).size / 1024) + ' KB')
+	.join(', '));
