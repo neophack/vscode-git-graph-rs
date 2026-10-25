@@ -19,15 +19,13 @@ export type ArgCheck = readonly [name: string, value: string | null | undefined,
 
 /**
  * What an operation can change about the repository, for Phase 4's impact-based refresh
- * (REFACTOR-PLAN §3.8.3/§4.8):
- * - `refs`     — named refs change (branches, tags, remote-tracking refs)
- * - `head`     — HEAD, or the branch it points to, moves
- * - `commits`  — new commits are created
- * - `worktree` — working tree (or index) contents change
- * - `stash`    — stash entries change
- * - `config`   — Git configuration changes
+ * (REFACTOR-PLAN §3.8.3/§4.8). The single definition lives in the shared protocol (where the
+ * per-command aggregate table `WRITE_EFFECTS` also lives); re-exported here so the op table's
+ * `effects` fields speak the local vocabulary without a second union to keep in sync.
  */
-export type WriteEffect = 'refs' | 'head' | 'commits' | 'worktree' | 'stash' | 'config';
+import type { WriteEffect } from '../../../../shared/protocol/graphView';
+
+export type { WriteEffect };
 
 /**
  * One Git invocation within an operation. Steps run in order and stop at the first failure,

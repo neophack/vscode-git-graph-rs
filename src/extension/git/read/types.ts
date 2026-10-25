@@ -51,6 +51,13 @@ export type {
 } from '../../../shared/engine/protocol';
 
 /**
+ * The answer of a refs-only re-annotation (task 4.8, the engine's `annotate` request): a fresh
+ * HEAD together with the refs of each given commit — everything a full page load would have
+ * attached to it, without the history walk.
+ */
+export type { AnnotateResult as GitAnnotation, GitCommitRefs, RefSnapshot as GitRefSnapshot } from '../../../shared/engine/protocol';
+
+/**
  * The read-only shapes the engine does not generate (no engine method answers them yet), defined
  * once in `src/types/git.ts` beside the rest of the extension's data contract, imported here for
  * the backend's own bags and re-exported so the backend's vocabulary stays one table.
@@ -107,6 +114,15 @@ export interface RefReadOptions {
 	readonly showChangeRefs?: boolean;
 	/** Only meaningful for `getRepoInfo`. */
 	readonly showStashes?: boolean;
+}
+
+/**
+ * The options a refs-only re-annotation accepts (task 4.8): the ref-reading options (which refs
+ * to attach) plus whether tags are annotated — the same "Show Tags" flag a page load receives.
+ * An omitted field means "the usual".
+ */
+export interface AnnotateReadOptions extends RefReadOptions {
+	readonly showTags?: boolean;
 }
 
 /** Everything a graph load accepts; an omitted field means "the usual" (the engine's defaults). */

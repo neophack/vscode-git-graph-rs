@@ -28,11 +28,14 @@ import {
 	GitLineCounts,
 	GitRefData,
 	GitReflogPage,
+	GitRefSnapshot,
+	GitAnnotation,
 	GitRepoInfo,
 	GitSignature,
 	GitStash,
 	GitTagDetails,
 	GitWorktree,
+	AnnotateReadOptions,
 	LogOptions,
 	RefReadOptions
 } from './types';
@@ -71,6 +74,21 @@ export interface GitBackend {
 
 	/** The refs of a repository, without the commits. */
 	getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData>;
+
+	/**
+	 * One pass over the repository's refs, answering everything a refs-only refresh needs at
+	 * once (task 4.8): the ref data, the view's branch list, the checked-out branch and the tag
+	 * names — the engine's `refs` request, served by the same ref scan a view load runs, without
+	 * any history walk.
+	 */
+	getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot>;
+
+	/**
+	 * Re-annotate the given commits with freshly read refs (task 4.8's refs-only refresh): the
+	 * answer carries exactly the labels a full page load of the same options would attach, plus
+	 * the commit HEAD resolves to now — no traversal runs. The optional signal cancels the read.
+	 */
+	annotate(repo: string, commits: ReadonlyArray<string>, options?: AnnotateReadOptions, signal?: AbortLike): Promise<GitAnnotation>;
 
 	/**
 	 * A signature of everything at ref level that can change the commit graph: the resolved hash
@@ -377,6 +395,33 @@ export class NativeBackend implements GitBackend {
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
 		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['loadRefs']['params'];
 		return request(repo, 'loadRefs', payload);
+	}
+
+	/** The engine's one-pass ref snapshot (task 4.8): dropdown data without a history walk. */
+	public getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot> {
+		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['refs']['params'];
+		return request(repo, 'refs', payload);
+	}
+
+	/**
+	 * The engine's refs-only re-annotation (task 4.8): fresh labels for the commits the caller
+	 * already holds, with the same signal-based cancellation a page walk gets.
+	 */
+	public annotate(repo: string, commits: ReadonlyArray<string>, options?: AnnotateReadOptions, signal?: AbortLike): Promise<GitAnnotation> {
+		const payload = {
+			commits: [...commits],
+			refs: { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['annotate']['params']['refs'],
+			showTags: options?.showTags ?? true
+		};
+		if (signal === undefined) {
+			return request(repo, 'annotate', payload);
+		}
+		const requestId = issueRequestId();
+		const onAbort = () => cancel(requestId);
+		signal.addEventListener('abort', onAbort);
+		return request(repo, 'annotate', payload, undefined, { requestId }).finally(() => {
+			signal.removeEventListener('abort', onAbort);
+		});
 	}
 
 	public async getRepoChangeSignature(repo: string): Promise<string | null> {

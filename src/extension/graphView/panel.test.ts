@@ -134,7 +134,10 @@ function fakeCollaborators() {
 		},
 		write: {
 			run: vi.fn(async () => null),
-			policies: { signCommits: false, signTags: false }
+			policies: { signCommits: false, signTags: false },
+			// The writer's repository-changed event (task 4.8's effect collection): no fake
+			// writes happen in these tests, so the listener is registered and never fires.
+			onRepositoryChanged: vi.fn(() => ({ dispose: () => undefined }))
 		},
 		getOperationState: vi.fn(async () => ({ type: null, conflictedFiles: [], progress: null }))
 	};

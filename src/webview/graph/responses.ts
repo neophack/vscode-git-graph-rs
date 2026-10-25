@@ -36,42 +36,42 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 
 	/* Generic action handlers */
 
-	/** Refresh the view if the action succeeded, else show the error. */
-	const refreshOrDisplayError = (error: GG.ErrorInfo, errorMessage: string, configChanges: boolean = false) => {
+	/**
+	 * The write-action success contract of REFACTOR-PLAN task 4.8: after a write succeeds, the
+	 * view does NOT refresh itself — the extension host pushes the impact-based partial update
+	 * (the re-annotated refs page, the uncommitted-changes row, the repository configuration, or
+	 * one incremental traversal reload) picked from the write's effects. On success only the
+	 * action's "running" dialog is dismissed; on failure the error shows exactly as before.
+	 */
+	const completeOrDisplayError = (error: GG.ErrorInfo, errorMessage: string) => {
 		if (error === null) {
-			ctx.loader.refresh(false, configChanges);
+			dialog.closeActionRunning();
 		} else {
 			dialog.showError(errorMessage, error, null, null);
 		}
 	};
 
-	/** Show the combined error of a multi-step action, and refresh the view if any step succeeded. */
-	const refreshAndDisplayErrors = (errors: GG.ErrorInfo[], errorMessage: string, configChanges: boolean = false) => {
+	/** The multi-step form of {@link completeOrDisplayError}: any partial success dismisses the "running" dialog. */
+	const completeAndDisplayErrors = (errors: GG.ErrorInfo[], errorMessage: string) => {
 		const reducedErrors = reduceErrorInfos(errors);
 		if (reducedErrors.error !== null) {
 			dialog.showError(errorMessage, reducedErrors.error, null, null);
 		}
 		if (reducedErrors.partialOrCompleteSuccess) {
-			ctx.loader.refresh(false, configChanges);
-		} else if (configChanges) {
-			ctx.loader.requestLoadConfig();
+			dialog.closeActionRunning();
 		}
 	};
 
 	/**
-	 * A checkout moved HEAD, so the current-position marker must follow immediately. The refresh is
-	 * SOFT on purpose: the rendered table stays on screen (no loading state) while fresh data is
-	 * fetched in the background — the extension drops its commit cache when the checkout command
-	 * completes, so the reloaded data is always post-checkout, and the changed HEAD defeats the
-	 * unchanged-commit-list render dedupe, re-rendering in place once the data arrives.
+	 * The few write responses whose refresh the VIEW still owns (the host pushes nothing for
+	 * them): `exportRepoConfig` writes a file outside the repository, and `gerritSetFetchRefs`
+	 * must reload under the integration's NEW fetch settings, which only this view holds.
 	 */
-	const refreshAfterCheckout = (errors: GG.ErrorInfo[], errorMessage: string) => {
-		const reducedErrors = reduceErrorInfos(errors);
-		if (reducedErrors.error !== null) {
-			dialog.showError(errorMessage, reducedErrors.error, null, null);
-		}
-		if (reducedErrors.partialOrCompleteSuccess) {
-			ctx.loader.refresh(false);
+	const refreshViewOrDisplayError = (error: GG.ErrorInfo, errorMessage: string, configChanges: boolean = false) => {
+		if (error === null) {
+			ctx.loader.refresh(false, configChanges);
+		} else {
+			dialog.showError(errorMessage, error, null, null);
 		}
 	};
 
@@ -92,23 +92,15 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		}
 	};
 
-	/** The handler of an action answered by a single error: refresh on success. */
-	const refresh = (errorMessage: string, configChanges: boolean = false) => (msg: { readonly error: GG.ErrorInfo }) => refreshOrDisplayError(msg.error, errorMessage, configChanges);
+	/** The handler of an action answered by a single error: the host pushes the refresh (task 4.8). */
+	const complete = (errorMessage: string) => (msg: { readonly error: GG.ErrorInfo }) => completeOrDisplayError(msg.error, errorMessage);
+	/** The handler of an action answered by several errors: the host pushes the refresh (task 4.8). */
+	const completeAll = (errorMessage: string) => (msg: { readonly errors: GG.ErrorInfo[] }) => completeAndDisplayErrors(msg.errors, errorMessage);
 	/** The handler of an action answered by a single error: only report a failure. */
 	const finish = (errorMessage: string, dismissActionRunning: boolean = false) => (msg: { readonly error: GG.ErrorInfo }) => finishOrDisplayError(msg.error, errorMessage, dismissActionRunning);
 	/** The handler of an action that failed: show the error (the success is handled elsewhere). */
 	const showFailure = (errorMessage: string) => (msg: { readonly error: GG.ErrorInfo }) => {
 		if (msg.error !== null) dialog.showError(errorMessage, msg.error, null, null);
-	};
-
-	const handleResponseDeleteBranch = (msg: GG.ResponseDeleteBranch) => {
-		if (msg.errors.length > 0 && msg.errors[0] !== null && msg.errors[0].includes('git branch -D')) {
-			dialog.showConfirmation(formatStr(markup.branchNotFullyMerged, msg.branchName), strings.yesForceDeleteBranch, () => {
-				ctx.actions.run({ command: 'deleteBranch', repo: msg.repo, branchName: msg.branchName, forceDelete: true, deleteOnRemotes: msg.deleteOnRemotes }, strings.deletingBranch);
-			}, { type: TargetType.Repo });
-		} else {
-			refreshAndDisplayErrors(msg.errors, strings.errDeleteBranch);
-		}
 	};
 
 	const handleResponsePushTagCommitNotOnRemote = (repo: string, tagName: string, remotes: string[], commitHash: string, error: string) => {
@@ -135,25 +127,26 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 	/* The response table */
 
 	const handlers: ResponseHandlers = {
-		abortOperation: refresh(strings.errAbortOperation),
-		addRemote: refresh(strings.errAddRemote, true),
+		abortOperation: complete(strings.errAbortOperation),
+		addRemote: complete(strings.errAddRemote),
 		addTag: (msg) => {
 			if (msg.pushToRemote !== null && msg.errors.length === 2 && msg.errors[0] === null && isExtensionErrorInfo(msg.errors[1], GG.ErrorInfoExtensionPrefix.PushTagCommitNotOnRemote)) {
-				ctx.loader.refresh(false);
+				// The tag itself was created (the host pushed the refs-only refresh for it); only
+				// the push still needs the user's decision
 				handleResponsePushTagCommitNotOnRemote(msg.repo, msg.tagName, [msg.pushToRemote], msg.commitHash, msg.errors[1]!);
 			} else {
-				refreshAndDisplayErrors(msg.errors, strings.errAddTag);
+				completeAll(strings.errAddTag)(msg);
 			}
 		},
-		applyStash: refresh(strings.errApplyStash),
-		branchFromStash: refresh(strings.errBranchFromStash),
-		checkoutBranch: (msg) => refreshAfterCheckout(msg.errors, msg.pullAfterwards !== null ? strings.errCheckoutBranchPull : strings.errCheckoutBranch),
-		checkoutCommit: (msg) => refreshAfterCheckout([msg.error], strings.errCheckoutCommit),
-		cherrypickCommit: (msg) => refreshAndDisplayErrors(msg.errors, strings.errCherryPick),
-		cleanUntrackedFiles: refresh(strings.errCleanUntracked),
-		commitFixup: refresh(strings.errCommitFixup),
-		commitSquash: refresh(strings.errCommitSquash),
-		continueOperation: refresh(strings.errContinueOperation),
+		applyStash: complete(strings.errApplyStash),
+		branchFromStash: complete(strings.errBranchFromStash),
+		checkoutBranch: (msg) => completeAndDisplayErrors(msg.errors, msg.pullAfterwards !== null ? strings.errCheckoutBranchPull : strings.errCheckoutBranch),
+		checkoutCommit: (msg) => completeOrDisplayError(msg.error, strings.errCheckoutCommit),
+		cherrypickCommit: completeAll(strings.errCherryPick),
+		cleanUntrackedFiles: complete(strings.errCleanUntracked),
+		commitFixup: complete(strings.errCommitFixup),
+		commitSquash: complete(strings.errCommitSquash),
+		continueOperation: complete(strings.errContinueOperation),
 		predictConflicts: (msg) => {
 			// Only patches the dialog if it is still showing (or fading out) for the same
 			// ours/theirs pair the prediction was requested for - a stale response for a
@@ -185,32 +178,37 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		copyFilePath: finish(strings.errCopyFilePath),
 		copyToClipboard: (msg) => finishOrDisplayError(msg.error, formatStr(strings.errCopyToClipboard, msg.type)),
 		createArchive: finish(strings.errCreateArchive, true),
-		createBranch: (msg) => refreshAndDisplayErrors(msg.errors, strings.errCreateBranch),
-		createPullRequest: (msg) => finishOrDisplayErrors(msg.errors, strings.errCreatePullRequest, () => {
-			if (msg.push) {
-				ctx.loader.refresh(false);
+		createBranch: completeAll(strings.errCreateBranch),
+		createPullRequest: (msg) => finishOrDisplayErrors(msg.errors, strings.errCreatePullRequest, () => undefined, true),
+		deleteBranch: (msg) => {
+			if (msg.errors.length > 0 && msg.errors[0] !== null && msg.errors[0].includes('git branch -D')) {
+				dialog.showConfirmation(formatStr(markup.branchNotFullyMerged, msg.branchName), strings.yesForceDeleteBranch, () => {
+					ctx.actions.run({ command: 'deleteBranch', repo: msg.repo, branchName: msg.branchName, forceDelete: true, deleteOnRemotes: msg.deleteOnRemotes }, strings.deletingBranch);
+				}, { type: TargetType.Repo });
+			} else {
+				completeAndDisplayErrors(msg.errors, strings.errDeleteBranch);
 			}
-		}, true),
-		deleteBranch: handleResponseDeleteBranch,
-		deleteRemote: refresh(strings.errDeleteRemote, true),
-		deleteRemoteBranch: refresh(strings.errDeleteRemoteBranch),
-		deleteTag: refresh(strings.errDeleteTag),
-		deleteUserDetails: (msg) => finishOrDisplayErrors(msg.errors, strings.errDeleteUserDetails, () => ctx.loader.requestLoadConfig(), true),
-		dropCommit: refresh(strings.errDropCommit),
-		dropStash: refresh(strings.errDropStash),
-		editRemote: refresh(strings.errEditRemote, true),
-		editUserDetails: (msg) => finishOrDisplayErrors(msg.errors, strings.errEditUserDetails, () => ctx.loader.requestLoadConfig(), true),
-		exportRepoConfig: refresh(strings.errExportRepoConfig),
-		fetch: refresh(strings.errFetch, false),
-		// The extension cleared its commit cache and (when disabling) deleted the local
-		// change refs, so the reload below re-renders without the change commits and badges
-		gerritSetFetchRefs: refresh(strings.errGerritSetFetchRefs, true),
+		},
+		deleteRemote: complete(strings.errDeleteRemote),
+		deleteRemoteBranch: complete(strings.errDeleteRemoteBranch),
+		deleteTag: complete(strings.errDeleteTag),
+		deleteUserDetails: (msg) => finishOrDisplayErrors(msg.errors, strings.errDeleteUserDetails, () => undefined, true),
+		dropCommit: complete(strings.errDropCommit),
+		dropStash: complete(strings.errDropStash),
+		editRemote: complete(strings.errEditRemote),
+		editUserDetails: (msg) => finishOrDisplayErrors(msg.errors, strings.errEditUserDetails, () => undefined, true),
+		exportRepoConfig: (msg) => refreshViewOrDisplayError(msg.error, strings.errExportRepoConfig),
+		fetch: complete(strings.errFetch),
+		// The extension cleared its commit cache and (when disabling) deleted the local change
+		// refs — and the reload must run under the integration's NEW fetch settings, which this
+		// view holds: the one write response whose refresh stays here (see task 4.8)
+		gerritSetFetchRefs: (msg) => refreshViewOrDisplayError(msg.error, strings.errGerritSetFetchRefs, true),
 		fetchAvatar: (msg) => {
 			imageResizer.resize(msg.image, (resizedImage) => {
 				ctx.loader.loadAvatar(msg.email, resizedImage);
 			});
 		},
-		fetchIntoLocalBranch: refresh(strings.errFetchIntoLocalBranch),
+		fetchIntoLocalBranch: complete(strings.errFetchIntoLocalBranch),
 		commitBodies: (msg) => ctx.commitBodies.process(msg),
 		commitFileCounts: (msg) => ctx.details.lineCounts.apply(msg),
 		// The standard data-loss warning: confirm re-sends the original request with its
@@ -228,15 +226,15 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		worktreeList: (msg) => ctx.widgets.worktree.processListResponse(msg),
 		repoStatistics: (msg) => ctx.widgets.statistics.processResponse(msg),
 		worktreeAdd: (msg) => {
-			refreshOrDisplayError(msg.error, strings.errWorktreeAdd);
+			completeOrDisplayError(msg.error, strings.errWorktreeAdd);
 			ctx.widgets.worktree.refresh();
 		},
 		worktreeRemove: (msg) => {
-			refreshOrDisplayError(msg.error, strings.errWorktreeRemove);
+			completeOrDisplayError(msg.error, strings.errWorktreeRemove);
 			ctx.widgets.worktree.refresh();
 		},
 		worktreePrune: (msg) => {
-			refreshOrDisplayError(msg.error, strings.errWorktreePrune);
+			completeOrDisplayError(msg.error, strings.errWorktreePrune);
 			ctx.widgets.worktree.refresh();
 		},
 		loadRepos: (msg) => {
@@ -252,44 +250,42 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 			// what Git really holds now instead of the pre-save snapshot
 			if (msg.authorConfigTouched) ctx.loader.requestLoadConfig();
 		},
-		merge: (msg) => refreshOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn))),
+		merge: (msg) => completeOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn))),
 		openExtensionSettings: finish(strings.errOpenExtensionSettings),
 		openLogFile: finish(strings.errOpenLogFile),
 		openExternalDirDiff: finish(strings.errOpenExternalDirDiff, true),
 		openExternalUrl: finish(strings.errOpenExternalUrl),
 		openFile: finish(strings.errOpenFile),
 		openTerminal: finish(strings.errOpenTerminal, true),
-		popStash: refresh(strings.errPopStash),
-		pruneRemote: refresh(strings.errPruneRemote),
-		pullBranch: refresh(strings.errPullBranch),
-		pushBranch: (msg) => refreshAndDisplayErrors(msg.errors, strings.errPushBranch, msg.willUpdateBranchConfig),
-		pushStash: refresh(strings.errPushStash),
+		popStash: complete(strings.errPopStash),
+		pruneRemote: complete(strings.errPruneRemote),
+		pullBranch: complete(strings.errPullBranch),
+		pushBranch: completeAll(strings.errPushBranch),
+		pushStash: complete(strings.errPushStash),
 		pushTag: (msg) => {
 			if (msg.errors.length === 1 && isExtensionErrorInfo(msg.errors[0], GG.ErrorInfoExtensionPrefix.PushTagCommitNotOnRemote)) {
 				handleResponsePushTagCommitNotOnRemote(msg.repo, msg.tagName, msg.remotes, msg.commitHash, msg.errors[0]!);
 			} else {
-				refreshAndDisplayErrors(msg.errors, strings.errPushTag);
+				completeAll(strings.errPushTag)(msg);
 			}
 		},
 		rebase: (msg) => {
 			if (msg.error === null) {
-				if (msg.interactive) {
-					dialog.closeActionRunning();
-				} else {
-					ctx.loader.refresh(false);
-				}
+				// Both variants wait for the host's pushed impact refresh (task 4.8); the
+				// interactive one never had one to wait for (its Git runs in the terminal)
+				dialog.closeActionRunning();
 			} else {
 				dialog.showError(formatStr(strings.errRebaseActionOn, getRebaseActionOnName(msg.actionOn)), msg.error, null, null);
 			}
 		},
 		refresh: () => ctx.loader.refresh(false),
 		configChanged: (msg) => ctx.loader.applyConfig(msg.config),
-		renameBranch: refresh(strings.errRenameBranch),
-		resetFileToRevision: refresh(strings.errResetFileToRevision),
-		resetToCommit: refresh(strings.errResetToCommit),
-		undoLastCommit: refresh(strings.errResetLastCommit),
-		revertCommit: refresh(strings.errRevertCommit),
-		editCommitMessage: refresh(strings.errEditCommitMessage),
+		renameBranch: complete(strings.errRenameBranch),
+		resetFileToRevision: complete(strings.errResetFileToRevision),
+		resetToCommit: complete(strings.errResetToCommit),
+		undoLastCommit: complete(strings.errResetLastCommit),
+		revertCommit: complete(strings.errRevertCommit),
+		editCommitMessage: complete(strings.errEditCommitMessage),
 		setGlobalViewState: finish(strings.errSaveGlobalViewState),
 		setWorkspaceViewState: finish(strings.errSaveWorkspaceViewState),
 		startCodeReview: (msg) => {

@@ -4,8 +4,13 @@
  */
 
 import {
+	AnnotateReadOptions,
+	GitAnnotation,
+	GitCommitRemote,
+	GitCommitTag,
 	GitRef,
 	GitRefData,
+	GitRefSnapshot,
 	GitRepoInfo,
 	GitStash,
 	GitTagRef,
@@ -49,6 +54,63 @@ export async function getRepoInfo(cli: GitCli, repo: string, options: RefReadOpt
 export async function getRefs(cli: GitCli, repo: string, options: RefReadOptions = {}): Promise<GitRefData> {
 	const snapshot = await readRefs(cli, repo, { showRemoteBranches: true, ...options });
 	return snapshot.refData;
+}
+
+/**
+ * The one-pass ref snapshot of a refs-only refresh (task 4.8): `readRefs` already answers
+ * exactly the engine's `refs` shape, from the same split scans a view load runs — no history
+ * walk, no page load.
+ */
+export async function getRefSnapshot(cli: GitCli, repo: string, options: RefReadOptions = {}): Promise<GitRefSnapshot> {
+	return readRefs(cli, repo, { showRemoteBranches: true, ...options });
+}
+
+/**
+ * Re-annotate the given commits with freshly read refs (task 4.8's refs-only refresh over the
+ * CLI): one ref scan maps every branch, tag and remote-tracking ref onto the commit hashes the
+ * caller already holds — the labels a full page load of the same options would attach, without
+ * running one.
+ */
+export async function annotate(cli: GitCli, repo: string, commits: ReadonlyArray<string>, options: AnnotateReadOptions = {}): Promise<GitAnnotation> {
+	const opts = { showRemoteBranches: true, ...options };
+	const [snapshot, remoteNames] = await Promise.all([
+		readRefs(cli, repo, opts),
+		opts.showRemoteBranches ? getRemotes(cli, repo).catch(() => [] as string[]) : Promise.resolve([] as string[])
+	]);
+
+	const heads = new Map<string, string[]>();
+	for (const ref of snapshot.refData.heads) {
+		const list = heads.get(ref.hash);
+		if (list === undefined) heads.set(ref.hash, [ref.name]);
+		else list.push(ref.name);
+	}
+	const tags = new Map<string, GitCommitTag[]>();
+	if (opts.showTags ?? true) {
+		for (const tag of snapshot.refData.tags) {
+			const list = tags.get(tag.hash);
+			if (list === undefined) tags.set(tag.hash, [{ name: tag.name, annotated: tag.annotated }]);
+			else list.push({ name: tag.name, annotated: tag.annotated });
+		}
+	}
+	const remotes = new Map<string, GitCommitRemote[]>();
+	for (const ref of snapshot.refData.remotes) {
+		const separator = ref.name.indexOf('/');
+		const remote = separator > -1 && remoteNames.includes(ref.name.substring(0, separator)) ? ref.name.substring(0, separator) : null;
+		const label: GitCommitRemote = { name: ref.name, remote: remote };
+		const list = remotes.get(ref.hash);
+		if (list === undefined) remotes.set(ref.hash, [label]);
+		else list.push(label);
+	}
+
+	return {
+		head: snapshot.refData.head,
+		commits: commits.map((hash) => ({
+			hash: hash,
+			heads: heads.get(hash) ?? [],
+			tags: tags.get(hash) ?? [],
+			remotes: remotes.get(hash) ?? []
+		}))
+	};
 }
 
 /**
@@ -143,14 +205,14 @@ export async function readRefs(
 		cli.run(['show-ref', '--heads', '--tags', '-d', '--head'], repo).catch(() => ''),
 		options.showRemoteBranches ?? true
 			? cli.run(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/remotes/'], repo).catch(
-					() => ''
-				)
+				() => ''
+			)
 			: Promise.resolve(''),
 		options.showRemoteBranches ?? true
 			? cli.run(
-					['for-each-ref', '--format=%(objectname) %(*objectname) %(refname)', 'refs/remotes/**/tags/*'],
-					repo
-				).catch(() => '')
+				['for-each-ref', '--format=%(objectname) %(*objectname) %(refname)', 'refs/remotes/**/tags/*'],
+				repo
+			).catch(() => '')
 			: Promise.resolve(''),
 		cli.run(['symbolic-ref', '-q', '--short', 'HEAD'], repo)
 			.then((out) => out.trim() || null)

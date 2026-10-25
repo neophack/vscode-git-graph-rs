@@ -57,6 +57,22 @@ describe('CommitPageCache', () => {
 		expect(cache.get('k')).toBeDefined(); // the newer good entry survives
 	});
 
+	it('removes an entry whose load REJECTED (a superseded walk cancelled through its signal, task 4.8)', async () => {
+		const cache = new CommitPageCache(32);
+		const rejected = cache.put('k', () => Promise.reject(new Error('cancelled')));
+		await expect(rejected).rejects.toThrow('cancelled');
+		expect(cache.get('k')).toBeUndefined(); // the next identical request must be allowed to retry
+	});
+
+	it('keeps a rejected entry that a newer load has already replaced', async () => {
+		const cache = new CommitPageCache(32);
+		const rejected = cache.put('k', () => Promise.reject(new Error('cancelled')));
+		const replacement = cache.put('k', () => Promise.resolve(page(['a'])));
+		await expect(rejected).rejects.toThrow('cancelled');
+		await replacement;
+		expect(cache.get('k')).toBe(replacement); // the superseding load owns the key
+	});
+
 	it('clear() drops everything', async () => {
 		const cache = new CommitPageCache(32);
 		await cache.put('k', () => Promise.resolve(page(['a'])));
