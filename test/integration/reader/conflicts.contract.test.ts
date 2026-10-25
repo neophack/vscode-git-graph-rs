@@ -13,25 +13,19 @@ import { adapterLegs, addonAvailable } from '../../support/adapters';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
-const repo = RepoBuilder.create('gg-conflicts');
 const legs = adapterLegs();
 
+for (const leg of legs) {
+// Each leg gets its OWN repository: the cases below branch, commit and reset on shared
+// files, so a second leg replaying them against the first leg's repository would commit
+// nothing (or read a reflog the first leg rewrote). Fresh repo per leg keeps the legs
+// independent of each other and of the engine's presence.
+const repo = RepoBuilder.create('gg-conflicts');
 const writeAndCommit = (fileName: string, content: string, message: string) => {
 	repo.write(fileName, content);
 	repo.commit(message);
 };
-
-beforeAll(() => {
-	writeAndCommit('shared.txt', 'line1\n', 'base');
-});
-
-afterAll(() => {
-	for (const leg of legs) leg.backend.closeAllRepositories();
-	repo.dispose();
-});
-
-for (const leg of legs) {
-	describe.skipIf(leg.needsAddon && !addonAvailable)(`predictConflicts (the merge/rebase advisory, ${leg.name})`, () => {
+describe.skipIf(leg.needsAddon && !addonAvailable)(`predictConflicts (the merge/rebase advisory, ${leg.name})`, () => {
 		it('predicts no conflict for a clean fast-forwardable merge, and touches neither the index nor the working tree', async () => {
 			repo.git(['checkout', '-q', '-b', 'clean-branch']);
 			writeAndCommit('other.txt', 'new file\n', 'unrelated addition');
@@ -71,6 +65,15 @@ for (const leg of legs) {
 
 		it('resolves to NULL (rather than passing it to git) for a ref value that looks like a command-line flag', async () => {
 			await expect(leg.backend.predictConflicts(repo.path, 'main', '--upload-pack=evil')).resolves.toBeNull();
+		});
+
+		beforeAll(() => {
+			writeAndCommit('shared.txt', 'line1\n', 'base');
+		});
+
+		afterAll(() => {
+			leg.backend.closeAllRepositories();
+			repo.dispose();
 		});
 	});
 }

@@ -15,27 +15,29 @@ import { adapterLegs, addonAvailable } from '../../support/adapters';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
-const repo = RepoBuilder.create('gg-reflog');
 const legs = adapterLegs();
 
+for (const leg of legs) {
+// Each leg gets its OWN repository: the dangling case below resets HEAD, which would leave
+// a `reset:` entry on top of the reflog the next leg reads. Fresh repo per leg keeps the
+// legs independent of each other and of the engine's presence.
+const repo = RepoBuilder.create('gg-reflog');
 const commit = (message: string) => {
 	repo.write('file.txt', message + '\n');
 	repo.commit(message);
 };
+describe.skipIf(leg.needsAddon && !addonAvailable)(`getReflog (the Reflog Widget read, ${leg.name})`, () => {
+	beforeAll(() => {
+		commit('first');
+		commit('second');
+		commit('third');
+	});
 
-beforeAll(() => {
-	commit('first');
-	commit('second');
-	commit('third');
-});
+	afterAll(() => {
+		leg.backend.closeAllRepositories();
+		repo.dispose();
+	});
 
-afterAll(() => {
-	for (const leg of legs) leg.backend.closeAllRepositories();
-	repo.dispose();
-});
-
-for (const leg of legs) {
-	describe.skipIf(leg.needsAddon && !addonAvailable)(`getReflog (the Reflog Widget read, ${leg.name})`, () => {
 		it('lists reflog entries newest-first, with index-based selectors and readable messages', async () => {
 			const { entries, moreAvailable } = await leg.backend.getReflog(repo.path, 'HEAD', 200);
 
