@@ -1,11 +1,12 @@
 /**
  * One full build at a time over this working tree.
  *
- * `npm run compile`'s clean step wipes all of `out/` and `media/`, so two build chains running
- * concurrently (a bat started twice, or a bat racing a manually invoked npm script) clobber
- * each other's artifacts mid-flight — tests fail with ENOENT on files they read seconds ago,
- * and the addon copy fails with EBUSY while another run's test workers hold the binary.
- * The build bats hold this lock for their whole run and release it on every exit path.
+ * The build pipelines rewrite all of `dist/` and `media/`, so two build chains running
+ * concurrently (a script started twice, or a script racing a manually invoked npm script)
+ * clobber each other's artifacts mid-flight — tests fail with ENOENT on files they read
+ * seconds ago, and the addon copy fails with EBUSY while another run's test workers hold
+ * the binary. The build chains hold this lock for their whole run and release it on every
+ * exit path.
  *
  *   node scripts/build-lock.mjs hold <token>     # wait (with progress notes) until acquired
  *   node scripts/build-lock.mjs release <token>  # release, but only if <token> still owns it

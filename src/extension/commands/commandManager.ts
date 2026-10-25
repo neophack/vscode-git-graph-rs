@@ -6,7 +6,7 @@ import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../../extensionState';
 import { isZhCn } from '../../i18n';
 import { Logger } from '../../logger';
-import { RepoManager } from '../../repoManager';
+import { RepoManager } from '../repos/repoManager';
 import { Disposable } from '../../utils/disposable';
 import { GgEvent } from '../../utils/event';
 import { GitExecutable } from '../../utils/findGit';

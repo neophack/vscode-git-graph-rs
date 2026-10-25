@@ -217,8 +217,8 @@ The write path (checkout, merge, rebase, stash operations, remotes, tags) is not
 [GAPS.md](GAPS.md) is the inventory of what is missing.
 
 Correctness is checked against Git itself: the engine's tests build fixture repositories with the
-`git` command line and compare every reader to what git reports, and `tests/backends.test.mjs`
-runs **both backends over the same repository through the same interface**, asserting they agree
+`git` command line and compare every reader to what git reports, and the reader contract suite under `test/integration/reader/`
+run **both backends over the same repository through the same interface** (the reader contract suite under `test/integration/reader/`, plus the seeded fuzz differential in `test/integration/reader/fuzz.contract.test.ts`), asserting they agree
 field by field — the webview cannot tell which one it is talking to, so any disagreement is a
 user-visible behaviour change.
 
@@ -257,11 +257,9 @@ when the user confirms. The guarded operations:
 Every control in the Git Graph view — buttons, context menus, dialogs, widgets — can drive and
 verify itself, with per-action timings, to answer two questions about a real install: *does
 every control still work?* and *how long does each take?* It is a **packaging variant**: the
-automation build ships it, the default build does not. `build-and-install.bat automation`
-on Windows, `./build-and-install.sh automation` on macOS/Linux (the optional argument
-packaging `npm run package:automation`) produces the
-automation-enabled vsix and installs it; the original bats and CI (`npm run package`) package
-the extension **without** it — the automation modules are moved out of the package and the
+automation build ships it, the default build does not. `npm run package:automation` produces
+the automation-enabled VSIX; the default packaging (`npm run package`) builds the extension
+**without** it — the compile-time switch keeps the modules out of the bundle and the
 contributions (button, command) are absent. The same source loads fine either way. There is no
 external interface: the suite runs entirely in-process (no sockets, no ports, no drivers).
 
@@ -320,7 +318,7 @@ Each catalogued action runs one of three ways:
   command's modal confirmation, the Gerrit amend prompt — are answered with their primary
   action, the same not-interactive policy as the data-loss warning; a file filter a command
   sets is cleared again by post-run page steps, and the tab a command opens is closed by the
-  per-action cleanup. `tests/contributedMenus.test.mjs` statically cross-checks the other half
+  per-action cleanup. the command-registry suite (`src/extension/commands/registry.test.ts`) statically cross-checks the other half
   of the contract: every menu item points at a registered command, the language variants stay
   symmetric, `when` clauses only use context keys the extension actually sets, and every menu
   command has one of these entries.
@@ -341,25 +339,18 @@ Safety rails, because the suite can drive real writes:
 - The read suite never mutates the repository; its only lasting effects (webview state like the
   last scroll position) are the same a user's visit leaves behind.
 
-`tests/automationServer.test.mjs` and `tests/automationRunner.test.mjs` drive the whole thing
+`test/integration/pipeline/automationServer.test.ts` and `test/integration/pipeline/automationRunner.test.ts` drive the whole thing
 in-process against the real compiled extension and webview in CI.
 
 ### The complete test, on demand
 
-`npm run test:automation:full -- --dir <path>` runs the **whole catalog** — every read action,
-then the write suite — against a real, freshly built git repository, outside CI: build (or
-reuse) a fixture with 2000+ commits across 50 branches by default, boot the real compiled
-extension and webview, drive every action, print a pass/fail/skip table, and write an HTML
-report next to the fixture. Requires `npm run compile` first (it drives `out/`, not the
-TypeScript sources).
-
-`--dir` must be an **empty or missing** folder: the script builds the disposable fixture there
-(a real `git init` + `git clone`, via `fixture.mjs`, not a mock) and must never modify an
-existing project — especially not one that already has commits. A non-empty `--dir` prints a
-reminder and exits instead of touching it. Re-running against the same `--dir` reuses the
-fixture it already built there; `--force` builds inside a non-empty directory anyway, and should
-only be used once you've checked what's actually there. See `--help` for the size knobs
-(`--commits`, `--branches`, `--tags`, `--authors`, `--seed`) and `--timeout`.
+The former standalone full-run script (`scripts/automation/full-test.mjs`) is gone: the whole
+catalog now runs **in real VS Code** through the E2E launcher (`npm run test:e2e`, see
+`test/e2e/`), which builds (or reuses) a real fixture repository, drives every read action and
+then the write suite through the real extension and webview, and writes the report. The
+in-product form is the **Run Automation Test** button of the automation VSIX
+(`npm run package:automation`): it runs the same suite against whatever repository the view is
+showing, generating a fixture in place when that repository has no commits.
 
 ## Building
 
@@ -368,17 +359,15 @@ headers: napi-rs resolves the Node-API symbols at load time.
 
 ```sh
 npm install
-npm run build                    # the addon (debug) + the TypeScript
+npm run build                    # the addon (debug) + the production dist bundle
 npm run build:native:release     # the addon as it ships
-npm test                         # cargo tests + the cross-backend integration tests
-npm run bench -- <repo-path>     # one view load, shipped backend vs git CLI
-npm run bench:all -- <repo-path> # every read operation, one table row each (--json for machines)
+npm test                         # cargo tests + the Vitest suites
+npm run perf -- --repo <path>    # the P2/P3 performance gates (see test/perf/README.md)
 npm run lint                     # clippy + rustfmt
 ```
 
-`build-and-install.bat` (Windows) and `./build-and-install.sh` (macOS/Linux) run the whole
-chain — addon, TypeScript, webview, tests — package the VSIX and install it into VS Code,
-stopping at the first failure.
+`node scripts/dev/install.mjs` runs the whole chain — deps, addon, dist build, tests, VSIX —
+and installs the result into VS Code, stopping at the first failure (see `--help`).
 
 While `git-graph-rs.enableLog` is on, every spawned `git` command is logged with its duration and
 every engine→CLI fallback with its reason; `node scripts/analyze-log.mjs <logfile>` summarises a

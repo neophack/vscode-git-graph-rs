@@ -184,38 +184,16 @@ jobs:
           node scripts/package-highlight.js
           node scripts/package-markdown.js
 
-      # The unit gate (task 1.5): the Vitest suite over src/** (vitest.config.ts), running
-      # alongside the legacy node:test suite below until Phase 7 drains it.
-      - name: Unit tests (Vitest)
+      # The unit gate (task 1.5): the Vitest suite over src/** and test/** (vitest.config.ts).
+      # The legacy node:test suite was drained in plan Phase 7 (task 7.1) — every scenario now
+      # lives in these layers.
+      - name: Unit and integration tests (Vitest)
         run: npx vitest run
 
       # The artifact syntax gate (task 1.8), standalone: re-proves what build.mjs already
       # enforced inline - every dist/ script parses as ES2018.
       - name: Artifact syntax gate (es-check)
         run: node test/compat/artifactSyntax.test.mjs
-
-      # The legacy node:test suite still imports out/*.js (build products; out/ is
-      # gitignored), so the legacy tsc pipeline keeps running here until the suite drains
-      # into Vitest (plan Phase 7). The dist bundle above does not produce out/.
-      - name: Build the legacy out/ tree for the legacy test suite
-        run: npm run compile-src
-
-      # c8 collects V8 coverage through run-tests.mjs's child processes (it propagates
-      # NODE_V8_COVERAGE in the environment) and remaps out/*.js to src/*.ts through the
-      # source maps tsc emits, so the report is filed against the TypeScript sources.
-      - name: Test
-        run: npm run test:node:cov
-
-      # The TypeScript half of the coverage; the Rust half is uploaded by the engine job.
-      # Codecov merges the two reports for the same commit. Uploading once from ubuntu is
-      # enough — the same suite runs on all three operating systems.
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
-        with:
-          files: coverage/lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
 
   # The old-Node runtime smoke (task 1.8, C2): the built bundle must BOOT and serve a real
   # repository read + write on the oldest Node the VS Code 1.38 host ships (10.11), on the

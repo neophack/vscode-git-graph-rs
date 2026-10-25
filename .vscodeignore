@@ -1,7 +1,7 @@
 # VSIX allowlist (REFACTOR-PLAN §4.1, task 1.4): everything is ignored unless re-included
 # below. vsce's negations override ignores, so what ships is exactly this list — when the
 # extension starts loading a new file at runtime, add it here; anything forgotten stays out
-# (and is caught by the manifest test in tests/distBuild.test.mjs) rather than leaking in.
+# (and is caught by the manifest test in test/tooling/distBuild.test.ts) rather than leaking in.
 **
 
 # The dist pipeline's output (scripts/build/build.mjs): the host bundle, and the askpass

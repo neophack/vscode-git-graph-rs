@@ -36,53 +36,27 @@
 	],
 	"main": "./dist/extension.js",
 	"scripts": {
-		"build": "npm run build:native && npm run build:dist -- --production && npm run build:ts",
+		"build": "npm run build:native && npm run build:dist -- --production",
 		"build:native": "node scripts/build-addon.mjs",
 		"build:native:release": "node scripts/build-addon.mjs --release",
-		"build:ts": "tsc -p tsconfig.json",
 		"build:dist": "node scripts/build/build.mjs",
-		"compile-src": "tsc -p ./src && node scripts/package-src.js",
+		"build:ts": "tsc -p tsconfig.json",
 		"compile-web": "node scripts/build/webview.mjs && node scripts/package-highlight.js && node scripts/package-markdown.js",
 		"compile-web-debug": "node scripts/build/webview.mjs debug && node scripts/package-highlight.js debug && node scripts/package-markdown.js debug",
-		"clean": "node scripts/clean.js",
-		"compile": "npm run clean && npm run compile-src && npm run compile-web",
 		"package": "node scripts/package-without-automation.mjs",
 		"package:automation": "node scripts/package-with-automation.mjs",
-		"test": "npm run test:rust && npm run test:unit && npm run test:node",
+		"test": "npm run test:rust && npm run test:unit",
 		"test:rust": "cargo test --workspace",
 		"test:unit": "vitest run",
-		"test:node": "node scripts/run-tests.mjs",
-		"test:node:cov": "c8 node scripts/run-tests.mjs",
 		"perf": "node test/perf/run.mjs",
 		"perf:record": "node test/perf/run.mjs --record",
 		"analyze-log": "node scripts/analyze-log.mjs",
-		"test:automation:full": "node scripts/automation/full-test.mjs",
 		"test:e2e": "tsc -p test/e2e/tsconfig.json && node test/e2e/out/launcher.js",
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check",
 		"lint:js": "eslint src scripts",
 		"lint:css": "stylelint \"src/webview/styles/**/*.css\"",
 		"lint:deps": "depcruise src --config .dependency-cruiser.cjs",
 		"baseline": "node scripts/dev/baseline.mjs"
-	},
-	"c8": {
-		"all": true,
-		"include": [
-			"out/**"
-		],
-		"reporter": [
-			"text",
-			"lcov"
-		],
-		"report-dir": "coverage",
-		"exclude": [
-			"coverage/**",
-			"media/**",
-			"scripts/**",
-			"tests/**",
-			"out/types/**",
-			"src/webview/**",
-			"**/*.d.ts"
-		]
 	},
 	"dependencies": {
 		"iconv-lite": "0.5.0"
@@ -96,7 +70,6 @@
 		"@vscode/test-electron": "^3.1.0",
 		"@vscode/vsce": "^2.19.0",
 		"browserslist": "^4.29.4",
-		"c8": "^12.0.0",
 		"dependency-cruiser": "^18.7.0",
 		"es-check": "^9.8.1",
 		"esbuild": "^0.25.12",
