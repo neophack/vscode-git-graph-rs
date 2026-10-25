@@ -175,13 +175,24 @@ jobs:
         run: npm ci || npm install
 
       # The canonical pipeline (task 1.4): one esbuild bundle on the VS Code 1.38 floor
-      # (Node 10.11), the askpass launchers, the webview assets, and the ES2018 compat gate
-      # inside build.mjs. This is the same chain `npm run package` ships.
+      # (Node 10.11), the askpass launchers, the webview assets, and the ES2018 compat gates
+      # (the in-tree scanner + the es-check CLI, task 1.8) inside build.mjs. This is the same
+      # chain `npm run package` ships.
       - name: Build the extension bundle (dist pipeline)
         run: |
           npm run build:dist -- --production
           node scripts/package-highlight.js
           node scripts/package-markdown.js
+
+      # The unit gate (task 1.5): the Vitest suite over src/** (vitest.config.ts), running
+      # alongside the legacy node:test suite below until Phase 7 drains it.
+      - name: Unit tests (Vitest)
+        run: npx vitest run
+
+      # The artifact syntax gate (task 1.8), standalone: re-proves what build.mjs already
+      # enforced inline - every dist/ script parses as ES2018.
+      - name: Artifact syntax gate (es-check)
+        run: node test/compat/artifactSyntax.test.mjs
 
       # The legacy node:test suite still imports out/*.js (build products; out/ is
       # gitignored), so the legacy tsc pipeline keeps running here until the suite drains
@@ -205,6 +216,56 @@ jobs:
           files: coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # The old-Node runtime smoke (task 1.8, C2): the built bundle must BOOT and serve a real
+  # repository read + write on the oldest Node the VS Code 1.38 host ships (10.11), on the
+  # transitional 12.x line, and on the current LTS. The bundle is built ONCE on modern Node
+  # (the toolchain's own floor) and the matrix legs require nothing but the dist artifact and
+  # Node builtins - no devDependency tooling runs on the old Nodes.
+  smoke-dist:
+    name: Build dist for the runtime smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build the extension bundle (dist pipeline)
+        run: npm run build:dist -- --production
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-host
+          path: dist/extension.js
+          if-no-files-found: error
+
+  runtime-smoke:
+    name: Runtime smoke (Node ${{ matrix.node-version }})
+    needs: smoke-dist
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [10.11.0, 12.4.0, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-host
+          path: dist
+
+      # The smoke is CommonJS because Node 10/12 cannot parse ES modules: run the .cjs entry
+      # directly (runtime-smoke.mjs is a forwarder for modern invocations only).
+      - name: Run the runtime smoke
+        run: node test/compat/runtime-smoke.cjs
 
   # Everything in one place, ready to be dropped into a VSIX.
   package:

@@ -46,7 +46,8 @@
  *   node scripts/build/build.mjs --automation # the automation-testing build variant
  *
  * After the webview build, the ES2018 compatibility gate (scripts/build/compat.mjs) scans the
- * emitted artifacts and fails the build on a violation. Type checking stays with the tsc
+ * emitted artifacts and fails the build on a violation; the es-check CLI (task 1.8) then
+ * re-proves the same floor with an independent parser. Type checking stays with the tsc
  * pipelines (`build:ts`, the webview build's own check): esbuild only strips types.
  */
 
@@ -179,6 +180,51 @@ function buildWebview() {
 	}
 }
 
+/**
+ * The es-check confirmation (C1, task 1.8): the es-check CLI re-parses every dist/ script
+ * against the ES2018 threshold with Acorn - an independent second opinion on the same floor
+ * compat.mjs's TypeScript scanner just checked, so a blind spot in either parser fails this
+ * build instead of shipping an artifact. Wired into the build itself (not a separate npm
+ * script) so the gate cannot be silently skipped; test/compat/artifactSyntax.test.mjs runs
+ * the same binary standalone for CI and manual runs. On violations fix the esbuild targets
+ * in this file, never the emitted output. The binary path comes from the installed package's
+ * manifest, so an es-check version change cannot desync this call.
+ */
+function runEsCheck() {
+	const manifestPath = resolveDependencyManifest('es-check');
+	if (manifestPath === null) {
+		console.error('es-check is not installed (it is a devDependency; run npm install).');
+		process.exit(1);
+	}
+	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	const bin = path.join(path.dirname(manifestPath), manifest.bin['es-check']);
+	const result = spawnSync(process.execPath, [bin, 'es2018', 'dist/**/*.js'], { cwd: root, stdio: 'inherit' });
+	if (result.error !== undefined) {
+		console.error('Failed to run es-check: ' + result.error.message);
+		process.exit(1);
+	}
+	if (result.status !== 0) {
+		console.error('es-check failed the ES2018 artifact gate over dist/ (lower the esbuild targets, do not hand-edit the output).');
+		process.exit(result.status ?? 1);
+	}
+}
+
+/**
+ * Locate a devDependency's package.json by walking up the node_modules tree from this script.
+ * require.resolve cannot be used for this: a package whose `exports` field does not expose
+ * "./package.json" (es-check among them) rejects the subpath resolution outright.
+ */
+function resolveDependencyManifest(name) {
+	let dir = path.dirname(fileURLToPath(import.meta.url));
+	for (;;) {
+		const candidate = path.join(dir, 'node_modules', name, 'package.json');
+		if (fs.existsSync(candidate)) return candidate;
+		const parent = path.dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+}
+
 async function main() {
 	fs.mkdirSync(dist, { recursive: true });
 	cleanOutputs();
@@ -203,6 +249,11 @@ async function main() {
 		process.exit(1);
 	}
 	console.log('Compatibility check passed (ES2018 syntax).');
+
+	// The independent es-check confirmation runs on every build, right behind the in-tree
+	// scanner: two parsers agreeing is the artifact's proof, one of them objecting fails here.
+	runEsCheck();
+	console.log('es-check gate passed (ES2018 syntax over dist/**/*.js).');
 }
 
 main().catch((error) => {
