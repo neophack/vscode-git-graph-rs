@@ -5,6 +5,8 @@
 }
 #cdv.inline, #cdv.docked{
 	animation:ggFadeIn var(--gg-dur-base) var(--gg-ease);
+	/* Render containment (task 5.10): the panel's (re)rendering stays inside it */
+	contain:layout paint;
 }
 #cdv.inline td{
 	background-color:rgba(128,128,128,0.1);

@@ -12,10 +12,39 @@ import { SVG_ICONS } from '../../common/icons';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
+import { measureGraphRender } from './measure';
 import { TextFormatter } from '../text/textFormatter';
 import { getCommitRowHtml, RowContext } from './commitRow';
 
 const FORMATTED_TEXT_CACHE_LIMIT = 5000;
+
+/**
+ * What one rendered row was built from (task 5.10): the render-wide inputs (a seed string) plus
+ * the row's own inputs that live OUTSIDE the commit object. A row whose recorded inputs all match
+ * is provably unchanged - its markup would come out identical - so it is kept without building
+ * that markup at all. Reference-compared where the store swaps whole objects (the commit, the
+ * Gerrit states, the pull requests), flag-compared where it mutates in place (avatars, bodies).
+ */
+interface RowBuildInputs {
+	/** The render-wide seed (see CommitTable.computeRowSeed): layout, config, HEAD, formatters. */
+	readonly seed: string;
+	/** The commit object the row was built from (its identity covers message, author, refs). */
+	readonly commit: GG.GitCommit;
+	readonly muted: boolean;
+	readonly pinned: boolean;
+	/** Was an avatar rendered for the commit's author (the image itself is patched in place). */
+	readonly avatarPresent: boolean;
+	/** Was an inline body rendered (bodies arrive after the rows, changing the row's markup). */
+	readonly bodyPresent: boolean;
+	/** The Gerrit state the row's badge was built from (undefined = no badge). */
+	readonly gerritState: GG.GerritChangeState | undefined;
+	/** Was the badge actually displayed (the fetch limit may hide an existing state). */
+	readonly gerritVisible: boolean;
+	/** The pull request the row's badge was built from (undefined = no badge). */
+	readonly pullRequest: GG.PullRequestInfo | undefined;
+	/** The branch-label offset at the vertex (only used when the labels align to the graph). */
+	readonly widthAtVertex: number;
+}
 
 export class CommitTable {
 	/**
@@ -25,6 +54,16 @@ export class CommitTable {
 	 * elements themselves so the nodes stay pristine.
 	 */
 	private readonly rowSignatures = new WeakMap<HTMLElement, string>();
+	/**
+	 * The INPUTS each rendered row was built from (see RowBuildInputs): the cheap keyed-patch fast
+	 * path. While the signatures above decide "would the markup differ?" by comparing markup (which
+	 * has to be built first), the inputs decide it without building anything - pure reference and
+	 * flag comparisons - so an unchanged row costs a handful of `===` instead of a row build. When
+	 * the inputs match, the markup is guaranteed to be the same; when they don't, the signature
+	 * comparison still decides (an input can change without the markup changing, e.g. a Gerrit
+	 * state arriving with the same badge).
+	 */
+	private readonly rowInputs = new WeakMap<HTMLElement, RowBuildInputs>();
 	/** Which columns the rendered header row was built for (see renderTable). */
 	private renderedHeaderKey: string | null = null;
 	/** The markup the footer was last set to (see setFooter): unchanged content is never swapped. */
@@ -51,7 +90,11 @@ export class CommitTable {
 
 	/* Rendering */
 
-	/** Render the pinned row, the table and the graph. */
+	/**
+	 * Render the pinned row, the table and the graph. This is the ONE render pass of the view
+	 * (task 5.10): callers reach it through the render scheduler, which merges every request made
+	 * before the next frame into a single invocation of this method.
+	 */
 	public render() {
 		const ctx = this.ctx();
 		ctx.pinned.render();
@@ -88,31 +131,26 @@ export class CommitTable {
 			return;
 		}
 
-		const colHeadersElem = document.getElementById('tableColHeaders');
 		const cdvHeight = store.repoState.cdvHeight;
-		// (+1 for its bottom border; the mobile layout hides the header row, which then adds nothing)
-		const headerHeight = colHeadersElem !== null && colHeadersElem.clientHeight > 0 ? colHeadersElem.clientHeight + 1 : 0;
 		const expandedCommit = ctx.layout.isCdvDocked() ? null : store.expandedCommit;
 		const expandedCommitElem = expandedCommit !== null ? document.getElementById('cdv') : null;
+
+		// Every layout READ this pass needs, batched in one place (measure.ts) BEFORE the graph - a
+		// pure write phase - runs: interleaving reads with the writes below would force a layout
+		// per read instead of one for the whole batch
+		const metrics = measureGraphRender(store, this.tableElem, expandedCommitElem, cdvHeight, expandedCommit !== null);
 		const grid = store.config.graph.grid;
 
-		// Update the graph's grid dimensions
-		grid.expandY = expandedCommitElem !== null
-			? expandedCommitElem.getBoundingClientRect().height
-			: cdvHeight;
-		// The row height is MEASURED from the rendered table (real rows can deviate from the
-		// configured graph.rowHeight), but a layout reporting no height - a hidden view
-		// (a backgrounded tab measures every clientHeight as 0) or a table not yet laid out -
-		// must not overwrite the last good grid: the graph's total height is reconstructed from
-		// these values, and reconstructing it from a zero measurement leaves floating point noise
-		// around zero, which SVG rejects outright once it tips negative. Keep the current grid
-		// (the configured one before the first measurable render) until a real layout is seen.
-		const measuredRowHeight = store.commits.length > 0 && this.tableElem.children.length > 0
-			? (this.tableElem.children[0].clientHeight - headerHeight - (expandedCommit !== null ? cdvHeight : 0)) / store.commits.length
-			: 0;
-		if (measuredRowHeight > 0) {
-			grid.y = measuredRowHeight;
-			grid.offsetY = headerHeight + measuredRowHeight / 2;
+		// Update the graph's grid dimensions. A measured row height of 0 (a hidden view - a
+		// backgrounded tab measures every clientHeight as 0 - or a table not yet laid out) must not
+		// overwrite the last good grid: the graph's total height is reconstructed from these values,
+		// and reconstructing it from a zero measurement leaves floating point noise around zero,
+		// which SVG rejects outright once it tips negative. Keep the current grid (the configured
+		// one before the first measurable render) until a real layout is seen.
+		grid.expandY = metrics.expandY;
+		if (metrics.measuredRowHeight > 0) {
+			grid.y = metrics.measuredRowHeight;
+			grid.offsetY = metrics.headerHeight + metrics.measuredRowHeight / 2;
 		}
 
 		ctx.graph.render(expandedCommit, [], ctx.viewport.renderedRange);
@@ -350,6 +388,11 @@ export class CommitTable {
 	 * removed outside the window therefore touches nothing inside it - the rows keep their very
 	 * DOM nodes, and with them the column widths the browser already laid out, the find-widget
 	 * highlights and the open Commit Details View. Only the `data-id` index label is restamped.
+	 *
+	 * The keyed-patch fast path (task 5.10): a row whose recorded build INPUTS all match is kept
+	 * without its markup ever being built - most of the rows of a scroll or refresh window - and
+	 * only rows whose inputs changed fall through to the (markup-comparing) signature check, where
+	 * an input change that does not change the markup still keeps the DOM node.
 	 */
 	private syncCommitRows(rowContext: RowContext, from: number, to: number) {
 		// Rows live inside the <tbody> (implicit or explicit), not directly under the <table>
@@ -370,36 +413,45 @@ export class CommitTable {
 		cursor = cursor !== null ? cursor.nextSibling : tableBody.firstChild;
 
 		const commits = rowContext.commits;
+		const seed = this.computeRowSeed(rowContext);
+		const alignedToGraph = rowContext.config.referenceLabels.branchLabelsAlignedToGraph;
 		const kept = new Set<HTMLElement>();
 		for (let i = from; i < to; i++) {
-			const rowHtml = getCommitRowHtml(i, rowContext);
-			// Three things change without the ROW changing - its index label, its graph lane colour
-			// and whether it is the checked-out commit - and all three can be applied to an existing
-			// node in place. Keeping them out of the comparison is what lets a row survive a commit
-			// arriving above it, or HEAD moving elsewhere, as the very same DOM node.
-			const signature = rowHtml.html
-				.replace(/ data-id="\d+"/, '')
-				.replace(/ data-color="\d+"/, '')
-				.replace(/^<tr class="commit current/, '<tr class="commit');
-			const hash = commits[i].hash;
+			const commit = commits[i];
+			const hash = commit.hash;
 			let row = existing.get(hash);
 
-			if (row === undefined || this.rowSignatures.get(row) !== signature) {
-				// The row's own content changed (or it was not rendered at all): build it, put it in
-				// place, and only then drop the stale node - which may be the very node `cursor`
-				// points at, so it must not be detached while the cursor still needs it.
-				const fresh = parseHtmlRow(rowHtml);
-				this.rowSignatures.set(fresh, signature);
-				tableBody.insertBefore(fresh, cursor);
-				if (row !== undefined && row.parentNode !== null) row.remove();
-				row = fresh;
+			if (row === undefined || !this.rowInputsMatch(row, seed, rowContext, i, commit, alignedToGraph)) {
+				const rowHtml = getCommitRowHtml(i, rowContext);
+				// Three things change without the ROW changing - its index label, its graph lane colour
+				// and whether it is the checked-out commit - and all three can be applied to an existing
+				// node in place. Keeping them out of the comparison is what lets a row survive a commit
+				// arriving above it, or HEAD moving elsewhere, as the very same DOM node.
+				const signature = rowHtml.html
+					.replace(/ data-id="\d+"/, '')
+					.replace(/ data-color="\d+"/, '')
+					.replace(/^<tr class="commit current/, '<tr class="commit');
+
+				if (row === undefined || this.rowSignatures.get(row) !== signature) {
+					// The row's own content changed (or it was not rendered at all): build it, put it in
+					// place, and only then drop the stale node - which may be the very node `cursor`
+					// points at, so it must not be detached while the cursor still needs it.
+					const fresh = parseHtmlRow(rowHtml);
+					this.rowSignatures.set(fresh, signature);
+					tableBody.insertBefore(fresh, cursor);
+					if (row !== undefined && row.parentNode !== null) row.remove();
+					row = fresh;
+				} else {
+					// The inputs changed but the markup did not: keep the node, restamping only what is
+					// allowed to differ. Moving it is what absorbs rows inserted or removed above
+					// without rebuilding anything.
+					this.restampRow(row, i, hash, rowContext, tableBody, cursor);
+				}
+				this.saveRowInputs(row, seed, rowContext, i, commit, alignedToGraph);
 			} else {
-				// Unchanged: keep the node, restamping only what is allowed to differ. Moving it is
-				// what absorbs rows inserted or removed above without rebuilding anything.
-				if (row.dataset.id !== String(i)) row.dataset.id = String(i);
-				if (row.dataset.color !== String(rowContext.vertexColours[i])) row.dataset.color = String(rowContext.vertexColours[i]);
-				row.classList.toggle('current', hash === rowContext.currentHash);
-				if (row !== cursor) tableBody.insertBefore(row, cursor);
+				// Fast path: every input matches, so the markup is what this node already shows -
+				// only the index label, lane colour and checked-out marker may need restamping
+				this.restampRow(row, i, hash, rowContext, tableBody, cursor);
 			}
 
 			// The next row goes immediately after this one, whatever just happened to the nodes
@@ -413,6 +465,73 @@ export class CommitTable {
 		for (let i = 0; i < remainingRows.length; i++) {
 			if (!kept.has(remainingRows[i])) remainingRows[i].remove();
 		}
+	}
+
+	/** Restamp the parts of a kept row that are allowed to differ without the row changing. */
+	private restampRow(row: HTMLElement, i: number, hash: string, rowContext: RowContext, tableBody: HTMLElement, cursor: Node | null) {
+		if (row.dataset.id !== String(i)) row.dataset.id = String(i);
+		if (row.dataset.color !== String(rowContext.vertexColours[i])) row.dataset.color = String(rowContext.vertexColours[i]);
+		row.classList.toggle('current', hash === rowContext.currentHash);
+		// Moving an already-placed node is skipped: the move is only there to absorb rows inserted
+		// or removed above, and a needless reinsertion would still show up as a DOM mutation
+		if (row !== cursor) tableBody.insertBefore(row, cursor);
+	}
+
+	/**
+	 * The render-wide part of a row's key: everything outside the commit object itself that feeds
+	 * `getCommitRowHtml` - the layout, the column visibility, the checked-out branch and HEAD (the
+	 * active branch label and the commit dot), the date and text formatting settings, and the
+	 * reference label configuration. Computed once per render and compared as one string.
+	 */
+	private computeRowSeed(rowContext: RowContext): string {
+		const config = rowContext.config, colVisibility = rowContext.colVisibility, dateFormat = config.dateFormat;
+		return [
+			rowContext.gitBranchHead, rowContext.commitHead,
+			rowContext.narrow ? 'n' : 'w',
+			colVisibility.date ? 'd' : '', colVisibility.author ? 'a' : '', colVisibility.commit ? 'c' : '',
+			dateFormat.type + (dateFormat.iso ? 'i' : ''),
+			config.fetchAvatars ? 'f' : '', config.showBodyInline ? 'b' : '', config.markdown ? 'm' : '',
+			config.gerrit.showReviewProgress ? 'r' : '',
+			config.referenceLabels.combineLocalAndRemoteBranchLabels ? 'l' : '',
+			config.referenceLabels.tagLabelsOnRight ? 't' : '',
+			config.referenceLabels.branchLabelsAlignedToGraph ? 'g' : '',
+			// The issue linking configuration feeds the text formatter alongside the markdown flag
+			// above (the same signature that busts the formatted-text cache)
+			JSON.stringify(this.store.getIssueLinkingConfig())
+		].join('\u0003');
+	}
+
+	/** Do a rendered row's recorded build inputs match the row that index `i` wants now? */
+	private rowInputsMatch(row: HTMLElement, seed: string, rowContext: RowContext, i: number, commit: GG.GitCommit, alignedToGraph: boolean): boolean {
+		const inputs = this.rowInputs.get(row);
+		if (inputs === undefined || inputs.seed !== seed || inputs.commit !== commit) return false;
+		if (inputs.muted !== rowContext.mutedCommits[i]) return false;
+		if (inputs.pinned !== rowContext.pinnedCommitHashes.has(commit.hash)) return false;
+		if (inputs.avatarPresent !== (rowContext.avatars[commit.email] !== undefined)) return false;
+		if (inputs.bodyPresent !== (rowContext.commitBodies[commit.hash] !== undefined)) return false;
+		const gerritState = rowContext.gerritStates[commit.hash];
+		if (inputs.gerritState !== gerritState) return false;
+		if (inputs.pullRequest !== rowContext.pullRequestsByHead[commit.hash]) return false;
+		if (inputs.gerritVisible !== (gerritState !== undefined && rowContext.gerritVisibleChanges.has(gerritState.change))) return false;
+		// Only read when the labels align to the graph (the seed covers the setting itself)
+		return !alignedToGraph || inputs.widthAtVertex === rowContext.widthsAtVertices[i];
+	}
+
+	/** Record the build inputs of a row the table just built or compared. */
+	private saveRowInputs(row: HTMLElement, seed: string, rowContext: RowContext, i: number, commit: GG.GitCommit, alignedToGraph: boolean) {
+		const gerritState = rowContext.gerritStates[commit.hash];
+		this.rowInputs.set(row, {
+			seed: seed,
+			commit: commit,
+			muted: rowContext.mutedCommits[i],
+			pinned: rowContext.pinnedCommitHashes.has(commit.hash),
+			avatarPresent: rowContext.avatars[commit.email] !== undefined,
+			bodyPresent: rowContext.commitBodies[commit.hash] !== undefined,
+			gerritState: gerritState,
+			gerritVisible: gerritState !== undefined && rowContext.gerritVisibleChanges.has(gerritState.change),
+			pullRequest: rowContext.pullRequestsByHead[commit.hash],
+			widthAtVertex: alignedToGraph ? rowContext.widthsAtVertices[i] : -1
+		});
 	}
 
 	/**

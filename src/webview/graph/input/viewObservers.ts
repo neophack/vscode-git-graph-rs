@@ -3,6 +3,7 @@
 import { alterClass, getVSCodeStyle, handledEvent } from '../../common/dom';
 import { modifyColourOpacity } from '../../common/util';
 import { GraphContext } from '../context';
+import { measureScroll } from '../render/measure';
 
 const CSS_PROP_FONT_FAMILY = '--vscode-font-family';
 const CSS_PROP_EDITOR_FONT_FAMILY = '--vscode-editor-font-family';
@@ -96,6 +97,8 @@ export function observeViewScroll(ctx: GraphContext) {
 	let timeout: number | null = null;
 	let virtualRafId: number | null = null;
 
+	// Passive (task 5.10): the handler never prevents the default scroll, and a passive listener
+	// keeps it off the scroll's critical path
 	viewElem.addEventListener('scroll', () => {
 		const scrollTop = viewElem.scrollTop;
 
@@ -123,8 +126,9 @@ export function observeViewScroll(ctx: GraphContext) {
 		});
 
 		if (store.config.loadMoreCommitsAutomatically && store.moreCommitsAvailable && !store.refreshState.inProgress) {
-			const viewHeight = viewElem.clientHeight, contentHeight = viewElem.scrollHeight;
-			if (scrollTop > 0 && viewHeight > 0 && contentHeight > 0 && (scrollTop + viewHeight) >= contentHeight - 25) {
+			// The scroll geometry reads of this handler, batched (measure.ts)
+			const metrics = measureScroll(viewElem);
+			if (metrics.scrollTop > 0 && metrics.viewHeight > 0 && metrics.contentHeight > 0 && (metrics.scrollTop + metrics.viewHeight) >= metrics.contentHeight - 25) {
 				// If the user has scrolled such that the bottom of the visible view is within 25px of the end of the content, load more commits.
 				ctx.loader.loadMoreCommits();
 			}
@@ -136,7 +140,7 @@ export function observeViewScroll(ctx: GraphContext) {
 			ctx.persistence.saveState();
 			timeout = null;
 		}, 250);
-	});
+	}, { passive: true });
 }
 
 /** Keyboard shortcuts: dialogs, navigating the Commit Details View, the Extension Settings' keybindings, Escape. */

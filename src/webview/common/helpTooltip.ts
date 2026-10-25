@@ -84,6 +84,6 @@ export function observeHelpTooltips() {
 		const target = getTooltipTarget(e.target);
 		if (target !== null && !(e.relatedTarget instanceof Node && target.contains(e.relatedTarget))) hideHelpTooltip();
 	});
-	window.addEventListener('scroll', hideHelpTooltip, true);
+	window.addEventListener('scroll', hideHelpTooltip, { capture: true, passive: true });
 	window.addEventListener('resize', hideHelpTooltip);
 }
