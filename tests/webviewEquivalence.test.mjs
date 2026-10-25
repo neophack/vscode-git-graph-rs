@@ -598,7 +598,9 @@ test('equivalence: the Chinese interface', async () => {
 		h.key(h.document, 'Escape');
 		await h.settle(220);
 		h.click(rowOf(h, 3));
-		await h.settle(80);
+		// >300ms so the background counts chunk (LINE_COUNTS_CHUNK_DELAY) has deterministically
+		// landed in both bundles before the checkpoint — otherwise the binary-file tooltip races
+		await h.settle(400);
 		cp('zh details');
 		h.click('#settingsBtn');
 		await h.settle(80);
