@@ -12,4 +12,8 @@
 import { buildDist, runVsce } from './automation-packaging.mjs';
 
 buildDist(false);
-await runVsce(['package', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']);
+// --no-dependencies: the VSIX bundles everything itself (dist/ + media/, the .vscodeignore
+// allowlist never includes node_modules), so vsce's dependency walk adds nothing — and it keeps
+// packaging deterministic in git worktrees, where npm list cannot classify a shared,
+// junctioned node_modules and fails with hundreds of spurious "extraneous" reports.
+await runVsce(['package', '--no-dependencies', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']);

@@ -7,8 +7,8 @@
  *
  *   node scripts/package-platforms.mjs [platform ...]
  *
- * Requires `npm run compile` (or `npm run package`'s prerequisites) to have already produced
- * `out/` and `media/`; this script only re-runs `vsce package`, not the TypeScript/webview build.
+ * Requires `npm run build:dist` (or `npm run package`'s prerequisites) to have already produced
+ * `dist/` and `media/`; this script only re-runs `vsce package`, not the host/webview build.
  * Safe to run with any subset of the six `native/<platform>/git-graph.node` binaries present —
  * cross-compiled locally (see build-rust.bat --full) or downloaded from CI.
  *
@@ -168,7 +168,7 @@ async function main() {
 				const outFile = `git-graph-rs-${version}-${platform}.vsix`;
 				console.log(`  packaging ${outFile} (--target ${target})...`);
 				execFileSync(process.execPath, [
-					vsceEntry, 'package', '--target', target,
+					vsceEntry, 'package', '--target', target, '--no-dependencies',
 					'--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid',
 					'--out', outFile
 				], { cwd: root, stdio: 'inherit' });

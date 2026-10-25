@@ -5,7 +5,7 @@ import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../../extensionState';
 import { Logger } from '../../logger';
-import { RepoManager } from '../../repoManager';
+import { RepoManager } from '../repos/repoManager';
 import { t } from '../../i18n';
 import { getConfig } from '../../config';
 import { GitExecutable } from '../../utils/findGit';

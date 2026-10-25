@@ -14,4 +14,6 @@
 import { buildDist, runVsce, withAutomationContributions } from './automation-packaging.mjs';
 
 buildDist(true);
-await withAutomationContributions(() => runVsce(['package', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));
+// --no-dependencies: same rationale as the default packaging — the VSIX carries the whole
+// subsystem inside dist/automation/ and never includes node_modules.
+await withAutomationContributions(() => runVsce(['package', '--no-dependencies', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));

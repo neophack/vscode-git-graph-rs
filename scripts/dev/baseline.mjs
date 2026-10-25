@@ -9,9 +9,8 @@
  *
  *   - test case counts: the Vitest suite via `npx vitest list` (one line per case; falls back
  *     to counting `it(`/`test(` occurrences in the files vitest.config.ts matches if `list`
- *     ever disappears from the installed vitest), the legacy node:test suite by the same file
- *     discovery scripts/run-tests.mjs uses plus an `it(`/`test(` proxy count, and the Rust
- *     side by counting `#[test]` attributes under native/ — a proxy, NOT a `cargo test` run
+ *     ever disappears from the installed vitest), and the Rust side by counting `#[test]`
+ *     attributes under native/ — a proxy, NOT a `cargo test` run
  *     (compiling the workspace is far too heavy for a baseline pass, and the attribute count
  *     needs no toolchain at all);
  *   - artifact sizes: a fresh production build (`npm run build:dist -- --production`) then a
@@ -148,13 +147,6 @@ function measureVitest() {
 		cases: it + test,
 		gated: []
 	};
-}
-
-/** The legacy node:test suite: the same discovery scripts/run-tests.mjs performs, plus the case proxy. */
-function measureLegacy() {
-	const files = walk(path.join(root, 'tests'), (file) => file.endsWith('.test.mjs'));
-	const { it, test } = countCaseCalls(files);
-	return { files: files.length, it, test, cases: it + test };
 }
 
 /**
@@ -322,7 +314,6 @@ function build() {
 	const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
 
 	const vitest = measureVitest();
-	const legacy = measureLegacy();
 	const rust = measureRust();
 	const sizes = measureSizes();
 	const addons = findPrebuiltAddon();
@@ -331,9 +322,8 @@ function build() {
 	const largest = measureLargestFiles();
 	const repo = measureRepoStats();
 
-	// The two grep proxy commands, kept out of the template literals below: both mix quotes and
+	// The grep proxy command, kept out of the template literal below: it mixes quotes and
 	// backslashes, which is unreadable escaped inline.
-	const legacyGrep = "grep -rhoE \"\\b(it|test)\\(\" tests --include=\"*.test.mjs\" | wc -l";
 	const rustGrep = "grep -rn \"#\\[test\\]\" native --include=\"*.rs\" | wc -l";
 
 	const parts = [];
@@ -364,14 +354,12 @@ deliberate decision. The header table above is hand-maintained prose inside
 | Suite | Files | Cases | Method |
 |---|---|---|---|
 | Vitest (\`src/**\` colocated units + \`test/integration\`) | ${vitest.files} with listed cases (${vitest.matchedFiles} matched by the include patterns) | ${vitest.cases} | ${vitest.method} |
-| Legacy node:test (\`tests/**\`) | ${legacy.files} | ${legacy.cases} (${legacy.it} \`it(\` + ${legacy.test} \`test(\`) | proxy count of \`it(\`/\`test(\` calls whose first argument is a string literal, over the same \`tests/*.test.mjs\` list \`scripts/run-tests.mjs\` discovers |
 | Rust (\`native/**\`) | ${rust.filesWithTests} files with tests | ${rust.total} | proxy count of \`#[test]\` attributes — the number of test functions in source, **not** a \`cargo test\` run (documented proxy; no \`#[test_case]\` or macro-generated cases exist today) |
 
 Exact commands (the generator invokes the same tools through their node entry points):
 
 \`\`\`bash
 npx vitest list                                  # one line per case, "file > name"; count the lines
-${legacyGrep}
 ${rustGrep}
 \`\`\`
 
@@ -387,9 +375,8 @@ ${Object.entries(rust.perArea).sort((a, b) => (b[1] - a[1]) || a[0].localeCompar
 
 Notes:
 
-- The legacy proxy under-counts nothing today (\`it.skip\`/\`it.each\`/\`test.each\` do not occur in \`tests/\`), but it resolves \`describe\` nesting only implicitly — the authoritative runner report is \`npm run test:node\` (needs the \`out/\` tree: \`npm run compile-src\` first).
 - \`test/compat/artifactSyntax.test.mjs\` is a CI gate script, not part of either suite's count (CI runs it via \`node test/compat/artifactSyntax.test.mjs\` after the dist build).
-- Case counts will **drop** as legacy coverage migrates into Vitest (REFACTOR-PLAN §2.3 rule 3); the mapping lives in each PR, and the totals here are the drift reference.
+- The legacy node:test suite was drained in REFACTOR-PLAN task 7.1 (the old-to-new mapping lives in that commit); every case count above is Vitest.
 `);
 
 	parts.push(`## Artifact sizes
@@ -488,7 +475,7 @@ ${repo.rows.map(([directory, count]) => `| ${directory}/ | ${count} |`).join('\n
 |---|---|---|
 | \`bench.mjs\` first-paint on the current tree | no prebuilt engine binary in this worktree; bench also needs the \`out/\` tree | \`npm run build && node scripts/bench.mjs <repo> --commits 200 --runs 5\` |
 | Rust line/branch coverage | needs \`cargo llvm-cov\` (the full workspace build) | \`cargo llvm-cov --workspace --lcov --output-path lcov.info\` |
-| Node line/branch coverage | needs the legacy \`out/\` tree and the full suite | \`npm run compile-src && npm run test:node:cov\` |
+| Node line/branch coverage | the Vitest coverage provider is not wired yet (REFACTOR-PLAN task 7.3) | \`npx vitest run --coverage\` once configured |
 | Platform VSIX sizes | each needs its cross-compiled addon from CI's cargo matrix | \`node scripts/package-platforms.mjs\` (in CI: \`.github/workflows/native-build.yml\`) |
 | All §3.8.1 timing scenarios (T0–T5, P50/P95) | the marker infrastructure and P1–P5 harness do not exist yet | \`test/perf/\` (P2–P5) and \`native/core/benches/\` (P1) — status tracked in \`docs/performance.md\` |
 
@@ -496,8 +483,6 @@ ${repo.rows.map(([directory, count]) => `| ${directory}/ | ${count} |`).join('\n
 		vitestCases: vitest.cases,
 		vitestFiles: vitest.files,
 		vitestMatchedFiles: vitest.matchedFiles,
-		legacyFiles: legacy.files,
-		legacyCases: legacy.cases,
 		rustTests: rust.total,
 		extensionJs: sizes.artifacts[0].bytes,
 		firstPaintJs: sizes.firstPaintJs,

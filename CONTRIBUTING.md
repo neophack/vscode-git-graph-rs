@@ -9,9 +9,8 @@ reviewed against; the shape of the tree and how the pieces connect are described
 
 ```bash
 npm install            # once (node_modules is gitignored)
-npm run build          # native addon (debug) + TypeScript host (tsc → out/)
-npm run compile        # the shipped legacy pipeline: clean → out/ host → media/ webview
-npm run build:dist     # the new pipeline: one esbuild bundle → dist/ + the webview + compat gate
+npm run build          # native addon (debug) + the production dist bundle (dist/ + media/)
+npm run build:dist     # the dist pipeline alone: one esbuild bundle → dist/ + the webview + compat gate
 node scripts/dev/install.mjs   # the full dev chain: deps → native → compile → tests → VSIX →
                                # install into VS Code (see --help; --dry-run prints the steps)
 ```
@@ -27,19 +26,30 @@ replaces the former root `build-*.bat`/`.sh` wrappers.
 ## Test
 
 ```bash
-npm test               # cargo test --workspace, then the Node suite
+npm test               # cargo test --workspace, then the Vitest suite
 npm run test:rust      # the engine (also regenerates src/shared/engine/protocol.ts via ts-rs)
-npm run test:node      # the legacy tests/*.test.mjs suite (needs a build first)
-npx vitest run         # the colocated unit tests — no build required
+npm run test:unit      # the whole Vitest suite (what CI runs after cargo)
+npx vitest run         # the same, directly
 ```
 
-- **New unit tests are Vitest and live next to their source**: `src/**/*.test.ts`, importing
-  the module under test directly. No build step, no `out/` paths.
-- The legacy suite in `tests/*.test.mjs` (node:test, against build outputs) is frozen
-  coverage: it is drained as its scenarios move into Vitest and disappears in the plan's
-  Phase 7. Add new coverage to Vitest, not there.
+- **Unit and integration tests are Vitest**: `src/**/*.test.ts` colocated with the module under
+  test, plus `test/integration/**` (real-git reader/writer contracts, the webview journeys
+  against the compiled bundle, the real-pipeline automation suites), `test/tooling/**` (build
+  and artifact contracts), `test/e2e/**` (real VS Code) and `test/perf/**` (the P gates). The
+  source-based suites need no build; the webview journeys and the tooling suites need
+  `npm run build:dist` first and self-skip without it.
 - `cargo test` is also the generator for the cross-language types: never hand-edit
   `src/shared/engine/protocol.ts`; change the Rust `protocol.rs` and regenerate.
+
+## Drain record (Phase 7, task 7.1)
+
+The legacy `node --test` suite (`tests/*.test.mjs` with its `vscodeStub`/harness modules, and
+the `npm run test:node` / `test:node:cov` / `test:automation:full` scripts) is deleted; every
+scenario was either migrated into the Vitest layers above with its assertions preserved, or
+deleted together with its owning machinery (the `out/` build, the packaging substitution, the
+full-test script). The complete old→new mapping is recorded in the drain commit's message. The
+test layout is now exactly the L0–L4 structure of `docs/REFACTOR-PLAN.md` §6.1; there is no
+separate legacy runner.
 
 ## Lint
 
@@ -57,11 +67,12 @@ The short version (the long one is `docs/ARCHITECTURE.md`):
 
 - `src/extension/`, `src/webview/`, `src/shared/` — the layered tree. Host code goes in
   `extension/`, webview code in `webview/` (no `vscode`, no Node imports), anything shared
-  (protocols, models, i18n) in `shared/`.
-- `src/*.ts` (the flat files: `extension.ts`, `gitGraphView.ts`, `dataSource.ts`, ...) are the
-  legacy half, still shipping but migrating out — do not add new modules there.
+  (protocols, models, i18n) in `shared/`. The remaining `src/*.ts` flat files
+  (`extension.ts`, `config.ts`, `i18n.ts`, `commands.ts`, ...) are the composition root and
+  the not-yet-absorbed seams — do not add new modules there.
 - `native/core`, `native/node` — the Rust engine and its Node binding.
-- `tests/` — the legacy suite; new tests are colocated (`src/**/*.test.ts`).
+- `test/` — integration, tooling, e2e and perf suites; unit tests are colocated
+  (`src/**/*.test.ts`).
 - `scripts/build/`, `scripts/dev/`, `scripts/` — build pipeline, developer entry points, and
   the not-yet-consolidated packaging/audit tooling.
 - `docs/` — this file, ARCHITECTURE.md, the REFACTOR-PLAN, and `docs/adr/`.
