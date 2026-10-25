@@ -7,10 +7,10 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
-import { GitGraphView } from './gitGraphView';
+import { GitGraphView } from './extension/graphView/panel';
 import { t } from './i18n';
 import { Logger } from './logger';
-import { RepoManager } from './repoManager';
+import { RepoManager } from './extension/repos/repoManager';
 import { StatusBarItem } from './statusBarItem';
 import {
 	GitExecutable,

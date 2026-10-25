@@ -1,53 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import type { DataSource } from '../../../dataSource';
 import { MUTATING_COMMANDS, REQUEST_COMMANDS } from '../../../shared/protocol/graphView';
-import { GitPushBranchMode, GitResetMode, MergeActionOn, RebaseActionOn, TagType } from '../../../types';
+import { GitConfigLocation, GitPushBranchMode, GitResetMode, MergeActionOn, RebaseActionOn, TagType } from '../../../types';
 import type { ResponseMessage } from '../../../types';
-import type { CommitLoaderPort, ConfigSnapshot, HandlerContext, UiPort } from './context';
+import type {
+	AvatarPort, CommitLoaderPort, ConfigSnapshot, GlobalSettingsPort, HandlerContext, PullRequestsPort,
+	ReposPort, StoragePort, UiPort, UserConfigPort, ViewPort
+} from './context';
 import { HANDLER_TABLE, dispatchRequest } from './index';
 
 /**
  * Handler table tests with a RecordingContext: a fake DataSource recording every call, a fake
- * UiPort recording every UI effect, a fake CommitLoaderPort recording the loader requests, and
- * a send function recording every response - proving that every command of the protocol
- * routes, that unknown commands are answered 'unknown', and that each handler's mutates flag
- * still equals the REPO_MUTATING_COMMANDS set the table is slated to replace.
+ * for every context port (ui, loader, avatars, storage, repos, userConfig, settings,
+ * pullRequests, view) recording every effect, and a send function recording every response -
+ * proving that every command of the protocol routes through its genuine handler, that unknown
+ * commands are answered 'unknown', and that each handler's mutates flag still equals the
+ * REPO_MUTATING_COMMANDS set the table replaced.
  */
 
 /** One recorded effect on a context port: which method ran, with which arguments. */
 interface RecordedCall {
-	readonly port: 'repo' | 'ui' | 'loader';
+	readonly port: 'repo' | 'ui' | 'loader' | 'avatars' | 'storage' | 'repos' | 'userConfig' | 'settings' | 'pullRequests' | 'view';
 	readonly method: string;
 	readonly args: unknown[];
 }
-
-/**
- * The REPO_MUTATING_COMMANDS set of src/gitGraphView.ts, transcribed as ground truth: the
- * handler table replaces it (task 4.2 deletes the old set once dispatch is wired), so the two
- * must agree exactly until then.
- */
-const REPO_MUTATING_COMMANDS: ReadonlyArray<string> = [
-	'abortOperation', 'addRemote', 'addTag', 'applyStash', 'branchFromStash', 'checkoutBranch', 'checkoutCommit',
-	'cherrypickCommit', 'cleanUntrackedFiles', 'commitFixup', 'commitSquash', 'continueOperation', 'createBranch',
-	'createPullRequest', 'deleteBranch', 'deleteRemote', 'deleteRemoteBranch',
-	'deleteTag', 'dropCommit', 'dropStash', 'editRemote', 'editUserDetails', 'fetch', 'fetchIntoLocalBranch',
-	'gerritSetFetchRefs', 'merge',
-	'popStash', 'pruneRemote', 'pullBranch', 'pushBranch', 'pushStash', 'pushTag', 'rebase', 'renameBranch',
-	'resetFileToRevision', 'resetToCommit', 'revertCommit', 'editCommitMessage', 'undoLastCommit',
-	'worktreeAdd', 'worktreeRemove', 'worktreePrune'
-];
 
 /** The non-null results genuine handlers destructure; everything else resolves null. */
 const CANNED_RESULTS: { [method: string]: unknown } = {
 	countCommitsBefore: 0,
 	getAuthorStatistics: [],
 	getActivityHeatmap: [],
+	getCommitComparison: { fileChanges: [], error: null },
+	getCommitDetails: { commitDetails: null, error: null },
 	getCommitFileCounts: { counts: {}, error: null },
 	getConfig: { config: null, error: null },
+	getOperationState: { type: null, conflictedFiles: [], progress: null },
 	getReflog: { entries: [], moreAvailable: false, error: null },
+	getRepoInfo: { branches: [], head: null, remotes: [], stashes: [], tags: [], error: null },
+	getStashDetails: { commitDetails: null, error: null },
 	getTagDetails: { details: null, error: null },
+	getUncommittedDetails: { commitDetails: null, error: null },
 	getWorktrees: [],
-	predictConflicts: null
+	predictConflicts: null,
+	repoRoot: null
 };
 
 class RecordingContext implements HandlerContext {
@@ -96,7 +91,7 @@ class RecordingContext implements HandlerContext {
 		}
 		for (const method of ['viewScm', 'openExternalUrl', 'openExtensionSettings', 'openLogFile', 'copyToClipboard',
 			'copyFilePathToClipboard', 'viewDiff', 'viewDiffWithWorkingFile', 'viewFileAtRevision', 'openFile',
-			'createArchive', 'createPullRequest', 'setInterfaceLanguage']) {
+			'createArchive', 'createPullRequest', 'setInterfaceLanguage', 'openCompareTab', 'viewDiffBinary']) {
 			ui[method] = (...args: unknown[]) => {
 				calls.push({ port: 'ui', method: method, args: args });
 				return Promise.resolve(null);
@@ -115,9 +110,96 @@ class RecordingContext implements HandlerContext {
 			markGerritStale: (repo: string) => { calls.push({ port: 'loader', method: 'markGerritStale', args: [repo] }); },
 			unmarkGerritStale: (repo: string) => { calls.push({ port: 'loader', method: 'unmarkGerritStale', args: [repo] }); },
 			clearGerritCache: (repo: string) => { calls.push({ port: 'loader', method: 'clearGerritCache', args: [repo] }); },
-			invalidateCommitCache: () => { calls.push({ port: 'loader', method: 'invalidateCommitCache', args: [] }); }
+			invalidateCommitCache: () => { calls.push({ port: 'loader', method: 'invalidateCommitCache', args: [] }); },
+			viewRepoChanged: () => { calls.push({ port: 'loader', method: 'viewRepoChanged', args: [] }); }
 		};
+		Object.defineProperty(loader, 'viewHasCommits', { value: false });
 		return loader as unknown as CommitLoaderPort;
+	}
+
+	get avatars(): AvatarPort {
+		const calls = this.calls;
+		const avatars: { [method: string]: unknown } = {
+			fetchAvatarImage: (...args: unknown[]) => { calls.push({ port: 'avatars', method: 'fetchAvatarImage', args: args }); },
+			getAvatarImage: (email: string) => { calls.push({ port: 'avatars', method: 'getAvatarImage', args: [email] }); return Promise.resolve(null); }
+		};
+		return avatars as unknown as AvatarPort;
+	}
+
+	get storage(): StoragePort {
+		const calls = this.calls;
+		const storage: { [method: string]: unknown } = {
+			getCodeReview: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'getCodeReview', args: args }); return null; },
+			startCodeReview: (...args: unknown[]) => {
+				calls.push({ port: 'storage', method: 'startCodeReview', args: args });
+				return Promise.resolve({ codeReview: { id: 'review', lastActive: 0, lastViewedFile: null, remainingFiles: [] }, error: null });
+			},
+			updateCodeReview: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'updateCodeReview', args: args }); return Promise.resolve(null); },
+			endCodeReview: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'endCodeReview', args: args }); },
+			setGlobalViewState: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'setGlobalViewState', args: args }); return Promise.resolve(null); },
+			setWorkspaceViewState: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'setWorkspaceViewState', args: args }); return Promise.resolve(null); },
+			setViewSnapshot: (...args: unknown[]) => { calls.push({ port: 'storage', method: 'setViewSnapshot', args: args }); },
+			getLastActiveRepo: () => { calls.push({ port: 'storage', method: 'getLastActiveRepo', args: [] }); return null; }
+		};
+		return storage as unknown as StoragePort;
+	}
+
+	get repos(): ReposPort {
+		const calls = this.calls;
+		const repos: { [method: string]: unknown } = {
+			getRepos: () => { calls.push({ port: 'repos', method: 'getRepos', args: [] }); return {}; },
+			checkReposExist: () => { calls.push({ port: 'repos', method: 'checkReposExist', args: [] }); return Promise.resolve(false); },
+			setRepoState: (...args: unknown[]) => { calls.push({ port: 'repos', method: 'setRepoState', args: args }); },
+			exportRepoConfig: (...args: unknown[]) => { calls.push({ port: 'repos', method: 'exportRepoConfig', args: args }); return Promise.resolve(null); },
+			rescanForRepos: () => { calls.push({ port: 'repos', method: 'rescanForRepos', args: [] }); return Promise.resolve(); }
+		};
+		return repos as unknown as ReposPort;
+	}
+
+	get userConfig(): UserConfigPort {
+		const calls = this.calls;
+		const record = (method: string) => (...args: unknown[]) => {
+			calls.push({ port: 'userConfig', method: method, args: args });
+			return Promise.resolve(null);
+		};
+		const userConfig: { [method: string]: unknown } = {
+			setUserName: record('setUserName'),
+			setUserEmail: record('setUserEmail'),
+			unsetUserName: record('unsetUserName'),
+			unsetUserEmail: record('unsetUserEmail'),
+			invalidateConfig: (...args: unknown[]) => { calls.push({ port: 'userConfig', method: 'invalidateConfig', args: args }); }
+		};
+		return userConfig as unknown as UserConfigPort;
+	}
+
+	get settings(): GlobalSettingsPort {
+		const calls = this.calls;
+		const settings: { [method: string]: unknown } = {
+			setGlobalSetting: (...args: unknown[]) => {
+				calls.push({ port: 'settings', method: 'setGlobalSetting', args: args });
+				return Promise.resolve(null);
+			}
+		};
+		return settings as unknown as GlobalSettingsPort;
+	}
+
+	get pullRequests(): PullRequestsPort {
+		const calls = this.calls;
+		const pullRequests: { [method: string]: unknown } = {
+			fetchPullRequests: (repo: string) => { calls.push({ port: 'pullRequests', method: 'fetchPullRequests', args: [repo] }); return Promise.resolve(null); },
+			fetchPullRequestHeadRefs: (repo: string, remote: unknown) => { calls.push({ port: 'pullRequests', method: 'fetchPullRequestHeadRefs', args: [repo, remote] }); return Promise.resolve(); }
+		};
+		return pullRequests as unknown as PullRequestsPort;
+	}
+
+	get view(): ViewPort {
+		const calls = this.calls;
+		const view: { [method: string]: unknown } = {
+			noteRefreshId: (kind: unknown, id: unknown) => { calls.push({ port: 'view', method: 'noteRefreshId', args: [kind, id] }); },
+			repoSwitched: (repo: unknown) => { calls.push({ port: 'view', method: 'repoSwitched', args: [repo] }); }
+		};
+		Object.defineProperty(view, 'viewHasCommits', { value: false });
+		return view as unknown as ViewPort;
 	}
 
 	public send(msg: ResponseMessage): void {
@@ -131,26 +213,43 @@ const FIXTURES: { [command: string]: { [field: string]: unknown } } = {
 	checkoutBranch: { branchName: 'main', remoteBranch: null, pullAfterwards: null },
 	cherrypickCommit: { commitHash: 'h', parentIndex: 0, recordOrigin: false, noCommit: false },
 	commitBodies: { commitHashes: [], requestId: 7 },
+	commitDetails: { commitHash: 'h', hasParents: false, stash: null, avatarEmail: null, refresh: false },
 	commitFileCounts: { commitHash: 'h', compareWithHash: null, from: null, to: 'HEAD', paths: [] },
 	compareCommits: { commitHash: 'a', compareWithHash: 'b', fromHash: 'a', toHash: 'b', refresh: false },
 	countCommitsBefore: { hash: 'h', branches: null, showRemoteBranches: false, includeCommitsMentionedByReflogs: false },
 	createBranch: { commitHash: 'h', branchName: 'topic', checkout: false, force: false },
 	createPullRequest: { push: false, config: { provider: 'github', custom: null } },
 	deleteBranch: { branchName: 'topic', forceDelete: false, deleteOnRemotes: [] },
+	deleteUserDetails: { name: true, email: true, location: GitConfigLocation.Global },
 	editCommitMessage: { commitHash: 'h', message: 'm' },
+	editUserDetails: { name: 'n', email: 'e', location: GitConfigLocation.Global, deleteLocalName: false, deleteLocalEmail: false },
+	endCodeReview: { id: 'review' },
+	exportRepoConfig: {},
 	fetch: { name: null, prune: false, pruneTags: false },
+	fetchAvatar: { email: 'a@b.c', remote: null, commits: [] },
+	fetchPullRequest: {},
 	gerritSetFetchRefs: { enabled: true },
 	loadCommits: { refreshId: 1 },
 	loadConfig: { refreshId: 1, remotes: [] },
 	loadRepoInfo: { refreshId: 1, showRemoteBranches: false, showStashes: false, hideRemotes: [] },
+	loadRepos: { check: false },
 	merge: { obj: 'main', actionOn: MergeActionOn.Branch, createNewCommit: false, squash: false, noCommit: false },
+	openCompareTab: { fromHash: 'a', toHash: 'b', singleCommit: false },
 	pushBranch: { branchName: 'main', remotes: [], setUpstream: false, mode: GitPushBranchMode.Normal, willUpdateBranchConfig: false },
 	pushTag: { tagName: 'v1', remotes: [], commitHash: 'h', skipRemoteCheck: false },
 	rebase: { obj: 'main', actionOn: RebaseActionOn.Branch, ignoreDate: false, interactive: false, autosquash: false },
 	reflog: { ref: 'HEAD', limit: 10 },
 	resetToCommit: { commit: 'HEAD~1', resetMode: GitResetMode.Soft },
+	rescanForRepos: {},
+	setGlobalSetting: { setting: 'enableLog', value: true },
+	setGlobalViewState: { state: null },
 	setInterfaceLanguage: { language: 'en' },
+	setRepoState: { state: null },
+	setViewSnapshot: { snapshot: null },
+	setWorkspaceViewState: { state: null },
+	startCodeReview: { id: 'review', files: [], lastViewedFile: null, commitHash: 'a', compareWithHash: null },
 	tagDetails: { tagName: 'v1', commitHash: 'h' },
+	updateCodeReview: { id: 'review', remainingFiles: [], lastViewedFile: null },
 	viewDiff: { fromHash: 'a', toHash: 'b', oldFilePath: 'a.txt', newFilePath: 'b.txt', type: 'M' },
 	viewDiffBinary: { fromHash: 'a', toHash: 'b', oldFilePath: 'a.png', newFilePath: 'b.png', type: 'M' },
 	viewDiffWithWorkingFile: { hash: 'a', filePath: 'a.txt' },
@@ -171,14 +270,6 @@ function fixture(command: string): { [field: string]: unknown } {
 	return { command: command, repo: '/repo', ...(FIXTURES[command] || {}) };
 }
 
-/** The commands whose handlers are honest 'not wired' stubs until their ports exist. */
-const NOT_WIRED: ReadonlyArray<string> = [
-	'commitDetails', 'compareCommits', 'fetchAvatar', 'fetchPullRequest', 'loadRepoInfo', 'loadRepos',
-	'rescanForRepos', 'exportRepoConfig', 'setRepoState', 'openCompareTab', 'viewDiffBinary',
-	'setGlobalViewState', 'setWorkspaceViewState', 'setViewSnapshot', 'setGlobalSetting',
-	'deleteUserDetails', 'editUserDetails', 'startCodeReview', 'updateCodeReview', 'endCodeReview'
-];
-
 describe('graphView handler table', () => {
 	it('has exactly one entry per protocol command', () => {
 		const keys = Object.keys(HANDLER_TABLE);
@@ -186,15 +277,12 @@ describe('graphView handler table', () => {
 		expect(keys.slice().sort()).toEqual((<string[]>REQUEST_COMMANDS).slice().sort());
 	});
 
-	it('routes every command: genuine handlers send a response, stubs throw not wired', async () => {
+	it('routes every command through its genuine handler', async () => {
 		for (const command of REQUEST_COMMANDS) {
 			const ctx = new RecordingContext();
-			if (NOT_WIRED.indexOf(command) !== -1) {
-				await expect(dispatchRequest(fixture(command), ctx), command).rejects.toThrow(/^not wired: /);
-				expect(ctx.sent, command).toEqual([]);
-			} else {
-				await expect(dispatchRequest(fixture(command), ctx), command).resolves.toBe('handled');
-			}
+			await expect(dispatchRequest(fixture(command), ctx), command).resolves.toBe('handled');
+			// Every handler touches at least one port (its response may legitimately be silent)
+			expect(ctx.calls.length + ctx.sent.length, command).toBeGreaterThan(0);
 		}
 	});
 
@@ -283,11 +371,13 @@ describe('graphView handler table', () => {
 		expect(ctx.calls).toEqual([]);
 	});
 
-	it("matches every handler's mutates flag against REPO_MUTATING_COMMANDS and MUTATING_COMMANDS", () => {
-		const expected = new Set<string>(REPO_MUTATING_COMMANDS);
+	it("derives every handler's mutates flag from the protocol table", () => {
+		// The one-off comparison against the old REPO_MUTATING_COMMANDS set (42 commands, both
+		// directions equal) ran during the task 4.4 cutover and passed; per the acceptance
+		// criteria it was then deleted. This keeps the table-internal consistency: every
+		// handler's flag is exactly the protocol's MUTATING_COMMANDS entry for its command.
 		for (const command of REQUEST_COMMANDS) {
 			const handler = (HANDLER_TABLE as { [command: string]: { mutates: boolean } })[command];
-			expect(handler.mutates, command).toBe(expected.has(command));
 			expect(handler.mutates, command).toBe(MUTATING_COMMANDS[command]);
 		}
 	});

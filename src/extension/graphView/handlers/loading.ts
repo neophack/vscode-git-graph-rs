@@ -1,26 +1,69 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
 import type { Handler } from './context';
-import { notWired } from './context';
 
 /** Handlers answering the view's data reads (branch graph pages, config, counts, details). */
 
+/**
+ * The synthetic hash of the "Uncommitted Changes" row. Duplicated from src/utils/git.ts's
+ * UNCOMMITTED ('*') because importing that module would transitively require the vscode-dependent
+ * i18n module - the same trade the CommitLoader makes for its own copy.
+ */
+const UNCOMMITTED_HASH = '*';
+
 export const loadCommits: Handler<'loadCommits'> = {
 	mutates: MUTATING_COMMANDS.loadCommits,
-	handle: (msg, ctx) => ctx.loader.loadCommits(msg, ctx.send)
+	handle: (msg, ctx) => {
+		// The id rides the regenerated page's initialState (the webview drops a response whose
+		// request was superseded); the staged responses themselves go through the loader
+		ctx.view.noteRefreshId('loadCommits', msg.refreshId);
+		return ctx.loader.loadCommits(msg, ctx.send);
+	}
 };
 
 export const loadRepoInfo: Handler<'loadRepoInfo'> = {
 	mutates: MUTATING_COMMANDS.loadRepoInfo,
-	handle: () => notWired('the loadRepoInfo pipeline depends on the remote-refs deferral view state, the repo file watcher and the last-active-repo tracking, which move into CommitLoader/Panel in tasks 4.3/4.4')
+	async handle(msg, ctx) {
+		ctx.view.noteRefreshId('loadRepoInfo', msg.refreshId);
+		// The remote-tracking refs are NOT scanned for this response while the view is EMPTY (see
+		// CommitLoaderPort.viewHasCommits): the branch dropdown starts local-only, and the complete
+		// list rides along the follow-up `loadCommits` response that carries the remote pills - the
+		// branch list and the pills come from the same ref scan, so it is run once. Once the view is
+		// populated, a deferred (local-only) list would just blink the remote entries out of the
+		// dropdown and back on a soft refresh, so the complete list is scanned right away.
+		const deferRemoteRefs = msg.showRemoteBranches && !ctx.view.viewHasCommits;
+		const [repoInfo, operationState] = await Promise.all([
+			ctx.repo.getRepoInfo(msg.repo, msg.showRemoteBranches, msg.showStashes, msg.hideRemotes, deferRemoteRefs),
+			ctx.repo.getOperationState(msg.repo)
+		]);
+		let isRepo = true;
+		if (repoInfo.error) {
+			// If an error occurred, check to make sure the repo still exists
+			isRepo = (await ctx.repo.repoRoot(msg.repo)) !== null;
+			if (!isRepo) repoInfo.error = null; // If the error is caused by the repo no longer existing, clear the error message
+		}
+		ctx.send({
+			command: 'loadRepoInfo',
+			refreshId: msg.refreshId,
+			...repoInfo,
+			isRepo: isRepo,
+			remoteRefsPending: deferRemoteRefs || undefined,
+			operationState: operationState
+		});
+		// The Panel restarts the repo file watcher, records the last-active repository and resets
+		// the per-repo view state (poll baseline, uncommitted stabiliser, the deferral above) when
+		// the response is for a repository the view did not show before
+		ctx.view.repoSwitched(msg.repo);
+	}
 };
 
 export const loadConfig: Handler<'loadConfig'> = {
 	mutates: MUTATING_COMMANDS.loadConfig,
 	async handle(msg, ctx) {
-		// The refresh id rides the response back: the webview drops a response whose request was
+		// The id rides the response back: the webview drops a response whose request was
 		// superseded by a newer one, so a slow pre-change read can never overwrite the fresh
-		// configuration a later request already applied. (Recording the id for the regenerated
-		// HTML's initialState moves to Panel in task 4.4.)
+		// configuration a later request already applied - and it rides the regenerated page's
+		// initialState for the same reason.
+		ctx.view.noteRefreshId('loadConfig', msg.refreshId);
 		const configData = await ctx.repo.getConfig(msg.repo, msg.remotes);
 		ctx.send({ command: 'loadConfig', repo: msg.repo, refreshId: msg.refreshId, ...configData });
 	}
@@ -68,17 +111,45 @@ export const commitFileCounts: Handler<'commitFileCounts'> = {
 
 export const commitDetails: Handler<'commitDetails'> = {
 	mutates: MUTATING_COMMANDS.commitDetails,
-	handle: () => notWired('commitDetails combines DataSource reads with AvatarManager and the code-review store of ExtensionState, which are not context ports yet (tasks 4.3/4.5)')
+	async handle(msg, ctx) {
+		const detailsPromise = msg.commitHash === UNCOMMITTED_HASH
+			? ctx.repo.getUncommittedDetails(msg.repo)
+			: msg.stash === null
+				? ctx.repo.getCommitDetails(msg.repo, msg.commitHash, msg.hasParents)
+				: ctx.repo.getStashDetails(msg.repo, msg.commitHash, msg.stash);
+		const avatarPromise = msg.avatarEmail !== null ? ctx.avatars.getAvatarImage(msg.avatarEmail) : Promise.resolve(null);
+		const data = await Promise.all([detailsPromise, avatarPromise]);
+		ctx.send({
+			command: 'commitDetails',
+			...data[0],
+			avatar: data[1],
+			codeReview: msg.commitHash !== UNCOMMITTED_HASH ? ctx.storage.getCodeReview(msg.repo, msg.commitHash) : null,
+			refresh: msg.refresh
+		});
+	}
 };
 
 export const compareCommits: Handler<'compareCommits'> = {
 	mutates: MUTATING_COMMANDS.compareCommits,
-	handle: () => notWired('compareCommits attaches the code-review state of ExtensionState, which is not a context port yet (task 4.5)')
+	async handle(msg, ctx) {
+		ctx.send({
+			command: 'compareCommits',
+			commitHash: msg.commitHash,
+			compareWithHash: msg.compareWithHash,
+			...await ctx.repo.getCommitComparison(msg.repo, msg.fromHash, msg.toHash),
+			codeReview: msg.toHash !== UNCOMMITTED_HASH ? ctx.storage.getCodeReview(msg.repo, msg.fromHash + '-' + msg.toHash) : null,
+			refresh: msg.refresh
+		});
+	}
 };
 
 export const fetchAvatar: Handler<'fetchAvatar'> = {
 	mutates: MUTATING_COMMANDS.fetchAvatar,
-	handle: () => notWired('fetchAvatar drives AvatarManager, which is not a context port yet')
+	handle(msg, ctx) {
+		// No response: the avatar arrives with the manager's completion event, which the Panel
+		// forwards to the webview as a fetchAvatar message of its own
+		ctx.avatars.fetchAvatarImage(msg.email, msg.repo, msg.remote, msg.commits);
+	}
 };
 
 export const repoStatistics: Handler<'repoStatistics'> = {

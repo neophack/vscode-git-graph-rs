@@ -114,6 +114,17 @@ export const HANDLER_TABLE = {
 /** The handler table widened to the general Handler type, for lookups by runtime command. */
 const TABLE: { readonly [K in RequestCommand]: Handler } = HANDLER_TABLE;
 
+/**
+ * Whether a command's handler can modify the repository. The per-handler replacement of the
+ * hand-maintained GitGraphView.REPO_MUTATING_COMMANDS set: the dispatcher's caller runs the
+ * message with the repo file watcher muted and drops the commit cache afterwards exactly when
+ * this answers TRUE (the acceptance comparison of the two sets ran once during the 4.4 cutover).
+ */
+export function isMutatingCommand(command: string): boolean {
+	const handler = Object.prototype.hasOwnProperty.call(TABLE, command) ? TABLE[command as RequestCommand] : undefined;
+	return handler !== undefined && handler.mutates;
+}
+
 /** What {@link dispatchRequest} did with a message. */
 export type DispatchResult =
 	/** A handler ran (it may still have thrown - the caller's try/catch reports that). */

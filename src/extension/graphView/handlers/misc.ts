@@ -1,5 +1,4 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { notWired } from './context';
 import type { Handler } from './context';
 
 /** Everything that fits no other domain: SCM/terminal/URL surfaces and the repository list. */
@@ -37,15 +36,30 @@ export const showErrorMessage: Handler<'showErrorMessage'> = {
 
 export const loadRepos: Handler<'loadRepos'> = {
 	mutates: MUTATING_COMMANDS.loadRepos,
-	handle: () => notWired('loadRepos answers from RepoManager, which is not a context port yet (extension/repos)')
+	async handle(msg, ctx) {
+		if (!msg.check || !await ctx.repos.checkReposExist()) {
+			// If not required to check repos, or no changes were found when checking, respond with repos
+			ctx.send({
+				command: 'loadRepos',
+				repos: ctx.repos.getRepos(),
+				lastActiveRepo: ctx.storage.getLastActiveRepo(),
+				loadViewTo: null
+			});
+		}
+	}
 };
 
 export const rescanForRepos: Handler<'rescanForRepos'> = {
 	mutates: MUTATING_COMMANDS.rescanForRepos,
-	handle: () => notWired('rescanForRepos drives RepoManager\'s workspace search, which is not a context port yet (extension/repos)')
+	handle: (_msg, ctx) => ctx.repos.rescanForRepos()
 };
 
 export const exportRepoConfig: Handler<'exportRepoConfig'> = {
 	mutates: MUTATING_COMMANDS.exportRepoConfig,
-	handle: () => notWired('exportRepoConfig writes through RepoManager, which is not a context port yet (extension/repos)')
+	async handle(msg, ctx) {
+		ctx.send({
+			command: 'exportRepoConfig',
+			error: await ctx.repos.exportRepoConfig(msg.repo)
+		});
+	}
 };

@@ -1,5 +1,4 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { notWired } from './context';
 import type { Handler } from './context';
 
 /** Gerrit and pull-request integration handlers. */
@@ -29,5 +28,13 @@ export const gerritSetFetchRefs: Handler<'gerritSetFetchRefs'> = {
 
 export const fetchPullRequest: Handler<'fetchPullRequest'> = {
 	mutates: MUTATING_COMMANDS.fetchPullRequest,
-	handle: () => notWired('fetchPullRequest drives the pull-requests manager and the head-ref fetch orchestration of GitGraphView, which move to extension/integrations')
+	async handle(msg, ctx) {
+		const remote = await ctx.pullRequests.fetchPullRequests(msg.repo);
+		ctx.send({
+			command: 'pullRequestStatus',
+			repo: msg.repo,
+			prs: remote === null ? null : remote.prs
+		});
+		if (remote !== null) await ctx.pullRequests.fetchPullRequestHeadRefs(msg.repo, remote);
+	}
 };

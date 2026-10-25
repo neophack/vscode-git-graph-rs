@@ -1,5 +1,4 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { notWired } from './context';
 import type { Handler } from './context';
 
 /** File and diff handlers: opening files/diffs and the clipboard. */
@@ -83,10 +82,16 @@ export const createArchive: Handler<'createArchive'> = {
 
 export const openCompareTab: Handler<'openCompareTab'> = {
 	mutates: MUTATING_COMMANDS.openCompareTab,
-	handle: () => notWired('openCompareTab opens the CommitComparisonView, whose controller moves to extension/views in Phase 6.1')
+	handle(msg, ctx) {
+		ctx.ui.openCompareTab(msg.repo, msg.fromHash, msg.toHash, msg.singleCommit);
+	}
 };
 
 export const viewDiffBinary: Handler<'viewDiffBinary'> = {
 	mutates: MUTATING_COMMANDS.viewDiffBinary,
-	handle: () => notWired('viewDiffBinary opens the BinaryCompareView, whose controller moves to extension/views in Phase 6.1')
+	handle(msg, ctx) {
+		// The native Diff View can't show a binary/image file (both panes would be empty): the
+		// same standalone tab the Commit Comparison View opens for one does (via the ui port).
+		ctx.ui.viewDiffBinary(msg.repo, msg.fromHash, msg.toHash, msg.oldFilePath, msg.newFilePath, msg.type);
+	}
 };

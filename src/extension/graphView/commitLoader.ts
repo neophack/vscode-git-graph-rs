@@ -155,9 +155,16 @@ export class CommitLoader implements CommitLoaderPort {
 	 * {@link viewRepoChanged}). The remote-tracking refs are deferred only while this is FALSE: a
 	 * stripped intermediate response is a win when the view is empty, but on a refresh of an
 	 * already-rendered view the remote branch pills would visibly vanish until the follow-up
-	 * restored them, so every refresh would flicker.
+	 * restored them, so every refresh would flicker. Exposed as a getter: the loadRepoInfo
+	 * handler reads the same state for its own remote-refs deferral (the single source of truth
+	 * the live GitGraphView field was).
 	 */
-	private viewHasCommits = false;
+	private renderingCommits = false;
+
+	/** Whether the view currently renders a commit list (see {@link renderingCommits}). */
+	public get viewHasCommits(): boolean {
+		return this.renderingCommits;
+	}
 
 	constructor(private readonly deps: CommitLoaderDeps) {
 		this.commitCache = new CommitPageCache(deps.commitCacheLimit ?? CommitLoader.DEFAULT_COMMIT_CACHE_LIMIT);
@@ -189,7 +196,7 @@ export class CommitLoader implements CommitLoaderPort {
 		// Remote-tracking refs dominate the ref scan on repositories with many of them, so the
 		// first response is sent WITHOUT them while the view is empty (see `viewHasCommits`); the
 		// complete ref set follows asynchronously in `sendRemoteRefsFollowUp`.
-		const deferRemoteRefs = msg.showRemoteBranches && !this.viewHasCommits;
+		const deferRemoteRefs = msg.showRemoteBranches && !this.renderingCommits;
 		try {
 			if (!msg.gerritFetchRefs) {
 				// Gerrit integration disabled for this repository: load the commits without Gerrit data
@@ -291,7 +298,7 @@ export class CommitLoader implements CommitLoaderPort {
 	 * starts empty, so the remote-refs deferral applies again until its first page is rendered.
 	 */
 	public viewRepoChanged(): void {
-		this.viewHasCommits = false;
+		this.renderingCommits = false;
 		this.deps.stabiliser.reset();
 	}
 
@@ -332,7 +339,7 @@ export class CommitLoader implements CommitLoaderPort {
 	}
 
 	private noteViewHasCommits(commitData: GitCommitData): void {
-		if (commitData.commits.length > 0) this.viewHasCommits = true;
+		if (commitData.commits.length > 0) this.renderingCommits = true;
 	}
 
 	private abortCurrentRun(): void {

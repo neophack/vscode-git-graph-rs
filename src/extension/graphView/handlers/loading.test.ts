@@ -5,7 +5,7 @@ import { CommitLoader } from '../commitLoader';
 import type { CommitDataPort } from '../commitLoader';
 import { CommitOrdering } from '../../../types';
 import type { RequestLoadCommits, ResponseMessage, ResponseLoadCommits } from '../../../types';
-import type { CommitLoaderPort, ConfigSnapshot, HandlerContext, UiPort } from './context';
+import type { CommitLoaderPort, ConfigSnapshot, HandlerContext, UiPort, ViewPort } from './context';
 import { dispatchRequest } from './index';
 
 /**
@@ -41,6 +41,19 @@ class WiringContext implements HandlerContext {
 	public readonly repo: DataSource = null as unknown as DataSource; // the handlers under test touch only ctx.loader and ctx.send
 	public readonly config: ConfigSnapshot = { gerrit: { remote: 'gerrit' } };
 	public readonly ui: UiPort = null as unknown as UiPort; // never reached by these handlers
+	// The ports the loadCommits pipeline never touches (typed `never`, assignable to every port);
+	// loadRepoInfo reads only ctx.view, recorded minimally
+	public readonly avatars: never = null as unknown as never;
+	public readonly storage: never = null as unknown as never;
+	public readonly repos: never = null as unknown as never;
+	public readonly userConfig: never = null as unknown as never;
+	public readonly settings: never = null as unknown as never;
+	public readonly pullRequests: never = null as unknown as never;
+	public readonly view: ViewPort = {
+		viewHasCommits: false,
+		noteRefreshId: () => undefined,
+		repoSwitched: () => undefined
+	};
 	public readonly loader: CommitLoaderPort;
 
 	constructor() {
