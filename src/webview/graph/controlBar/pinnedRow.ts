@@ -11,6 +11,9 @@ import { abbrevCommit, UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
 
 export class PinnedRow {
+	/** The markup the pinned chips were last built from: identical content is never re-swapped. */
+	private renderedHtml: string | null = null;
+
 	constructor(private readonly ctx: () => GraphContext) { }
 
 	/** Wire the row's chips (one delegated listener). */
@@ -38,7 +41,7 @@ export class PinnedRow {
 			});
 		}
 		ctx.persistence.saveRepoStateValue(store.currentRepo, 'pinnedCommits', pinned);
-		ctx.table.render();
+		ctx.renderScheduler.request();
 	}
 
 	public togglePinBranch(branch: string) {
@@ -47,7 +50,7 @@ export class PinnedRow {
 		const pinned = store.getPinnedBranches().filter((pinnedBranch) => pinnedBranch !== branch);
 		if (!wasPinned) pinned.push(branch);
 		ctx.persistence.saveRepoStateValue(store.currentRepo, 'pinnedBranches', pinned);
-		ctx.table.render();
+		ctx.renderScheduler.request();
 	}
 
 	/**
@@ -73,13 +76,15 @@ export class PinnedRow {
 		return title;
 	}
 
-	/** Render the Pinned row. */
+	/** Render the Pinned row. Idempotent: the render pass runs on every scroll window update, so
+	 * unchanged chips keep their DOM nodes (and whatever the user is doing with them). */
 	public render() {
 		const ctx = this.ctx(), store = ctx.store;
 		const controls = ctx.dom.pinnedControls;
 		if (controls === null) return;
 		if (!store.hasCurrentRepo()) {
 			controls.style.display = 'none';
+			this.renderedHtml = null;
 			return;
 		}
 
@@ -94,7 +99,11 @@ export class PinnedRow {
 			const summary = pinned.summary.length > 30 ? pinned.summary.substring(0, 30) + '…' : pinned.summary;
 			chips.push(html`<span class="pinnedChip" data-type="commit" data-value="${pinned.hash}" title="${this.chipTitle(pinned)}">📌 <b>${abbrevCommit(pinned.hash)}</b>${summary !== '' ? ' ' + summary : ''}<span class="pinnedChipRemove" data-type="commit" data-value="${pinned.hash}" title="${formatStr(strings.pinnedUnpinCommit, pinned.hash)}">&times;</span></span>`);
 		}
-		setHtml(controls, html`<span class="unselectable pinnedRowLabel">${strings.pinnedLabel}</span>${joinHtml(chips)}`);
+		const content = html`<span class="unselectable pinnedRowLabel">${strings.pinnedLabel}</span>${joinHtml(chips)}`;
+		if (this.renderedHtml !== content.html) {
+			this.renderedHtml = content.html;
+			setHtml(controls, content);
+		}
 		controls.style.display = pinnedBranches.length + pinnedCommits.length > 0 ? 'block' : 'none';
 	}
 

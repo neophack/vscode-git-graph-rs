@@ -459,7 +459,10 @@ export class RepoLoader {
 		// (Rendering first and correcting afterwards would window the list at the stale position,
 		// then move - destroying and rebuilding the rows at both edges of the window for nothing.)
 		viewport.applyViewportAnchor(anchor);
-		ctx.table.render();
+		// The ONE render of this response (task 5.10): synchronous because the anchor re-application
+		// below measures the rows this pass wrote, and it satisfies any render requested earlier in
+		// the same response (the scheduler's pending flag), so nothing renders twice
+		ctx.renderScheduler.renderSync();
 		store.gerritStatesDirty = false;
 		// A full render has variable row heights, so its anchor can only be measured now that the
 		// rows are on screen. Windowed rendering already landed exactly, and this is a no-op.
@@ -658,7 +661,7 @@ export class RepoLoader {
 	 * that became visible — they ride along the visible states only.
 	 */
 	public applyGerritFilterChange() {
-		this.ctx().table.render();
+		this.ctx().store.invalidateRender();
 		if (this.gerritFilterRefreshTimer !== null) window.clearTimeout(this.gerritFilterRefreshTimer);
 		this.gerritFilterRefreshTimer = window.setTimeout(() => {
 			this.gerritFilterRefreshTimer = null;
@@ -757,7 +760,9 @@ export class RepoLoader {
 		}
 		if (pullRequestMapsEqual(store.pullRequestsByHead, pullRequestsByHead)) return;
 		store.pullRequestsByHead = pullRequestsByHead;
-		ctx.table.render();
+		// A store change: the invalidation channel (main.ts wires it to the render scheduler)
+		// coalesces this with any other change of the same burst into one render
+		store.invalidateRender();
 	}
 
 	public processLoadCommitsResponse(msg: GG.ResponseLoadCommits) {
@@ -905,8 +910,9 @@ export class RepoLoader {
 
 		// Settings that shape the rendered output but not the commit data (graph style, date
 		// format, column visibility, ...) would otherwise wait for the next render: run one now.
-		// It reconciles, so unchanged rows keep their DOM nodes and the viewport its position.
-		ctx.table.render();
+		// It reconciles, so unchanged rows keep their DOM nodes and the viewport its position -
+		// and it coalesces onto the next frame with anything else this config change requested.
+		store.invalidateRender();
 
 		// Reload the commits under the new settings (the extension host dropped its commit cache
 		// for the change): a soft refresh, answered with the complete data in one response, so

@@ -24,6 +24,13 @@ export class Store {
 	/* Extension Settings & environment */
 	private configValue: GG.GitGraphViewConfig;
 	private readonly configListeners: Array<(config: GG.GitGraphViewConfig, previous: GG.GitGraphViewConfig) => void> = [];
+	/**
+	 * Render invalidation listeners (REFACTOR-PLAN task 5.10): `invalidateRender()` is called when
+	 * the store changed in a way the rendered view does not reflect, and the subscriber (main.ts
+	 * wires the render scheduler) coalesces the notifications into ONE render on the next frame -
+	 * however many changes a response made.
+	 */
+	private readonly renderListeners: Array<() => void> = [];
 	public readonly backend: GG.BackendReport;
 	public readonly globalViewState: GG.DeepWriteable<GG.GitGraphViewGlobalState>;
 	public readonly workspaceViewState: GG.DeepWriteable<GG.GitGraphViewWorkspaceState>;
@@ -115,6 +122,29 @@ export class Store {
 	/** Subscribe to replacements of the Extension Settings. */
 	public onConfigChange(listener: (config: GG.GitGraphViewConfig, previous: GG.GitGraphViewConfig) => void) {
 		this.configListeners.push(listener);
+	}
+
+
+	/* Render invalidation (REFACTOR-PLAN task 5.10) */
+
+	/**
+	 * Subscribe to render invalidations: the notifications the render scheduler coalesces into one
+	 * render per frame. @returns The unsubscribe function.
+	 */
+	public onRenderChange(listener: () => void): () => void {
+		this.renderListeners.push(listener);
+		return () => {
+			const index = this.renderListeners.indexOf(listener);
+			if (index >= 0) this.renderListeners.splice(index, 1);
+		};
+	}
+
+	/**
+	 * Mark the rendered view stale: whatever changed, the DOM no longer reflects the store. The
+	 * subscribers merge any number of these into a single render on the next animation frame.
+	 */
+	public invalidateRender(): void {
+		for (let i = 0; i < this.renderListeners.length; i++) this.renderListeners[i]();
 	}
 
 
