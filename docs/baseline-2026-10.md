@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Generated | 2026-10-25 |
-| HEAD | `3d2b5fe37` on branch `task/docs-baseline-performance` |
+| HEAD | `4187f69c7` on branch `task/docs-baseline-performance` |
 | Machine | Windows dev machine (process starts are slower than CI's Linux runner; REFACTOR-PLAN §3.8.1 records the two reference environments separately) |
 | Node | v24.14.0 |
 | Reproduce | `npm run baseline` — regenerates this file end to end and prints it to stdout |
@@ -152,11 +152,11 @@ Tracked files per top-level directory (`git ls-files | cut -d/ -f1 | sort | uniq
 | scripts/ | 28 |
 | test/ | 25 |
 | resources/ | 21 |
-| docs/ | 13 |
+| docs/ | 15 |
 | licenses/ | 8 |
 | .github/ | 2 |
 | (repository root) | 21 |
-| **Total** | **602** |
+| **Total** | **604** |
 
 `legacy/` no longer exists in this tree (it has been drained by the refactor's phases);
 `dist/`, `media/`, `out/`, `native/<platform>/` and `*.vsix` are gitignored build outputs.
