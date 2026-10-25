@@ -148,7 +148,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
 	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
-	const repoManager = new RepoManager(dataSource, extensionState, onDidChangeConfiguration, logger);
+	const repoManager = new RepoManager(repo, gitRunner, extensionState, onDidChangeConfiguration, logger);
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
 	const diffDocProvider = new DiffDocProvider(dataSource);
 

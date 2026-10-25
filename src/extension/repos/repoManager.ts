@@ -1,6 +1,8 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DataSource } from '../../dataSource';
+import type { ProductionGitRepository } from '../git/gitRepository';
+import type { GitRunnerPort } from '../graphView/gitRunner';
+import { addRemoteTagsRefspec } from '../git/write/ops/config';
 import { t } from '../../i18n';
 import { ErrorInfo, GitRepoSet, GitRepoState } from '../../types';
 import {
@@ -31,6 +33,8 @@ import {
 	doesPathExist,
 	getWorkspaceFolderInfoForRepoInclusionMapping,
 	isDirectory,
+	listSubmodules,
+	resolveRepoRoot,
 	searchDirectoryForRepos,
 	searchRepoForSubmodules
 } from './repoDiscovery';
@@ -77,7 +81,8 @@ export function recentReposList(recorded: ReadonlyArray<string>, lastActive: str
  * Detects and manages repositories in Git Graph.
  */
 export class RepoManager extends Disposable {
-	private readonly dataSource: DataSource;
+	private readonly repo: ProductionGitRepository;
+	private readonly git: GitRunnerPort;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
 
@@ -101,13 +106,16 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Creates the Git Graph Repository Manager, and runs startup tasks.
-	 * @param dataSource The Git Graph DataSource instance.
+	 * @param repo The repository facade: repository roots and submodules are read through it, the
+	 *              tag-tracking refspecs are written through it (REFACTOR-PLAN task 3.6).
+	 * @param git The raw runner the tag-tracking preflight reads through.
 	 * @param extensionState The Git Graph ExtensionState instance.
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(dataSource: DataSource, extensionState: ExtensionState, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(repo: ProductionGitRepository, git: GitRunnerPort, extensionState: ExtensionState, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
 		super();
-		this.dataSource = dataSource;
+		this.repo = repo;
+		this.git = git;
 		this.extensionState = extensionState;
 		this.logger = logger;
 		// Repository paths used to be persisted in native-separator form on Windows when they came
@@ -237,12 +245,34 @@ export class RepoManager extends Disposable {
 		await this.checkReposForNewSubmodules();
 		await Promise.all(Object.keys(this.repos).map(repo => {
 			if (getConfig(repo).trackRemoteTags) {
-				return this.dataSource.trackRemoteTags(repo);
+				return this.trackRemoteTags(repo);
 			}
 			return Promise.resolve();
 		}));
 		await this.searchWorkspaceForRepos();
 		this.startWatchingFolders();
+	}
+
+	/**
+	 * Add the tag-tracking fetch refspec (`+refs/tags/*:refs/remotes/<remote>/tags/*`) to every
+	 * remote of the repository that does not already carry it (the port of the legacy
+	 * `DataSource.trackRemoteTags`): the refspec is only added when the remote's fetch
+	 * configuration does not yet include it, and any failure is swallowed (a repository whose
+	 * remotes cannot be read or configured simply keeps its current fetch behaviour).
+	 * @param repo The path of the repository.
+	 */
+	private async trackRemoteTags(repo: string): Promise<void> {
+		try {
+			const remotes = await this.repo.read.getRemotes(repo);
+			await Promise.all(remotes.map(async (remote) => {
+				// `git config --get-all` exits non-zero when the key holds no value at all — read as
+				// "no tag refspec present" rather than a failure (the legacy read ignored the exit code)
+				const fetchConfigs = await this.git.gitOutput(['config', '--get-all', 'remote.' + remote + '.fetch'], repo, (stdout) => stdout).catch(() => '');
+				if (!fetchConfigs.includes('refs/remotes/' + remote + '/tags/*')) {
+					await this.repo.write.run(repo, addRemoteTagsRefspec({ remote: remote }));
+				}
+			}));
+		} catch (_) { }
 	}
 
 	/**
@@ -266,7 +296,7 @@ export class RepoManager extends Disposable {
 	 */
 	public registerRepo(path: string, loadRepo: boolean) {
 		return new Promise<{ root: string | null, error: string | null }>(async resolve => {
-			let root = await this.dataSource.repoRoot(path);
+			let root = await resolveRepoRoot(this.repo.read, path);
 			if (root === null) {
 				resolve({ root: null, error: 'The folder "' + path + '" is not a Git repository.' });
 			} else if (typeof this.repos[root] !== 'undefined') {
@@ -411,7 +441,9 @@ export class RepoManager extends Disposable {
 			this.repos[repo] = Object.assign({}, DEFAULT_REPO_STATE);
 			// Open a repository handle in the Git backend (fire-and-forget: a failure just means the
 			// backend reads this repository through the `git` CLI instead)
-			this.dataSource.openRepository(repo);
+			void this.repo.read.openRepository(repo).catch((error) => {
+				this.logger.log('The Git backend could not open the repository ' + repo + ': ' + (error instanceof Error ? error.message : String(error)));
+			});
 			this.updateReposWorkspaceFolderIndex(repo);
 			this.extensionState.saveRepos(this.repos);
 			this.logger.log('Added new repo: ' + repo);
@@ -428,9 +460,9 @@ export class RepoManager extends Disposable {
 	private removeRepo(repo: string) {
 		delete this.repos[repo];
 		this.recentRepos = this.recentRepos.filter((known) => known !== repo);
-		// Release the engine's handle and the cached config data of the removed repository: both
-		// would otherwise stay resident for the rest of the editor session
-		this.dataSource.closeRepository(repo);
+		// Release the engine's handle of the removed repository: it would otherwise stay resident
+		// (with its pack indexes and caches) for the rest of the editor session
+		this.repo.read.closeRepository(repo);
 		this.extensionState.saveRepos(this.repos);
 		this.logger.log('Removed repo: ' + repo);
 	}
@@ -481,7 +513,7 @@ export class RepoManager extends Disposable {
 	 */
 	public checkReposExist() {
 		let repoPaths = Object.keys(this.repos), changes = false;
-		return evalPromises(repoPaths, 3, (path) => this.dataSource.repoRoot(path)).then((results) => {
+		return evalPromises(repoPaths, 3, (path) => resolveRepoRoot(this.repo.read, path)).then((results) => {
 			for (let i = 0; i < repoPaths.length; i++) {
 				if (results[i] === null) {
 					this.removeRepo(repoPaths[i]);
@@ -580,7 +612,7 @@ export class RepoManager extends Disposable {
 		this.repos[newRepo] = this.repos[oldRepo];
 		delete this.repos[oldRepo];
 		// The old path no longer names the repository, so its engine handle must not stay resident
-		this.dataSource.closeRepository(oldRepo);
+		this.repo.read.closeRepository(oldRepo);
 		this.recentRepos = this.recentRepos.map((repo) => repo === oldRepo ? newRepo : repo);
 		this.updateReposWorkspaceFolderIndex(newRepo);
 		this.extensionState.saveRepos(this.repos);
@@ -617,7 +649,7 @@ export class RepoManager extends Disposable {
 	 */
 	private searchDirectoryForRepos(directory: string, maxDepth: number) {
 		return searchDirectoryForRepos(directory, maxDepth, {
-			repoRoot: (dir) => this.dataSource.repoRoot(dir),
+			repoRoot: (dir) => resolveRepoRoot(this.repo.read, dir),
 			isWithinKnownRepo: (dir) => this.isDirectoryWithinRepos(dir),
 			addRepo: (repo) => this.addRepo(repo)
 		});
@@ -641,7 +673,7 @@ export class RepoManager extends Disposable {
 	 */
 	private searchRepoForSubmodules(repo: string) {
 		return searchRepoForSubmodules(repo, {
-			getSubmodules: (r) => this.dataSource.getSubmodules(r),
+			getSubmodules: (r) => listSubmodules(this.repo.read, r),
 			isKnownRepo: (r) => this.isKnownRepo(r),
 			addRepo: (r) => this.addRepo(r)
 		});
