@@ -1,0 +1,5 @@
+# Browserslist targets for the webview lint gates (docs/REFACTOR-PLAN.md §3.7.2):
+# VS Code 1.38 ships Chromium 69 — the promised webview floor (§3.7.1 runtime
+# anchors). eslint-plugin-compat (eslint.config.mjs block b) reads this file;
+# the future stylelint no-unsupported-browser-features gate shares it.
+chrome 69
