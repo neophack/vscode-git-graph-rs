@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::cancel::Cancel;
 use crate::error::Result;
 use crate::repository::{Repo, RepoManager};
 use crate::status::ScmChange;
@@ -174,7 +175,7 @@ impl Engine {
     /// One page of the commit graph, with the refs attached to each commit.
     pub fn graph(&self, options: &GraphOptions) -> Result<GitCommitData> {
         let remotes = self.repo.remote_names();
-        crate::graph::load_commits(&self.repo, &options.to_log_options(remotes))
+        crate::graph::load_commits(&self.repo, &options.to_log_options(remotes), Cancel::none())
     }
 
     /// Every ref the graph annotates commits with, plus the branch and tag name lists.
@@ -188,7 +189,7 @@ impl Engine {
 
     /// Search commit messages, newest first (`git log --all -E -i --grep`).
     pub fn search_history(&self, query: &str) -> Result<Vec<GitHistoryMatch>> {
-        crate::log::search_history(&self.repo, query)
+        crate::log::search_history(&self.repo, query, Cancel::none())
     }
 
     /* ---------- Commits ---------- */
@@ -258,7 +259,7 @@ impl Engine {
     /// The working tree's changes, staged and unstaged halves apart, conflicts flagged - what
     /// a Source Control view lists.
     pub fn status(&self) -> Result<Vec<ScmChange>> {
-        crate::status::scm_changes(&self.repo)
+        crate::status::scm_changes(&self.repo, Cancel::none())
     }
 
     /// Whether anything in the tracked files is uncommitted (a cheaper question than
@@ -292,17 +293,17 @@ impl Engine {
 
     /// Every distinct author, for an author filter.
     pub fn authors(&self) -> Result<Vec<GitAuthor>> {
-        crate::log::authors(&self.repo)
+        crate::log::authors(&self.repo, Cancel::none())
     }
 
     /// Commits per author.
     pub fn author_stats(&self) -> Result<Vec<GitAuthorStat>> {
-        crate::stats::author_stats(&self.repo)
+        crate::stats::author_stats(&self.repo, Cancel::none())
     }
 
     /// Commits per day, for an activity heat map.
     pub fn activity(&self) -> Result<Vec<GitActivityCell>> {
-        crate::stats::activity_heatmap(&self.repo)
+        crate::stats::activity_heatmap(&self.repo, Cancel::none())
     }
 }
 

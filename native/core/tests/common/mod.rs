@@ -135,6 +135,60 @@ impl TestRepo {
         self.commit(message)
     }
 
+    /// Build `count` commits of a linear history in one `git fast-import` run, so tests that
+    /// need thousands of commits (the cancellation checkpoints, say) do not pay one `git commit`
+    /// process per commit.
+    ///
+    /// Every commit changes the same file to distinct contents, with dates one minute apart, so
+    /// the order is deterministic and matches the commit order whatever the machine's speed.
+    pub fn commit_linear_history(&mut self, count: usize) {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let mut stream = String::from("reset refs/heads/main\n");
+        for i in 0..count {
+            let message = format!("commit {i}\n");
+            let contents = format!("contents {i:08}\n");
+            let seconds = self.clock + 60 * (i as i64 + 1);
+            stream.push_str(&format!(
+                "commit refs/heads/main\n\
+                 committer Test User <test@example.com> {seconds} +0000\n\
+                 data {}\n{message}\
+                 M 100644 inline a.txt\n\
+                 data {}\n{contents}",
+                message.len(),
+                contents.len(),
+            ));
+        }
+
+        let mut child = Command::new("git")
+            .args(["fast-import", "--quiet"])
+            .current_dir(self.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("HOME", self.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("could not run `git fast-import`");
+        child
+            .stdin
+            .as_mut()
+            .expect("fast-import asked for no stdin")
+            .write_all(stream.as_bytes())
+            .expect("could not feed `git fast-import`");
+        let output = child
+            .wait_with_output()
+            .expect("could not wait for `git fast-import`");
+        assert!(
+            output.status.success(),
+            "`git fast-import` failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        self.clock += 60 * count as i64;
+    }
+
     pub fn head(&self) -> String {
         self.git(&["rev-parse", "HEAD"]).trim().to_string()
     }

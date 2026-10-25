@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::ops::Deref;
 
+use crate::cancel::Cancel;
 use crate::diff;
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
@@ -101,7 +102,7 @@ pub fn stash_details(repo: &Repo, hash: &str, stash: &GitCommitStash) -> Result<
 ///
 /// There is no commit to read, so every field but the file list is empty — which is what the view
 /// renders for it.
-pub fn uncommitted_details(repo: &Repo) -> Result<GitCommitDetails> {
+pub fn uncommitted_details(repo: &Repo, cancel: Cancel) -> Result<GitCommitDetails> {
     Ok(GitCommitDetails {
         hash: UNCOMMITTED.to_string(),
         parents: Vec::new(),
@@ -113,7 +114,7 @@ pub fn uncommitted_details(repo: &Repo) -> Result<GitCommitDetails> {
         committer_date: 0,
         signature: None,
         body: String::new(),
-        file_changes: crate::status::uncommitted_changes(repo)?,
+        file_changes: crate::status::uncommitted_changes(repo, cancel)?,
     })
 }
 

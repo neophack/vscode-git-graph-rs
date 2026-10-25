@@ -17,6 +17,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use gix::ObjectId;
 
+use crate::cancel::Cancel;
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::{Repo, Shallow};
 use crate::text::{self, CommitEncoding};
@@ -45,6 +46,9 @@ pub struct WalkOptions {
     pub authors: Option<Vec<String>>,
     /// Keep only commits that changed one of these repository-relative paths.
     pub filter_paths: Vec<String>,
+    /// The request's cancellation state, checked every [`crate::cancel::CHECK_INTERVAL`]
+    /// iterations; [`Cancel::none`] (the default) makes the walk uncancellable, as before.
+    pub cancel: Cancel,
 }
 
 /// Walk from `tips` and return the page of commits the view should render.
@@ -109,6 +113,9 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         if visited > window {
             break;
         }
+        // The cancellation checkpoint (task 2.9): a relaxed flag read every CHECK_INTERVAL-th
+        // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
+        options.cancel.check(visited)?;
 
         let commit = match git.find_commit(info.id) {
             Ok(commit) => commit,
@@ -607,7 +614,7 @@ const SEARCH_LIMIT: usize = 100;
 /// branches, HEAD, and the stash, whose ref lives in `refs/` even though the graph never shows it.
 /// The walk is commit-date ordered (git's default for `--grep`), not topologically constrained, so
 /// it needs none of the windowed re-ordering the graph does.
-pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> {
+pub fn search_history(repo: &Repo, query: &str, cancel: Cancel) -> Result<Vec<GitHistoryMatch>> {
     let matcher = regex::RegexBuilder::new(query)
         .case_insensitive(true)
         // git's grep matches the pattern line by line, so ^/$ anchor at any line boundary —
@@ -644,6 +651,7 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
         .git_ctx("Could not walk the commit graph")?;
 
     let mut matches: Vec<GitHistoryMatch> = Vec::new();
+    let mut visited = 0usize;
     for info in walk {
         let info = match info {
             Ok(info) => info,
@@ -651,6 +659,8 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
             // graph walk.
             Err(_) => break,
         };
+        visited += 1;
+        cancel.check(visited)?;
         let commit = match git.find_commit(info.id) {
             Ok(commit) => commit,
             Err(_) => continue,
@@ -709,6 +719,7 @@ pub fn count_commits_before(
     hash: &str,
     show_remote_branches: bool,
     include_reflogs: bool,
+    cancel: Cancel,
 ) -> Result<u64> {
     if include_reflogs {
         return Err(Error::unsupported(
@@ -751,6 +762,7 @@ pub fn count_commits_before(
     // Everything reachable from the excluded commit is crossed out first, so that the counting
     // walk is a single pass that only tests set membership.
     let mut excluded: HashSet<ObjectId> = HashSet::new();
+    let mut visited = 0usize;
     for info in git
         .rev_walk([excluded_id])
         .all()
@@ -762,9 +774,12 @@ pub fn count_commits_before(
             }
             Err(_) => break,
         }
+        visited += 1;
+        cancel.check(visited)?;
     }
 
     let mut count = 0u64;
+    let mut visited = 0usize;
     for info in git
         .rev_walk(tips.iter().copied())
         .all()
@@ -775,6 +790,8 @@ pub fn count_commits_before(
             Ok(_) => {}
             Err(_) => break,
         }
+        visited += 1;
+        cancel.check(visited)?;
     }
     Ok(count)
 }
@@ -784,13 +801,14 @@ pub fn count_commits_before(
 /// The distinct commit authors of the current branch's history — what `git shortlog -s -n -e`
 /// is parsed into: aggregated per (name, email), ordered by commit count (most first), then
 /// de-duplicated by name (the first, most-prolific spelling wins) and sorted by name.
-pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
+pub fn authors(repo: &Repo, cancel: Cancel) -> Result<Vec<GitAuthor>> {
     let git = repo.borrow();
     let head = git
         .head_id()
         .map_err(|_| Error::not_found("The repository has no commits"))?;
 
     let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    let mut visited = 0usize;
     for info in git
         .rev_walk(std::iter::once(head))
         .all()
@@ -800,6 +818,8 @@ pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
             Ok(info) => info,
             Err(_) => break,
         };
+        visited += 1;
+        cancel.check(visited)?;
         let Ok(commit) = git.find_commit(info.id) else {
             continue;
         };

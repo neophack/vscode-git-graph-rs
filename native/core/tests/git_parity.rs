@@ -8,6 +8,8 @@
 #[macro_use]
 mod common;
 
+use git_graph_core::cancel::Cancel;
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -60,11 +62,14 @@ fn an_intent_to_add_file_is_an_uncommitted_addition() {
     let engine = open(&repo);
     // git: ` A new.txt`.
     assert_eq!(
-        status::count_changes(&engine, true).unwrap(),
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
         porcelain_lines(&repo)
     );
-    assert_eq!(status::count_changes(&engine, true).unwrap(), 1);
-    let changes = status::uncommitted_changes(&engine).unwrap();
+    assert_eq!(
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
+        1
+    );
+    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].new_file_path, "new.txt");
     assert_eq!(changes[0].kind, GitFileStatus::Added);
@@ -80,11 +85,14 @@ fn a_file_removed_from_the_index_but_kept_on_disk_is_two_changes() {
     let engine = open(&repo);
     // git: `D  a.txt` and `?? a.txt`.
     assert_eq!(
-        status::count_changes(&engine, true).unwrap(),
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
         porcelain_lines(&repo)
     );
-    assert_eq!(status::count_changes(&engine, true).unwrap(), 2);
-    let kinds: Vec<GitFileStatus> = status::uncommitted_changes(&engine)
+    assert_eq!(
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
+        2
+    );
+    let kinds: Vec<GitFileStatus> = status::uncommitted_changes(&engine, Cancel::none())
         .unwrap()
         .into_iter()
         .map(|change| change.kind)
@@ -93,7 +101,7 @@ fn a_file_removed_from_the_index_but_kept_on_disk_is_two_changes() {
         kinds,
         vec![GitFileStatus::Deleted, GitFileStatus::Untracked]
     );
-    let files = status::status_files(&engine, true).unwrap();
+    let files = status::status_files(&engine, true, Cancel::none()).unwrap();
     assert_eq!(files.deleted, vec!["a.txt"]);
     assert_eq!(files.untracked, vec!["a.txt"]);
 }
@@ -109,9 +117,12 @@ fn status_renames_off_counts_both_halves_of_a_staged_rename() {
     let engine = open(&repo);
     // git: `D  a.txt` and `A  b.txt`, not one `R` line.
     assert_eq!(porcelain_lines(&repo), 2);
-    assert_eq!(status::count_changes(&engine, true).unwrap(), 2);
+    assert_eq!(
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
+        2
+    );
     // The details still pair the rename, as the CLI backend's `git diff --find-renames` does.
-    let changes = status::uncommitted_changes(&engine).unwrap();
+    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].kind, GitFileStatus::Renamed);
     assert_eq!(changes[0].old_file_path, "a.txt");
@@ -138,7 +149,9 @@ fn a_nested_repository_is_listed_as_a_directory() {
         .collect();
     assert_eq!(expected, vec!["inner/"]);
     assert_eq!(
-        status::status_files(&engine, true).unwrap().untracked,
+        status::status_files(&engine, true, Cancel::none())
+            .unwrap()
+            .untracked,
         expected
     );
 }
@@ -226,7 +239,7 @@ fn a_commit_in_a_legacy_encoding_is_decoded_as_git_log_decodes_it() {
     assert_eq!(details.author, "José");
     assert_eq!(details.body, "café");
     assert_eq!(details::commit_subject(&engine, &hash).unwrap(), "café");
-    let matches = log::search_history(&engine, "café").unwrap();
+    let matches = log::search_history(&engine, "café", Cancel::none()).unwrap();
     assert_eq!(matches.len(), 1, "--grep matches the re-encoded message");
 }
 
@@ -448,10 +461,13 @@ fn a_tag_of_a_blob_or_a_tree_does_not_break_history_reads() {
     let engine = open(&repo);
     // `git log --all` passes over the tags that name no commit.
     let expected = repo.git(&["log", "--all", "--format=%H"]);
-    let matches = log::search_history(&engine, "one").unwrap();
+    let matches = log::search_history(&engine, "one", Cancel::none()).unwrap();
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].hash, expected.trim());
-    assert_eq!(stats::author_stats(&engine).unwrap()[0].commits, 1);
+    assert_eq!(
+        stats::author_stats(&engine, Cancel::none()).unwrap()[0].commits,
+        1
+    );
 
     let tag = details::tag_details(&engine, "lighttree").unwrap();
     assert_eq!(tag.hash, tree);
@@ -476,7 +492,7 @@ fn author_statistics_apply_the_mailmap_as_shortlog_does() {
         shortlog.contains("Canonical Name <test@example.com>"),
         "{shortlog}"
     );
-    let stats = stats::author_stats(&engine).unwrap();
+    let stats = stats::author_stats(&engine, Cancel::none()).unwrap();
     assert_eq!(stats[0].name, "Canonical Name");
 }
 
@@ -498,7 +514,7 @@ fn replacement_objects_hand_the_graph_to_git() {
         max_commits: 10,
         ..Default::default()
     };
-    let error = graph::load_commits(&engine, &options).unwrap_err();
+    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unsupported);
     assert_eq!(
         details::commit_details(&engine, &two).unwrap_err().kind,
@@ -511,7 +527,9 @@ fn replacement_objects_hand_the_graph_to_git() {
     assert_eq!(repo.git(&["log", "--format=%H"]).lines().count(), 3);
     let engine = open(&repo);
     assert_eq!(
-        graph::load_commits(&engine, &options).unwrap_err().kind,
+        graph::load_commits(&engine, &options, Cancel::none())
+            .unwrap_err()
+            .kind,
         ErrorKind::Unsupported
     );
 }

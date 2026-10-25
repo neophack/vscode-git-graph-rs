@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use bstr::ByteSlice;
 
+use crate::cancel::Cancel;
 use crate::error::{Error, Result, ResultExt};
 use crate::repository::Repo;
 use crate::types::{GitFileChange, GitFileStatus, GitLineCounts, GitStatusFiles, UNCOMMITTED};
@@ -115,7 +116,9 @@ fn diff_against_worktree(repo: &Repo, from: &str) -> Result<Vec<GitFileChange>> 
     };
 
     // Everything uncommitted on top of HEAD is only visible to the working-tree scan.
-    for change in crate::status::uncommitted_changes(repo)? {
+    // The working-tree half of this comparison is bounded by the tree, and the tree diff
+    // above dominates it; its scan runs uncancellable, as before task 2.9.
+    for change in crate::status::uncommitted_changes(repo, Cancel::none())? {
         // An uncommitted rename of a path the revision range also touched cannot stay one record:
         // relative to the revision, its source is gone and its destination is new.
         let committed_source = change.kind == GitFileStatus::Renamed

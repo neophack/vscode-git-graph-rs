@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::{Config, TypeVisitor, TS};
 
+use crate::cancel::{Cancel, Registry};
 use crate::error::{Error, Result};
 use crate::repository::{Repo, RepoManager};
 use crate::status::ScmChange;
@@ -34,15 +35,23 @@ use crate::types::{
     LogOptions, RefOptions,
 };
 
-/// What a handler sees: the repository path the request names, and a warm handle on demand.
+/// What a handler sees: the repository path the request names, a warm handle on demand, and the
+/// request's cancellation state (task 2.9) for the handlers whose work loops.
 pub struct Context<'a> {
     repo_path: &'a str,
+    cancel: Cancel,
 }
 
 impl Context<'_> {
     /// The shared handle of the repository containing the request's path.
     fn repo(&self) -> Result<Arc<Repo>> {
         RepoManager::global().get(self.repo_path)
+    }
+
+    /// The request's cancellation token, for the handlers that loop over commits or the working
+    /// tree. A request without a request id hands out [`Cancel::none`], whose checks cost nothing.
+    fn cancel(&self) -> Cancel {
+        self.cancel.clone()
     }
 }
 
@@ -140,18 +149,18 @@ protocol! {
     /* ---------- The graph and its refs ---------- */
 
     /// The view's opening load — `loadRepoInfo` and `loadCommits` from one ref scan.
-    "loadView" => LoadView(LogOptions) -> GitViewData = |ctx, options| crate::graph::load_view(&*ctx.repo()?, &options);
+    "loadView" => LoadView(LogOptions) -> GitViewData = |ctx, options| crate::graph::load_view(&*ctx.repo()?, &options, ctx.cancel());
     "loadRepoInfo" => LoadRepoInfo(RefOptions) -> GitRepoInfo = |ctx, options| {
         crate::graph::repo_info(&*ctx.repo()?, &options.to_read_options(), options.show_stashes)
     };
-    "loadCommits" => LoadCommits(LogOptions) -> GitCommitData = |ctx, options| crate::graph::load_commits(&*ctx.repo()?, &options);
+    "loadCommits" => LoadCommits(LogOptions) -> GitCommitData = |ctx, options| crate::graph::load_commits(&*ctx.repo()?, &options, ctx.cancel());
     "loadRefs" => LoadRefs(RefOptions) -> GitRefData = |ctx, options| {
         crate::refs::read_refs(&*ctx.repo()?, &options.to_read_options()).map(|snapshot| snapshot.ref_data)
     };
     /// The working tree's changes, staged and unstaged halves apart.
-    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::status::scm_changes(&*ctx.repo()?);
+    "status" => Status(NoParams) -> Vec<ScmChange> = |ctx, _| crate::status::scm_changes(&*ctx.repo()?, ctx.cancel());
     "countUncommittedChanges" => CountUncommittedChanges(UntrackedParams) -> usize = |ctx, p| {
-        crate::status::count_changes(&*ctx.repo()?, p.include_untracked)
+        crate::status::count_changes(&*ctx.repo()?, p.include_untracked, ctx.cancel())
     };
 
     /* ---------- Commits ---------- */
@@ -165,7 +174,7 @@ protocol! {
     "tagDetails" => TagDetails(TagParams) -> GitTagDetails = |ctx, p| crate::details::tag_details(&*ctx.repo()?, &p.tag_name);
     "stashDetails" => StashDetails(StashParams) -> GitCommitDetails = |ctx, p| crate::details::stash_details(&*ctx.repo()?, &p.hash, &p.stash);
     /// The "Uncommitted Changes" row in full.
-    "uncommittedDetails" => UncommittedDetails(NoParams) -> GitCommitDetails = |ctx, _| crate::details::uncommitted_details(&*ctx.repo()?);
+    "uncommittedDetails" => UncommittedDetails(NoParams) -> GitCommitDetails = |ctx, _| crate::details::uncommitted_details(&*ctx.repo()?, ctx.cancel());
 
     /* ---------- Diffs and files ---------- */
 
@@ -202,13 +211,13 @@ protocol! {
         crate::config::current_branch_upstream(&*ctx.repo()?)
     };
     /// Commit messages matching a pattern, newest first (`git log --all -E -i --grep`).
-    "searchHistory" => SearchHistory(SearchParams) -> Vec<GitHistoryMatch> = |ctx, p| crate::log::search_history(&*ctx.repo()?, &p.query);
-    "authors" => Authors(NoParams) -> Vec<GitAuthor> = |ctx, _| crate::log::authors(&*ctx.repo()?);
-    "authorStats" => AuthorStats(NoParams) -> Vec<GitAuthorStat> = |ctx, _| crate::stats::author_stats(&*ctx.repo()?);
-    "activityHeatmap" => ActivityHeatmap(NoParams) -> Vec<GitActivityCell> = |ctx, _| crate::stats::activity_heatmap(&*ctx.repo()?);
+    "searchHistory" => SearchHistory(SearchParams) -> Vec<GitHistoryMatch> = |ctx, p| crate::log::search_history(&*ctx.repo()?, &p.query, ctx.cancel());
+    "authors" => Authors(NoParams) -> Vec<GitAuthor> = |ctx, _| crate::log::authors(&*ctx.repo()?, ctx.cancel());
+    "authorStats" => AuthorStats(NoParams) -> Vec<GitAuthorStat> = |ctx, _| crate::stats::author_stats(&*ctx.repo()?, ctx.cancel());
+    "activityHeatmap" => ActivityHeatmap(NoParams) -> Vec<GitActivityCell> = |ctx, _| crate::stats::activity_heatmap(&*ctx.repo()?, ctx.cancel());
     /// How many commits of the shown refs precede `hash` (`git rev-list --count`).
     "countCommitsBefore" => CountCommitsBefore(CountBeforeParams) -> u64 = |ctx, p| {
-        crate::log::count_commits_before(&*ctx.repo()?, p.branches.as_deref(), &p.hash, p.show_remote_branches, p.include_reflogs)
+        crate::log::count_commits_before(&*ctx.repo()?, p.branches.as_deref(), &p.hash, p.show_remote_branches, p.include_reflogs, ctx.cancel())
     };
 
     /* ---------- Gerrit ---------- */
@@ -224,12 +233,36 @@ protocol! {
 ///
 /// Never fails and never panics: every failure — malformed JSON, an unknown method, parameters
 /// that do not fit, a repository that cannot be opened, a panic inside the engine — is the
-/// envelope `{"error": {"kind", "message"}}`.
+/// envelope `{"error": {"kind", "message"}}`. The request runs uncancellable; a host that wants to
+/// cancel it names it with [`request_with_id`].
 pub fn request(repo_path: &str, request_json: &str) -> String {
-    let outcome = catch_unwind(AssertUnwindSafe(|| {
-        decode_request(request_json).and_then(|request| request.answer(&Context { repo_path }))
-    }))
-    .unwrap_or_else(|panic| Err(Error::internal(panic_message(&panic))));
+    answer(repo_path, request_json, Cancel::none())
+}
+
+/// Answer one JSON request the host can cancel by its request id (task 2.9).
+///
+/// The id is registered for the duration of the call — the Node binding's `cancel(requestId)`
+/// flips the flag from any thread, and the loops inside the traversal, status, statistics and
+/// history-search handlers unwind with `{"error": {"kind": "cancelled", …}}` at their next
+/// checkpoint. A cancellation that arrives before this call is honored just the same. The entry
+/// and its answer are exactly [`request`]'s otherwise.
+pub fn request_with_id(repo_path: &str, request_json: &str, request_id: u32) -> String {
+    let guard = Registry::global().register(request_id);
+    answer(repo_path, request_json, guard.token())
+}
+
+fn answer(repo_path: &str, request_json: &str, cancel: Cancel) -> String {
+    // A request whose cancellation raced ahead of it answers Cancelled without touching the
+    // repository: its answer is already unwanted, whatever the repository would say.
+    let outcome = if cancel.is_cancelled() {
+        Err(Error::cancelled())
+    } else {
+        catch_unwind(AssertUnwindSafe(|| {
+            decode_request(request_json)
+                .and_then(|request| request.answer(&Context { repo_path, cancel }))
+        }))
+        .unwrap_or_else(|panic| Err(Error::internal(panic_message(&panic))))
+    };
     let envelope = match outcome {
         Ok(value) => serde_json::json!({ "ok": value }),
         Err(error) => serde_json::json!({ "error": error }),
@@ -268,6 +301,31 @@ pub fn decode_request(request_json: &str) -> Result<Request> {
 /// when the path does not exist there. The binary channel: the Node binding hands the bytes to
 /// JavaScript as a `Buffer`, never through a text encoding.
 pub fn file_bytes(repo_path: &str, revision: &str, path: &str) -> Result<Option<Vec<u8>>> {
+    file_bytes_answer(repo_path, revision, path, Cancel::none())
+}
+
+/// [`file_bytes`], named by a request id the host can cancel through. A single blob read has no
+/// loop to unwind mid-flight, but a cancellation that raced ahead of the read is honored rather
+/// than answered with bytes nobody is waiting for any more.
+pub fn file_bytes_with_id(
+    repo_path: &str,
+    revision: &str,
+    path: &str,
+    request_id: u32,
+) -> Result<Option<Vec<u8>>> {
+    let guard = Registry::global().register(request_id);
+    file_bytes_answer(repo_path, revision, path, guard.token())
+}
+
+fn file_bytes_answer(
+    repo_path: &str,
+    revision: &str,
+    path: &str,
+    cancel: Cancel,
+) -> Result<Option<Vec<u8>>> {
+    if cancel.is_cancelled() {
+        return Err(Error::cancelled());
+    }
     catch_unwind(AssertUnwindSafe(|| {
         let repo = RepoManager::global().get(repo_path)?;
         if revision == crate::engine::INDEX {

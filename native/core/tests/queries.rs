@@ -4,6 +4,8 @@
 #[macro_use]
 mod common;
 
+use git_graph_core::cancel::Cancel;
+
 use std::process::Command;
 
 use git_graph_core::repository::Repo;
@@ -105,7 +107,7 @@ fn searches_history_like_git_log_grep() {
     let expected = repo.log_hashes(&["--all", "-i", "--grep=feature"]);
 
     let engine = open(&repo);
-    let matches = log::search_history(&engine, "feature").unwrap();
+    let matches = log::search_history(&engine, "feature", Cancel::none()).unwrap();
     let hashes: Vec<&String> = matches.iter().map(|m| &m.hash).collect();
 
     assert_eq!(hashes, expected.iter().collect::<Vec<_>>());
@@ -125,9 +127,11 @@ fn searches_history_like_git_log_grep() {
     }
 
     // A pattern that matches nothing matches nothing.
-    assert!(log::search_history(&engine, "no-such-thing-at-all")
-        .unwrap()
-        .is_empty());
+    assert!(
+        log::search_history(&engine, "no-such-thing-at-all", Cancel::none())
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -137,7 +141,7 @@ fn search_rejects_a_pattern_that_is_not_a_regex() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = log::search_history(&engine, "(unclosed").unwrap_err();
+    let error = log::search_history(&engine, "(unclosed", Cancel::none()).unwrap_err();
 
     assert_eq!(error.kind, ErrorKind::InvalidArgument);
 }
@@ -325,7 +329,8 @@ fn counts_commits_before_a_hash_as_rev_list_does() {
         .unwrap();
 
     let engine = open(&repo);
-    let count = log::count_commits_before(&engine, None, &first, true, false).unwrap();
+    let count =
+        log::count_commits_before(&engine, None, &first, true, false, Cancel::none()).unwrap();
     assert_eq!(count, expected);
     assert_eq!(count, 3);
 
@@ -336,8 +341,15 @@ fn counts_commits_before_a_hash_as_rev_list_does() {
         .parse()
         .unwrap();
     assert_eq!(
-        log::count_commits_before(&engine, Some(&["main".to_string()]), &first, true, false)
-            .unwrap(),
+        log::count_commits_before(
+            &engine,
+            Some(&["main".to_string()]),
+            &first,
+            true,
+            false,
+            Cancel::none(),
+        )
+        .unwrap(),
         from_branches
     );
 }
@@ -355,6 +367,7 @@ fn counting_before_an_unknown_hash_fails() {
         "0123456789012345678901234567890123456789",
         true,
         false,
+        Cancel::none(),
     )
     .unwrap_err();
 
@@ -368,7 +381,8 @@ fn counting_reflog_tips_and_glob_patterns_is_reported_as_unsupported() {
     let first = repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let reflog_error = log::count_commits_before(&engine, None, &first, true, true).unwrap_err();
+    let reflog_error =
+        log::count_commits_before(&engine, None, &first, true, true, Cancel::none()).unwrap_err();
     assert_eq!(reflog_error.kind, ErrorKind::Unsupported);
 
     let glob_error = log::count_commits_before(
@@ -377,6 +391,7 @@ fn counting_reflog_tips_and_glob_patterns_is_reported_as_unsupported() {
         &first,
         true,
         false,
+        Cancel::none(),
     )
     .unwrap_err();
     assert_eq!(glob_error.kind, ErrorKind::Unsupported);
@@ -474,7 +489,9 @@ fn searching_a_repository_without_commits_matches_nothing() {
     let repo = TestRepo::new();
 
     let engine = open(&repo);
-    assert!(log::search_history(&engine, "anything").unwrap().is_empty());
+    assert!(log::search_history(&engine, "anything", Cancel::none())
+        .unwrap()
+        .is_empty());
     // count_commits_before on this repo is covered by counting_before_an_unknown_hash_fails:
     // its error fires at hash resolution, before any walk, so an empty repository reaches the
     // same branch a populated one does.
@@ -533,7 +550,8 @@ fn counting_an_empty_branch_list_is_declined() {
     let hash = repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = log::count_commits_before(&engine, Some(&[]), &hash, true, false).unwrap_err();
+    let error = log::count_commits_before(&engine, Some(&[]), &hash, true, false, Cancel::none())
+        .unwrap_err();
 
     // The command line this replaces would count from HEAD for an empty ref list; the engine
     // declines rather than guess, so the call falls back and behaviour is preserved exactly.
@@ -681,7 +699,7 @@ fn aggregates_authors_like_shortlog() {
 
     let expected = repo.git(&["shortlog", "-e", "-s", "-n", "HEAD"]);
     let engine = open(&repo);
-    let authors = log::authors(&engine).unwrap();
+    let authors = log::authors(&engine, Cancel::none()).unwrap();
 
     assert_eq!(
         authors,

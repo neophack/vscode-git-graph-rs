@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 
+use crate::cancel::Cancel;
 use crate::error::Result;
 use crate::log::{self, WalkOptions};
 use crate::refs::read_refs;
@@ -59,14 +60,14 @@ pub fn repo_info(
 /// `LogOptions::defer_remote_refs`): the walk starts from the local branches and tags alone, and
 /// the commits carry no remote labels — the caller sends this page straight away and follows up
 /// with a complete one.
-pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> {
-    load_page(repo, options).map(|page| page.data)
+pub fn load_commits(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<GitCommitData> {
+    load_page(repo, options, cancel).map(|page| page.data)
 }
 
 /// The view's opening load: the dropdown data and the first page from one ref scan and one
 /// stash read, where `repo_info` followed by `load_commits` would scan the refs twice.
-pub fn load_view(repo: &Repo, options: &LogOptions) -> Result<GitViewData> {
-    let page = load_page(repo, options)?;
+pub fn load_view(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<GitViewData> {
+    let page = load_page(repo, options, cancel)?;
     Ok(GitViewData {
         info: GitRepoInfo {
             branches: page.data.branches.clone().unwrap_or_default(),
@@ -87,7 +88,7 @@ struct Page {
     stashes: Vec<GitStash>,
 }
 
-fn load_page(repo: &Repo, options: &LogOptions) -> Result<Page> {
+fn load_page(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Page> {
     // The engine does not read reflog entries yet. Decline this request instead of silently
     // omitting reflog-only commits; the backend layer then serves the exact `git log --reflog`
     // result through the CLI implementation.
@@ -147,6 +148,7 @@ fn load_page(repo: &Repo, options: &LogOptions) -> Result<Page> {
         first_parent_only: options.only_follow_first_parent,
         authors: options.authors.clone(),
         filter_paths: options.filter_paths.clone(),
+        cancel: cancel.clone(),
     };
     let mut records = log::walk(repo, &tips, &walk_options)?;
 
@@ -179,7 +181,7 @@ fn load_page(repo: &Repo, options: &LogOptions) -> Result<Page> {
         })
         .collect();
 
-    insert_uncommitted_row(repo, options, &snapshot.ref_data, &mut commits)?;
+    insert_uncommitted_row(repo, options, &snapshot.ref_data, &mut commits, cancel)?;
     insert_stashes(&stashes, &mut commits);
     annotate_refs(&snapshot.ref_data, options, &mut commits);
 
@@ -261,6 +263,7 @@ fn insert_uncommitted_row(
     options: &LogOptions,
     ref_data: &GitRefData,
     commits: &mut Vec<GitCommit>,
+    cancel: Cancel,
 ) -> Result<()> {
     if !options.show_uncommitted_changes || options.defer_uncommitted_changes {
         return Ok(());
@@ -272,7 +275,7 @@ fn insert_uncommitted_row(
         return Ok(());
     }
 
-    let count = status::count_changes(repo, options.show_untracked_files)?;
+    let count = status::count_changes(repo, options.show_untracked_files, cancel)?;
     if count == 0 {
         return Ok(());
     }

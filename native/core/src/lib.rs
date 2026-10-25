@@ -13,6 +13,7 @@
 //! through [`protocol::request`]: one typed `Request` enum, one `{"method", "params"}` call.
 
 pub mod blob;
+pub mod cancel;
 pub mod config;
 pub mod details;
 pub mod diff;

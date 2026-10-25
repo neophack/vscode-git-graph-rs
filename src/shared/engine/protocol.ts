@@ -51,13 +51,19 @@ showCommitsOnlyReferencedByTags: boolean,
  * CLI backend serves the mapped names.
  */
 useMailmap: boolean, };
+export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
+export type GitRepoInfo = { branches: Array<string>, 
+/**
+ * The checked-out branch's short name, or `None` when HEAD is detached.
+ */
+head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
+export type GitCommitTag = { name: string, annotated: boolean, };
 export type GitCommitRemote = { name: string, 
 /**
  * `None` when the ref's remote is not one of the repository's known remotes.
  */
 remote: string | null, };
 export type GitCommitStash = { selector: string, baseHash: string, untrackedFilesHash: string | null, };
-export type GitCommitTag = { name: string, annotated: boolean, };
 export type GitCommit = { hash: string, parents: Array<string>, author: string, email: string, 
 /**
  * Seconds since the Unix epoch.
@@ -74,12 +80,6 @@ export type GitCommitData = { commits: Array<GitCommit>, head: string | null, ta
  * second scan. `None` on error (and for callers that did not ask for it).
  */
 branches?: Array<string> | null, moreCommitsAvailable: boolean, error: string | null, };
-export type GitStash = { hash: string, baseHash: string, untrackedFilesHash: string | null, selector: string, author: string, email: string, date: number, message: string, };
-export type GitRepoInfo = { branches: Array<string>, 
-/**
- * The checked-out branch's short name, or `None` when HEAD is detached.
- */
-head: string | null, remotes: Array<string>, stashes: Array<GitStash>, tags: Array<string>, error: string | null, };
 /**
  * Everything the view opens with, from one ref scan: the dropdown data and the first page.
  * `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
@@ -114,8 +114,6 @@ export type ScmChange = { path: string, oldPath: string | null, staged: string |
 conflicted: boolean, };
 export type UntrackedParams = { includeUntracked: boolean, };
 export type HashParams = { hash: string, };
-export type GitSignatureStatus = "G" | "U" | "X" | "Y" | "R" | "E" | "B";
-export type GitSignature = { key: string, signer: string, status: GitSignatureStatus, };
 export type GitFileStatus = "A" | "M" | "D" | "R" | "U";
 export type GitFileChange = { oldFilePath: string, newFilePath: string, type: GitFileStatus, 
 /**
@@ -123,6 +121,8 @@ export type GitFileChange = { oldFilePath: string, newFilePath: string, type: Gi
  * counts of a freshly opened view are still being computed in the background.
  */
 additions: number | null, deletions: number | null, };
+export type GitSignatureStatus = "G" | "U" | "X" | "Y" | "R" | "E" | "B";
+export type GitSignature = { key: string, signer: string, status: GitSignatureStatus, };
 export type GitCommitDetails = { hash: string, parents: Array<string>, author: string, authorEmail: string, authorDate: number, committer: string, committerEmail: string, committerDate: number, signature: GitSignature | null, 
 /**
  * The full commit message, including the subject.

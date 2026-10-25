@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use gix::bstr::ByteSlice;
 use serde::Serialize;
 
+use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
 use crate::repository::Repo;
 use crate::types::{GitFileChange, GitFileStatus, GitStatusFiles};
@@ -47,6 +48,7 @@ fn scan(
     repo: &Repo,
     include_untracked: bool,
     renames: Renames,
+    cancel: Cancel,
 ) -> Result<BTreeMap<String, PathState>> {
     let git = repo.borrow();
     let mut states: BTreeMap<String, PathState> = BTreeMap::new();
@@ -88,8 +90,13 @@ fn scan(
         .into_iter(None)
         .git_ctx("Could not read the working tree status")?;
 
+    let mut scanned = 0usize;
     for item in iter {
         let item = item.git_ctx("Could not read the working tree status")?;
+        scanned += 1;
+        // The scan's cost grows with the working tree, not with the history, so it is a
+        // cancellation checkpoint too (task 2.9) — a large tree stays cancellable.
+        cancel.check(scanned)?;
         match item {
             gix::status::Item::TreeIndex(change) => {
                 let (path, status, old_path) = classify_staged(&change);
@@ -224,16 +231,20 @@ impl PathState {
 ///
 /// This is the number of lines `git status --porcelain` would print, which is what the
 /// "Uncommitted Changes (N)" row shows.
-pub fn count_changes(repo: &Repo, include_untracked: bool) -> Result<usize> {
-    Ok(scan(repo, include_untracked, Renames::AsStatus)?
+pub fn count_changes(repo: &Repo, include_untracked: bool, cancel: Cancel) -> Result<usize> {
+    Ok(scan(repo, include_untracked, Renames::AsStatus, cancel)?
         .values()
         .map(|state| 1 + usize::from(state.deleted_and_untracked()))
         .sum())
 }
 
 /// The untracked and deleted files of the working tree.
-pub fn status_files(repo: &Repo, include_untracked: bool) -> Result<GitStatusFiles> {
-    let states = scan(repo, include_untracked, Renames::AsStatus)?;
+pub fn status_files(
+    repo: &Repo,
+    include_untracked: bool,
+    cancel: Cancel,
+) -> Result<GitStatusFiles> {
+    let states = scan(repo, include_untracked, Renames::AsStatus, cancel)?;
     let mut files = GitStatusFiles::default();
     for (path, state) in states {
         if state.staged == Some(GitFileStatus::Deleted)
@@ -252,10 +263,10 @@ pub fn status_files(repo: &Repo, include_untracked: bool) -> Result<GitStatusFil
 ///
 /// The staged side wins when a path changed on both, because it describes the change relative to
 /// HEAD — which is what the view is comparing against.
-pub fn uncommitted_changes(repo: &Repo) -> Result<Vec<GitFileChange>> {
+pub fn uncommitted_changes(repo: &Repo, cancel: Cancel) -> Result<Vec<GitFileChange>> {
     // Renames are always paired here, as the CLI backend's `git diff --find-renames HEAD` pairs
     // them: the rename configuration only changes how `git status` lists them.
-    let states = scan(repo, true, Renames::Always)?;
+    let states = scan(repo, true, Renames::Always, cancel)?;
     let mut changes = Vec::with_capacity(states.len());
     for (path, state) in states {
         if state.deleted_and_untracked() {
@@ -324,8 +335,8 @@ fn status_name(status: GitFileStatus) -> &'static str {
 
 /// The working tree's changes as the Source Control view lists them, staged and unstaged halves
 /// separate, so it can fill its two sections without a second read.
-pub fn scm_changes(repo: &Repo) -> Result<Vec<ScmChange>> {
-    let states = scan(repo, true, Renames::AsStatus)?;
+pub fn scm_changes(repo: &Repo, cancel: Cancel) -> Result<Vec<ScmChange>> {
+    let states = scan(repo, true, Renames::AsStatus, cancel)?;
     Ok(states
         .into_iter()
         .map(|(path, state)| ScmChange {

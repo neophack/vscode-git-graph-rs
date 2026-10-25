@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
 use crate::log::{all_tips, stash_tip};
 use crate::repository::Repo;
@@ -29,13 +30,14 @@ fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
 
 /// Commit counts per author, across all refs, merge commits excluded - what
 /// `git shortlog -sne --all --no-merges` aggregates into, `.mailmap` applied as shortlog applies it.
-pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
+pub fn author_stats(repo: &Repo, cancel: Cancel) -> Result<Vec<GitAuthorStat>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);
     let mailmap = git.open_mailmap();
 
     let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    let mut visited = 0usize;
     for info in git
         .rev_walk(tips.iter().copied())
         .all()
@@ -45,6 +47,8 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
             Ok(info) => info,
             Err(_) => break,
         };
+        visited += 1;
+        cancel.check(visited)?;
         let Ok(commit) = git.find_commit(info.id) else {
             continue;
         };
@@ -87,12 +91,13 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
 /// the same rule the ported TypeScript/CLI implementation applies to `%aI`'s printed digits, so a
 /// commit made at 11pm in the author's timezone bins as "night" regardless of what time it was
 /// for whoever happens to be viewing the graph.
-pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
+pub fn activity_heatmap(repo: &Repo, cancel: Cancel) -> Result<Vec<GitActivityCell>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);
 
     let mut counts: HashMap<(u8, u8), usize> = HashMap::new();
+    let mut visited = 0usize;
     for info in git
         .rev_walk(tips.iter().copied())
         .all()
@@ -102,6 +107,8 @@ pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
             Ok(info) => info,
             Err(_) => break,
         };
+        visited += 1;
+        cancel.check(visited)?;
         let Ok(commit) = git.find_commit(info.id) else {
             continue;
         };

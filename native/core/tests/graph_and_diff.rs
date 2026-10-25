@@ -3,6 +3,8 @@
 #[macro_use]
 mod common;
 
+use git_graph_core::cancel::Cancel;
+
 use git_graph_core::types::{GitFileStatus, LogOptions, RefReadOptions, UNCOMMITTED};
 use git_graph_core::{details, diff, graph, repository::Repo, stash, status};
 
@@ -34,7 +36,7 @@ fn assembles_a_graph_with_its_branch_and_tag_labels() {
     let second = repo.commit_file("b.txt", "2", "second");
 
     let engine = open(&repo);
-    let data = graph::load_commits(&engine, &view_options(100)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
 
     assert_eq!(data.head.as_deref(), Some(second.as_str()));
     assert!(!data.more_commits_available);
@@ -60,7 +62,7 @@ fn reports_when_more_commits_are_available() {
 
     let engine = open(&repo);
 
-    let data = graph::load_commits(&engine, &view_options(4)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(4), Cancel::none()).unwrap();
     assert_eq!(
         data.commits.len(),
         4,
@@ -68,7 +70,7 @@ fn reports_when_more_commits_are_available() {
     );
     assert!(data.more_commits_available);
 
-    let data = graph::load_commits(&engine, &view_options(50)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(50), Cancel::none()).unwrap();
     assert_eq!(data.commits.len(), 10);
     assert!(!data.more_commits_available);
 }
@@ -96,7 +98,7 @@ fn keeps_the_injected_gerrit_change_commits_on_the_page() {
     // them, so the page cut would drop it — and with it the badge the fetch limit promised
     let mut options = view_options(4);
     options.gerrit_refs = Some(vec![change_ref.clone()]);
-    let data = graph::load_commits(&engine, &options).unwrap();
+    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
     assert!(data.more_commits_available);
     let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
     assert_eq!(
@@ -113,7 +115,7 @@ fn keeps_the_injected_gerrit_change_commits_on_the_page() {
     // A page holding the change's patchset anyway neither duplicates nor moves it
     let mut options = view_options(50);
     options.gerrit_refs = Some(vec![change_ref]);
-    let data = graph::load_commits(&engine, &options).unwrap();
+    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
     let hashes: Vec<&str> = data.commits.iter().map(|c| c.hash.as_str()).collect();
     assert_eq!(hashes.len(), 12);
     assert_eq!(hashes.iter().filter(|h| **h == patchset).count(), 1);
@@ -131,7 +133,7 @@ fn declines_graphs_that_include_reflog_commits() {
     let mut options = view_options(100);
     options.include_commits_mentioned_by_reflogs = true;
 
-    let error = graph::load_commits(&engine, &options).unwrap_err();
+    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
     assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
 }
 
@@ -146,7 +148,7 @@ fn allows_branch_filtered_graphs_with_reflog_option() {
     options.branches = Some(vec!["main".to_string()]);
     options.include_commits_mentioned_by_reflogs = true;
 
-    let data = graph::load_commits(&engine, &options).unwrap();
+    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
     assert_eq!(data.commits.len(), 1);
 }
 
@@ -162,10 +164,10 @@ fn declines_mailmapped_graphs_only_when_a_mailmap_exists() {
     // page is served exactly as it is without it.
     let mut options = view_options(100);
     options.use_mailmap = true;
-    let data = graph::load_commits(&engine, &options).unwrap();
+    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
     assert_eq!(
         data.commits.len(),
-        graph::load_commits(&engine, &view_options(100))
+        graph::load_commits(&engine, &view_options(100), Cancel::none())
             .unwrap()
             .commits
             .len()
@@ -175,11 +177,11 @@ fn declines_mailmapped_graphs_only_when_a_mailmap_exists() {
         ".mailmap",
         "Proper Name <proper@example.com> <first@example.com>\n",
     );
-    let error = graph::load_commits(&engine, &options).unwrap_err();
+    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
     assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
 
     // Without the option the engine serves the graph, as it always has.
-    graph::load_commits(&engine, &view_options(100)).unwrap();
+    graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
 }
 
 #[test]
@@ -191,13 +193,13 @@ fn adds_an_uncommitted_changes_row_above_head() {
     let engine = open(&repo);
 
     // Nothing uncommitted: no row.
-    let data = graph::load_commits(&engine, &view_options(100)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
     assert!(data.commits.iter().all(|commit| commit.hash != UNCOMMITTED));
 
     repo.write("a.txt", "changed");
     repo.write("untracked.txt", "new");
 
-    let data = graph::load_commits(&engine, &view_options(100)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
     let row = &data.commits[0];
     assert_eq!(row.hash, UNCOMMITTED);
     assert_eq!(row.message, "Uncommitted Changes (2)");
@@ -217,7 +219,7 @@ fn skips_the_uncommitted_row_when_the_view_defers_it() {
         defer_uncommitted_changes: true,
         ..view_options(100)
     };
-    let data = graph::load_commits(&engine, &options).unwrap();
+    let data = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
 
     // Deferring lets the graph render before the working tree has been scanned.
     assert!(data.commits.iter().all(|commit| commit.hash != UNCOMMITTED));
@@ -241,14 +243,17 @@ fn counts_uncommitted_changes_the_way_git_status_does() {
         .git(&["status", "--porcelain", "--untracked-files=all"])
         .lines()
         .count();
-    assert_eq!(status::count_changes(&engine, true).unwrap(), expected);
+    assert_eq!(
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
+        expected
+    );
 
     let expected_no_untracked = repo
         .git(&["status", "--porcelain", "--untracked-files=no"])
         .lines()
         .count();
     assert_eq!(
-        status::count_changes(&engine, false).unwrap(),
+        status::count_changes(&engine, false, Cancel::none()).unwrap(),
         expected_no_untracked
     );
 }
@@ -280,9 +285,12 @@ fn reports_a_dirty_submodule_as_a_modification() {
         .git(&["status", "--porcelain", "--untracked-files=all"])
         .lines()
         .count();
-    assert_eq!(status::count_changes(&engine, true).unwrap(), expected);
+    assert_eq!(
+        status::count_changes(&engine, true, Cancel::none()).unwrap(),
+        expected
+    );
 
-    let changes = status::uncommitted_changes(&engine).unwrap();
+    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
     let submodule_change = changes
         .iter()
         .find(|change| change.new_file_path == "sub")
@@ -300,7 +308,7 @@ fn reports_the_untracked_and_deleted_files() {
     repo.write("c.txt", "untracked");
 
     let engine = open(&repo);
-    let files = status::status_files(&engine, true).unwrap();
+    let files = status::status_files(&engine, true, Cancel::none()).unwrap();
 
     assert_eq!(files.deleted, vec!["b.txt"]);
     assert_eq!(files.untracked, vec!["c.txt"]);
@@ -560,7 +568,7 @@ fn detects_a_staged_but_uncommitted_rename() {
     repo.git(&["mv", "original.txt", "renamed.txt"]);
 
     let engine = open(&repo);
-    let changes = status::uncommitted_changes(&engine).unwrap();
+    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
 
     assert_eq!(
         changes.len(),
@@ -713,7 +721,7 @@ fn hangs_a_stash_row_off_the_commit_it_was_taken_from() {
     repo.git(&["stash", "push", "--quiet", "-m", "the stash"]);
 
     let engine = open(&repo);
-    let data = graph::load_commits(&engine, &view_options(100)).unwrap();
+    let data = graph::load_commits(&engine, &view_options(100), Cancel::none()).unwrap();
 
     // The stash commit is not reachable from any branch, so it only appears because the graph
     // splices it in above its base commit.
@@ -825,7 +833,7 @@ fn flags_the_unmerged_paths_of_a_stopped_merge() {
     repo.git_allow_failure(&["merge", "feature"]);
 
     let engine = open(&repo);
-    let changes = status::scm_changes(&engine).unwrap();
+    let changes = status::scm_changes(&engine, Cancel::none()).unwrap();
     let by_path = |path: &str| {
         changes
             .iter()
