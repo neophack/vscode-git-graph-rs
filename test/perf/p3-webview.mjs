@@ -291,10 +291,19 @@ function pageHarnessScript() {
 export function startServer(cases) {
 	const server = http.createServer((request, response) => {
 		const url = new URL(request.url, 'http://127.0.0.1');
-		if (url.pathname === '/out.min.js' || url.pathname === '/out.min.css') {
-			const file = path.join(mediaDir, url.pathname.slice(1));
+		/* The page mirrors the real one (task 5.9): the entry is an ES MODULE whose static import
+		   closure (the shared chunks) and dynamic import() calls (the on-demand chunks) all resolve
+		   under /chunks/ - every file the browser may ask for is served from media/, so the page
+		   exercises exactly the artifact graph a VSIX ships. */
+		const mediaPaths = new Map([['/out.min.js', 'out.min.js'], ['/out.min.css', 'out.min.css']]);
+		if (mediaPaths.has(url.pathname)) {
 			response.setHeader('Content-Type', url.pathname.endsWith('.js') ? 'text/javascript' : 'text/css');
-			response.end(fs.readFileSync(file));
+			response.end(fs.readFileSync(path.join(mediaDir, mediaPaths.get(url.pathname))));
+			return;
+		}
+		if (url.pathname.startsWith('/chunks/') && /^\/chunks\/[\w.-]+\.js$/.test(url.pathname)) {
+			response.setHeader('Content-Type', 'text/javascript');
+			response.end(fs.readFileSync(path.join(mediaDir, 'chunks', url.pathname.slice('/chunks/'.length))));
 			return;
 		}
 		const data = cases[url.searchParams.get('case') ?? 's'];
@@ -319,7 +328,7 @@ export function startServer(cases) {
 			'<script>var initialState = ' + JSON.stringify(data.initialState) + ', globalState = ' + JSON.stringify(data.globalState) + ', workspaceState = {};</script>' +
 			'<script>window.__ggData = ' + JSON.stringify(data) + ';</script>' +
 			'<script>' + pageHarnessScript() + '</script>' +
-			'<script src="/out.min.js"></script>' +
+			'<script type="module" src="/out.min.js"></script>' +
 			'</body></html>');
 	});
 	return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server: server, base: 'http://127.0.0.1:' + server.address().port })));
