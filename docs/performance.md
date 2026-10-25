@@ -101,7 +101,7 @@ measurement yet. The size row is measured: see [docs/baseline-2026-10.md](baseli
 | Find | Typing → highlights updated (over the loaded commits) | ≤ 50 ms | ≤ 50 ms | ≤ 100 ms | pending — measured by P3 + P4 |
 | Scrolling | Frame-time P99 with 10 K rows loaded; long tasks > 50 ms | ≤ 16 ms; 0 | same | same | pending — measured by P3 (`PerformanceObserver` + rAF intervals) |
 | Memory | webview (10 K rows loaded) / host increment (opening one repo) | ≤ 150 MB / ≤ 40 MB | ≤ 150 MB / ≤ 60 MB | ≤ 250 MB / ≤ 120 MB | pending — measured by P3 (JS heap) + P4 (host increment) |
-| Size | First-paint critical JS / critical CSS (minified, not gzipped) | ≤ 200 KB / ≤ 60 KB | — | — | **measured 2026-10-25: 578.7 KiB JS / 101.2 KiB CSS — over budget** (markdown-it still loads unconditionally, task 1.9; splitting is task 5.9; gate P5). Commands below |
+| Size | First-paint critical JS / critical CSS (minified, not gzipped) | ≤ 360 KB / ≤ 60 KB (JS per [ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md); entry chunk ≤ 200 KB) | — | — | **measured 2026-10-25 after the 5.9 split: entry 195.1 KB, closure (entry + static chunks) 343.8 KB, critical CSS 44.4 KB — all inside budget** (gate P5). Commands below |
 
 Rules (§3.8.1, verbatim):
 
@@ -111,9 +111,14 @@ Rules (§3.8.1, verbatim):
 > which this project does not control; hence the separate "own time" metric as the hard
 > number this project can influence.
 
-Calibration status: **not yet calibrated** — no P50/P95 measurement exists for any timing
-scenario, so §3.8.1 stands as written (ADR-0004 records this state and the tighten-only
-ratchet).
+Calibration status: **timing budgets not yet calibrated** — no P50/P95 measurement exists for
+any timing scenario, so those rows of §3.8.1 stand as written (ADR-0004 records this state and
+the tighten-only ratchet). The SIZE half is calibrated: the first-paint critical-JS budget was
+recalibrated once to the code-split layout's measured floor (200 KB → 360 KB over the entry's
+static-import closure, with the entry chunk keeping its own 200 KB target) — the decomposition
+evidence and the cost of every alternative are in
+[ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md); the CSS budget needed no change
+(44.4 KB measured against 60 KB).
 
 ## Measured evidence today
 
@@ -123,15 +128,18 @@ Every number below was produced by the command next to it on this repository.
 |---|---|---|
 | Engine first page (200 commits) | 12.6 ms (median of 5) | `node scripts/bench.mjs <repo> --commits 200 --runs 5` — measured on the v1.0 code and recorded in REFACTOR-PLAN §0.7; re-measuring on the current tree is P2's first job |
 | git CLI, same page | 205.3 ms (median of 5) | as above (the same `bench.mjs` run compares both backends) |
-| First-paint critical JS | 592548 B (578.7 KiB) = `media/out.min.js` 488969 B + `media/vendor/markdown-it.min.js` 103579 B | `npm run build:dist -- --production` then stat both files; the webview HTML loads them unconditionally (`src/extension/graphView/html.ts`) |
-| First-paint critical CSS | 103644 B (101.2 KiB) = `media/out.min.css` | same build, same stat |
-| Host bundle | `dist/extension.js` 457310 B (446.6 KiB) | same build; P5 also gates host-bundle growth (≤ 2% per PR without justification) |
-| Universal VSIX | 519125 B (507 KiB) | `npm run package` (no Rust toolchain needed) |
+| Webview entry chunk | `media/out.min.js` 199823 B (195.1 KB), budget 200 KB | `npm run build:dist -- --production` then `node test/perf/p5-size.mjs` (item `webview-entry-js`); §3.8.2's slimming target for what the entry itself carries |
+| First-paint critical JS (closure) | 352021 B (343.8 KB) = the entry + the 9 chunks it imports statically, budget 360 KB ([ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md)) | same build, same run (item `first-paint-js-total`); the string table, the inline icons and the data-URI assets are first paint by necessity — the ADR carries the decomposition |
+| First-paint critical CSS | 45419 B (44.4 KB) = `media/out.min.css`, budget 60 KB | same build, same run (item `webview-entry-css`); the widget/dialog/details styles ride on-demand chunks (46.1 KB, item `webview-ondemand-js:onDemand`) |
+| On-demand chunks (never first paint) | findWidget 15.3 KB, settingsWidget 56.1 KB, markdown-it 101.2 KB, zh-cn 87.3 KB, reflog 7.4 KB, worktree 6.7 KB, statistics 5.7 KB, styles 46.1 KB, shared 4.1 KB | same run (items `webview-ondemand-js:*`); loaded at first use, idle-prefetched after the first paint |
+| Host bundle | `dist/extension.js` 442437 B (432.1 KB) | same build, same run (item `host-extension-js`); P5 also gates host-bundle growth (≤ 2% per PR without justification) |
+| Universal VSIX | 519125 B (507 KiB) | `npm run package` (no Rust toolchain needed) — pre-split measurement, re-measure when packaging next runs |
 
-Reproduce the whole size column with `npm run baseline` (it rebuilds, repackages, and rewrites
-[docs/baseline-2026-10.md](baseline-2026-10.md) — byte-identical on an unchanged tree).
-`media/vendor/highlight.min.js` (164741 B) is **not** part of the main view's first paint: the
-comparison page loads it, not the graph.
+The pre-split size measurements (578.7 KiB JS / 101.2 KiB CSS, the evidence ADR-0004 recorded)
+remain in [docs/baseline-2026-10.md](baseline-2026-10.md); `npm run baseline` regenerates that
+file on the current tree. `media/vendor/` no longer exists: markdown-it rides the on-demand
+chunk `media/chunks/markdown-it-*.js` since task 5.9, and `highlight.min.js` (164741 B) was
+always the comparison page's, never the graph view's first paint.
 
 ## What could not be measured yet, and why
 
@@ -145,5 +153,6 @@ comparison page loads it, not the graph.
 ## Related
 
 - [ADR-0004: performance budgets — calibration status and the tighten-only ratchet](adr/adr-0004-performance-budgets.md)
+- [ADR-0005: the first-paint critical-JS budget recalibrated to the split layout's measured floor](adr/adr-0005-critical-js-budget-recalibration.md)
 - [docs/baseline-2026-10.md](baseline-2026-10.md) — the generated baseline this document's size numbers come from
 - [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §3.8 (performance architecture), §6.7 (P1–P5 gates), §7.6 (finalization of this document)

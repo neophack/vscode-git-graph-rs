@@ -228,8 +228,9 @@ const criticalJs = [...staticClosureOfEntry(graphBuild.metafile)].sort();
 const criticalJsBytes = criticalJs.reduce((sum, file) => sum + fs.statSync(file).size, 0);
 const onDemandJs = emitted.filter((file) => !criticalJs.includes(file) && !classicEntries.some(({ out }) => out === file) && path.basename(file) !== 'out.testbundle.js');
 console.log('Webview built (' + (DEBUG ? 'debug' : 'production') + ')');
-console.log('  first paint critical JS = ' + Math.round(criticalJsBytes / 1024) + ' KB (REFACTOR-PLAN 3.8.1 budget: 200 KB): '
+console.log('  first paint critical JS = ' + Math.round(criticalJsBytes / 1024) + ' KB (budget 360 KB, ADR-0005): '
 	+ criticalJs.map((file) => path.basename(file) + ' ' + kib(file) + ' KB').join(', '));
+console.log('  entry chunk = ' + path.basename(outJs) + ' ' + kib(outJs) + ' KB (REFACTOR-PLAN 3.8.2 slimming budget: 200 KB)');
 console.log('  first paint critical CSS = ' + kib(outCss) + ' KB (budget: 60 KB)');
 console.log(onDemandJs.length > 0 ? '  on demand: ' + onDemandJs.map((file) => relative(file) + ' ' + kib(file) + ' KB').join(', ') : '  on demand: (none)');
 console.log('  pages: ' + classicEntries.map(({ out }) => relative(out) + ' ' + kib(out) + ' KB').join(', '));
