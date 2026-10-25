@@ -241,3 +241,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# E2E run artifacts (test/e2e/results keeps its summaries via explicit adds)
+test/e2e/.profile-*
+test/e2e/.staged-extension/
+test/e2e/out/
+test/e2e/results/
+.vscode-test/

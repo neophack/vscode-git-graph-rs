@@ -100,7 +100,11 @@ const hostAdapter = {
 			if (count !== 3) {
 				return { errors: [{ text: `expected 3 extension-root defaults in ${path.relative(root, args.path)}, found ${count}: update the patch in scripts/build/build.mjs` }] };
 			}
-			return { contents: rewrite(source, expected, "path.join(__dirname, '..')"), loader: 'ts' };
+			// The automation variant emits one directory deeper (dist/automation/ instead of
+			// dist/), so its extension root needs two ups — with one, the packaged automation
+			// artifact silently misses native/ and runs everything over the git CLI instead.
+			const bundledRoot = automationBuild ? "path.join(__dirname, '..', '..')" : "path.join(__dirname, '..')";
+			return { contents: rewrite(source, expected, bundledRoot), loader: 'ts' };
 		});
 		builder.onLoad({ filter: /[\\/]src[\\/]askpass[\\/]askpassManager\.ts$/ }, (args) => {
 			const source = fs.readFileSync(args.path, 'utf8');
