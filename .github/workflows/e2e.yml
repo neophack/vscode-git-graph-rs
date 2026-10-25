@@ -1,0 +1,106 @@
+name: E2E
+
+# The E2E tiers (REFACTOR-PLAN tasks 0.6/1.10, §6.8.5): the smoke tier (budget <= 8 minutes) and
+# the affected tier (budget <= 15 minutes) run on every PR and block merging; a nightly schedule
+# runs the full tier (budget 40 minutes per environment, one environment here — the full §6.8.5
+# matrix lands with task 7.2). Results are uploaded as an artifact on every run.
+#
+# UNTESTED IN CI (documented in docs/e2e-baseline.md): this workflow has not run on GitHub yet —
+# the local verification covers the Windows x64 launcher path end to end; the ubuntu + xvfb leg,
+# the artifact upload and the nightly full tier are wired but unobserved until the first CI run.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, dev-refactor]
+  schedule:
+    # 03:20 UTC nightly — the full tier.
+    - cron: '20 3 * * *'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Which tier to run'
+        required: false
+        default: smoke
+        type: choice
+        options: [smoke, affected, full]
+      vscode:
+        description: 'VS Code version (stable / insiders / x.y.z)'
+        required: false
+        default: stable
+        type: string
+      backend:
+        description: 'Backend (engine / cli / nogit)'
+        required: false
+        default: engine
+        type: choice
+        options: [engine, cli, nogit]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  e2e:
+    name: E2E (${{ (github.event_name == 'schedule' && 'full') || (inputs.tier || (github.event_name == 'pull_request' && 'smoke-then-affected') || 'smoke') }}) ubuntu-stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Full history: the affected tier diffs HEAD against the merge base with the PR's base ref.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      # The native engine binary the extension loads (native/linux-x64-gnu/git-graph.node); the
+      # E2E launcher's dist build bundles the host but never builds the addon itself.
+      - name: Build the native addon
+        run: node scripts/build-addon.mjs --release
+
+      # The VS Code download cache (~300 MB): keyed by the requested version, restored across runs.
+      - name: Cache the VS Code test download
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ inputs.vscode || 'stable' }}-${{ runner.os }}
+
+      - name: Ensure xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # Every PR runs the smoke tier (<= 8 min budget) and then the affected tier (<= 15 min
+      # budget); either failing fails the job. Scheduled/manual dispatch runs one tier.
+      - name: Run the E2E smoke tier
+        if: github.event_name != 'schedule' && inputs.tier != 'full'
+        run: xvfb-run -a npm run test:e2e -- --tier smoke --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        env:
+          E2E_BASE_REF: origin/${{ github.event_name == 'pull_request' && github.base_ref || 'dev-refactor' }}
+
+      - name: Run the E2E affected tier
+        if: github.event_name == 'pull_request' && inputs.tier == ''
+        run: xvfb-run -a npm run test:e2e -- --tier affected --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        env:
+          E2E_BASE_REF: origin/${{ github.base_ref }}
+
+      - name: Run the E2E full tier
+        if: github.event_name == 'schedule' || inputs.tier == 'full'
+        run: xvfb-run -a npm run test:e2e -- --tier full --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results-${{ inputs.tier || (github.event_name == 'schedule' && 'full') || 'pr' }}
+          path: test/e2e/results/
+          if-no-files-found: warn

@@ -21,6 +21,8 @@ declare global {
 export interface AutomationModules {
 	runAutomationSuite: typeof import('./suiteRunner').runAutomationSuite;
 	showAutomationReport: typeof import('./reportView').showAutomationReport;
+	e2eEvalPage: typeof import('./e2eGate').e2eEvalPage;
+	e2eProbe: typeof import('./e2eGate').e2eProbe;
 }
 
 /**
@@ -34,9 +36,13 @@ export function loadAutomationModules(): AutomationModules | null {
 			const suiteRunner = require('./suiteRunner') as typeof import('./suiteRunner');
 			// eslint-disable-next-line @typescript-eslint/no-var-requires
 			const reportView = require('./reportView') as typeof import('./reportView');
+			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			const e2eGate = require('./e2eGate') as typeof import('./e2eGate');
 			return {
 				runAutomationSuite: suiteRunner.runAutomationSuite,
-				showAutomationReport: reportView.showAutomationReport
+				showAutomationReport: reportView.showAutomationReport,
+				e2eEvalPage: e2eGate.e2eEvalPage,
+				e2eProbe: e2eGate.e2eProbe
 			};
 		} catch (_) {
 			// The automation modules are absent from this build: not an error.

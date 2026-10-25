@@ -9,7 +9,7 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
 	test: {
-		include: ['src/**/*.test.ts', 'test/integration/**/*.test.ts'],
+		include: ['src/**/*.test.ts', 'test/integration/**/*.test.ts', 'test/e2e/*.test.ts'],
 		environment: 'node'
 	}
 });

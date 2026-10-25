@@ -84,7 +84,7 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.registerCommand('git-graph-rs.searchCommits', () => searchCommits(this));
 		this.registerCommand('git-graph-rs.openFile', (arg) => openFile(this, arg));
 		if (automationAvailable()) {
-			this.registerCommand('git-graph-rs.runAutomationTest', () => runAutomationTest(this));
+			this.registerCommand('git-graph-rs.runAutomationTest', (arg) => runAutomationTest(this, arg));
 		}
 		this.registerCommand('git-graph-rs.amendLastCommit', (arg) => amendLastCommit(this, arg));
 		this.registerCommand('git-graph-rs.resetCurrentBranchToRemote', (arg) => resetCurrentBranchToRemote(this, arg));
