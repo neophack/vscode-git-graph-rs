@@ -5,6 +5,7 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from '../config';
+import { Terminals } from '../extension/platform/terminal';
 import { t } from '../i18n';
 
 /**
@@ -19,19 +20,19 @@ export function openGitTerminal(cwd: string, gitPath: string, command: string | 
 	if (p !== '' && !p.endsWith(sep)) p += sep;
 	p += path.dirname(gitPath);
 
-	const options: vscode.TerminalOptions = {
+	const shell = getConfig().integratedTerminalShell;
+	const options: { cwd: string, name: string, env: { [key: string]: string }, shellPath?: string } = {
 		cwd: cwd,
 		name: t('terminalName', name),
 		env: { 'PATH': p }
 	};
-	const shell = getConfig().integratedTerminalShell;
 	if (shell !== '') options.shellPath = shell;
 
-	const terminal = vscode.window.createTerminal(options);
-	if (command !== null) {
-		terminal.sendText('git ' + command);
-	}
-	terminal.show();
+	// The platform adapter (task 4.10, INVENTORY.md #25) creates the terminal, optionally sends
+	// the command into it and shows it - the exact flow this wrapper drove directly through
+	// `vscode.window.createTerminal` before. Built at call time, so merely importing this
+	// module never touches the vscode module surface (minimal test mocks stay usable).
+	new Terminals(vscode.window).run(options, command === null ? null : 'git ' + command);
 }
 
 /**

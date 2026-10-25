@@ -1,9 +1,8 @@
-import * as vscode from 'vscode';
 import { t } from '../../i18n';
 import { extractChangeId, generateChangeId } from '../../gerrit';
 import { getConfig } from '../../config';
-import { showErrorMessage, showInformationMessage } from '../../utils/actions';
-import { openExternalUrl } from '../../utils/actions';
+import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { isSafeRefName } from '../../utils/git';
 import { unableToFindGitMsg } from '../../utils/findGit';
 import { ErrorInfo } from '../../types';
@@ -20,8 +19,9 @@ import { resolveRepoFromCommandArg, type CommandHost } from './context';
  * amending a Change-Id onto HEAD first if it has none (after asking).
  * @param host The services the command runs with.
  * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
+ * @param ui The native-UI port (task 4.10); defaults to the production port, injectable for tests.
  */
-export async function gerritPushRef(host: CommandHost, arg: unknown) {
+export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
 		showErrorMessage(unableToFindGitMsg());
 		return;
@@ -44,7 +44,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown) {
 		return;
 	}
 
-	const amend = await ensureHeadChangeId(host, repo, true);
+	const amend = await ensureHeadChangeId(host, repo, true, ui);
 	if (amend.error !== null) {
 		showErrorMessage(amend.error);
 		return;
@@ -59,7 +59,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown) {
 			return match !== null ? match[1] : null;
 		});
 		if (url !== null) {
-			vscode.window.showInformationMessage(t('gerritPushedWithUrl', url), t('gerritOpenChange')).then((action) => {
+			ui.showInformationMessage(t('gerritPushedWithUrl', url), t('gerritOpenChange')).then((action) => {
 				if (action === t('gerritOpenChange')) openExternalUrl(url);
 			}, () => { });
 		} else {
@@ -104,10 +104,11 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
  * @param repo The path of the repository.
  * @param confirm Ask the user to confirm the amend before performing it (used by the push flow,
  * where amending is a side effect of another action, rather than the action itself).
+ * @param ui The native-UI port the confirm dialog runs through (task 4.10, INVENTORY.md #2).
  * @returns The error of the operation (NULL => HEAD already had a Change-Id, or one was amended),
  *          the Change-Id of HEAD, and whether it was newly amended.
  */
-async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: boolean): Promise<{ error: ErrorInfo, changeId: string | null, amended: boolean }> {
+async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: boolean, ui: UiPort): Promise<{ error: ErrorInfo, changeId: string | null, amended: boolean }> {
 	try {
 		const message = await host.dataSource.gitOutput(['log', '-1', '--format=%B', 'HEAD', '--'], repo, (stdout) => stdout);
 		const existing = extractChangeId(message);
@@ -129,7 +130,7 @@ async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: bool
 		});
 
 		if (confirm) {
-			const action = await vscode.window.showInformationMessage(
+			const action = await ui.showInformationMessage(
 				t('gerritAmendConfirm', changeId.substring(0, 12)),
 				t('gerritAmendAndPushButton'),
 				t('gerritCancel')

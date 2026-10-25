@@ -1,7 +1,7 @@
-import * as vscode from 'vscode';
 import { GitGraphView } from '../../gitGraphView';
 import { t } from '../../i18n';
-import { showErrorMessage } from '../../utils/actions';
+import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { unableToFindGitMsg } from '../../utils/findGit';
 import type { CommandHost } from './context';
 
@@ -13,8 +13,10 @@ import type { CommandHost } from './context';
 /**
  * The method run when the `git-graph-rs.searchCommits` command is invoked.
  * @param host The services the command runs with.
+ * @param ui The native-UI port the repo/query/commit pickers run through (task 4.10,
+ * INVENTORY.md #15-#17); defaults to the production port, injectable for tests.
  */
-export async function searchCommits(host: CommandHost) {
+export async function searchCommits(host: CommandHost, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
 		showErrorMessage(unableToFindGitMsg());
 		return;
@@ -27,12 +29,12 @@ export async function searchCommits(host: CommandHost) {
 	if (repoOptions.length === 1) {
 		repo = repoOptions[0];
 	} else {
-		const selectedRepo = await vscode.window.showQuickPick(repoOptions, { placeHolder: t('selectRepoToSearch') });
+		const selectedRepo = await ui.showQuickPick(repoOptions, { placeHolder: t('selectRepoToSearch') });
 		if (!selectedRepo) return;
 		repo = selectedRepo;
 	}
 
-	const query = await vscode.window.showInputBox({
+	const query = await ui.showInputBox({
 		prompt: t('searchCommitsPrompt'),
 		placeHolder: t('searchCommitsPlaceholder')
 	});
@@ -41,7 +43,7 @@ export async function searchCommits(host: CommandHost) {
 	try {
 		const commits = await host.dataSource.searchHistory(repo, query.trim());
 		if (commits.length === 0) {
-			vscode.window.showInformationMessage(t('noCommitsFound'));
+			showInformationMessage(t('noCommitsFound'));
 			return;
 		}
 		const items = commits.map(c => ({
@@ -50,13 +52,13 @@ export async function searchCommits(host: CommandHost) {
 			detail: c.author + ' - ' + new Date(c.date * 1000).toLocaleString(),
 			commitHash: c.hash
 		}));
-		const selected = await vscode.window.showQuickPick(items, {
+		const selected = await ui.showQuickPick(items, {
 			placeHolder: t('selectCommitToView'),
 			matchOnDescription: true,
 			matchOnDetail: true
 		});
 		if (selected) {
-			GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, findCommitHash: selected.commitHash });
+			GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, findCommitHash: selected.commitHash });
 		}
 	} catch (err) {
 		showErrorMessage(t('searchCommitsError'));

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { uiPort } from '../utils/actions';
 import { SuiteReport } from './suiteRunner';
 
 /**
@@ -164,7 +165,7 @@ export function showAutomationReport(report: SuiteReport): void {
 		if (message.command !== 'saveReport') return;
 		const stamp = report.finishedAt.replace(/[:.]/g, '-');
 		const extension = message.format === 'json' ? 'json' : 'html';
-		vscode.window.showSaveDialog({
+		uiPort.showSaveDialog({
 			// Anchor the dialog to the workspace (or the home directory outside one) — a bare
 			// relative filename would open it at the drive root
 			defaultUri: vscode.Uri.file(path.join(vscode.workspace.workspaceFolders !== undefined && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0].uri.fsPath : os.homedir(), 'git-graph-automation-report-' + stamp + '.' + extension)),
@@ -176,9 +177,9 @@ export function showAutomationReport(report: SuiteReport): void {
 				: renderReportHtml(report);
 			fs.writeFile(uri.fsPath, content, (error) => {
 				if (error !== null) {
-					void vscode.window.showErrorMessage('Unable to save the automation report: ' + error.message);
+					void uiPort.showErrorMessage('Unable to save the automation report: ' + error.message);
 				} else {
-					void vscode.window.showInformationMessage('Automation report saved to ' + uri.fsPath);
+					void uiPort.showInformationMessage('Automation report saved to ' + uri.fsPath);
 				}
 			});
 		});

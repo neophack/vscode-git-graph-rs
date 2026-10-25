@@ -18,6 +18,12 @@
 //         through extension/platform/vscodeCompat.ts only; G7: zero `as any` API
 //         probes). Expressed with no-restricted-syntax: any TS `as any` cast
 //         whose expression mentions the `vscode` identifier.
+//   (d) task 4.10: native-UI calls (vscode.window.show* dialogs and
+//         createTerminal) are forbidden outside platform/** and views/** —
+//         they must run through the platform adapters or the UiPort
+//         (see src/extension/platform/INVENTORY.md). Three files that still
+//         carry unabsorbed sites are relaxed to warn until their owners absorb
+//         them (comments in place).
 //
 // Style (§4.2): tabs, single quotes, semicolons — kept via ESLint stylistic
 // rules only. NO Prettier, no repo-wide formatting sweep. ESLint 10 still ships
@@ -45,9 +51,49 @@ import globals from 'globals';
 const HOST_TS = ['src/**/*.ts'];
 const WEBVIEW_TS = ['src/webview/**/*.ts'];
 const PLATFORM_TS = ['src/extension/platform/**/*.ts'];
+const VIEWS_TS = ['src/extension/views/**/*.ts'];
 const HOST_TS_NO_WEBVIEW = ['src/**/*.ts', '!src/webview/**'];
 const HOST_TS_NO_WEBVIEW_NO_TESTS = ['src/**/*.ts', '!src/webview/**', '!src/**/*.test.ts'];
 const SCRIPTS = ['scripts/**/*.{js,mjs,cjs}'];
+
+// Task 4.10 (REFACTOR-PLAN): every native-UI dialog the host shows must run through the platform
+// layer - the adapters (platform/notifications.ts, terminal.ts, clipboard.ts) or the UiPort
+// (platform/uiPort.ts) - so the E2E build can inject a ScriptedUiPort and replay every branch.
+// src/extension/platform/INVENTORY.md is the authoritative per-site survey this rule enforces.
+// platform/** owns the seams, and the plan allows vscode UI types in views/**; the files that
+// still carry unabsorbed sites (INVENTORY.md #6/#7, #8, #18) are temporarily relaxed to warn
+// below and ratchet to error as their owners absorb them.
+//
+// Expressed with no-restricted-syntax (no-restricted-properties cannot match the nested
+// `vscode.window` object path). `vscode.window['prop']`-style literal access is not matched;
+// the host never writes member access that way.
+const NATIVE_UI_SELECTOR = "MemberExpression[object.object.name='vscode'][object.property.name='window'][property.name=/^(showErrorMessage|showWarningMessage|showInformationMessage|showQuickPick|showInputBox|showSaveDialog|showOpenDialog|createTerminal)$/]";
+
+// The files that still carry unabsorbed native-UI sites: their rule stays at warn until their
+// owners absorb the sites, then they join the error block. commands/context.ts (#18), graphView/
+// globalSettings.ts (#6/#7) and repos/repoManager.ts (#8) are INVENTORY.md-registered; graphView/
+// panelContext.ts picked up a new save-dialog site in the concurrent task 4.4 wave - its owner
+// routes it through the view's ui port (see INVENTORY.md).
+const NATIVE_UI_CARRIERS = [
+	'src/extension/commands/context.ts',
+	'src/extension/graphView/globalSettings.ts',
+	'src/extension/graphView/panelContext.ts',
+	'src/extension/repos/repoManager.ts'
+];
+
+const NATIVE_UI_MESSAGE = "Native UI goes through the platform layer (REFACTOR-PLAN task 4.10): route 'vscode.window' dialogs through the platform adapters (notifications.ts / terminal.ts) or the UiPort - see src/extension/platform/INVENTORY.md.";
+
+// The `as any` vscode probe selector of layer (c), lifted to a constant so layer (d)'s
+// re-declaration of no-restricted-syntax (a later flat-config block replaces the whole
+// rule value per file set) keeps the probe entry byte-identical.
+const VSCODE_PROBE_SELECTOR = {
+	selector: 'TSAsExpression[typeAnnotation.type=\'TSAnyKeyword\'] Identifier[name=\'vscode\']',
+	message: 'Do not probe the vscode API with `as any` casts (REFACTOR-PLAN §3.7.2/§3.7.3): route post-1.38 APIs through extension/platform/vscodeCompat.ts.'
+};
+const NATIVE_UI_SELECTOR_ENTRY = {
+	selector: NATIVE_UI_SELECTOR,
+	message: NATIVE_UI_MESSAGE
+};
 
 // Node core modules the webview must never import (§3.6: "webview/** → webview/**, shared/**; node:*, vscode forbidden").
 // One anchored regex (not `group`: gitignore-style group patterns would also match
@@ -200,6 +246,30 @@ export default tseslint.config(
 		files: PLATFORM_TS,
 		rules: {
 			'no-restricted-syntax': 'off'
+		}
+	},
+
+	// ---- (d) native UI through the platform layer (task 4.10, INVENTORY.md) -----
+	// After (c) deliberately: a later block replaces the whole rule value per file
+	// set, so this block re-declares the `as any` probe selector to keep it in force
+	// at its ratcheted level (error - it is at zero today, G7 forbids the probes).
+	// The native-UI selector applies everywhere except the platform layer (which owns
+	// the seams) and views/ (the plan allows vscode UI types there); the three files
+	// that still carry unabsorbed sites are relaxed to warn in the block that follows.
+	{
+		files: HOST_TS,
+		ignores: [...PLATFORM_TS, ...VIEWS_TS, ...NATIVE_UI_CARRIERS],
+		rules: {
+			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY]
+		}
+	},
+	{
+		// Temporary relaxations (ratchet to error when absorbed - see INVENTORY.md): the files
+		// listed in NATIVE_UI_CARRIERS. Their owners absorb the sites onto the UiPort; the probe
+		// rule of layer (c) keeps its current warn level for these files.
+		files: NATIVE_UI_CARRIERS,
+		rules: {
+			'no-restricted-syntax': ['warn', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY]
 		}
 	}
 );

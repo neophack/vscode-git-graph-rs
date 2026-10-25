@@ -11,6 +11,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { InputBoxOptionsLike, UiPort } from '../extension/platform/uiPort';
 import { getNonce } from '../utils/format';
 import { Disposable, toDisposable } from '../utils/disposable';
 
@@ -25,6 +26,56 @@ export interface AskpassEnvironment {
 export interface AskpassRequest {
 	host: string;
 	request: string;
+}
+
+/** The response surface the askpass prompts write to (`http.ServerResponse` structurally). */
+export interface AskpassResponder {
+	writeHead(status: number): unknown;
+	end(body?: string): void;
+}
+
+// The native input port of the askpass responder (task 4.10, INVENTORY.md #21). This module
+// cannot import the shared uiPort of src/utils/actions.ts: the DataSource (which constructs
+// this manager) sits in that module graph, which would make an import cycle. So the window is
+// captured on first use here (merely importing this module never touches the vscode module
+// surface, keeping minimal test vscode mocks usable); when
+// src/extension/platform/uiPort.ts ships its production implementation, this binding is
+// replaced by the wiring-injected port and nothing else changes.
+let askpassUi: Pick<UiPort, 'showInputBox'> | null = null;
+
+function nativeInput(): Pick<UiPort, 'showInputBox'> {
+	if (askpassUi === null) {
+		// The captured window (call-time property lookups) is this port's single native seam,
+		// the same binding style as the interim UiPort of src/utils/actions.ts.
+		const window = vscode.window;
+		askpassUi = {
+			showInputBox(options?: InputBoxOptionsLike): Promise<string | undefined> {
+				const showInputBox = window.showInputBox;
+				return typeof showInputBox === 'function' ? Promise.resolve(showInputBox(options)) : Promise.resolve(undefined);
+			}
+		};
+	}
+	return askpassUi;
+}
+
+/**
+ * Prompt for one credential through the native input port and write the answer onto the askpass
+ * HTTP response. A dismissed prompt answers '' (git treats that as no input given); a failed
+ * prompt rejects with HTTP 500, so git surfaces the failure instead of hanging (INVENTORY.md #21:
+ * the answer feeds `res.end`, so this promise plumbing must not be broken up).
+ * @param input The native input port (production: {@link askpassUi}; tests: a fake).
+ * @param request What git asks for (username, password, ...).
+ * @param host The host the credential is for.
+ * @param res The askpass HTTP response.
+ */
+export function promptForCredential(input: Pick<UiPort, 'showInputBox'>, request: string, host: string, res: AskpassResponder): void {
+	input.showInputBox({ placeHolder: request, prompt: 'Git Graph RS: ' + host, password: /password/i.test(request), ignoreFocusOut: true }).then(result => {
+		res.writeHead(200);
+		res.end(JSON.stringify(result || ''));
+	}, () => {
+		res.writeHead(500);
+		res.end();
+	});
 }
 
 export class AskpassManager extends Disposable {
@@ -82,13 +133,7 @@ export class AskpassManager extends Disposable {
 				res.end();
 				return;
 			}
-			vscode.window.showInputBox({ placeHolder: data.request, prompt: 'Git Graph RS: ' + data.host, password: /password/i.test(data.request), ignoreFocusOut: true }).then(result => {
-				res.writeHead(200);
-				res.end(JSON.stringify(result || ''));
-			}, () => {
-				res.writeHead(500);
-				res.end();
-			});
+			promptForCredential(nativeInput(), data.request, data.host, res);
 		});
 	}
 

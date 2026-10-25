@@ -6,10 +6,130 @@ import * as vscode from 'vscode';
 import { getConfig } from '../config';
 import { DataSource } from '../dataSource';
 import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
+import { Clipboard } from '../extension/platform/clipboard';
+import { Notifications, MessageChoice } from '../extension/platform/notifications';
+import {
+	InputBoxOptionsLike, MessageOptionsLike, OpenDialogOptionsLike, ProgressLike, ProgressOptionsLike,
+	QuickPickItemLike, QuickPickOptionsLike, SaveDialogOptionsLike, UiPort, UriLike
+} from '../extension/platform/uiPort';
 import { t } from '../i18n';
 import { ErrorInfo, GitFileStatus, PullRequestConfig, PullRequestProvider } from '../types';
 import { UNCOMMITTED, abbrevCommit } from './git';
 import { doesFileExist } from './paths';
+
+// The platform adapter instances of this module (task 4.10), built on first use: merely
+// importing this module never touches the vscode module surface (test fakes inject minimal
+// `vscode` mocks), while every native-UI access still dispatches through one captured window.
+// Property lookups happen at call time, so the automation suite's runtime monkey-patching of
+// `vscode.window` keeps working until it is replaced by the ScriptedUiPort (plan 6.8.2). This
+// is the interim production binding of {@link uiPort} until src/extension/platform/uiPort.ts
+// gains its own implementation (INVENTORY.md #3/#5/#13-#24): when it ships, only this lazily
+// built instance is rebound and no call site changes.
+interface PlatformAdapters {
+	readonly window: typeof vscode.window;
+	readonly notifications: Notifications;
+	readonly clipboard: Clipboard;
+}
+
+let platformAdapters: PlatformAdapters | null = null;
+
+function adapters(): PlatformAdapters {
+	if (platformAdapters === null) {
+		const window = vscode.window;
+		platformAdapters = { window: window, notifications: new Notifications(window), clipboard: new Clipboard(vscode.env.clipboard) };
+	}
+	return platformAdapters;
+}
+
+/** Whether a message-call argument after the message is the options object (not a choice item). */
+function isMessageOptions<T extends MessageChoice>(value: MessageOptionsLike | T): value is MessageOptionsLike {
+	return typeof value === 'object' && !('title' in value);
+}
+
+/**
+ * Show a message through the captured window, with or without the options overload. Without
+ * options the platform Notifications adapter serves the call (its degradation contract: an
+ * unavailable or rejected dialog answers UNDEFINED); the options-bearing (modal) form forwards
+ * directly, preserving the caller's rejection handling.
+ */
+function showMessage<T extends MessageChoice>(method: 'showInformationMessage' | 'showWarningMessage' | 'showErrorMessage', message: string, optionsOrFirstItem: MessageOptionsLike | T | undefined, items: T[]): Promise<T | undefined> {
+	if (optionsOrFirstItem === undefined) {
+		const adapter = adapters().notifications[method] as (message: string, ...items: T[]) => Promise<T | undefined>;
+		return adapter(message, ...items);
+	}
+	const show = adapters().window[method];
+	if (typeof show !== 'function') return Promise.resolve(undefined);
+	if (isMessageOptions(optionsOrFirstItem)) {
+		const withOptions = show as (message: string, options: MessageOptionsLike, ...items: T[]) => Thenable<T | undefined>;
+		return Promise.resolve(withOptions(message, optionsOrFirstItem, ...items));
+	}
+	const withItems = show as (message: string, ...items: T[]) => Thenable<T | undefined>;
+	return Promise.resolve(withItems(message, optionsOrFirstItem, ...items));
+}
+
+/**
+ * The interim production UiPort (task 4.10): the modal/dialog/input/pick surface of the host,
+ * typed against src/extension/platform/uiPort.ts so the E2E build can inject a ScriptedUiPort
+ * over the same seam. The plain message forms delegate to the platform Notifications adapter.
+ */
+class WindowUiPort implements UiPort {
+	public showInformationMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined>;
+	public showInformationMessage<T extends MessageChoice>(message: string, options: MessageOptionsLike, ...items: T[]): Promise<T | undefined>;
+	public showInformationMessage<T extends MessageChoice>(message: string, optionsOrFirstItem?: MessageOptionsLike | T, ...items: T[]): Promise<T | undefined> {
+		return showMessage('showInformationMessage', message, optionsOrFirstItem, items);
+	}
+
+	public showWarningMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined>;
+	public showWarningMessage<T extends MessageChoice>(message: string, options: MessageOptionsLike, ...items: T[]): Promise<T | undefined>;
+	public showWarningMessage<T extends MessageChoice>(message: string, optionsOrFirstItem?: MessageOptionsLike | T, ...items: T[]): Promise<T | undefined> {
+		return showMessage('showWarningMessage', message, optionsOrFirstItem, items);
+	}
+
+	public showErrorMessage<T extends MessageChoice>(message: string, ...items: T[]): Promise<T | undefined>;
+	public showErrorMessage<T extends MessageChoice>(message: string, options: MessageOptionsLike, ...items: T[]): Promise<T | undefined>;
+	public showErrorMessage<T extends MessageChoice>(message: string, optionsOrFirstItem?: MessageOptionsLike | T, ...items: T[]): Promise<T | undefined> {
+		return showMessage('showErrorMessage', message, optionsOrFirstItem, items);
+	}
+
+	public showInputBox(options?: InputBoxOptionsLike): Promise<string | undefined> {
+		const showInputBox = adapters().window.showInputBox;
+		return typeof showInputBox === 'function' ? Promise.resolve(showInputBox(options)) : Promise.resolve(undefined);
+	}
+
+	public showQuickPick<T extends string | QuickPickItemLike>(items: ReadonlyArray<T>, options?: QuickPickOptionsLike): Promise<T | undefined> {
+		const showQuickPick = adapters().window.showQuickPick;
+		if (typeof showQuickPick !== 'function') return Promise.resolve(undefined);
+		// vscode.window satisfies this subset structurally; the cast bridges the QuickPickItem
+		// generic bound of the official typing, which the structural check cannot express.
+		const pick = showQuickPick as <T2 extends string | QuickPickItemLike>(items: ReadonlyArray<T2>, options?: QuickPickOptionsLike) => Thenable<T2 | undefined>;
+		return Promise.resolve(pick(items, options));
+	}
+
+	public showSaveDialog(options: SaveDialogOptionsLike): Promise<UriLike | undefined> {
+		const showSaveDialog = adapters().window.showSaveDialog;
+		if (typeof showSaveDialog !== 'function') return Promise.resolve(undefined);
+		return Promise.resolve(showSaveDialog(options as vscode.SaveDialogOptions));
+	}
+
+	public showOpenDialog(options: OpenDialogOptionsLike): Promise<ReadonlyArray<UriLike> | undefined> {
+		const showOpenDialog = adapters().window.showOpenDialog;
+		if (typeof showOpenDialog !== 'function') return Promise.resolve(undefined);
+		return Promise.resolve(showOpenDialog(options as vscode.OpenDialogOptions));
+	}
+
+	public withProgress<R>(options: ProgressOptionsLike, task: (progress: ProgressLike, token: import('../extension/platform/uiPort').CancellationTokenLike) => Thenable<R>): Promise<R> {
+		// No degradation path here (unlike the dialogs): no host call site routes through the
+		// port yet (INVENTORY.md #27 stays with its owner), so an absent API should surface.
+		return Promise.resolve(adapters().window.withProgress(options as vscode.ProgressOptions, task));
+	}
+}
+
+/**
+ * The host's native-UI port (task 4.10): every modal, input, pick and dialog flow of the host
+ * runs through this instance, so the flows are replayable by a scripted port and the 4.10 ESLint
+ * rule can keep direct `vscode.window.show*` calls out of the host modules.
+ */
+export const uiPort: UiPort = new WindowUiPort();
 
 /**
  * Create an archive of a repository at a specific reference, and save to disk.
@@ -19,7 +139,7 @@ import { doesFileExist } from './paths';
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
 export function archive(repo: string, ref: string, dataSource: DataSource): Thenable<ErrorInfo> {
-	return vscode.window.showSaveDialog({
+	return uiPort.showSaveDialog({
 		defaultUri: vscode.Uri.file(repo),
 		saveLabel: t('archiveSaveLabel'),
 		filters: { [t('archiveTarFilter')]: ['tar'], [t('archiveZipFilter')]: ['zip'] }
@@ -57,10 +177,9 @@ export function copyFilePathToClipboard(repo: string, filePath: string, absolute
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
 export function copyToClipboard(text: string): Thenable<ErrorInfo> {
-	return vscode.env.clipboard.writeText(text).then(
-		() => null,
-		() => t('clipboardWriteFailed')
-	);
+	// The adapter's contract: FALSE on an unavailable or rejected write - exactly the signal
+	// this wrapper turns into its localized failure message.
+	return adapters().clipboard.write(text).then((written) => written ? null : t('clipboardWriteFailed'));
 }
 
 /**
@@ -273,16 +392,20 @@ export function viewScm(): Thenable<ErrorInfo> {
 
 /**
  * Show a Visual Studio Code Information Message Dialog with the specified message.
+ * Delegates to the platform notifications adapter (task 4.10, INVENTORY.md #9); every remaining
+ * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */
 export function showInformationMessage(message: string) {
-	return vscode.window.showInformationMessage(message).then(() => { }, () => { });
+	return adapters().notifications.showInformationMessage(message).then(() => { }, () => { });
 }
 
 /**
  * Show a Visual Studio Code Error Message Dialog with the specified message.
+ * Delegates to the platform notifications adapter (task 4.10, INVENTORY.md #10); every remaining
+ * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */
 export function showErrorMessage(message: string) {
-	return vscode.window.showErrorMessage(message).then(() => { }, () => { });
+	return adapters().notifications.showErrorMessage(message).then(() => { }, () => { });
 }

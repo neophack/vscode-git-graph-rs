@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { GitGraphView } from '../../gitGraphView';
 import { t } from '../../i18n';
 import { CodeReviewData, CodeReviews } from '../../extensionState';
-import { showErrorMessage, showInformationMessage } from '../../utils/actions';
+import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { abbrevCommit } from '../../utils/git';
 import { abbrevText, getRelativeTimeDiff } from '../../utils/format';
 import { getRepoName } from '../../utils/paths';
@@ -25,17 +26,24 @@ export function endAllWorkspaceCodeReviews(host: CommandHost) {
 /**
  * The method run when the `git-graph-rs.endSpecificWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
+ * @param ui The native-UI port the review picker runs through (task 4.10, INVENTORY.md #13);
+ * defaults to the production port, injectable for tests.
  */
-export function endSpecificWorkspaceCodeReview(host: CommandHost) {
+export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {
 	const codeReviews = host.extensionState.getCodeReviews();
 	if (Object.keys(codeReviews).length === 0) {
 		showErrorMessage(t('noCodeReviewsInProgress'));
 		return;
 	}
 
-	vscode.window.showQuickPick(getCodeReviewQuickPickItems(host, codeReviews), {
-		placeHolder: t('selectCodeReviewToEnd'),
-		canPickMany: false
+	// The review items load asynchronously; resolve them before the port's pick (the port takes
+	// the materialized list), with the shared rejection handler catching both stages, exactly as
+	// the native pick forwarded a rejected item list before (INVENTORY.md #13).
+	getCodeReviewQuickPickItems(host, codeReviews).then((items) => {
+		return ui.showQuickPick(items, {
+			placeHolder: t('selectCodeReviewToEnd'),
+			canPickMany: false
+		});
 	}).then((item) => {
 		if (item) {
 			host.extensionState.endCodeReview(item.codeReviewRepo, item.codeReviewId).then((errorInfo) => {
@@ -48,27 +56,32 @@ export function endSpecificWorkspaceCodeReview(host: CommandHost) {
 		}
 	}, () => {
 		showErrorMessage(t('unexpectedErrorInCommand', 'End a specific Code Review in Workspace...'));
-	});
-}
+	});}
 
 /**
  * The method run when the `git-graph-rs.resumeWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
+ * @param ui The native-UI port the review picker runs through (task 4.10, INVENTORY.md #14);
+ * defaults to the production port, injectable for tests.
  */
-export function resumeWorkspaceCodeReview(host: CommandHost) {
+export function resumeWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {
 	const codeReviews = host.extensionState.getCodeReviews();
 	if (Object.keys(codeReviews).length === 0) {
 		showErrorMessage(t('noCodeReviewsInProgress'));
 		return;
 	}
 
-	vscode.window.showQuickPick(getCodeReviewQuickPickItems(host, codeReviews), {
-		placeHolder: t('selectCodeReviewToResume'),
-		canPickMany: false
+	// As in the end-review flow: materialize the items, then pick; one rejection handler covers
+	// both stages (INVENTORY.md #14).
+	getCodeReviewQuickPickItems(host, codeReviews).then((items) => {
+		return ui.showQuickPick(items, {
+			placeHolder: t('selectCodeReviewToResume'),
+			canPickMany: false
+		});
 	}).then((item) => {
 		if (item) {
 			const commitHashes = item.codeReviewId.split('-');
-			GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+			GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
 				repo: item.codeReviewRepo,
 				commitDetails: {
 					commitHash: commitHashes[commitHashes.length > 1 ? 1 : 0],

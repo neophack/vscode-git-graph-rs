@@ -3,7 +3,8 @@ import * as vscode from 'vscode';
 import { GitGraphView } from '../../gitGraphView';
 import { t } from '../../i18n';
 import { getConfig } from '../../config';
-import { showErrorMessage } from '../../utils/actions';
+import { showErrorMessage, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { getRepoName, getPathFromStr, getPathFromUri, resolveToSymbolicPath } from '../../utils/paths';
 import { getSortedRepositoryPaths } from '../../utils/repo';
 import { isRepoCommandArg, type CommandHost } from './context';
@@ -34,7 +35,7 @@ export async function view(host: CommandHost, arg: unknown) {
 		loadRepo = host.repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
 	}
 
-	GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, loadRepo !== null ? { repo: loadRepo } : null);
+	GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, loadRepo !== null ? { repo: loadRepo } : null);
 }
 
 /**
@@ -62,7 +63,7 @@ export async function filterByFile(host: CommandHost, arg: unknown) {
 	let filterPath = getPathFromStr(path.relative(repo, getPathFromUri(uris[0])));
 	if (filterPath === '') filterPath = '.';
 
-	GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, filterPath: filterPath });
+	GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, filterPath: filterPath });
 }
 
 /**
@@ -91,8 +92,10 @@ function getUrisFromCommandArg(arg: unknown): vscode.Uri[] {
 /**
  * The method run when the `git-graph-rs.fetch` command is invoked.
  * @param host The services the command runs with.
+ * @param ui The native-UI port the repository picker runs through (task 4.10, INVENTORY.md #20);
+ * defaults to the production port, injectable for tests.
  */
-export function fetch(host: CommandHost) {
+export function fetch(host: CommandHost, ui: UiPort = uiPort) {
 	const repos = host.repoManager.getRepos();
 	const repoPaths = getSortedRepositoryPaths(repos, getConfig().repoDropdownOrder);
 
@@ -111,12 +114,12 @@ export function fetch(host: CommandHost) {
 			}
 		}
 
-		vscode.window.showQuickPick(items, {
+		ui.showQuickPick(items, {
 			placeHolder: t('selectRepoToFetch'),
 			canPickMany: false
 		}).then((item) => {
 			if (item && item.description) {
-				GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+				GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
 					repo: item.description,
 					runCommandOnLoad: 'fetch'
 				});
@@ -125,11 +128,11 @@ export function fetch(host: CommandHost) {
 			showErrorMessage(t('unexpectedErrorInCommand', 'Fetch from Remote(s)'));
 		});
 	} else if (repoPaths.length === 1) {
-		GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+		GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
 			repo: repoPaths[0],
 			runCommandOnLoad: 'fetch'
 		});
 	} else {
-		GitGraphView.createOrShow(host.context.extensionPath, host.dataSource, host.extensionState, host.avatarManager, host.repoManager, host.logger, null);
+		GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, null);
 	}
 }

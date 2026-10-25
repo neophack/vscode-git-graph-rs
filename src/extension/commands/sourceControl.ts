@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
 import { t } from '../../i18n';
-import { showErrorMessage, showInformationMessage } from '../../utils/actions';
+import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { getRepoName } from '../../utils/paths';
 import { unableToFindGitMsg } from '../../utils/findGit';
 import { resolveRepoFromCommandArg, type CommandHost } from './context';
@@ -40,8 +40,10 @@ export async function amendLastCommit(host: CommandHost, arg: unknown) {
  * Soft resets the current branch to its upstream (remote tracking) branch, keeping all changes staged.
  * @param host The services the command runs with.
  * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
+ * @param ui The native-UI port the destructive confirm runs through (task 4.10, INVENTORY.md #5);
+ * defaults to the production port, injectable for tests.
  */
-export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown) {
+export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
 		showErrorMessage(unableToFindGitMsg());
 		return;
@@ -56,7 +58,7 @@ export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown
 		return;
 	}
 
-	const confirmed = await vscode.window.showWarningMessage(
+	const confirmed = await ui.showWarningMessage(
 		t('resetToRemoteConfirm', upstream),
 		{ modal: true },
 		t('resetToRemoteButton')

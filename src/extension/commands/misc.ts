@@ -2,7 +2,8 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import { t } from '../../i18n';
 import { DiffDocProvider, decodeDiffDocUri } from '../../diffDocProvider';
-import { copyToClipboard, openFile as openFileInEditor, showErrorMessage, showInformationMessage } from '../../utils/actions';
+import { copyToClipboard, openFile as openFileInEditor, showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
+import { UiPort } from '../../extension/platform/uiPort';
 import { getExtensionVersion } from '../../utils/format';
 import type { CommandHost } from './context';
 
@@ -14,12 +15,14 @@ import type { CommandHost } from './context';
 /**
  * The method run when the `git-graph-rs.version` command is invoked.
  * @param host The services the command runs with.
+ * @param ui The native-UI port the modal version dialog runs through (task 4.10, INVENTORY.md #3);
+ * defaults to the production port, injectable for tests.
  */
-export async function version(host: CommandHost) {
+export async function version(host: CommandHost, ui: UiPort = uiPort) {
 	try {
 		const gitGraphVersion = await getExtensionVersion(host.context);
 		const information = t('versionInfo', gitGraphVersion, vscode.version, os.type() + ' ' + os.arch() + ' ' + os.release(), host.gitExecutable !== null ? host.gitExecutable.version : '(none)');
-		vscode.window.showInformationMessage(information, { modal: true }, t('copyButton')).then((selectedItem) => {
+		ui.showInformationMessage(information, { modal: true }, t('copyButton')).then((selectedItem) => {
 			if (selectedItem === t('copyButton')) {
 				copyToClipboard(information).then((result) => {
 					if (result !== null) {
