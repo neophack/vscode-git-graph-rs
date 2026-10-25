@@ -22,6 +22,7 @@ import { GitWriter } from './extension/git/write/gitWriter';
 import type { Localize } from './extension/git/write/argSafety';
 import { CommitComparisonView } from './extension/views/comparison/viewController';
 import { BinaryCompareView } from './extension/views/binaryCompare/viewController';
+import type { GitStreamSpawner } from './extension/views/binaryCompare/hexDiff';
 import { t } from './i18n';
 import { TextMessageKey } from './shared/i18n';
 import { Logger } from './logger';
@@ -152,15 +153,22 @@ export async function activate(context: vscode.ExtensionContext) {
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
 	const diffDocProvider = new DiffDocProvider(reader);
 
-	// The two auxiliary webviews still hold the legacy data source; composed here, where it
-	// lives, so no graphView module imports it.
+	// The two auxiliary webviews, composed over the read backend and the streaming spawner (the
+	// same git layer the Git Graph view's facade runs on), so no graphView module imports them.
+	const gitStream: GitStreamSpawner = {
+		spawnGitStream: (args, repo) => {
+			// The localised no-Git message of the legacy spawn, kept for the hex view's error toast
+			if (gitProcess.git === null) throw new Error(unableToFindGitMsg());
+			return gitProcess.spawnStream(args, repo);
+		}
+	};
 	const legacyViews: LegacyViewPort = {
 		openCompareTab: (extensionPath, repoPath, fromHash, toHash, singleCommit) => {
 			// The controller moves to extension/views in Phase 6.
-			CommitComparisonView.open(extensionPath, dataSource, repoPath, fromHash, toHash, singleCommit);
+			CommitComparisonView.open(extensionPath, reader, gitStream, repoPath, fromHash, toHash, singleCommit);
 		},
 		openBinaryCompare: (extensionPath, repoPath, fromHash, toHash, file) => {
-			BinaryCompareView.open(extensionPath, dataSource, repoPath, fromHash, toHash, {
+			BinaryCompareView.open(extensionPath, gitStream, repoPath, fromHash, toHash, {
 				oldFilePath: file.oldFilePath, newFilePath: file.newFilePath,
 				type: file.type, additions: file.additions, deletions: file.deletions
 			});

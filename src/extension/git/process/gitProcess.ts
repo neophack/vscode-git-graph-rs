@@ -85,6 +85,21 @@ export class GitProcess {
 	}
 
 	/**
+	 * Spawn Git for a streaming read: unlike {@link run}, the caller consumes the child's stdout
+	 * directly and destroys the process when done (the hex comparison's chunked blob reads).
+	 * The environment is assembled exactly like a `run` spawn (askpass included); with no Git
+	 * executable the no-Git error is thrown for the caller to surface.
+	 */
+	spawnStream(args: ReadonlyArray<string>, cwd: string): cp.ChildProcess {
+		const git = this.executable();
+		if (git === null) throw new GitError('noGit', 'No Git executable was found');
+		const env: { [name: string]: string } = Object.assign({}, process.env, this.askpass());
+		// The spawn function's structural return type is the slice every consumer of this class
+		// needs; the streaming consumers use the full ChildProcess surface.
+		return this.spawnFn(git.path, args, { cwd: cwd, env: env, windowsHide: true }) as unknown as cp.ChildProcess;
+	}
+
+	/**
 	 * Run Git and collect its output. Resolves with the exit code whatever it is; rejects only
 	 * when no Git executable is available (`noGit`), the spawn itself failed (`noGit`/`io`),
 	 * the run was cancelled (`cancelled`), or the output exceeded `maxBuffer` (`tooLarge`).

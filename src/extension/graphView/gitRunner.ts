@@ -108,9 +108,9 @@ export interface GitRunnerParseMetas {
 }
 
 /**
- * The two auxiliary webviews the view opens, which still hold a legacy `DataSource` (their
- * controllers move in Phase 6): the port is composed in extension.ts, where the instance lives,
- * so no graphView module imports `src/dataSource`.
+ * The two auxiliary webviews the view opens (their controllers move in Phase 6): the port is
+ * composed in extension.ts over the shared git layer, so no graphView module imports the
+ * controllers.
  */
 export interface LegacyViewPort {
 	openCompareTab(extensionPath: string, repo: string, fromHash: string, toHash: string, singleCommit: boolean): void;

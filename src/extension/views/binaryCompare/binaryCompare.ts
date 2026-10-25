@@ -1,5 +1,4 @@
-import { DataSource } from '../../../dataSource';
-import { HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
+import { GitStreamSpawner, HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
 import { t } from '../../../i18n';
 import { BinaryCompareResponse } from '../../../shared/protocol/binaryCompare';
 import { GitFileChange } from '../../../types';
@@ -46,10 +45,10 @@ export function imageMimeOf(filePath: string): string | null {
  * The session comparing one file between two revisions. `fromHash`/`toHash` treat
  * UNCOMMITTED and '' as the working tree, exactly like the diff the view is showing.
  */
-export function createHexSession(dataSource: DataSource, repo: string, fromHash: string, toHash: string, file: GitFileChange): HexDiffSession {
+export function createHexSession(spawner: GitStreamSpawner, repo: string, fromHash: string, toHash: string, file: GitFileChange): HexDiffSession {
 	const fromWorkingTree = fromHash === UNCOMMITTED || fromHash === '';
 	const toWorkingTree = toHash === UNCOMMITTED || toHash === '';
-	return new HexDiffSession(dataSource, repo,
+	return new HexDiffSession(spawner, repo,
 		fromWorkingTree, file.oldFilePath !== '' ? file.oldFilePath : file.newFilePath, fromHash,
 		toWorkingTree, file.newFilePath !== '' ? file.newFilePath : file.oldFilePath, toHash,
 		file);
