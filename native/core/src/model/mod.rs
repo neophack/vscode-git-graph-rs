@@ -23,7 +23,7 @@ pub use commits::{
 };
 pub use config::{ConfigSnapshot, RemoteConfig};
 pub use details::{GitCommitDetails, GitSignature, GitSignatureStatus, GitTagDetails};
-pub use files::{CommitFile, GitFileChange, GitFileStatus, GitLineCounts, GitStatusFiles};
+pub use files::{CommitFile, GitFileChange, GitFileStatus, GitLineCounts, ScmChange};
 pub use gerrit::{GerritChangeEvent, GerritChangeState, GerritVote};
 pub use refs::{
     AnnotateParams, AnnotateResult, GitCommitRefs, GitRef, GitRefData, GitTagRef, RefOptions,

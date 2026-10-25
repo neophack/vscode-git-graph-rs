@@ -5,19 +5,19 @@
 //! - **How many things are uncommitted?** ([`count_changes`]) The graph needs only this to decide
 //!   whether to draw the "Uncommitted Changes" row, and it is on the critical path of every view
 //!   load, so it stops as soon as it has the count.
-//! - **Which files are untracked or deleted?** ([`status_files`]) Neither is visible to a
-//!   tree-to-tree diff, so the Commit Details view layers them on top of one.
 //! - **What changed against a revision?** ([`uncommitted_changes`]) The full file list, combining
-//!   the staged and unstaged sides.
+//!   the staged and unstaged sides — the untracked and deleted files a tree-to-tree diff cannot
+//!   see are part of it.
+//! - **How does the Source Control view list the tree?** ([`scm_changes`]) One row per path, the
+//!   staged and unstaged halves kept apart.
 
 use std::collections::BTreeMap;
 
 use gix::bstr::ByteSlice;
-use serde::Serialize;
 
 use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
-use crate::model::{GitFileChange, GitFileStatus, GitStatusFiles};
+use crate::model::{GitFileChange, GitFileStatus, ScmChange};
 use crate::repository::Repo;
 
 /// One path's state, as the two halves of a porcelain status code.
@@ -238,27 +238,6 @@ pub fn count_changes(repo: &Repo, include_untracked: bool, cancel: Cancel) -> Re
         .sum())
 }
 
-/// The untracked and deleted files of the working tree.
-pub fn status_files(
-    repo: &Repo,
-    include_untracked: bool,
-    cancel: Cancel,
-) -> Result<GitStatusFiles> {
-    let states = scan(repo, include_untracked, Renames::AsStatus, cancel)?;
-    let mut files = GitStatusFiles::default();
-    for (path, state) in states {
-        if state.staged == Some(GitFileStatus::Deleted)
-            || state.unstaged == Some(GitFileStatus::Deleted)
-        {
-            files.deleted.push(path.clone());
-        }
-        if state.untracked {
-            files.untracked.push(path);
-        }
-    }
-    Ok(files)
-}
-
 /// The complete list of uncommitted file changes, staged and unstaged together.
 ///
 /// The staged side wins when a path changed on both, because it describes the change relative to
@@ -306,23 +285,7 @@ pub fn uncommitted_changes(repo: &Repo, cancel: Cancel) -> Result<Vec<GitFileCha
     Ok(changes)
 }
 
-/// One path as the Source Control view lists it: the staged and unstaged halves of its change
-/// kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
-#[derive(Debug, Clone, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ScmChange {
-    pub path: String,
-    pub old_path: Option<String>,
-    #[ts(type = "string | null")]
-    pub staged: Option<&'static str>,
-    #[ts(type = "string | null")]
-    pub unstaged: Option<&'static str>,
-    pub untracked: bool,
-    /// The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control
-    /// view lists it under "Merge Changes" and opens it in the merge editor.
-    pub conflicted: bool,
-}
-
+/// The lowercase status names of [`ScmChange`]'s halves, as the Source Control view speaks them.
 fn status_name(status: GitFileStatus) -> &'static str {
     match status {
         GitFileStatus::Added => "added",

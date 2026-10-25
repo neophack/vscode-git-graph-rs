@@ -1,21 +1,123 @@
 //! The on-demand reads: commit bodies, subjects and summaries, history search, tag details,
 //! remote URLs, upstream names, submodule roots, rename tracking and commit counting.
+//!
+//! Everything goes through the public surface — `Engine` where a Rust host has a method, the
+//! request protocol where the call is one of the wire methods a host sends.
 
 #[macro_use]
 mod common;
 
-use git_graph_core::cancel::Cancel;
-
 use std::process::Command;
 
-use git_graph_core::read::{config, details, diff, log};
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::Engine;
+use git_graph_core::model::GitCommitSummary;
 use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 
-fn open(repo: &TestRepo) -> Repo {
-    Repo::discover(repo.path()).expect("could not open the fixture repository")
+fn open(repo: &TestRepo) -> Engine {
+    Engine::open(repo.path()).expect("could not open the fixture repository")
+}
+
+/// The summaries of a batch of commits, as the Commit Comparison view asks for them.
+fn commit_summaries(
+    repo: &TestRepo,
+    hashes: &[String],
+) -> std::collections::BTreeMap<String, GitCommitSummary> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        hashes: &'a [String],
+    }
+    common::ask(repo, "commitSummaries", Params { hashes })
+}
+
+/// The new path of a renamed file, as the file viewer follows a rename into the working tree.
+fn new_path_of_renamed_file(
+    repo: &TestRepo,
+    commit_hash: &str,
+    old_file_path: &str,
+) -> Option<String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        commit_hash: &'a str,
+        old_file_path: &'a str,
+    }
+    common::ask(
+        repo,
+        "newPathOfRenamedFile",
+        Params {
+            commit_hash,
+            old_file_path,
+        },
+    )
+}
+
+/// How many commits of the shown refs precede `hash` (`git rev-list --count`).
+fn count_commits_before(
+    repo: &TestRepo,
+    branches: Option<&[&str]>,
+    hash: &str,
+    show_remote_branches: bool,
+    include_reflogs: bool,
+) -> u64 {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        branches: Option<Vec<&'a str>>,
+        hash: &'a str,
+        show_remote_branches: bool,
+        include_reflogs: bool,
+    }
+    common::ask(
+        repo,
+        "countCommitsBefore",
+        Params {
+            branches: branches.map(|branches| branches.to_vec()),
+            hash,
+            show_remote_branches,
+            include_reflogs,
+        },
+    )
+}
+
+/// How the same count fails, with the structured error a host falls back on.
+fn count_commits_before_error(
+    repo: &TestRepo,
+    branches: Option<&[&str]>,
+    hash: &str,
+    show_remote_branches: bool,
+    include_reflogs: bool,
+) -> git_graph_core::Error {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        branches: Option<Vec<&'a str>>,
+        hash: &'a str,
+        show_remote_branches: bool,
+        include_reflogs: bool,
+    }
+    common::ask_error(
+        repo,
+        "countCommitsBefore",
+        Params {
+            branches: branches.map(|branches| branches.to_vec()),
+            hash,
+            show_remote_branches,
+            include_reflogs,
+        },
+    )
+}
+
+/// The key/value list of one configuration location, with git's own resolution semantics.
+fn config_list(repo: &TestRepo, local: bool) -> std::collections::BTreeMap<String, String> {
+    common::ask(repo, "configList", serde_json::json!({ "local": local }))
+}
+
+/// The repository's remote names, in the order `git remote` lists them.
+fn remote_names(repo: &TestRepo) -> Vec<String> {
+    common::ask(repo, "remoteNames", serde_json::json!({}))
 }
 
 #[test]
@@ -26,7 +128,9 @@ fn reads_commit_bodies_without_the_trailing_newline() {
     let second = repo.commit_file("b.txt", "2\n", "single-line subject");
 
     let engine = open(&repo);
-    let bodies = details::commit_bodies(&engine, &[first.clone(), second.clone()]).unwrap();
+    let bodies = engine
+        .commit_bodies(&[first.clone(), second.clone()])
+        .unwrap();
 
     // git's `%B` carries the message's trailing newline; the caller has always stripped it.
     assert_eq!(bodies[&first], "the subject\n\nthe body paragraph");
@@ -40,11 +144,9 @@ fn commit_bodies_fail_on_an_unknown_hash() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = details::commit_bodies(
-        &engine,
-        &["0123456789012345678901234567890123456789".to_string()],
-    )
-    .unwrap_err();
+    let error = engine
+        .commit_bodies(&["0123456789012345678901234567890123456789".to_string()])
+        .unwrap_err();
 
     assert_eq!(error.kind, ErrorKind::NotFound);
 }
@@ -66,7 +168,7 @@ fn reads_a_folded_subject_as_git_folds_it() {
         .join(" ");
 
     let engine = open(&repo);
-    assert_eq!(details::commit_subject(&engine, &hash).unwrap(), expected);
+    assert_eq!(engine.commit_subject(&hash).unwrap(), expected);
     assert_eq!(expected, "a subject that spans several lines");
 }
 
@@ -76,8 +178,7 @@ fn reads_commit_summaries_with_the_author_date() {
     let mut repo = TestRepo::new();
     let hash = repo.commit_file("a.txt", "1\n", "the subject\n\nthe body");
 
-    let engine = open(&repo);
-    let summaries = details::commit_summaries(&engine, std::slice::from_ref(&hash)).unwrap();
+    let summaries = commit_summaries(&repo, std::slice::from_ref(&hash));
     let summary = &summaries[&hash];
 
     assert_eq!(summary.hash, hash);
@@ -108,7 +209,7 @@ fn searches_history_like_git_log_grep() {
     let expected = repo.log_hashes(&["--all", "-i", "--grep=feature"]);
 
     let engine = open(&repo);
-    let matches = log::search_history(&engine, "feature", Cancel::none()).unwrap();
+    let matches = engine.search_history("feature").unwrap();
     let hashes: Vec<&String> = matches.iter().map(|m| &m.hash).collect();
 
     assert_eq!(hashes, expected.iter().collect::<Vec<_>>());
@@ -128,11 +229,10 @@ fn searches_history_like_git_log_grep() {
     }
 
     // A pattern that matches nothing matches nothing.
-    assert!(
-        log::search_history(&engine, "no-such-thing-at-all", Cancel::none())
-            .unwrap()
-            .is_empty()
-    );
+    assert!(engine
+        .search_history("no-such-thing-at-all")
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -142,7 +242,7 @@ fn search_rejects_a_pattern_that_is_not_a_regex() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = log::search_history(&engine, "(unclosed", Cancel::none()).unwrap_err();
+    let error = engine.search_history("(unclosed").unwrap_err();
 
     assert_eq!(error.kind, ErrorKind::InvalidArgument);
 }
@@ -162,7 +262,7 @@ fn reads_an_annotated_tag_in_full() {
     ]);
 
     let engine = open(&repo);
-    let details = details::tag_details(&engine, "v2.0").unwrap();
+    let details = engine.tag("v2.0").unwrap();
 
     assert_eq!(details.hash, tag_object);
     assert_eq!(details.tagger_name, "Test User");
@@ -182,7 +282,7 @@ fn reads_a_lightweight_tag_from_its_commit() {
     repo.git(&["tag", "v1.0"]);
 
     let engine = open(&repo);
-    let details = details::tag_details(&engine, "v1.0").unwrap();
+    let details = engine.tag("v1.0").unwrap();
 
     // A lightweight tag has no object of its own: the ref names the commit, and the message the
     // dialogue shows is the commit's.
@@ -201,7 +301,7 @@ fn a_missing_tag_is_not_found() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    let error = details::tag_details(&engine, "no-such-tag").unwrap_err();
+    let error = engine.tag("no-such-tag").unwrap_err();
 
     assert_eq!(error.kind, ErrorKind::NotFound);
 }
@@ -214,10 +314,10 @@ fn reads_a_remote_url_and_reports_an_absent_one() {
 
     let engine = open(&repo);
     assert_eq!(
-        config::remote_url(&engine, "origin").unwrap().as_deref(),
+        engine.remote_url("origin").unwrap().as_deref(),
         Some("https://example.invalid/one.git")
     );
-    assert_eq!(config::remote_url(&engine, "no-such-remote").unwrap(), None);
+    assert_eq!(engine.remote_url("no-such-remote").unwrap(), None);
 }
 
 #[test]
@@ -241,7 +341,7 @@ fn reads_the_upstream_of_the_checked_out_branch() {
 
     let engine = open(&repo);
     assert_eq!(
-        config::current_branch_upstream(&engine).unwrap().as_deref(),
+        engine.upstream_of_current_branch().unwrap().as_deref(),
         Some(expected.as_str())
     );
     assert_eq!(expected, "origin/main");
@@ -254,7 +354,7 @@ fn a_branch_without_an_upstream_has_none() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    assert_eq!(config::current_branch_upstream(&engine).unwrap(), None);
+    assert_eq!(engine.upstream_of_current_branch().unwrap(), None);
 }
 
 #[test]
@@ -269,7 +369,7 @@ fn lists_initialised_submodules_only() {
     repo.git(&["init", "--quiet", "present"]);
 
     let engine = open(&repo);
-    let submodules = config::submodules(&engine).unwrap();
+    let submodules = engine.submodules().unwrap();
 
     let expected = std::fs::canonicalize(repo.path().join("present"))
         .expect("the submodule directory exists")
@@ -296,14 +396,10 @@ fn follows_a_rename_into_the_working_tree() {
         &contents.replace("line 39", "line thirty-nine"),
     );
 
-    let engine = open(&repo);
-    let new_path = diff::new_path_of_renamed_file(&engine, &first, "original.txt").unwrap();
+    let new_path = new_path_of_renamed_file(&repo, &first, "original.txt");
 
     assert_eq!(new_path.as_deref(), Some("renamed.txt"));
-    assert_eq!(
-        diff::new_path_of_renamed_file(&engine, &first, "no-such.txt").unwrap(),
-        None
-    );
+    assert_eq!(new_path_of_renamed_file(&repo, &first, "no-such.txt"), None);
 }
 
 #[test]
@@ -329,9 +425,7 @@ fn counts_commits_before_a_hash_as_rev_list_does() {
         .parse()
         .unwrap();
 
-    let engine = open(&repo);
-    let count =
-        log::count_commits_before(&engine, None, &first, true, false, Cancel::none()).unwrap();
+    let count = count_commits_before(&repo, None, &first, true, false);
     assert_eq!(count, expected);
     assert_eq!(count, 3);
 
@@ -342,15 +436,7 @@ fn counts_commits_before_a_hash_as_rev_list_does() {
         .parse()
         .unwrap();
     assert_eq!(
-        log::count_commits_before(
-            &engine,
-            Some(&["main".to_string()]),
-            &first,
-            true,
-            false,
-            Cancel::none(),
-        )
-        .unwrap(),
+        count_commits_before(&repo, Some(&["main"]), &first, true, false),
         from_branches
     );
 }
@@ -361,16 +447,13 @@ fn counting_before_an_unknown_hash_fails() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "1\n", "first");
 
-    let engine = open(&repo);
-    let error = log::count_commits_before(
-        &engine,
+    let error = count_commits_before_error(
+        &repo,
         None,
         "0123456789012345678901234567890123456789",
         true,
         false,
-        Cancel::none(),
-    )
-    .unwrap_err();
+    );
 
     assert_eq!(error.kind, ErrorKind::NotFound);
 }
@@ -381,20 +464,11 @@ fn counting_reflog_tips_and_glob_patterns_is_reported_as_unsupported() {
     let mut repo = TestRepo::new();
     let first = repo.commit_file("a.txt", "1\n", "first");
 
-    let engine = open(&repo);
-    let reflog_error =
-        log::count_commits_before(&engine, None, &first, true, true, Cancel::none()).unwrap_err();
+    let reflog_error = count_commits_before_error(&repo, None, &first, true, true);
     assert_eq!(reflog_error.kind, ErrorKind::Unsupported);
 
-    let glob_error = log::count_commits_before(
-        &engine,
-        Some(&["--glob=feature/**".to_string()]),
-        &first,
-        true,
-        false,
-        Cancel::none(),
-    )
-    .unwrap_err();
+    let glob_error =
+        count_commits_before_error(&repo, Some(&["--glob=feature/**"]), &first, true, false);
     assert_eq!(glob_error.kind, ErrorKind::Unsupported);
 }
 
@@ -407,7 +481,7 @@ fn reads_a_tag_whose_name_contains_slashes() {
 
     let tag_object = repo.rev_parse("refs/tags/release/v1.0");
     let engine = open(&repo);
-    let details = details::tag_details(&engine, "release/v1.0").unwrap();
+    let details = engine.tag("release/v1.0").unwrap();
 
     assert_eq!(details.hash, tag_object);
     assert_eq!(details.message, "a hierarchical tag");
@@ -431,7 +505,8 @@ fn rejects_tag_names_git_would_reject() {
         "no spaces",
         "caret^",
     ] {
-        let error = details::tag_details(&engine, bad)
+        let error = engine
+            .tag(bad)
             .unwrap_err_or_else(|| panic!("the tag name {bad} was accepted"));
         assert_eq!(error.kind, ErrorKind::InvalidArgument, "tag name {bad}");
     }
@@ -457,17 +532,14 @@ fn a_bare_repository_has_no_upstream_and_no_submodules() {
         String::from_utf8_lossy(&clone.stderr)
     );
 
-    let engine = Repo::open(bare.path()).expect("could not open the bare repository");
-    assert_eq!(config::current_branch_upstream(&engine).unwrap(), None);
-    assert!(config::submodules(&engine).unwrap().is_empty());
+    let engine = Engine::open(bare.path()).expect("could not open the bare repository");
+    assert_eq!(engine.upstream_of_current_branch().unwrap(), None);
+    assert!(engine.submodules().unwrap().is_empty());
 
     // The object database is all a bare repository has, and it is enough for every object read.
+    assert_eq!(engine.commit_subject(&hash).unwrap(), "the subject");
     assert_eq!(
-        details::commit_subject(&engine, &hash).unwrap(),
-        "the subject"
-    );
-    assert_eq!(
-        details::commit_bodies(&engine, std::slice::from_ref(&hash)).unwrap()[&hash],
+        engine.commit_bodies(std::slice::from_ref(&hash)).unwrap()[&hash],
         "the subject\n\nand a body"
     );
 }
@@ -481,7 +553,7 @@ fn a_detached_head_has_no_upstream() {
     repo.git(&["checkout", "--quiet", "--detach", &first]);
 
     let engine = open(&repo);
-    assert_eq!(config::current_branch_upstream(&engine).unwrap(), None);
+    assert_eq!(engine.upstream_of_current_branch().unwrap(), None);
 }
 
 #[test]
@@ -490,9 +562,7 @@ fn searching_a_repository_without_commits_matches_nothing() {
     let repo = TestRepo::new();
 
     let engine = open(&repo);
-    assert!(log::search_history(&engine, "anything", Cancel::none())
-        .unwrap()
-        .is_empty());
+    assert!(engine.search_history("anything").unwrap().is_empty());
     // count_commits_before on this repo is covered by counting_before_an_unknown_hash_fails:
     // its error fires at hash resolution, before any walk, so an empty repository reaches the
     // same branch a populated one does.
@@ -532,15 +602,15 @@ fn reads_the_url_of_a_remote_with_an_unusual_name() {
 
     let engine = open(&repo);
     assert_eq!(
-        config::remote_url(&engine, "up stream").unwrap().as_deref(),
+        engine.remote_url("up stream").unwrap().as_deref(),
         Some("https://example.invalid/spaced.git")
     );
     assert_eq!(
-        config::remote_url(&engine, "a..b").unwrap().as_deref(),
+        engine.remote_url("a..b").unwrap().as_deref(),
         Some("https://example.invalid/dotted.git")
     );
 
-    let error = config::remote_url(&engine, "").unwrap_err();
+    let error = engine.remote_url("").unwrap_err();
     assert_eq!(error.kind, ErrorKind::InvalidArgument);
 }
 
@@ -550,9 +620,7 @@ fn counting_an_empty_branch_list_is_declined() {
     let mut repo = TestRepo::new();
     let hash = repo.commit_file("a.txt", "1\n", "first");
 
-    let engine = open(&repo);
-    let error = log::count_commits_before(&engine, Some(&[]), &hash, true, false, Cancel::none())
-        .unwrap_err();
+    let error = count_commits_before_error(&repo, Some(&[]), &hash, true, false);
 
     // The command line this replaces would count from HEAD for an empty ref list; the engine
     // declines rather than guess, so the call falls back and behaviour is preserved exactly.
@@ -568,7 +636,7 @@ fn reads_a_tag_message_without_its_trailing_blank_lines() {
     repo.git(&["tag", "-a", "wordy", "-F", "tag-message.txt"]);
 
     let engine = open(&repo);
-    let details = details::tag_details(&engine, "wordy").unwrap();
+    let details = engine.tag("wordy").unwrap();
 
     assert_ne!(details.hash, hash);
     assert_eq!(details.message, "line one\n\nline two");
@@ -585,7 +653,7 @@ fn finds_the_repository_root_from_a_subdirectory() {
     repo.write("nested/deep/file.txt", "x\n");
 
     let nested = repo.path().join("nested").join("deep");
-    let root = git_graph_core::repository::repo_root(nested.to_str().unwrap()).unwrap();
+    let root: String = common::ask_at(nested.to_str().unwrap(), "repoRoot", serde_json::json!({}));
 
     let normalise = |path: String| {
         path.trim_start_matches(r"\\?\")
@@ -597,8 +665,11 @@ fn finds_the_repository_root_from_a_subdirectory() {
         normalise(repo.path().display().to_string())
     );
 
-    let error =
-        git_graph_core::repository::repo_root(std::env::temp_dir().to_str().unwrap()).unwrap_err();
+    let error = common::ask_error_at(
+        std::env::temp_dir().to_str().unwrap(),
+        "repoRoot",
+        serde_json::json!({}),
+    );
     assert_eq!(error.kind, ErrorKind::NotARepository);
 }
 
@@ -620,8 +691,7 @@ fn lists_the_local_configuration_with_git_resolution_semantics() {
         + "[advice]\n\tamWorkDir = false\n[SomeSection \"CamelCase\"]\n\tSomeKey = mixed case\n";
     std::fs::write(&local, text).unwrap();
 
-    let engine = open(&repo);
-    let config = config::config_list(&engine, config::ConfigLocation::Local).unwrap();
+    let config = config_list(&repo, true);
 
     assert_eq!(config["user.name"], "Test User");
     assert_eq!(config["branch.main.remote"], "origin");
@@ -642,17 +712,19 @@ fn lists_the_global_configuration_and_declines_includes() {
     std::fs::write(&global, "[user]\n\tname = Global Identity\n").unwrap();
     std::env::set_var("GIT_CONFIG_GLOBAL", &global);
 
-    let engine = open(&repo);
-    let config = config::config_list(&engine, config::ConfigLocation::Global).unwrap();
+    let config = config_list(&repo, false);
 
     std::env::remove_var("GIT_CONFIG_GLOBAL");
 
     assert_eq!(config["user.name"], "Global Identity");
 
-    // An include directive is where the engine stops and lets the command line answer.
+    // An include directive is where the engine stops and lets the command line answer. The warm
+    // handle predates the rewrite, so it is dropped first — what a host does when it knows the
+    // repository changed underneath it.
     std::fs::write(&global, "[include]\n\tpath = elsewhere\n").unwrap();
     std::env::set_var("GIT_CONFIG_GLOBAL", &global);
-    let error = config::config_list(&engine, config::ConfigLocation::Global).unwrap_err();
+    git_graph_core::protocol::close(repo.path().to_str().unwrap());
+    let error = common::ask_error(&repo, "configList", serde_json::json!({ "local": false }));
     std::env::remove_var("GIT_CONFIG_GLOBAL");
 
     assert_eq!(error.kind, ErrorKind::Unsupported);
@@ -700,7 +772,7 @@ fn aggregates_authors_like_shortlog() {
 
     let expected = repo.git(&["shortlog", "-e", "-s", "-n", "HEAD"]);
     let engine = open(&repo);
-    let authors = log::authors(&engine, Cancel::none()).unwrap();
+    let authors = engine.authors().unwrap();
 
     assert_eq!(
         authors,
@@ -726,13 +798,10 @@ fn reads_the_checked_out_branch_name() {
     repo.commit_file("a.txt", "1\n", "first");
 
     let engine = open(&repo);
-    assert_eq!(
-        config::current_branch_name(&engine).unwrap().as_deref(),
-        Some("main")
-    );
+    assert_eq!(engine.current_branch().unwrap().as_deref(), Some("main"));
 
     repo.git(&["checkout", "--quiet", "--detach", "HEAD"]);
-    assert_eq!(config::current_branch_name(&engine).unwrap(), None);
+    assert_eq!(engine.current_branch().unwrap(), None);
 }
 
 #[test]
@@ -742,10 +811,7 @@ fn an_unborn_head_still_names_its_branch() {
 
     let engine = open(&repo);
     // `git symbolic-ref --short HEAD` prints the branch even before the first commit exists.
-    assert_eq!(
-        config::current_branch_name(&engine).unwrap().as_deref(),
-        Some("main")
-    );
+    assert_eq!(engine.current_branch().unwrap().as_deref(), Some("main"));
 }
 
 #[test]
@@ -756,9 +822,5 @@ fn lists_remote_names_alphabetically() {
     repo.git(&["remote", "add", "zeta", "https://example.invalid/z.git"]);
     repo.git(&["remote", "add", "alpha", "https://example.invalid/a.git"]);
 
-    let engine = open(&repo);
-    assert_eq!(
-        config::remote_names(&engine).unwrap(),
-        vec!["alpha", "zeta"]
-    );
+    assert_eq!(remote_names(&repo), vec!["alpha", "zeta"]);
 }

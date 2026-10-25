@@ -38,7 +38,6 @@ const FILTERED_WALK_LIMIT: usize = 250_000;
 pub struct WalkOptions {
     /// The maximum number of commits to return.
     pub limit: usize,
-    pub ordering: CommitOrdering,
     /// Follow only the first parent of each merge.
     pub first_parent_only: bool,
     /// Keep only commits whose author name matches one of these (case-insensitive substring, as
@@ -51,16 +50,13 @@ pub struct WalkOptions {
     pub cancel: Cancel,
 }
 
-/// A completed walk: the window it read, and the page cut from that window.
+/// A completed walk: every commit it read, in walk order, after any filter re-parenting. This is
+/// the unit the incremental cache ([`crate::read::incremental`]) stores and continues from — a
+/// later load that only adds commits re-orders this list together with the new part, instead of
+/// reading it again — and the unit `read::graph` orders and cuts the page from.
 #[derive(Debug, Clone, Default)]
 pub struct WalkResult {
-    /// Every commit the walk read, in walk order, after any filter re-parenting. This is the
-    /// unit the incremental cache ([`crate::read::incremental`]) stores and continues from: a later
-    /// load that only adds commits re-orders this list together with the new part, instead of
-    /// reading it again.
     pub window: Vec<CommitRecord>,
-    /// The page: `window` topologically re-ordered and cut to `options.limit`.
-    pub ordered: Vec<CommitRecord>,
 }
 
 /// How many commits a plain (unfiltered) walk of `limit` reads, so that the topological
@@ -71,12 +67,8 @@ pub(crate) fn window_size(limit: usize) -> usize {
     (limit * WINDOW_FACTOR).max(WINDOW_MINIMUM)
 }
 
-/// Walk from `tips` and return the page of commits the view should render.
-pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec<CommitRecord>> {
-    Ok(walk_windowed(repo, tips, options)?.ordered)
-}
-
-/// [`walk`], also answering the window the page was cut from.
+/// Walk from `tips`, answering the page of commits the view should render together with the
+/// window the page was cut from (the incremental cache continues from that window).
 pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<WalkResult> {
     if options.limit == 0 || tips.is_empty() {
         return Ok(WalkResult::default());
@@ -194,13 +186,9 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
         rewrite_parents(&mut records, &visited_parents);
     }
 
-    // The filtered page is ordered like any other, over its re-parented graph: the walk read it by
-    // commit time alone, which is neither `--topo-order` nor topologically constrained.
-    let ordered = order_records(&records, options.ordering, options.limit);
-    Ok(WalkResult {
-        window: records,
-        ordered,
-    })
+    // The page itself — the window ordered and cut — is derived by `read::graph`, which owns the
+    // page assembly for every walk (full and incremental alike).
+    Ok(WalkResult { window: records })
 }
 
 /// Read the fields the graph renders out of a commit object.

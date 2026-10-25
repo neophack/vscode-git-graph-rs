@@ -5,15 +5,12 @@
 #[macro_use]
 mod common;
 
-use git_graph_core::cancel::Cancel;
-
-use git_graph_core::read::stats;
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::Engine;
 
 use common::TestRepo;
 
-fn open(repo: &TestRepo) -> Repo {
-    Repo::discover(repo.path()).expect("could not open the fixture repository")
+fn open(repo: &TestRepo) -> Engine {
+    Engine::open(repo.path()).expect("could not open the fixture repository")
 }
 
 #[test]
@@ -39,7 +36,7 @@ fn counts_commits_per_author_like_git_shortlog() {
     ]);
 
     let engine = open(&repo);
-    let stats = stats::author_stats(&engine, Cancel::none()).expect("author_stats failed");
+    let stats = engine.author_stats().expect("author_stats failed");
 
     let bob = stats
         .iter()
@@ -71,7 +68,7 @@ fn excludes_merge_commits_from_the_author_count() {
     ]);
 
     let engine = open(&repo);
-    let stats = stats::author_stats(&engine, Cancel::none()).expect("author_stats failed");
+    let stats = engine.author_stats().expect("author_stats failed");
     // 4 real commits (base, feature work, main work) + the merge commit itself, which must be
     // excluded: --no-merges means the total across all authors is 3, not 4.
     let total: usize = stats.iter().map(|s| s.commits).sum();
@@ -87,16 +84,15 @@ fn walks_refs_stash_matching_real_all_ref_coverage() {
     // Verified directly against `git log --all --no-merges` before writing this test: the
     // "On <branch>: ..." tip is itself EXCLUDED by --no-merges (it has 2 parents), while the
     // "index on ..." commit survives (1 parent) - so of the two commits `refs/stash` newly makes
-    // reachable, exactly one is counted. This pins that `stats::author_stats` walks refs/stash at
-    // all (log::all_tips alone does not enumerate it - only stats::author_stats's extra merge-in
-    // does), not that stashing conceptually "adds one commit".
+    // reachable, exactly one is counted. This pins that the statistics walk walks refs/stash at
+    // all, not that stashing conceptually "adds one commit".
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "1", "base");
     repo.write("a.txt", "changed");
     repo.git(&["stash", "push", "--quiet", "-m", "the stash"]);
 
     let engine = open(&repo);
-    let stats = stats::author_stats(&engine, Cancel::none()).expect("author_stats failed");
+    let stats = engine.author_stats().expect("author_stats failed");
     let total: usize = stats.iter().map(|s| s.commits).sum();
     assert_eq!(
         total, 2,
@@ -121,7 +117,7 @@ fn bins_activity_by_the_committed_weekday_and_hour_digits_not_the_true_utc_insta
     ]);
 
     let engine = open(&repo);
-    let cells = stats::activity_heatmap(&engine, Cancel::none()).expect("activity_heatmap failed");
+    let cells = engine.activity().expect("activity_heatmap failed");
 
     let cell = cells
         .iter()
@@ -146,7 +142,7 @@ fn aggregates_two_commits_in_the_same_cell() {
     }
 
     let engine = open(&repo);
-    let cells = stats::activity_heatmap(&engine, Cancel::none()).expect("activity_heatmap failed");
+    let cells = engine.activity().expect("activity_heatmap failed");
     let monday_ten = cells
         .iter()
         .find(|c| c.weekday == 1 && c.hour == 10)
@@ -162,6 +158,6 @@ fn never_emits_a_zero_count_cell() {
     repo.commit_file("b.txt", "2", "second");
 
     let engine = open(&repo);
-    let cells = stats::activity_heatmap(&engine, Cancel::none()).expect("activity_heatmap failed");
+    let cells = engine.activity().expect("activity_heatmap failed");
     assert!(cells.iter().all(|c| c.count > 0));
 }

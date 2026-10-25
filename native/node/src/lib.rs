@@ -22,8 +22,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use git_graph_core::repository::RepoManager;
-use git_graph_core::{cancel, protocol};
+use git_graph_core::protocol;
 
 /// Answer one protocol request against the repository containing `repo` (any path inside it).
 ///
@@ -146,19 +145,19 @@ pub fn open(path: String) -> AsyncTask<RequestTask> {
 /// Drop a repository handle, releasing its object cache and open pack files.
 #[napi]
 pub fn close(path: String) {
-    RepoManager::global().close(&path);
+    protocol::close(&path);
 }
 
 /// Drop every repository handle.
 #[napi]
 pub fn close_all() {
-    RepoManager::global().close_all();
+    protocol::close_all();
 }
 
 /// How many repositories are currently open. Exposed for the tests and for diagnostics.
 #[napi]
 pub fn open_count() -> u32 {
-    RepoManager::global().open_count() as u32
+    protocol::open_count() as u32
 }
 
 /// The engine's version: the host compares it with its own to detect a stale binary.
@@ -175,5 +174,5 @@ pub fn engine_version() -> String {
 /// unwanted work.
 #[napi]
 pub fn cancel(request_id: u32) {
-    cancel::Registry::global().cancel(request_id);
+    protocol::cancel(request_id);
 }

@@ -4,25 +4,49 @@
 //! with the `git` command line: working-tree states gix classifies differently, commit text gix does
 //! not re-encode or fold, shallow boundaries, rename and binary rules, and the objects a tag can
 //! name. The expected answer always comes from running git on the same fixture.
+//!
+//! Every engine call goes through the public surface — `Engine` and the request protocol — so
+//! these tests exercise exactly what a host receives.
 
 #[macro_use]
 mod common;
-
-use git_graph_core::cancel::Cancel;
 
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use git_graph_core::model::{GitFileStatus, LogOptions};
-use git_graph_core::read::{blob, details, diff, graph, log, stats, status};
-use git_graph_core::repository::Repo;
+use git_graph_core::engine::Engine;
+use git_graph_core::model::{GitCommitData, GitFileStatus, GitLineCounts, LogOptions};
 use git_graph_core::ErrorKind;
 
 use common::TestRepo;
 
-fn open(repo: &TestRepo) -> Repo {
-    Repo::discover(repo.path()).expect("could not open the fixture repository")
+fn open(repo: &TestRepo) -> Engine {
+    Engine::open(repo.path()).expect("could not open the fixture repository")
+}
+
+/// The load options that walk every ref, as `git log --all` does.
+fn all_refs(max_commits: u32) -> LogOptions {
+    LogOptions {
+        max_commits,
+        show_tags: true,
+        show_remote_branches: true,
+        show_commits_only_referenced_by_tags: true,
+        ..Default::default()
+    }
+}
+
+/// The commits of one full load, in page order.
+fn load(repo: &TestRepo, options: &LogOptions) -> GitCommitData {
+    common::ask(repo, "loadCommits", options)
+}
+
+/// The uncommitted file changes, staged and unstaged together — what the
+/// "Uncommitted Changes" row's details list.
+fn uncommitted_changes(repo: &TestRepo) -> Vec<git_graph_core::model::GitFileChange> {
+    let details: git_graph_core::model::GitCommitDetails =
+        common::ask(repo, "uncommittedDetails", serde_json::json!({}));
+    details.file_changes
 }
 
 /// How many lines `git status --porcelain` prints — what "Uncommitted Changes (N)" counts.
@@ -31,6 +55,21 @@ fn porcelain_lines(repo: &TestRepo) -> usize {
         .lines()
         .filter(|line| !line.is_empty())
         .count()
+}
+
+/// The paths the working tree scan reports as deleted (either half) and as untracked.
+fn deleted_and_untracked(engine: &Engine) -> (Vec<String>, Vec<String>) {
+    let mut deleted = Vec::new();
+    let mut untracked = Vec::new();
+    for change in engine.status().unwrap() {
+        if change.staged == Some("deleted") || change.unstaged == Some("deleted") {
+            deleted.push(change.path.clone());
+        }
+        if change.untracked {
+            untracked.push(change.path);
+        }
+    }
+    (deleted, untracked)
 }
 
 /// Run git with bytes on stdin, returning stdout — for objects `git` must store verbatim.
@@ -50,6 +89,23 @@ fn git_with_input(dir: &Path, args: &[&str], input: &[u8]) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// The `+N/-M` counts of paths between a revision and its first parent (or an explicit `from`).
+fn line_counts(
+    repo: &TestRepo,
+    from: Option<&str>,
+    to: &str,
+    paths: &[String],
+) -> std::collections::BTreeMap<String, GitLineCounts> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Params<'a> {
+        from: Option<&'a str>,
+        to: &'a str,
+        paths: &'a [String],
+    }
+    common::ask(repo, "lineCounts", Params { from, to, paths })
+}
+
 /* ---------- Working-tree status ---------- */
 
 #[test]
@@ -60,17 +116,15 @@ fn an_intent_to_add_file_is_an_uncommitted_addition() {
     repo.write("new.txt", "new\n");
     repo.git(&["add", "-N", "new.txt"]);
 
-    let engine = open(&repo);
+    let count: usize = common::ask(
+        &repo,
+        "countUncommittedChanges",
+        serde_json::json!({ "includeUntracked": true }),
+    );
     // git: ` A new.txt`.
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        porcelain_lines(&repo)
-    );
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        1
-    );
-    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
+    assert_eq!(count, porcelain_lines(&repo));
+    assert_eq!(count, 1);
+    let changes = uncommitted_changes(&repo);
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].new_file_path, "new.txt");
     assert_eq!(changes[0].kind, GitFileStatus::Added);
@@ -83,18 +137,15 @@ fn a_file_removed_from_the_index_but_kept_on_disk_is_two_changes() {
     repo.commit_file("a.txt", "1\n", "one");
     repo.git(&["rm", "--quiet", "--cached", "a.txt"]);
 
-    let engine = open(&repo);
+    let count: usize = common::ask(
+        &repo,
+        "countUncommittedChanges",
+        serde_json::json!({ "includeUntracked": true }),
+    );
     // git: `D  a.txt` and `?? a.txt`.
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        porcelain_lines(&repo)
-    );
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        2
-    );
-    let kinds: Vec<GitFileStatus> = status::uncommitted_changes(&engine, Cancel::none())
-        .unwrap()
+    assert_eq!(count, porcelain_lines(&repo));
+    assert_eq!(count, 2);
+    let kinds: Vec<GitFileStatus> = uncommitted_changes(&repo)
         .into_iter()
         .map(|change| change.kind)
         .collect();
@@ -102,9 +153,10 @@ fn a_file_removed_from_the_index_but_kept_on_disk_is_two_changes() {
         kinds,
         vec![GitFileStatus::Deleted, GitFileStatus::Untracked]
     );
-    let files = status::status_files(&engine, true, Cancel::none()).unwrap();
-    assert_eq!(files.deleted, vec!["a.txt"]);
-    assert_eq!(files.untracked, vec!["a.txt"]);
+    let engine = open(&repo);
+    let (deleted, untracked) = deleted_and_untracked(&engine);
+    assert_eq!(deleted, vec!["a.txt"]);
+    assert_eq!(untracked, vec!["a.txt"]);
 }
 
 #[test]
@@ -115,15 +167,16 @@ fn status_renames_off_counts_both_halves_of_a_staged_rename() {
     repo.git(&["config", "status.renames", "false"]);
     repo.git(&["mv", "a.txt", "b.txt"]);
 
-    let engine = open(&repo);
+    let count: usize = common::ask(
+        &repo,
+        "countUncommittedChanges",
+        serde_json::json!({ "includeUntracked": true }),
+    );
     // git: `D  a.txt` and `A  b.txt`, not one `R` line.
     assert_eq!(porcelain_lines(&repo), 2);
-    assert_eq!(
-        status::count_changes(&engine, true, Cancel::none()).unwrap(),
-        2
-    );
+    assert_eq!(count, 2);
     // The details still pair the rename, as the CLI backend's `git diff --find-renames` does.
-    let changes = status::uncommitted_changes(&engine, Cancel::none()).unwrap();
+    let changes = uncommitted_changes(&repo);
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].kind, GitFileStatus::Renamed);
     assert_eq!(changes[0].old_file_path, "a.txt");
@@ -142,19 +195,15 @@ fn a_nested_repository_is_listed_as_a_directory() {
         .unwrap();
     repo.write("inner/f.txt", "f");
 
-    let engine = open(&repo);
     let expected: Vec<String> = repo
         .git(&["status", "--porcelain", "--untracked-files=all"])
         .lines()
         .map(|line| line[3..].to_string())
         .collect();
     assert_eq!(expected, vec!["inner/"]);
-    assert_eq!(
-        status::status_files(&engine, true, Cancel::none())
-            .unwrap()
-            .untracked,
-        expected
-    );
+    let engine = open(&repo);
+    let (_, untracked) = deleted_and_untracked(&engine);
+    assert_eq!(untracked, expected);
 }
 
 #[test]
@@ -166,7 +215,7 @@ fn comparing_with_the_working_tree_keeps_a_file_added_since_the_revision_an_addi
     repo.write("new.txt", "edited since\n");
 
     let engine = open(&repo);
-    let changes = diff::diff_revisions(&engine, &base, "").unwrap();
+    let changes = engine.diff(&base, "").unwrap();
     // `git diff --name-status <base>`: `A new.txt`, however it has been edited since.
     assert_eq!(
         repo.git(&["diff", "--name-status", &base]).trim(),
@@ -192,20 +241,10 @@ fn a_subject_after_leading_blank_lines_is_read_as_git_reads_it() {
         "\n\n  leading blanks  \n\nbody",
     ]);
 
-    let engine = open(&repo);
-    let tips = log::all_tips(&engine, true, true).unwrap();
-    let records = log::walk(
-        &engine,
-        &tips,
-        &log::WalkOptions {
-            limit: 10,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    let data = load(&repo, &all_refs(10));
     let expected = repo.git(&["log", "-1", "--format=%s"]);
-    assert_eq!(records[0].message, expected.trim_end_matches('\n'));
-    assert_eq!(records[0].message, "  leading blanks");
+    assert_eq!(data.commits[0].message, expected.trim_end_matches('\n'));
+    assert_eq!(data.commits[0].message, "  leading blanks");
 }
 
 #[test]
@@ -232,15 +271,15 @@ fn a_commit_in_a_legacy_encoding_is_decoded_as_git_log_decodes_it() {
     repo.update_ref("refs/heads/main", &hash);
 
     let engine = open(&repo);
-    let details = details::commit_details(&engine, &hash).unwrap();
+    let details = engine.commit(&hash).unwrap();
     assert_eq!(
         details.author,
         repo.git(&["log", "-1", "--format=%an"]).trim()
     );
     assert_eq!(details.author, "José");
     assert_eq!(details.body, "café");
-    assert_eq!(details::commit_subject(&engine, &hash).unwrap(), "café");
-    let matches = log::search_history(&engine, "café", Cancel::none()).unwrap();
+    assert_eq!(engine.commit_subject(&hash).unwrap(), "café");
+    let matches = engine.search_history("café").unwrap();
     assert_eq!(matches.len(), 1, "--grep matches the re-encoded message");
 }
 
@@ -280,18 +319,10 @@ fn a_shallow_boundary_commit_has_no_parents_and_opens_its_details() {
     };
     let boundary = git_in_clone(&["rev-parse", "HEAD~1"]).trim().to_string();
 
-    let engine = Repo::discover(&clone_path).unwrap();
-    let tips = log::all_tips(&engine, true, true).unwrap();
-    let records = log::walk(
-        &engine,
-        &tips,
-        &log::WalkOptions {
-            limit: 10,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let record = records
+    let data: GitCommitData =
+        common::ask_at(clone_path.to_str().unwrap(), "loadCommits", all_refs(10));
+    let record = data
+        .commits
         .iter()
         .find(|record| record.hash == boundary)
         .unwrap();
@@ -304,7 +335,11 @@ fn a_shallow_boundary_commit_has_no_parents_and_opens_its_details() {
 
     // Its details diff against the empty tree, as `git show` does, instead of failing on the
     // parent that was never fetched.
-    let details = details::commit_details(&engine, &boundary).unwrap();
+    let details: git_graph_core::model::GitCommitDetails = common::ask_at(
+        clone_path.to_str().unwrap(),
+        "commitDetails",
+        serde_json::json!({ "hash": &boundary }),
+    );
     assert!(details.parents.is_empty());
     assert_eq!(details.file_changes.len(), 1);
     assert_eq!(details.file_changes[0].kind, GitFileStatus::Added);
@@ -334,8 +369,7 @@ fn line_counts_see_a_last_line_gaining_its_newline() {
     repo.commit_file("noeol.txt", "a\nb", "without a final newline");
     let commit = repo.commit_file("noeol.txt", "a\nb\n", "with one");
 
-    let engine = open(&repo);
-    let counts = diff::line_counts(&engine, None, &commit, &["noeol.txt".to_string()]).unwrap();
+    let counts = line_counts(&repo, None, &commit, &["noeol.txt".to_string()]);
     // git: `1 1 noeol.txt` — `-b` / `+b` with "\ No newline at end of file".
     assert_eq!(
         numstat(&repo, &commit),
@@ -365,12 +399,12 @@ fn an_empty_file_is_renamed_as_git_renames_it() {
         .trim(),
         "R100\tempty.txt\tmoved.txt"
     );
-    let changes = diff::diff_commit(&engine, &commit).unwrap();
+    let changes = engine.commit_files(&commit).unwrap();
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].kind, GitFileStatus::Renamed);
     assert_eq!(changes[0].old_file_path, "empty.txt");
     // A pure rename has no content diff: git prints the header alone.
-    let file_diff = blob::commit_file_diff(&engine, &commit, "moved.txt").unwrap();
+    let file_diff = engine.file_diff(&commit, "moved.txt").unwrap();
     assert!(!file_diff.contains("--- "), "{file_diff}");
 }
 
@@ -389,14 +423,14 @@ fn a_submodule_change_counts_and_diffs_as_its_subproject_line() {
     let commit = repo.head();
 
     let engine = open(&repo);
-    let counts = diff::line_counts(&engine, None, &commit, &["vendored".to_string()]).unwrap();
+    let counts = line_counts(&repo, None, &commit, &["vendored".to_string()]);
     assert_eq!(
         numstat(&repo, &commit),
         vec![("vendored".to_string(), Some(1), Some(0))]
     );
     assert_eq!(counts["vendored"].additions, Some(1));
     assert_eq!(counts["vendored"].deletions, Some(0));
-    let file_diff = blob::commit_file_diff(&engine, &commit, "vendored").unwrap();
+    let file_diff = engine.file_diff(&commit, "vendored").unwrap();
     assert!(file_diff.contains("new file mode 160000\n"), "{file_diff}");
     assert!(
         file_diff.contains(&format!("+Subproject commit {first}\n")),
@@ -430,12 +464,12 @@ fn the_file_diff_honours_gitattributes_and_mode_changes() {
     let commit = repo.commit("two");
 
     let engine = open(&repo);
-    let dat = blob::commit_file_diff(&engine, &commit, "a.dat").unwrap();
+    let dat = engine.file_diff(&commit, "a.dat").unwrap();
     assert!(
         dat.contains("Binary files a/a.dat and b/a.dat differ"),
         "`binary` in .gitattributes makes git print no hunks: {dat}"
     );
-    let script = blob::commit_file_diff(&engine, &commit, "run.sh").unwrap();
+    let script = engine.file_diff(&commit, "run.sh").unwrap();
     assert!(
         script.contains("old mode 100644\nnew mode 100755\n"),
         "{script}"
@@ -462,15 +496,12 @@ fn a_tag_of_a_blob_or_a_tree_does_not_break_history_reads() {
     let engine = open(&repo);
     // `git log --all` passes over the tags that name no commit.
     let expected = repo.git(&["log", "--all", "--format=%H"]);
-    let matches = log::search_history(&engine, "one", Cancel::none()).unwrap();
+    let matches = engine.search_history("one").unwrap();
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].hash, expected.trim());
-    assert_eq!(
-        stats::author_stats(&engine, Cancel::none()).unwrap()[0].commits,
-        1
-    );
+    assert_eq!(engine.author_stats().unwrap()[0].commits, 1);
 
-    let tag = details::tag_details(&engine, "lighttree").unwrap();
+    let tag = engine.tag("lighttree").unwrap();
     assert_eq!(tag.hash, tree);
     assert_eq!(tag.message, "");
 }
@@ -493,7 +524,7 @@ fn author_statistics_apply_the_mailmap_as_shortlog_does() {
         shortlog.contains("Canonical Name <test@example.com>"),
         "{shortlog}"
     );
-    let stats = stats::author_stats(&engine, Cancel::none()).unwrap();
+    let stats = engine.author_stats().unwrap();
     assert_eq!(stats[0].name, "Canonical Name");
 }
 
@@ -508,29 +539,24 @@ fn replacement_objects_hand_the_graph_to_git() {
     repo.commit_file("a.txt", "3", "three");
     repo.git(&["replace", "--graft", &two]);
 
-    let engine = open(&repo);
     // git now shows `two` as a root; gix would still show its original parent.
     assert_eq!(repo.git(&["log", "--format=%H"]).lines().count(), 2);
     let options = LogOptions {
         max_commits: 10,
         ..Default::default()
     };
-    let error = graph::load_commits(&engine, &options, Cancel::none()).unwrap_err();
+    let error = common::ask_error(&repo, "loadCommits", &options);
     assert_eq!(error.kind, ErrorKind::Unsupported);
-    assert_eq!(
-        details::commit_details(&engine, &two).unwrap_err().kind,
-        ErrorKind::Unsupported
-    );
+    let error = open(&repo).commit(&two).unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unsupported);
 
     // `core.useReplaceRefs=false` makes git read the original objects, and gix 0.87 then applies
     // the replacements (it inverts the setting), so the engine still hands the load to git.
+    // The warm handle was opened under the old setting, so it is dropped first — what a host
+    // does when it knows the repository changed underneath it.
+    git_graph_core::protocol::close(repo.path().to_str().unwrap());
     repo.git(&["config", "core.useReplaceRefs", "false"]);
     assert_eq!(repo.git(&["log", "--format=%H"]).lines().count(), 3);
-    let engine = open(&repo);
-    assert_eq!(
-        graph::load_commits(&engine, &options, Cancel::none())
-            .unwrap_err()
-            .kind,
-        ErrorKind::Unsupported
-    );
+    let error = common::ask_error(&repo, "loadCommits", &options);
+    assert_eq!(error.kind, ErrorKind::Unsupported);
 }

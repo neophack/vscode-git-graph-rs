@@ -34,7 +34,7 @@ pub struct GitRefData {
 
 /// One pass over the repository's refs, serving both the `loadRepoInfo` and `loadCommits`
 /// requests of a single view load.
-#[derive(Debug, Clone, Default, Serialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RefSnapshot {
     pub ref_data: GitRefData,
@@ -57,7 +57,7 @@ pub struct RefReadOptions {
 
 /// The wire form of the ref-reading options, plus the stash flag `loadRepoInfo` also needs.
 /// The defaults are the ones a view load uses, so an omitted field means "the usual".
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", default)]
 pub struct RefOptions {
     pub show_remote_branches: bool,
@@ -92,7 +92,7 @@ impl RefOptions {
 
 /// The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
 /// the caller already holds on screen — plus which refs to annotate them with.
-#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotateParams {
     /// The commits to re-annotate, newest first as the view shows them.
@@ -105,7 +105,7 @@ pub struct AnnotateParams {
 
 /// The refs of one commit, as a refs-only refresh re-annotates it: exactly the labels a full
 /// `loadCommits` of the same options would attach to that commit, in the same order.
-#[derive(Debug, Clone, Default, Serialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitRefs {
     pub hash: String,
@@ -116,7 +116,7 @@ pub struct GitCommitRefs {
 
 /// The answer of the `annotate` request: a freshly read HEAD together with the re-annotated
 /// commits, in the order they were given.
-#[derive(Debug, Clone, Default, Serialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotateResult {
     /// The commit HEAD resolves to now — the page's `head` field, refreshed.

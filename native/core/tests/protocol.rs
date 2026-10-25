@@ -103,6 +103,42 @@ fn lifecycle_meta_and_errors_answer_in_band() {
 }
 
 #[test]
+fn repeated_opens_of_one_repository_share_one_handle() {
+    let _registry = REGISTRY_LOCK.lock().unwrap();
+    require_git!();
+    let mut repo = TestRepo::new();
+    let _ = repo.commit_file("a.txt", "one\n", "first commit");
+    let root = repo.path().to_str().unwrap().to_string();
+
+    // The whole point of the warm handles: a second request for the same root reuses the cached
+    // handle instead of re-reading the pack indexes, and the Rust-side lifecycle functions (the
+    // ones the Node binding calls) see the same count the protocol's methods answer.
+    assert_eq!(protocol::open_count(), 0);
+    assert_eq!(ask(&root, "open", json!({})), json!(root));
+    let _again = ask(&root, "open", json!({}));
+    assert_eq!(ask(&root, "openCount", json!({})), json!(1));
+    assert_eq!(
+        protocol::open_count(),
+        1,
+        "the second open reuses the warm handle"
+    );
+
+    protocol::close(&root);
+    assert_eq!(protocol::open_count(), 0);
+    assert_eq!(ask(&root, "openCount", json!({})), json!(0));
+
+    // The out-of-band cancellation entry point: cancelling an id nobody registered costs nothing
+    // and leaves the registry able to answer requests.
+    protocol::cancel(u32::MAX);
+    assert_eq!(
+        ask(&root, "engineVersion", json!({})),
+        json!(git_graph_core::VERSION)
+    );
+
+    protocol::close_all();
+}
+
+#[test]
 fn the_table_covers_the_host_workflow() {
     let _registry = REGISTRY_LOCK.lock().unwrap();
     require_git!();

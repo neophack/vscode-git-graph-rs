@@ -9,23 +9,24 @@
 //! refresh really is answered from the cache, that history rewrites really do fall back, that
 //! `annotate` re-labels exactly what a full load would, and that a commit-graph file changes
 //! nothing.
+//!
+//! The pages themselves are loaded through the `loadCommits`/`loadView`/`annotate` requests the
+//! host sends. The one piece of the engine these tests reach for beyond the public surface is
+//! the traversal cache itself (`git_graph_core::IncrementalStore`): forcing a full traversal
+//! and observing cache hits is exactly what the public API cannot express, by design.
 
 #[macro_use]
 mod common;
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
 use std::process::Command;
 
 use common::TestRepo;
-use git_graph_core::cancel::Cancel;
 use git_graph_core::model::{
-    AnnotateParams, CommitOrdering, LogOptions, RefOptions, RefReadOptions,
+    AnnotateParams, AnnotateResult, CommitOrdering, GitCommitData, GitViewData, LogOptions,
+    RefOptions,
 };
-use git_graph_core::protocol;
-use git_graph_core::read::graph;
-use git_graph_core::read::incremental;
-use git_graph_core::repository::Repo;
+use git_graph_core::IncrementalStore;
 use serde::Serialize;
 
 /* ---------- A seeded generator, so every case is reproducible ---------- */
@@ -285,16 +286,20 @@ fn to_json<T: Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).unwrap()
 }
 
+/// One page of the graph, through the request the view sends.
+fn load(repo: &TestRepo, options: &LogOptions) -> GitCommitData {
+    common::ask(repo, "loadCommits", options)
+}
+
 /// The property: served from the cache (the loads a host refresh issues) the page must equal
 /// the page of a full traversal (the cache invalidated first), under both orderings.
-fn assert_matches_full(repo_path: &Path, date: &LogOptions, topo: &LogOptions, context: &str) {
-    let engine = Repo::discover(repo_path).unwrap();
-    let store = incremental::Store::global();
-    let incremental_date = graph::load_commits(&engine, date, Cancel::none()).unwrap();
-    let incremental_topo = graph::load_commits(&engine, topo, Cancel::none()).unwrap();
-    store.invalidate(engine.root());
-    let full_date = graph::load_commits(&engine, date, Cancel::none()).unwrap();
-    let full_topo = graph::load_commits(&engine, topo, Cancel::none()).unwrap();
+fn assert_matches_full(repo: &TestRepo, date: &LogOptions, topo: &LogOptions, context: &str) {
+    let store = IncrementalStore::global();
+    let incremental_date = load(repo, date);
+    let incremental_topo = load(repo, topo);
+    store.invalidate(repo.path());
+    let full_date = load(repo, date);
+    let full_topo = load(repo, topo);
     assert_eq!(
         to_json(&incremental_date),
         to_json(&full_date),
@@ -323,7 +328,7 @@ fn run_case(seed: u64) -> bool {
     let max_commits: u32 = [3, 7, 12, 40, 300][driver.rng.below(5) as usize];
     let date = view_options(max_commits, CommitOrdering::Date);
     let topo = view_options(max_commits, CommitOrdering::Topo);
-    let store = incremental::Store::global();
+    let store = IncrementalStore::global();
 
     let steps = 6 + driver.rng.below(7);
     let mut any_hit = false;
@@ -331,7 +336,7 @@ fn run_case(seed: u64) -> bool {
         let op = driver.op();
         let (hits_before, _) = store.stats();
         assert_matches_full(
-            driver.repo.path(),
+            &driver.repo,
             &date,
             &topo,
             &format!("seed {seed}, step {step} ({op})"),
@@ -359,14 +364,14 @@ fn run_batch(batch: u64) {
 }
 
 macro_rules! property_batch {
-	($($name:ident = $batch:expr;)*) => {
+    ($($name:ident = $batch:expr;)*) => {
 		$(
 			#[test]
 			fn $name() {
 				run_batch($batch);
 			}
 		)*
-	};
+    };
 }
 
 property_batch! {
@@ -390,14 +395,13 @@ fn a_refresh_after_a_commit_is_answered_from_the_cache() {
     let mut repo = TestRepo::new();
     repo.commit_file("a.txt", "1\n", "one");
     repo.commit_file("a.txt", "2\n", "two");
-    let engine = Repo::discover(repo.path()).unwrap();
     let options = view_options(300, CommitOrdering::Date);
 
-    let first = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
-    let store = incremental::Store::global();
+    let first = load(&repo, &options);
+    let store = IncrementalStore::global();
     let hits_before = store.stats().0;
     repo.commit_file("a.txt", "3\n", "three");
-    let second = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let second = load(&repo, &options);
     let hits_after = store.stats().0;
     assert!(
         hits_after > hits_before,
@@ -411,8 +415,8 @@ fn a_refresh_after_a_commit_is_answered_from_the_cache() {
     assert_eq!(second.head.as_deref(), Some(repo.head().as_str()));
 
     // And it is exactly what a full traversal answers.
-    store.invalidate(engine.root());
-    let full = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    store.invalidate(repo.path());
+    let full = load(&repo, &options);
     assert_eq!(to_json(&second), to_json(&full));
 }
 
@@ -423,14 +427,13 @@ fn a_reset_falls_back_to_a_full_traversal() {
     repo.commit_file("a.txt", "1\n", "one");
     repo.commit_file("a.txt", "2\n", "two");
     let stranded = repo.head();
-    let engine = Repo::discover(repo.path()).unwrap();
     let options = view_options(300, CommitOrdering::Topo);
-    graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    load(&repo, &options);
 
     repo.git(&["reset", "--hard", "HEAD~1"]);
-    let store = incremental::Store::global();
+    let store = IncrementalStore::global();
     let fallbacks_before = store.stats().1;
-    let after = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let after = load(&repo, &options);
     let fallbacks_after = store.stats().1;
     assert!(
         fallbacks_after > fallbacks_before,
@@ -442,8 +445,8 @@ fn a_reset_falls_back_to_a_full_traversal() {
     assert_eq!(after.commits[0].hash, repo.head());
     assert!(after.commits.iter().all(|commit| commit.hash != stranded));
 
-    store.invalidate(engine.root());
-    let full = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    store.invalidate(repo.path());
+    let full = load(&repo, &options);
     assert_eq!(to_json(&after), to_json(&full));
 }
 
@@ -460,12 +463,12 @@ fn annotate_re_labels_a_page_exactly_as_a_full_load() {
     repo.add_fake_remote("origin", "feature", &second);
     repo.git(&["tag", "-a", "v2", "-m", "second", &second]);
 
-    let engine = Repo::discover(repo.path()).unwrap();
     // The remotes the engine itself reads — `annotate` resolves remote ownership from the
     // repository, exactly as `Engine::graph` does; the comparison load is given the same list.
+    let remotes: Vec<String> = common::ask(&repo, "remoteNames", serde_json::json!({}));
     let mut options = view_options(300, CommitOrdering::Date);
-    options.remotes = engine.remote_names();
-    let page = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    options.remotes = remotes;
+    let page = load(&repo, &options);
     let hashes: Vec<String> = page
         .commits
         .iter()
@@ -475,18 +478,18 @@ fn annotate_re_labels_a_page_exactly_as_a_full_load() {
     // A refs-only operation: the commits stay, the labels move.
     repo.git(&["branch", "moved", &third]);
     repo.git(&["update-ref", "refs/remotes/origin/feature", &third]);
-    let annotated = graph::annotate(
-        &engine,
+    let annotated: AnnotateResult = common::ask(
+        &repo,
+        "annotate",
         &AnnotateParams {
             commits: hashes,
             refs: RefOptions::default(),
             show_tags: true,
         },
-    )
-    .unwrap();
+    );
 
     assert_eq!(annotated.head.as_deref(), Some(third.as_str()));
-    let fresh = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let fresh = load(&repo, &options);
     // Every label field a full load attaches, in the same order — compared label by label so a
     // failure names the commit that differs.
     assert_eq!(annotated.commits.len(), fresh.commits.len());
@@ -542,11 +545,11 @@ fn the_protocol_answers_refs_and_annotate() {
     let first = repo.commit_file("a.txt", "1\n", "one");
     repo.git(&["tag", "v1"]);
     let second = repo.commit_file("a.txt", "2\n", "two");
-    let root = repo.path().to_str().unwrap().to_string();
+    let root = repo.path().to_str().unwrap();
 
     // `refs` answers the same ref scan `loadRepoInfo` and `loadCommits` build on: the raw ref
     // data, plus the branch list, the checked-out branch and the tag names.
-    let answer = ask(&root, "refs", serde_json::json!({}));
+    let answer = ask(root, "refs", serde_json::json!({}));
     assert_eq!(answer["branchHead"], serde_json::json!("main"));
     assert_eq!(answer["branches"], serde_json::json!(["main"]));
     assert_eq!(answer["tagNames"], serde_json::json!(["v1"]));
@@ -554,7 +557,7 @@ fn the_protocol_answers_refs_and_annotate() {
 
     // `annotate` answers the labels of the page the host already holds.
     let answer = ask(
-        &root,
+        root,
         "annotate",
         serde_json::json!({ "commits": [&second, &first], "refs": {}, "showTags": true }),
     );
@@ -578,19 +581,17 @@ fn load_view_answers_repo_info_and_commits_in_one_call() {
     repo.commit_file("a.txt", "2\n", "feature");
     repo.git(&["checkout", "--quiet", "main"]);
 
-    let engine = Repo::discover(repo.path()).unwrap();
     let options = view_options(300, CommitOrdering::Date);
-    let view = graph::load_view(&engine, &options, Cancel::none()).unwrap();
-    let info = graph::repo_info(
-        &engine,
-        &RefReadOptions {
-            show_remote_branches: true,
-            ..Default::default()
-        },
-        true,
-    )
-    .unwrap();
-    let page = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let view: GitViewData = common::ask(&repo, "loadView", &options);
+    // The same ref-read options the view's own `loadRepoInfo` sends (remote branches shown,
+    // remote HEADs hidden, stashes included).
+    let info_options = RefOptions {
+        show_remote_heads: false,
+        ..Default::default()
+    };
+    let info: git_graph_core::model::GitRepoInfo =
+        common::ask(&repo, "loadRepoInfo", &info_options);
+    let page = load(&repo, &options);
     assert_eq!(to_json(&view.info), to_json(&info));
     assert_eq!(to_json(&view.commits), to_json(&page));
 }
@@ -601,13 +602,12 @@ fn a_commit_graph_file_leaves_the_answers_unchanged() {
     let mut repo = TestRepo::new();
     repo.commit_linear_history(50);
     repo.git(&["reset", "--hard", "HEAD"]);
-    let engine = Repo::discover(repo.path()).unwrap();
     let options = view_options(20, CommitOrdering::Topo);
 
-    let before = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let before = load(&repo, &options);
     repo.git(&["commit-graph", "write", "--reachable"]);
-    incremental::Store::global().invalidate(engine.root());
-    let after = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    IncrementalStore::global().invalidate(repo.path());
+    let after = load(&repo, &options);
     assert_eq!(
         to_json(&before),
         to_json(&after),
@@ -616,9 +616,9 @@ fn a_commit_graph_file_leaves_the_answers_unchanged() {
 
     // The incremental path keeps working on top of a commit-graph file.
     repo.commit_file("a.txt", "tail\n", "one more");
-    let refreshed = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
-    incremental::Store::global().invalidate(engine.root());
-    let full = graph::load_commits(&engine, &options, Cancel::none()).unwrap();
+    let refreshed = load(&repo, &options);
+    IncrementalStore::global().invalidate(repo.path());
+    let full = load(&repo, &options);
     assert_eq!(to_json(&refreshed), to_json(&full));
 }
 
@@ -628,7 +628,7 @@ fn a_commit_graph_file_leaves_the_answers_unchanged() {
 fn ask(repo_path: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
     let request = serde_json::json!({ "method": method, "params": params }).to_string();
     let answer: serde_json::Value =
-        serde_json::from_str(&protocol::request(repo_path, &request)).unwrap();
+        serde_json::from_str(&git_graph_core::protocol::request(repo_path, &request)).unwrap();
     answer
         .get("ok")
         .cloned()

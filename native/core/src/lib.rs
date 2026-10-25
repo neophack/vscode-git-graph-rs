@@ -16,28 +16,42 @@
 //! - [`model`] — the data contract shared with the TypeScript extension.
 //! - [`error::Error`] — the structured error, `{ kind, message }` on the wire.
 //!
-//! Everything else is implementation. The read modules under [`read`], the handle cache under
-//! [`repository`], and the cancellation registry [`cancel`] are `#[doc(hidden)]`: they stay
-//! nameable so this package's own integration tests (`native/core/tests`), benchmarks
-//! (`native/core/benches`) and the Node binding (`native/node`) can reach the finer grain, but
-//! they are not part of the documented API and may change between minor versions.
+//! Everything else is implementation and lives behind `pub(crate)`: the read modules under
+//! `read`, the handle cache under `repository`, and the cancellation registry `cancel` are
+//! reachable only from inside this crate — the crate's own integration tests, benchmarks and
+//! the Node binding exercise the engine through the four surfaces above, exactly as an outside
+//! integration would.
+//!
+//! The one deliberate exception is [`IncrementalStore`]: the incremental-traversal cache's
+//! control surface, kept nameable for this package's own integration tests and benchmarks (see
+//! its documentation for why they cannot do without it).
 
 pub mod engine;
 pub mod error;
 pub mod model;
 pub mod protocol;
 
-#[doc(hidden)]
-pub mod cancel;
-#[doc(hidden)]
-pub mod read;
-#[doc(hidden)]
-pub mod repository;
+pub(crate) mod cancel;
+pub(crate) mod read;
+pub(crate) mod repository;
 
 pub(crate) mod text;
 
 pub use engine::{Engine, GraphOptions};
 pub use error::{Error, ErrorKind, Result};
+
+/// The control surface of the incremental-traversal cache (task 2.10): [`IncrementalStore::invalidate`]
+/// forces the next load of a repository to traverse in full, and [`IncrementalStore::stats`]
+/// reports how often the cache answered a refresh and how often it fell back.
+///
+/// This is **not** part of the host contract. It stays nameable for exactly one kind of caller:
+/// this package's own integration tests and benchmarks, which must compare an incrementally
+/// served page against a *forced* full traversal of the same options (there is no way to force
+/// one through the public API — the cache is the point of the load path), and must measure the
+/// traversal itself rather than the cache hit that would otherwise answer every iteration.
+/// Hidden from the docs; may change between minor versions.
+#[doc(hidden)]
+pub use read::incremental::Store as IncrementalStore;
 
 /// The engine's version, so a host that links it can tell whether an installed package's
 /// backend process would answer identically (and can then skip the process entirely).
