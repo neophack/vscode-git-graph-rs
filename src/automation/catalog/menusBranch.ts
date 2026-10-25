@@ -67,9 +67,8 @@ export const MENUS_BRANCH_ACTIONS: readonly AutomationAction[] = [
 		group: 'menu-branch',
 		tags: ['menu-branch', 'context-menu'],
 		mutable: true,
-		nativeSaveDialog: true,
-		// Confirming opens the editor's native save dialog (utils.archive's showSaveDialog) —
-		// the suite runner reports this action as skipped rather than stall the run on the modal.
+		// Confirming opens the editor's native save dialog — answered by the ScriptedUiPort the
+		// suite runner installs (task 4.10), so the action RUNS in every mode.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Create Archive', '创建归档') },

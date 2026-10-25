@@ -134,11 +134,13 @@ test('runAutomationSuite ends with the repository back in its seeded state', asy
 	assert.equal(git(['rev-parse', '--abbrev-ref', 'HEAD']), 'main', 'the run ends checked out on main');
 });
 
-test('actions that open the editor\'s native save dialog are reported as skipped, never run', async () => {
+test('the archive actions run: their native save dialog is answered by the scripted UI port', async () => {
 	const { runAutomationSuite } = boot.automation.suiteRunner;
-	// Create Archive confirms into vscode.window.showSaveDialog — a modal an automated run cannot
-	// dismiss; in the real editor it stalls the suite until clicked away. All three variants must
-	// come back skipped (not failed, not silently absent) with a reason naming the dialog.
+	// Create Archive confirms into the native save dialog — the flow the former nativeSaveDialog
+	// skip existed for. Task 4.10 replaced the skip with a scripted UiPort the runner installs
+	// for the whole run: every archive variant RUNS (never skipped again) and its dialog is
+	// answered from the lenient default script (a generated .zip path), so no OS modal can stall
+	// the suite.
 	const report = await runAutomationSuite({
 		logger: silentLogger,
 		filter: (action) => action.id.endsWith('/create-archive'),
@@ -146,12 +148,9 @@ test('actions that open the editor\'s native save dialog are reported as skipped
 	});
 	assert.equal(report.suites[1].runs.length, 3);
 	for (const run of report.suites[1].runs) {
-		assert.equal(run.skipped, true, run.id + ' must be skipped, not run');
-		assert.equal(run.ok, false);
-		assert.match(run.reason, /native save dialog/);
+		assert.equal(run.skipped, false, run.id + ' must run, not be skipped: ' + JSON.stringify(run));
 	}
-	assert.equal(report.totals.skipped, 3);
-	assert.equal(report.totals.failed, 0);
+	assert.equal(report.totals.skipped, 0);
 });
 
 test('reseedFixtureClone restores a mutated clone to the seeded state', async () => {

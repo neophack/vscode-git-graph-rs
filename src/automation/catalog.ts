@@ -24,14 +24,6 @@ import { AutomationAction, UiStep } from './catalog/types';
 const PLACEHOLDER_REGEXP = /\{\{([a-zA-Z][a-zA-Z0-9]*)\}\}/g;
 
 /**
- * The skip reason every layer reports for {@link AutomationAction.nativeSaveDialog} actions: the
- * modal they open (utils.archive's showSaveDialog) cannot be driven or dismissed by a run, so no
- * layer may ever execute them — the suite runner filters them before dispatching, and the engine
- * refuses them again as the backstop for a direct run() caller.
- */
-export const NATIVE_SAVE_DIALOG_SKIP_REASON = 'opens the editor\'s native save dialog — not run by the automation suite';
-
-/**
  * Expand every `{{name}}` placeholder in a template value from the context. Walks plain objects
  * and arrays; any other value passes through untouched. Throws on an unknown placeholder so a
  * bad catalog entry or missing run parameter fails loudly instead of reaching the host.

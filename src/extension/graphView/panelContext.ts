@@ -8,7 +8,7 @@ import { unableToFindGitMsg } from '../../utils/findGit';
 import { detectTerminalShellKind, openGitTerminal, quoteForShell } from '../../utils/childProcess';
 import {
 	copyFilePathToClipboard, copyToClipboard, createPullRequest, openExtensionSettings,
-	openExternalUrl, resolveDiffFromHash, showErrorMessage, viewDiff, viewFileAtRevision, viewScm
+	openExternalUrl, resolveDiffFromHash, showErrorMessage, uiPort, viewDiff, viewFileAtRevision, viewScm
 } from '../../utils/actions';
 import { doesFileExist } from '../../utils/paths';
 import type { RepoManager } from '../repos/repoManager';
@@ -406,10 +406,15 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, repo: string, f
 	});
 }
 
-/** The save-dialog + `git archive` flow of utils/actions.archive, over the pure op. */
+/**
+ * The save-dialog + `git archive` flow of utils/actions.archive, over the pure op. The dialog
+ * goes through the host's UiPort (utils/actions.ts's uiPort), so the automation/E2E build's
+ * ScriptedUiPort answers it from the scenario script — this flow is the exact site the former
+ * `nativeSaveDialog` catalog skip existed for (REFACTOR-PLAN task 4.10's acceptance).
+ */
 async function createArchive(repo: ProductionGitRepository, repoPath: string, ref: string): Promise<ErrorInfo> {
 	try {
-		const uri = await vscode.window.showSaveDialog({
+		const uri = await uiPort.showSaveDialog({
 			defaultUri: vscode.Uri.file(repoPath),
 			saveLabel: t('archiveSaveLabel'),
 			filters: { [t('archiveTarFilter')]: ['tar'], [t('archiveZipFilter')]: ['zip'] }

@@ -78,7 +78,7 @@ test('the default host bundle carries no automation module code', { skip }, () =
 	const automationMarkers = [
 		'menu-commit/add-tag',           // a catalog action id (catalog/ domain files)
 		'control-bar/author-dropdown',   // the catalog's first action id
-		'native save dialog',            // NATIVE_SAVE_DIALOG_SKIP_REASON
+		'ScriptedUiPort',                // the automation build's scripted native-UI port (task 4.10)
 		'Reset the fixture repository'   // suiteRunner's reseed record title
 	];
 	for (const marker of automationMarkers) {

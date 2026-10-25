@@ -62,13 +62,16 @@ monkey-patch surface and the indirect consumers listed at the end.
 | 28 | `src/logger.ts:37` | `platform/logger.ts` | `createOutputChannel` (not a 4.10 dialog rule site; listed because platform owns the seam). |
 | 29 | `src/gitGraphView.ts:2633` | stays outside UiPort | `showTextDocument` is editor reveal, not a modal UI API — it is NOT covered by the 4.10 rule and remains in views/panel wiring. |
 
-## Automation monkey-patch surface (replaced by ScriptedUiPort, not by the adapters)
+## Automation monkey-patch surface (being replaced by ScriptedUiPort, not by the adapters)
 
-`src/automation/hostBridge.ts:216-219` wraps `vscode.window.showWarningMessage`,
+`src/automation/hostBridge.ts` wraps `vscode.window.showWarningMessage`,
 `showInformationMessage`, `showErrorMessage` and `showQuickPick` at runtime to auto-answer them
-during suite runs. Once the host sites above route through UiPort, this patching — and the
-`nativeSaveDialog` skips documented in `src/automation/catalog.ts` (see lines 83, 157, 1724,
-1975, 2234) — is replaced by injecting the E2E `ScriptedUiPort` (plan 6.8.2).
+during command-mode suite runs. Since task 4.10's ScriptedUiPort wave, the suite runner installs
+a scripted port through the production seam (`utils/actions.ts`'s `setScriptedUiPort`) for the
+whole run: every dialog routed through the host's UiPort is answered and recorded there, the
+former `nativeSaveDialog` catalog skips are gone (the archive flows run, their save dialog
+answered by the script), and the monkey-patch remains only for the carrier sites above that
+still call `vscode.window` directly. It disappears with them.
 
 ## Indirect consumers (no direct vscode call; migrate when their wrapper does)
 
