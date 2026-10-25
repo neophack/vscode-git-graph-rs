@@ -1,0 +1,122 @@
+# The performance gates (REFACTOR-PLAN §6.7, rows P2/P3/P5 + the U9 regression rule): one
+# ubuntu job that builds the BASE ref and the PR back-to-back on the same machine, records the
+# base run, and gates the PR run against it — the same-machine comparison §6.7 mandates,
+# because timing numbers recorded on different machines differ far more than the regressions
+# the gate hunts.
+#
+#   P2 (host pipeline)   the real CommitLoader over the real engine AND the CLI fallback,
+#                        driven over the deterministic fast-import fixture
+#   P3 (webview render)  the built webview artifact in headless Chromium (ubuntu only)
+#   P5 (size)            the dist/ + media/ payloads against the §3.8.1 budgets and a baseline
+#
+# The comparison policy is U9: a timing item fails when its median regresses more than 5% AND
+# the Mann-Whitney test confirms the shift (>= 21 samples per item); size items fail at +2%.
+# The absolute size budgets are recorded on every run; failing ON them stays opt-in
+# (--enforce-budgets) until the §3.8.2 first-paint slimming brings the un-split webview entry
+# inside them — flip the flag on that line when it does.
+#
+# Results land in the job artifacts: the per-gate JSON, the recorded baseline, and
+# perf-summary.md (also appended to the job summary).
+
+name: Performance gates
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: nothing here needs write access; artifacts and the step summary do not.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  # One target directory for both trees, so the base build warms the PR build (and the cache).
+  CARGO_TARGET_DIR: ${{ github.workspace }}/cargo-target
+
+jobs:
+  perf:
+    name: P2 + P3 + P5 (base vs PR, same machine)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the PR tree
+        uses: actions/checkout@v4
+
+      - name: Check out the base tree (the comparison's other side)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the cargo target directory
+        uses: actions/cache@v4
+        with:
+          path: cargo-target
+          key: perf-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: perf-cargo-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # cargo-zigbuild + zig: every Linux addon build goes through them (the glibc 2.17 floor,
+      # ADR 0002) — see scripts/build-addon.mjs.
+      - name: Install cargo-zigbuild and zig
+        run: |
+          curl -fsSL https://taiki-e.github.io/install-action/cargo-zigbuild.sh | sh
+          pip install ziglang
+
+      - name: Install the Chromium P3 drives (shared browser cache across both trees)
+        run: |
+          npm ci
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Build the PR tree (out/, release addon, production dist, vendor libs)
+        run: |
+          npm run build:ts
+          node scripts/build-addon.mjs --release
+          npm run build:dist -- --production
+          node scripts/package-highlight.js
+          node scripts/package-markdown.js
+
+      - name: Record the base run (the same-machine baseline)
+        if: github.event_name == 'pull_request'
+        working-directory: base
+        run: |
+          npm ci
+          npm install --no-save playwright
+          npm run build:ts
+          node scripts/build-addon.mjs --release
+          npm run build:dist -- --production
+          node scripts/package-highlight.js
+          node scripts/package-markdown.js
+          node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --record
+
+      - name: Run the PR gates against the base baseline
+        if: github.event_name == 'pull_request'
+        run: |
+          cp base/test/perf/results/baseline.json test/perf/results/base-baseline.json
+          node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --compare-to test/perf/results/base-baseline.json
+
+      # Manual dispatches have no base side: record only, so the run still produces (and
+      # archives) a full set of numbers for the tree it ran on.
+      - name: Run the gates (no comparison — manual dispatch)
+        if: github.event_name != 'pull_request'
+        run: node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --record
+
+      - name: Append the summary to the job report
+        if: always()
+        run: cat test/perf/results/perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: test/perf/results/
+          if-no-files-found: error
