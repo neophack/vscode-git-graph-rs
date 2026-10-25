@@ -22,6 +22,23 @@
  * (`--baseline-mode shrink-only`), and adding code to the baseline requires a
  * deliberate regeneration with `--baseline-mode full`.
  *
+ * Baseline at Phase 1.6: 17 violations, all "new tree still imports legacy
+ * type modules" transition debt — 16x git-layer-isolation (src/extension/git/**
+ * importing src/types/{git,messages,webview}.ts and src/backend/types.ts) and
+ * 1x webview-only-webview-shared (src/webview/common/protocol.ts importing
+ * src/types/index.ts). They drain as task 1.1's shared/ type migration lands.
+ *
+ * Ratchet-down order (earliest first):
+ *   1. End of Phase 1 (types migration, task 1.1): the git-layer and webview
+ *      type-import violations drain to 0 — regenerate with shrink-only and the
+ *      shared-only / webview-only / git-layer rules are fully live.
+ *   2. End of Phase 3 (host git layer): any remaining git-layer-isolation
+ *      entries are gone; git/** violating becomes a hard error on review.
+ *   3. End of Phase 4 (host split): src/extension/graphView/panel.ts exists and
+ *      handlers-not-to-panel + vscode-only-via-platform become fully live.
+ *   4. Ongoing: no-circular and not-to-test are live from day one (empty
+ *      baseline) — new cycles or test imports fail immediately.
+ *
  * Regenerate after fixes:
  *   npx depcruise src --config .dependency-cruiser.cjs --baseline docs/depcruise-baseline.json --baseline-mode shrink-only
  *

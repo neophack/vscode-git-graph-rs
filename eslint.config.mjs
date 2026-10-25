@@ -103,11 +103,13 @@ export default tseslint.config(
 			'no-mixed-spaces-and-tabs': 'error',
 			indent: ['warn', 'tab', { SwitchCase: 1 }],
 			// Realistic starting bar (§5 task 1.6): rules that fire on the legacy
-			// flat files start at warn and ratchet to error per phase.
-			// Counts at Phase 1.6 (may only go down): prefer-const 98, indent 68,
-			// no-explicit-any 48, no-require-imports 3, no-unused-expressions 3
-			// (src/hexDiff.ts), no-namespace 1 (src/repoManager.ts), no-this-alias
-			// 1 (src/webview/binaryCompare/hexView.ts, in-flight migration).
+			// flat files start at warn and ratchet to error per phase. Phase 1.6
+			// starting counts (drift with in-flight migration work — the binding
+			// constraint is zero errors): prefer-const ~98, indent ~68 (mostly the
+			// legacy flat files and the automation catalog), no-explicit-any ~48,
+			// no-require-imports 3, no-unused-expressions 3 (src/hexDiff.ts),
+			// no-namespace 1 (src/repoManager.ts), no-this-alias 1
+			// (src/webview/binaryCompare/hexView.ts, in-flight migration).
 			'prefer-const': 'warn',
 			'@typescript-eslint/no-explicit-any': 'warn',
 			'@typescript-eslint/no-require-imports': 'warn',
