@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigurationChangeEvent } from 'vscode';
-import type { DataSource } from '../../dataSource';
+import type { ProductionGitRepository } from '../git/gitRepository';
+import type { GitRunnerPort } from '../graphView/gitRunner';
 import type { GgEvent } from '../../utils/event';
 import type { ExtensionState } from '../platform/storage';
 import type { Logger } from '../platform/logger';
@@ -9,7 +10,8 @@ import { MAX_RECENT_REPOS, RepoManager, bumpRecentRepos, recentReposList } from 
 /**
  * The recently-opened repository list (REFACTOR-PLAN task 4.9): the pure ordering/merge helpers
  * are tested directly, and the RepoManager wiring around them is tested through a constructed
- * instance whose heavy collaborators (DataSource, ExtensionState, Logger) are structural fakes -
+ * instance whose heavy collaborators (the repository facade, the raw runner, ExtensionState,
+ * Logger) are structural fakes -
  * the fake 'vscode' module backs the file system watchers and the configuration lookups the
  * constructor touches. No Git backend is involved.
  */
@@ -40,10 +42,6 @@ const vscodeMock = vi.hoisted(() => {
 });
 
 vi.mock('vscode', () => vscodeMock);
-vi.mock('../../dataSource', () => ({
-	DataSource: class {
-	}
-}));
 
 /** Every fake repository lives inside the fake workspace folder, or startupTasks drops it. */
 const REPO_A = 'E:/ws/repo-a';
@@ -70,20 +68,27 @@ function createRepoManager(options: HarnessOptions = {}) {
 		setIgnoredRepos: () => undefined,
 		transferRepo: () => undefined
 	};
-	const dataSource = {
-		// Answer the repository itself for the known ones and NULL for everything else, so the
-		// startup workspace search (maxDepth 0) finds nothing new and checkReposExist keeps them
-		repoRoot: (repo: string) => Promise.resolve(
-			options.rootOf ? options.rootOf(repo) : (knownRepos[repo] !== undefined ? repo : null)
-		),
-		openRepository: () => undefined,
-		closeRepository: () => undefined,
-		trackRemoteTags: () => Promise.resolve(),
-		getSubmodules: () => Promise.resolve([])
+	// The read face answers the repository itself for the known ones and NULL for everything
+	// else, so the startup workspace search (maxDepth 0) finds nothing new and checkReposExist
+	// keeps them. The write face records nothing (the tag-tracking startup pass finds no remotes).
+	const repo = {
+		read: {
+			repoRoot: (asked: string) => {
+				const root = options.rootOf ? options.rootOf(asked) : (knownRepos[asked] !== undefined ? asked : null);
+				return root !== null ? Promise.resolve(root) : Promise.reject(new Error('not a repository'));
+			},
+			getRemotes: () => Promise.resolve([] as string[]),
+			openRepository: () => Promise.resolve(''),
+			closeRepository: () => undefined,
+			getSubmodules: () => Promise.resolve([] as string[])
+		},
+		write: { run: () => Promise.resolve(null) }
 	};
+	const git = { gitOutput: () => Promise.reject(new Error('no git')) } as unknown as GitRunnerPort;
 	const onDidChangeConfiguration = (() => ({ dispose: () => undefined })) as unknown as GgEvent<ConfigurationChangeEvent>;
 	const manager = new RepoManager(
-		dataSource as unknown as DataSource,
+		repo as unknown as ProductionGitRepository,
+		git,
 		extensionState as unknown as ExtensionState,
 		onDidChangeConfiguration,
 		{ log: () => undefined } as unknown as Logger

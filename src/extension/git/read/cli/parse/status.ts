@@ -3,7 +3,7 @@
  * reports, and the layering of that list onto a diff's file changes.
  */
 
-import { GitFileChange, GitFileStatus } from '../../../../../backend/types';
+import { GitFileChange, GitFileStatus } from '../../types';
 
 /** The untracked, deleted and unmerged paths of the working tree. */
 export interface StatusFiles {

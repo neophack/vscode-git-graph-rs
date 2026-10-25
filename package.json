@@ -53,8 +53,6 @@
 		"test:unit": "vitest run",
 		"test:node": "node scripts/run-tests.mjs",
 		"test:node:cov": "c8 node scripts/run-tests.mjs",
-		"bench": "node scripts/bench.mjs",
-		"bench:all": "node scripts/bench.mjs --all",
 		"perf": "node test/perf/run.mjs",
 		"perf:record": "node test/perf/run.mjs --record",
 		"analyze-log": "node scripts/analyze-log.mjs",

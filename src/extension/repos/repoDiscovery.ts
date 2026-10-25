@@ -1,7 +1,8 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { evalPromises } from '../../utils/childProcess';
-import { getPathFromUri, pathWithTrailingSlash } from '../../utils/paths';
+import { getPathFromUri, pathWithTrailingSlash, realpath } from '../../utils/paths';
 
 /**
  * The repository discovery seam of the repository manager (REFACTOR-PLAN §3.3 / Appendix A):
@@ -10,6 +11,74 @@ import { getPathFromUri, pathWithTrailingSlash } from '../../utils/paths';
  * from the former flat src/repoManager.ts; the search takes its repository lookups as
  * dependencies so the recursion can be tested without a Git backend.
  */
+
+/** A mapped-network-drive letter path (`E:/...`) — the form Git may answer with a UNC path for. */
+const DRIVE_LETTER_PATH_REGEX = /^[a-z]:\//;
+
+/** The backend read the repository-root resolution needs. */
+export interface RepoRootReader {
+	repoRoot(path: string): Promise<string>;
+}
+
+/**
+ * Resolve the root of the repository containing the specified path over the read backend (the
+ * port of the legacy `DataSource.repoRoot`): the answer is normalised, and on Windows a UNC
+ * root Git substituted for a mapped network drive is mapped back onto the drive letter, walking
+ * the asked path's ancestors so a symlinked directory still resolves to the known spelling.
+ * @param read The read backend (or any structural stand-in) answering `repoRoot`.
+ * @param pathOfPotentialRepo The path that is potentially a repository (or is contained within one).
+ * @returns The root of the repository, or NULL when the path is not inside one.
+ */
+export async function resolveRepoRoot(read: RepoRootReader, pathOfPotentialRepo: string): Promise<string | null> {
+	let pathReturnedByGit: string;
+	try {
+		const root = await read.repoRoot(pathOfPotentialRepo);
+		pathReturnedByGit = getPathFromUri(vscode.Uri.file(path.normalize(root)));
+	} catch (_) {
+		return null; // null => path is not in a repo
+	}
+
+	if (process.platform === 'win32') {
+		// On Windows Mapped Network Drives with Git >= 2.25.0, `git rev-parse --show-toplevel` returns the UNC Path for the Mapped Network Drive, instead of the Drive Letter.
+		// Attempt to replace the UNC Path with the Drive Letter.
+		let driveLetterPathMatch: RegExpMatchArray | null;
+		if ((driveLetterPathMatch = pathOfPotentialRepo.match(DRIVE_LETTER_PATH_REGEX)) && !pathReturnedByGit.match(DRIVE_LETTER_PATH_REGEX)) {
+			const realPathForDriveLetter = pathWithTrailingSlash(await realpath(driveLetterPathMatch[0], true));
+			if (realPathForDriveLetter !== driveLetterPathMatch[0] && pathReturnedByGit.startsWith(realPathForDriveLetter)) {
+				pathReturnedByGit = driveLetterPathMatch[0] + pathReturnedByGit.substring(realPathForDriveLetter.length);
+			}
+		}
+	}
+	let current = pathOfPotentialRepo;
+	const first = current.indexOf('/');
+	while (true) {
+		if (pathReturnedByGit === current || pathReturnedByGit === await realpath(current)) return current;
+		const next = current.lastIndexOf('/');
+		if (first !== next && next > -1) {
+			current = current.substring(0, next);
+		} else {
+			return pathReturnedByGit;
+		}
+	}
+}
+
+/** The backend read the submodule listing needs. */
+export interface SubmoduleReader {
+	getSubmodules(repo: string): Promise<ReadonlyArray<string>>;
+}
+
+/**
+ * List the submodules of a repository, normalised to the extension's path spelling (the port of
+ * the legacy `DataSource.getSubmodules`): the backends return native-separator paths on Windows,
+ * while every repository path these are compared against is normalised. A failed read answers
+ * the empty list (no submodule of a repository that cannot be read).
+ */
+export async function listSubmodules(read: SubmoduleReader, repo: string): Promise<string[]> {
+	return read.getSubmodules(repo).then(
+		(submodules) => submodules.map((submodule) => getPathFromUri(vscode.Uri.file(path.normalize(submodule)))),
+		() => [] as string[]
+	);
+}
 
 /** The repository lookups the directory search needs from its host (the RepoManager). */
 export interface RepoSearchDeps {

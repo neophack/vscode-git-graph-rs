@@ -2,9 +2,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from '../binaryCompare/binaryCompare';
 import { BinaryCompareView } from '../binaryCompare/viewController';
-import { DataSource } from '../../../dataSource';
+import type { GitBackend } from '../../git/read/gitReader';
+import { checkUnsafeGitArgs, isSafeRefName, isValidCommitHash, Localize } from '../../git/write/argSafety';
+import type { GitStreamSpawner } from '../binaryCompare/hexDiff';
 import { HexDiffSession } from '../binaryCompare/hexDiff';
 import { isZhCn, t } from '../../../i18n';
+import type { TextMessageKey } from '../../../shared/i18n';
 import { ComparisonInitResponse, ComparisonRequest, ComparisonResponse } from '../../../shared/protocol/comparison';
 import { GitFileChange } from '../../../types';
 import { UNCOMMITTED, abbrevCommit } from '../../../utils/git';
@@ -20,10 +23,15 @@ import { Disposable, toDisposable } from '../../../utils/disposable';
  * file changes and commit summaries through the `ready` / `init` boot pair; the frontend itself
  * lives in src/webview/comparison (bundled into media/comparison.min.js).
  */
+/** The adapter calls' localiser: the i18n table's keys widened to the adapter's plain strings. */
+const localize: Localize = (key, ...params) => t(key as TextMessageKey, ...params);
+
 export class CommitComparisonView extends Disposable {
 	private static readonly openViews = new Map<string, CommitComparisonView>();
 
 	private readonly panel: vscode.WebviewPanel;
+	private readonly read: GitBackend;
+	private readonly spawner: GitStreamSpawner;
 	private fileChanges: ReadonlyArray<GitFileChange> = [];
 	/** Hex comparison sessions by file index; only the most recent few are kept (they hold chunk caches). */
 	private readonly hexSessions = new Map<number, HexDiffSession>();
@@ -38,18 +46,20 @@ export class CommitComparisonView extends Disposable {
 	 * presents the changes as those of `toHash` alone (opened via the "Open Changes" action)
 	 * instead of showing both ends of the comparison; the tab is titled "Commit <hash>".
 	 */
-	public static open(extensionPath: string, dataSource: DataSource, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
+	public static open(extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
 		const key = repo + '\n' + fromHash + '\n' + toHash + '\n' + (singleCommit ? '1' : '0');
 		const existing = CommitComparisonView.openViews.get(key);
 		if (existing !== undefined) {
 			existing.panel.reveal();
 			return;
 		}
-		new CommitComparisonView(extensionPath, dataSource, repo, fromHash, toHash, singleCommit, key);
+		new CommitComparisonView(extensionPath, read, spawner, repo, fromHash, toHash, singleCommit, key);
 	}
 
-	private constructor(private readonly extensionPath: string, private readonly dataSource: DataSource, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, private readonly singleCommit: boolean, key: string) {
+	private constructor(private readonly extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, private readonly singleCommit: boolean, key: string) {
 		super();
+		this.read = read;
+		this.spawner = spawner;
 
 		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', this.singleCommit
 			? t('commitPanelTitle', abbrevCommit(this.toHash))
@@ -74,7 +84,7 @@ export class CommitComparisonView extends Disposable {
 					const file = this.fileChanges[msg.index];
 					let diff: string | null, error: string | null = null;
 					try {
-						diff = await dataSource.getCommitFileDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath);
+						diff = await this.getCommitFileDiff(this.fromHash, this.toHash, file.oldFilePath, file.newFilePath);
 					} catch (errorMessage) {
 						diff = null;
 						error = errorMessage instanceof Error ? errorMessage.message : String(errorMessage);
@@ -89,7 +99,7 @@ export class CommitComparisonView extends Disposable {
 					// standalone Binary Compare tab shows the full hex / picture comparison.
 					const file = this.fileChanges[msg.index];
 					if (file !== undefined) {
-						BinaryCompareView.open(this.extensionPath, this.dataSource, this.repo, this.fromHash, this.toHash, file);
+						BinaryCompareView.open(this.extensionPath, this.spawner, this.repo, this.fromHash, this.toHash, file);
 					}
 				} else if (msg.command === 'getHexInfo') {
 					const session = this.hexSession(msg.index);
@@ -103,7 +113,7 @@ export class CommitComparisonView extends Disposable {
 					// The deferred +N/-M counts of the file list, asked for after the list itself has
 					// rendered — computing them means reading two blobs per file, which on a large
 					// range is the slow half of the load.
-					const result = await this.dataSource.getCommitFileCounts(this.repo, this.fromHash, this.toHash, msg.paths);
+					const result = await this.getCommitFileCounts(this.fromHash, this.toHash, msg.paths);
 					if (!this.isDisposed()) this.panel.webview.postMessage({ command: 'lineCounts', counts: result.counts });
 				} else if (msg.command === 'getImageData') {
 					const session = this.hexSession(msg.index);
@@ -126,8 +136,11 @@ export class CommitComparisonView extends Disposable {
 		// Load the file changes, the summaries of the commits shown in the header, and the number
 		// of commits between them in parallel, so the view is ready as soon as possible.
 		Promise.all([
-			dataSource.getCommitComparison(repo, fromHash, toHash),
-			dataSource.getCommitSummaries(repo, (this.singleCommit ? [toHash] : [fromHash, toHash]).filter((hash) => hash !== '' && hash !== UNCOMMITTED)),
+			this.getCommitComparison(fromHash, toHash),
+			this.read.getCommitSummaries(repo, (this.singleCommit ? [toHash] : [fromHash, toHash]).filter((hash) => hash !== '' && hash !== UNCOMMITTED)).then(
+				(summaries) => summaries as { [hash: string]: { hash: string, author: string, email: string, date: number, message: string } },
+				() => null
+			),
 			this.getCommitsBetweenCount()
 		]).then((results) => {
 			if (this.isDisposed()) return; // the tab was closed while the Git commands were running
@@ -180,7 +193,57 @@ export class CommitComparisonView extends Disposable {
 	private getCommitsBetweenCount(): Promise<number | null> {
 		if (this.singleCommit || this.fromHash === '' || this.fromHash === UNCOMMITTED) return Promise.resolve(null);
 		const tip = this.toHash === '' || this.toHash === UNCOMMITTED ? 'HEAD' : this.toHash;
-		return this.dataSource.countCommitsBefore(this.repo, [tip], this.fromHash, false, false);
+		return this.getCommitsBefore([tip], this.fromHash);
+	}
+
+	/**
+	 * The file list of the comparison (the legacy `getCommitComparison` adapter): the hashes go
+	 * through the argument-injection gate, the backend's commit comparison answers the list, and
+	 * a failed read maps to the empty list plus the error the view shows in its place.
+	 */
+	private getCommitComparison(fromHash: string, toHash: string): Promise<{ fileChanges: GitFileChange[]; error: string | null }> {
+		const unsafe = checkUnsafeGitArgs(localize,
+			['fromHash', fromHash === UNCOMMITTED ? null : fromHash, 'hash'],
+			['toHash', toHash === UNCOMMITTED ? null : toHash, 'hash']);
+		if (unsafe !== null) return Promise.resolve({ fileChanges: [], error: unsafe });
+		return this.read.compareCommits(this.repo, fromHash, toHash === UNCOMMITTED ? '' : toHash).then(
+			(fileChanges) => ({ fileChanges: [...fileChanges] as unknown as GitFileChange[], error: null }),
+			(errorMessage: unknown) => ({ fileChanges: [], error: errorMessage instanceof Error ? errorMessage.message : String(errorMessage) })
+		);
+	}
+
+	/**
+	 * The unified diff of one file (the legacy `getCommitFileDiff` adapter): the diff of a single
+	 * file in a single commit is answered directly by the backend (the engine resolves it without
+	 * spawning a diff), everything else runs the two-revision comparison.
+	 */
+	private getCommitFileDiff(fromHash: string, toHash: string, oldFilePath: string, newFilePath: string): Promise<string> {
+		if (toHash === UNCOMMITTED) toHash = '';
+		if (oldFilePath === newFilePath && toHash !== '' && isValidCommitHash(toHash) && fromHash === toHash + '^') {
+			return this.read.getCommitFileDiff(this.repo, toHash, newFilePath);
+		}
+		return this.read.compareFileDiff(this.repo, fromHash, toHash, oldFilePath, newFilePath);
+	}
+
+	/**
+	 * The progressive +/- line counts (the legacy `getCommitFileCounts` adapter): the same
+	 * argument gate, then the backend's line counts with a failed read mapping to empty counts.
+	 */
+	private getCommitFileCounts(from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ counts: { [path: string]: { additions: number, deletions: number } }; error: string | null }> {
+		const unsafe = checkUnsafeGitArgs(localize,
+			['from', from, 'hash'],
+			['to', to === UNCOMMITTED ? null : to, 'hash']);
+		if (unsafe !== null) return Promise.resolve({ counts: {}, error: unsafe });
+		return this.read.getLineCounts(this.repo, from, to, paths).then(
+			(counts) => ({ counts: counts as { [path: string]: { additions: number, deletions: number } }, error: null }),
+			(errorMessage: unknown) => ({ counts: {}, error: errorMessage instanceof Error ? errorMessage.message : String(errorMessage) })
+		);
+	}
+
+	/** The commits-before count (the legacy `countCommitsBefore` adapter): unsafe branch names are dropped, a failed read answers NULL. */
+	private getCommitsBefore(branches: ReadonlyArray<string>, hash: string): Promise<number | null> {
+		const refs = branches.filter((branch) => isSafeRefName(branch) || isValidCommitHash(branch) || branch.startsWith('--glob='));
+		return this.read.countCommitsBefore(this.repo, refs, hash, false, false).catch(() => null);
 	}
 
 	/** A poster for the shared binary-compare responders that checks the panel's lifetime.
@@ -206,7 +269,7 @@ export class CommitComparisonView extends Disposable {
 		}
 		const file = this.fileChanges[index];
 		if (file === undefined) return null;
-		const session = createHexSession(this.dataSource, this.repo, this.fromHash, this.toHash, file);
+		const session = createHexSession(this.spawner, this.repo, this.fromHash, this.toHash, file);
 		wireHexSession(session, index, this.hexPost());
 		this.hexSessions.set(index, session);
 		while (this.hexSessions.size > 4) {

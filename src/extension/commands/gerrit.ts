@@ -1,5 +1,5 @@
 import { t } from '../../i18n';
-import { extractChangeId, generateChangeId } from '../../gerrit';
+import { extractChangeId, generateChangeId } from '../integrations/gerrit/gerritProtocol';
 import { getConfig } from '../../config';
 import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../../utils/actions';
 import { UiPort } from '../../extension/platform/uiPort';
@@ -30,7 +30,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort 
 	const repo = await resolveRepoFromCommandArg(host, arg);
 	if (repo === null) return;
 
-	const branch = await host.dataSource.gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'], repo, (stdout) => stdout.trim()).catch(() => null);
+	const branch = await host.gitRunner.gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'], repo, (stdout) => stdout.trim()).catch(() => null);
 	if (branch === null || branch === '') {
 		showErrorMessage(t('gerritNoCommits'));
 		return;
@@ -54,7 +54,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort 
 	try {
 		// git push writes its report (with the change URL) to STDERR, not stdout — resolve
 		// from both streams, so the "Open Change" action is actually offered.
-		const url = await host.dataSource.gitOutputWithStderr(['push', remote, 'HEAD:refs/for/' + branch], repo, (stdout, stderr) => {
+		const url = await host.gitRunner.gitOutputWithStderr(['push', remote, 'HEAD:refs/for/' + branch], repo, (stdout, stderr) => {
 			const match = /(https?:\/\/\S*\/c\/\S*\/\+?\/?\d+)/.exec((stdout + '\n' + stderr).replace(/\r?\n/g, ' '));
 			return match !== null ? match[1] : null;
 		});
@@ -86,7 +86,7 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
 	const repo = await resolveRepoFromCommandArg(host, arg);
 	if (repo === null) return;
 
-	const result = await host.dataSource.gerrit.installHook(repo, getConfig().gerrit.remote, 'commit-msg');
+	const result = await host.gerrit.installHook(repo, getConfig().gerrit.remote, 'commit-msg');
 	if (result.error !== null) {
 		showErrorMessage(t('gerritHookFailed', result.error));
 	} else if (result.installed) {
@@ -110,11 +110,11 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
  */
 async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: boolean, ui: UiPort): Promise<{ error: ErrorInfo, changeId: string | null, amended: boolean }> {
 	try {
-		const message = await host.dataSource.gitOutput(['log', '-1', '--format=%B', 'HEAD', '--'], repo, (stdout) => stdout);
+		const message = await host.gitRunner.gitOutput(['log', '-1', '--format=%B', 'HEAD', '--'], repo, (stdout) => stdout);
 		const existing = extractChangeId(message);
 		if (existing !== null) return { error: null, changeId: existing, amended: false }; // nothing to amend
 
-		const remotes = await host.dataSource.gitOutput(['branch', '-r', '--no-color', '--contains=HEAD'], repo, (stdout) =>
+		const remotes = await host.gitRunner.gitOutput(['branch', '-r', '--no-color', '--contains=HEAD'], repo, (stdout) =>
 			stdout.split(/\r?\n/).map((line) => line.trim())
 				// A symbolic line ("origin/HEAD -> origin/main") names the same remote branch as
 				// its target, which the listing carries as its own line: resolve it and deduplicate.
@@ -124,7 +124,7 @@ async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: bool
 		if (remotes.length > 0) return { error: t('gerritChangeIdPushedError', remotes[0]), changeId: null, amended: false };
 
 		// Generate the Change-Id Gerrit would assign to HEAD (same construction as the commit-msg hook)
-		const changeId = await host.dataSource.gitOutput(['show', '-s', '--format=%T%n%P%n%an <%ae> %at%n%cn <%ce> %ct%n%B', 'HEAD'], repo, (stdout) => {
+		const changeId = await host.gitRunner.gitOutput(['show', '-s', '--format=%T%n%P%n%an <%ae> %at%n%cn <%ce> %ct%n%B', 'HEAD'], repo, (stdout) => {
 			const lines = stdout.split(/\r?\n/);
 			return generateChangeId(lines[0], lines[1], lines[2], lines[3], lines.slice(4).join('\n'));
 		});
@@ -140,7 +140,7 @@ async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: bool
 
 		const args = ['commit', '--amend', '-m', message.replace(/\s+$/, '') + '\n\nChange-Id: ' + changeId];
 		if (getConfig().signCommits) args.push('-S');
-		const error = await host.dataSource.runGitCommand(args, repo);
+		const error = await host.gitRunner.runGitCommand(args, repo);
 		return { error: error, changeId: changeId, amended: error === null };
 	} catch (errorMessage) {
 		return { error: String(errorMessage), changeId: null, amended: false };

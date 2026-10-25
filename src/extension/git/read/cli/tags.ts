@@ -4,7 +4,7 @@
  */
 
 import { parseGitSignatureOutput } from '../signatures';
-import { GitBackendError, GitSignature, GitSignatureStatus, GitTagDetails } from '../../../../backend/types';
+import { GitBackendError, GitSignature, GitSignatureStatus, GitTagDetails } from '../types';
 import { EOL, GitCli, SEPARATOR } from './process';
 
 /** A tag in full, read from the ref as `for-each-ref` reports it. */

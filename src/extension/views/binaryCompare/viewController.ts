@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { createHexSession, isImageChange, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
-import { DataSource } from '../../../dataSource';
+import type { GitStreamSpawner } from './hexDiff';
 import { isZhCn, t } from '../../../i18n';
 import { BinaryCompareInitResponse, BinaryCompareRequest, BinaryCompareResponse } from '../../../shared/protocol/binaryCompare';
 import { GitFileChange } from '../../../types';
@@ -32,7 +32,7 @@ export class BinaryCompareView extends Disposable {
 	 * Opens a Binary Compare View for one file, reusing (and revealing) the existing tab when the
 	 * same file is compared between the same revisions again.
 	 */
-	public static open(extensionPath: string, dataSource: DataSource, repo: string, fromHash: string, toHash: string, file: GitFileChange) {
+	public static open(extensionPath: string, spawner: GitStreamSpawner, repo: string, fromHash: string, toHash: string, file: GitFileChange) {
 		const filePath = file.newFilePath !== '' ? file.newFilePath : file.oldFilePath;
 		const key = repo + '\n' + fromHash + '\n' + toHash + '\n' + filePath;
 		const existing = BinaryCompareView.openViews.get(key);
@@ -40,10 +40,10 @@ export class BinaryCompareView extends Disposable {
 			existing.panel.reveal();
 			return;
 		}
-		new BinaryCompareView(extensionPath, dataSource, repo, fromHash, toHash, file, key);
+		new BinaryCompareView(extensionPath, spawner, repo, fromHash, toHash, file, key);
 	}
 
-	private constructor(private readonly extensionPath: string, dataSource: DataSource, repo: string, private readonly fromHash: string, private readonly toHash: string, file: GitFileChange, key: string) {
+	private constructor(private readonly extensionPath: string, spawner: GitStreamSpawner, repo: string, private readonly fromHash: string, private readonly toHash: string, file: GitFileChange, key: string) {
 		super();
 
 		const filePath = file.newFilePath !== '' ? file.newFilePath : file.oldFilePath;
@@ -53,7 +53,7 @@ export class BinaryCompareView extends Disposable {
 			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
 		});
 
-		this.session = createHexSession(dataSource, repo, fromHash, toHash, file);
+		this.session = createHexSession(spawner, repo, fromHash, toHash, file);
 		wireHexSession(this.session, 0, this.post());
 
 		this.registerDisposables(

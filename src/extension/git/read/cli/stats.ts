@@ -9,7 +9,7 @@ import {
 	GitAuthorStat,
 	GitBackendError,
 	GitLineCounts
-} from '../../../../backend/types';
+} from '../types';
 import { EOL, GitCli } from './process';
 import { parseNumStat } from './parse/numStat';
 

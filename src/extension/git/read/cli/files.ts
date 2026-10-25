@@ -14,7 +14,7 @@ import {
 	GitCommitSummary,
 	GitFileStatus,
 	GitHistoryMatch
-} from '../../../../backend/types';
+} from '../types';
 import { GitCli, MAX_BUFFER } from './process';
 import { diffSectionNewPath } from './parse/diffHeader';
 

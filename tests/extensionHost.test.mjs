@@ -327,10 +327,10 @@ describe('Logger', () => {
 });
 
 describe('DiffDocProvider', () => {
-	it('serves a revision through the DataSource once, then from its cache, and clears it when the document closes', async () => {
+	it('serves a revision through the read face once, then from its cache, and clears it when the document closes', async () => {
 		let fetches = 0;
-		const dataSource = { getCommitFile: async (repo, commit, filePath) => { fetches++; return `${repo}@${commit}:${filePath}`; } };
-		const provider = new DiffDocProvider(dataSource);
+		const read = { getCommitFile: async (repo, commit, filePath) => { fetches++; return { contents: `${repo}@${commit}:${filePath}` }; } };
+		const provider = new DiffDocProvider(read);
 		vscode.textDocumentContentProviders.clear();
 		const uri = encodeDiffDocUri('/r', 'dir/f.txt', 'abc', 'M', 1);
 
@@ -346,7 +346,7 @@ describe('DiffDocProvider', () => {
 		provider.dispose();
 	});
 
-	it('returns empty content for a side that does not exist, and the DataSource error otherwise', async () => {
+	it('returns empty content for a side that does not exist, and the read error otherwise', async () => {
 		const provider = new DiffDocProvider({ getCommitFile: async () => { throw 'no such object'; } });
 		const missing = encodeDiffDocUri('/r', 'f.txt', 'abc', 'A', 0);
 		assert.equal(missing.path.endsWith(' (non-existent)'), true);

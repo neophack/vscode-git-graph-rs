@@ -3,7 +3,7 @@
  * location, and a single remote's fetch URL.
  */
 
-import { GitConfigSnapshot } from '../../../../backend/types';
+import { GitConfigSnapshot } from '../types';
 import { EOL, GitCli } from './process';
 import { getRemotes } from './refs';
 

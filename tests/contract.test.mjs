@@ -31,11 +31,19 @@ describe('the icon set', () => {
 
 	it('every icon referenced by the manifest and the sources exists', () => {
 		const pkg = read('package.json');
-		const sources = [
-			read('src', 'gitGraphView.ts'),
-			read('src', 'statusBarItem.ts'),
-			read('src', 'comparisonView.ts')
-		].join('\n');
+		// The icon-referencing sources live in the split tree now (task 3.6/6.1): the panel
+		// HTML, the status bar item and the comparison view controller. Scan the whole
+		// extension tree so future moves cannot silently drop a file from this check.
+		const extensionSources = [];
+		const walkSources = (dir) => {
+			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) walkSources(full);
+				else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) extensionSources.push(fs.readFileSync(full, 'utf8'));
+			}
+		};
+		walkSources(path.join(root, 'src', 'extension'));
+		const sources = extensionSources.join('\n');
 
 		const referenced = new Set([...iconPathsIn(pkg), ...iconPathsIn(sources)]);
 

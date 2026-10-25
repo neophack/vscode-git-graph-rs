@@ -1,11 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { hasEngineForPlatform, isAddonAvailable, platformKey } from './backend/addon';
+import { hasEngineForPlatform, isAddonAvailable, platformKey } from './extension/git/read/addonLoader';
 import { AskpassManager } from './askpass/askpassManager';
 import { AvatarManager } from './avatarManager';
 import { CommandManager } from './commands';
 import { getConfig } from './config';
-import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
 import { GitGraphView } from './extension/graphView/panel';
@@ -15,12 +14,14 @@ import { GitProcess } from './extension/git/process/gitProcess';
 import type { GitExecutable } from './extension/git/process/gitProcess';
 import { GitRepository } from './extension/git/gitRepository';
 import type { ProductionGitRepository } from './extension/git/gitRepository';
+import { gerritDataSourceOver } from './extension/integrations/gerrit/gerrit';
 import { createBackend, NativeBackend } from './extension/git/read/backendIndex';
 import type { GitBackend } from './extension/git/read/backendIndex';
 import { GitWriter } from './extension/git/write/gitWriter';
 import type { Localize } from './extension/git/write/argSafety';
 import { CommitComparisonView } from './extension/views/comparison/viewController';
 import { BinaryCompareView } from './extension/views/binaryCompare/viewController';
+import type { GitStreamSpawner } from './extension/views/binaryCompare/hexDiff';
 import { t } from './i18n';
 import { TextMessageKey } from './shared/i18n';
 import { Logger } from './logger';
@@ -45,10 +46,8 @@ import { EventEmitter } from './utils/event';
  * The composition root (REFACTOR-PLAN task 3.6, host side): the production git layer is composed
  * here — the read backend (the Rust engine preferred, the `git` CLI answering whatever it
  * declines), the single `GitProcess` every write and runner spawn goes through, the GitWriter
- * over it, and the `GitRepository` facade the Git Graph view runs on. The legacy `DataSource` is
- * still constructed for the consumers that have not migrated (the RepoManager, the AvatarManager,
- * the command registry, the diff document provider and the two auxiliary views); it is drained
- * and deleted as those move.
+ * over it, and the `GitRepository` facade every consumer runs on (the view, the commands, the
+ * repository manager, the avatars, the diff documents and the two auxiliary views).
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
@@ -147,28 +146,38 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	/* ---------- The collaborators ---------- */
 
-	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
-	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
-	const repoManager = new RepoManager(dataSource, extensionState, onDidChangeConfiguration, logger);
+	const avatarManager = new AvatarManager(reader, extensionState, logger);
+	const repoManager = new RepoManager(repo, gitRunner, extensionState, onDidChangeConfiguration, logger);
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
-	const diffDocProvider = new DiffDocProvider(dataSource);
+	const diffDocProvider = new DiffDocProvider(reader);
 
-	// The two auxiliary webviews still hold the legacy data source; composed here, where it
-	// lives, so no graphView module imports it.
+	// The two auxiliary webviews, composed over the read backend and the streaming spawner (the
+	// same git layer the Git Graph view's facade runs on), so no graphView module imports them.
+	const gitStream: GitStreamSpawner = {
+		spawnGitStream: (args, repo) => {
+			// The localised no-Git message of the legacy spawn, kept for the hex view's error toast
+			if (gitProcess.git === null) throw new Error(unableToFindGitMsg());
+			return gitProcess.spawnStream(args, repo);
+		}
+	};
 	const legacyViews: LegacyViewPort = {
 		openCompareTab: (extensionPath, repoPath, fromHash, toHash, singleCommit) => {
 			// The controller moves to extension/views in Phase 6.
-			CommitComparisonView.open(extensionPath, dataSource, repoPath, fromHash, toHash, singleCommit);
+			CommitComparisonView.open(extensionPath, reader, gitStream, repoPath, fromHash, toHash, singleCommit);
 		},
 		openBinaryCompare: (extensionPath, repoPath, fromHash, toHash, file) => {
-			BinaryCompareView.open(extensionPath, dataSource, repoPath, fromHash, toHash, {
+			BinaryCompareView.open(extensionPath, gitStream, repoPath, fromHash, toHash, {
 				oldFilePath: file.oldFilePath, newFilePath: file.newFilePath,
 				type: file.type, additions: file.additions, deletions: file.deletions
 			});
 		}
 	};
 
-	const commandManager = new CommandManager(context, avatarManager, dataSource, repo, gitRunner, legacyViews, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
+	// The Gerrit integration the gerrit commands run (the hook install of `gerritFetchCommitMsgHook`),
+	// over the same runner the view's pipeline uses.
+	const commandGerrit = gerritDataSourceOver(gitRunner);
+
+	const commandManager = new CommandManager(context, avatarManager, repo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
 
 	// Prewarming (task 4.9): 2 s after activation, open engine handles and prefetch the first
 	// page of recently-opened repositories, one at a time. The reader rides the same
@@ -188,8 +197,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(prewarm);
 	context.subscriptions.push(askpass);
 
-	// The legacy DataSource rebuilds its backend (and the writer follows the executable through
-	// the cell) when the Git executable changes; the new layer's reader rebuilds with it.
+	// The read backend rebuilds when the Git executable changes (the writer and the runner follow
+	// the executable through the cell).
 	context.subscriptions.push(onDidChangeGitExecutable((executable) => {
 		gitCell.executable = toProcessExecutable(executable);
 		readerCell.backend = buildBackend(executable, logger);
@@ -229,7 +238,6 @@ export async function activate(context: vscode.ExtensionContext) {
 		statusBarItem,
 		repoManager,
 		avatarManager,
-		dataSource,
 		configurationEmitter,
 		extensionState,
 		gitExecutableEmitter,

@@ -3,7 +3,7 @@
  * one commit record, and the stash reflog the view splices into the graph.
  */
 
-import { GitStash } from '../../../../../backend/types';
+import { GitStash } from '../../types';
 import { EOL, SEPARATOR } from '../process';
 
 /** One commit of the `git log` output, before the refs, stashes and the working tree are attached. */

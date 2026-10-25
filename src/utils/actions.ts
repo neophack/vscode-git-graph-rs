@@ -4,7 +4,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from '../config';
-import { DataSource } from '../dataSource';
+import { archive as archiveOp, WriteOp } from '../extension/git/write/ops/index';
 import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
 import { Clipboard } from '../extension/platform/clipboard';
 import { Notifications, MessageChoice } from '../extension/platform/notifications';
@@ -131,14 +131,19 @@ class WindowUiPort implements UiPort {
  */
 export const uiPort: UiPort = new WindowUiPort();
 
+/** The write seam the archive flow runs through (the facade's GitWriter satisfies it). */
+export interface ArchiveWriter {
+	run(repo: string, op: WriteOp): Promise<ErrorInfo>;
+}
+
 /**
  * Create an archive of a repository at a specific reference, and save to disk.
  * @param repo The path of the repository.
  * @param ref The reference of the revision to archive.
- * @param dataSource The DataSource instance that can be used to create the archive.
+ * @param writer The GitWriter the archive write operation runs through.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export function archive(repo: string, ref: string, dataSource: DataSource): Thenable<ErrorInfo> {
+export function archive(repo: string, ref: string, writer: ArchiveWriter): Thenable<ErrorInfo> {
 	return uiPort.showSaveDialog({
 		defaultUri: vscode.Uri.file(repo),
 		saveLabel: t('archiveSaveLabel'),
@@ -148,7 +153,7 @@ export function archive(repo: string, ref: string, dataSource: DataSource): Then
 			if (uri) {
 				const extension = uri.fsPath.substring(uri.fsPath.lastIndexOf('.') + 1).toLowerCase();
 				if (extension === 'tar' || extension === 'zip') {
-					return dataSource.archive(repo, ref, uri.fsPath, extension);
+					return writer.run(repo, archiveOp({ ref: ref, outputFilePath: uri.fsPath, type: extension }));
 				} else {
 					return t('archiveInvalidExtension', extension);
 				}
@@ -248,21 +253,26 @@ export function openExternalUrl(url: string, type: string = t('externalUrlType')
 	}
 }
 
+/** The rename-resolution read the open-file flows consult (a slice of the read backend). */
+export interface RenamedPathReader {
+	getNewPathOfRenamedFile(repo: string, commitHash: string, oldFilePath: string): Promise<string | null>;
+}
+
 /**
  * Open a file within a repository in Visual Studio Code.
  * @param repo The repository the file is contained in.
  * @param filePath The relative path of the file within the repository.
  * @param hash An optional commit hash where the file is known to have existed.
- * @param dataSource An optional DataSource instance, that's used to check if the file has been renamed.
+ * @param renames An optional reader used to check if the file has been renamed.
  * @param viewColumn An optional ViewColumn that the file should be opened in.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export async function openFile(repo: string, filePath: string, hash: string | null = null, dataSource: DataSource | null = null, viewColumn: vscode.ViewColumn | null = null) {
+export async function openFile(repo: string, filePath: string, hash: string | null = null, renames: RenamedPathReader | null = null, viewColumn: vscode.ViewColumn | null = null) {
 	let newFilePath = filePath;
 	let newAbsoluteFilePath = path.join(repo, newFilePath);
 	let fileExists = await doesFileExist(newAbsoluteFilePath);
-	if (!fileExists && hash !== null && dataSource !== null) {
-		const renamedFilePath = await dataSource.getNewPathOfRenamedFile(repo, hash, filePath);
+	if (!fileExists && hash !== null && renames !== null) {
+		const renamedFilePath = await renames.getNewPathOfRenamedFile(repo, hash, filePath).catch(() => null);
 		if (renamedFilePath !== null) {
 			const renamedAbsoluteFilePath = path.join(repo, renamedFilePath);
 			if (await doesFileExist(renamedAbsoluteFilePath)) {
@@ -336,14 +346,14 @@ export function viewDiff(repo: string, fromHash: string, toHash: string, oldFile
  * @param repo The repository the file is contained in.
  * @param hash The revision of the left-side of the Diff View.
  * @param filePath The relative path of the file within the repository.
- * @param dataSource A DataSource instance, that's used to check if the file has been renamed.
+ * @param renames The reader used to check if the file has been renamed.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export async function viewDiffWithWorkingFile(repo: string, hash: string, filePath: string, dataSource: DataSource) {
+export async function viewDiffWithWorkingFile(repo: string, hash: string, filePath: string, renames: RenamedPathReader) {
 	let newFilePath = filePath;
 	let fileExists = await doesFileExist(path.join(repo, newFilePath));
 	if (!fileExists) {
-		const renamedFilePath = await dataSource.getNewPathOfRenamedFile(repo, hash, filePath);
+		const renamedFilePath = await renames.getNewPathOfRenamedFile(repo, hash, filePath).catch(() => null);
 		if (renamedFilePath !== null && await doesFileExist(path.join(repo, renamedFilePath))) {
 			newFilePath = renamedFilePath;
 			fileExists = true;

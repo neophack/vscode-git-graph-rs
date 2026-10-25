@@ -20,7 +20,7 @@
  * view knows about automation.
  */
 
-import type { GitGraphView } from '../gitGraphView';
+import type { GitGraphView } from '../extension/graphView/panel';
 import type { RequestMessage, ResponseMessage } from '../types';
 
 /** Snapshot of the view and repository state (the gg.status / gg.query repos surface). */

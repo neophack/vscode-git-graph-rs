@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Uri } from 'vscode';
-import { describeCapabilities } from '../../backend';
-import { hasEngineForPlatform } from '../../backend/addon';
+import { describeCapabilities } from '../git/read/backendIndex';
+import { hasEngineForPlatform } from '../git/read/addonLoader';
 import { getConfig } from '../../config';
 import { t } from '../../i18n';
 import type {

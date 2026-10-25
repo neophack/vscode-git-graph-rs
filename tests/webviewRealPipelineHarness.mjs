@@ -218,10 +218,9 @@ export async function bootRealView(repo) {
 	const { EventEmitter } = require(path.join(rootDir, 'out', 'utils', 'event.js'));
 	const { Logger } = require(path.join(rootDir, 'out', 'logger.js'));
 	const { ExtensionState } = require(path.join(rootDir, 'out', 'extensionState.js'));
-	const { DataSource } = require(path.join(rootDir, 'out', 'dataSource.js'));
 	const { AvatarManager } = require(path.join(rootDir, 'out', 'avatarManager.js'));
 	const { RepoManager } = require(path.join(rootDir, 'out', 'repoManager.js'));
-	const { GitGraphView } = require(path.join(rootDir, 'out', 'gitGraphView.js'));
+	const { GitGraphView } = require(path.join(rootDir, 'out', 'extension', 'graphView', 'panel.js'));
 	// The new git layer the panel now runs on (extension/git/**): composed below exactly like
 	// the extension's activate() does, so the harness drives the real reader/writer/runner.
 	const { GitProcess } = require(path.join(rootDir, 'out', 'extension', 'git', 'process', 'gitProcess.js'));
@@ -229,6 +228,7 @@ export async function bootRealView(repo) {
 	const { GitRepository } = require(path.join(rootDir, 'out', 'extension', 'git', 'gitRepository.js'));
 	const { createBackend } = require(path.join(rootDir, 'out', 'extension', 'git', 'read', 'backendIndex.js'));
 	const { createGitRunner } = require(path.join(rootDir, 'out', 'extension', 'graphView', 'gitRunner.js'));
+	const { gerritDataSourceOver } = require(path.join(rootDir, 'out', 'extension', 'integrations', 'gerrit', 'gerrit.js'));
 	// The automation server + bridge resolve 'vscode' and gitGraphView too: load them inside the
 	// stub window so tests can drive the real pipeline over the real socket protocol.
 	const { AutomationServer } = require(path.join(rootDir, 'out', 'automation', 'server.js'));
@@ -268,9 +268,6 @@ export async function bootRealView(repo) {
 		asAbsolutePath: (p) => path.join(rootDir, p)
 	};
 	const extensionState = new ExtensionState(context, gitExecutableEmitter.subscribe);
-	const dataSource = new DataSource({ path: 'git', version: '2.50.0' }, configurationEmitter.subscribe, gitExecutableEmitter.subscribe, logger);
-	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
-	const repoManager = new RepoManager(dataSource, extensionState, configurationEmitter.subscribe, logger);
 
 	// The GitRepository facade the view reads and writes through, over the same real git binary
 	// (engine preferred, CLI fallback - createBackend decides), and the raw runner the editor-
@@ -282,6 +279,10 @@ export async function bootRealView(repo) {
 	const gitRunner = createGitRunner(gitProcess, null, (key) => key);
 	const legacyViews = { openCompareTab: () => { }, openBinaryCompare: () => { } };
 
+	const avatarManager = new AvatarManager(viewReader, extensionState, logger);
+	const repoManager = new RepoManager(viewRepo, gitRunner, extensionState, configurationEmitter.subscribe, logger);
+
+
 	for (let i = 0; i < 600 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
 	assert.ok(Object.keys(repoManager.getRepos()).length > 0, 'the repository was discovered');
 
@@ -290,7 +291,8 @@ export async function bootRealView(repo) {
 	// CommandManager's handlers — command-mode automation actions (the contributed VS Code menus'
 	// commands, e.g. filterByFile, view, amendLastCommit) run the same code the editor's menus
 	// run, and the host bridge's openView keeps switching repositories as before.
-	const commandManager = new CommandManager(context, avatarManager, dataSource, viewRepo, gitRunner, legacyViews, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger);
+	const commandGerrit = gerritDataSourceOver(gitRunner);
+	const commandManager = new CommandManager(context, avatarManager, viewRepo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger);
 
 	GitGraphView.createOrShow(rootDir, viewRepo, gitRunner, legacyViews, extensionState, avatarManager, repoManager, new Logger(), null);
 	assert.ok(graphPanel.webview.html.length > 0, 'the webview html was generated');

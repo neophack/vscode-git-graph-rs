@@ -3,7 +3,7 @@
  * each file's new path.
  */
 
-import { GitLineCounts } from '../../../../../backend/types';
+import { GitLineCounts } from '../../types';
 
 export function parseNumStat(numStat: string): { [path: string]: GitLineCounts } {
 	const counts: { [path: string]: GitLineCounts } = {};

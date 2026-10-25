@@ -22,7 +22,9 @@ const gitGraphViewStub = { GitGraphView: { createOrShow: (...args) => { viewCall
 // The command handlers now live under src/extension/commands/, so the compiled modules require
 // GitGraphView as '../../gitGraphView' (the old src/commands.ts spelling is kept for out/ files
 // that still sit at the out/ root).
-installVscodeStub(vscode, { './gitGraphView': gitGraphViewStub, '../../gitGraphView': gitGraphViewStub });
+installVscodeStub(vscode, { './gitGraphView': gitGraphViewStub, '../../gitGraphView': gitGraphViewStub,
+	// task 3.6: the command modules import the panel from the split tree now
+	'../graphView/panel': gitGraphViewStub, './extension/graphView/panel': gitGraphViewStub });
 
 const { CommandManager } = await import('../out/commands.js');
 const { t } = await import('../out/i18n.js');
@@ -99,10 +101,19 @@ function createManager(doubles, gitExecutable = { path: 'git', version: '2.45.0'
 	const context = { extensionPath: root, subscriptions: [] };
 	// The view ports the panel consumes (task 3.6/4.4): structural fakes, since these tests
 	// exercise registration and dispatch, not the panel wiring behind them.
-	const viewRepo = { read: {}, write: { run: async () => null }, getOperationState: async () => ({ type: null, conflictedFiles: [], progress: null }) };
+	// task 3.6: commands read through the facade now - forward to the DataSource-shaped double,
+	// which carries exactly the read surface these tests stub (getCommitSubject, searchHistory, ...).
+	const viewRepo = {
+		read: new Proxy({}, { get: (_target, key) => { if (key in doubles.dataSource) return doubles.dataSource[key]; return undefined; } }),
+		write: { run: async () => null },
+		getOperationState: async () => ({ type: null, conflictedFiles: [], progress: null })
+	};
 	const gitRunner = { gitOutput: async () => '', runGitCommand: async () => null, runGitCommandWithInput: async () => null };
 	const legacyViews = { openCompareTab: () => { }, openBinaryCompare: () => { } };
-	const manager = new CommandManager(context, doubles.avatarManager, doubles.dataSource, viewRepo, gitRunner, legacyViews, doubles.extensionState, doubles.repoManager, gitExecutable, onDidChangeGitExecutable.subscribe, onDidChangeConfiguration.subscribe, logger);
+	// The Gerrit double rides the old DataSource-shaped fake (installHook and the git-runner
+	// surface the gerrit commands call) - task 3.6 moved it off the DataSource parameter.
+	const gerrit = doubles.dataSource;
+	const manager = new CommandManager(context, doubles.avatarManager, viewRepo, gitRunner, gerrit, legacyViews, doubles.extensionState, doubles.repoManager, gitExecutable, onDidChangeGitExecutable.subscribe, onDidChangeConfiguration.subscribe, logger);
 	return { manager, logger, onDidChangeGitExecutable, onDidChangeConfiguration };
 }
 
@@ -436,7 +447,7 @@ describe('git-graph-rs.version', () => {
 
 		manager.dispose();
 		({ manager } = createManager(doubles));
-		const broken = new CommandManager({ extensionPath: '/nope' }, doubles.avatarManager, doubles.dataSource, { read: {}, write: { run: async () => null } }, { gitOutput: async () => '' }, { openCompareTab: () => { }, openBinaryCompare: () => { } }, doubles.extensionState, doubles.repoManager, null, () => ({ dispose() {} }), () => ({ dispose() {} }), createLoggerStub());
+		const broken = new CommandManager({ extensionPath: '/nope' }, doubles.avatarManager, { read: {}, write: { run: async () => null } }, { gitOutput: async () => '' }, doubles.dataSource, { openCompareTab: () => { }, openBinaryCompare: () => { } }, doubles.extensionState, doubles.repoManager, null, () => ({ dispose() {} }), () => ({ dispose() {} }), createLoggerStub());
 		vscode.runCommand('git-graph-rs.version');
 		await flush();
 		assert.equal(lastError(), t('versionInfoError'));
@@ -499,6 +510,10 @@ describe('git-graph-rs.searchCommits', () => {
 	});
 });
 
+// Replaced by the colocated vitest suites on the new seams (task 3.6/4.10):
+// - repository resolution + amendLastCommit + resetCurrentBranchToRemote ->
+//   src/extension/commands/sourceControl.test.ts
+// - gerritPushRef + gerritFetchCommitMsgHook -> src/extension/commands/gerrit.test.ts
 describe('git-graph-rs.openFile', () => {
 	it('opens the file behind a Git Graph diff URI (argument or active editor)', async () => {
 		const uri = encodeDiffDocUri('/ws/repo', 'src/a.ts', 'd'.repeat(40), 'M', 1);
@@ -518,221 +533,5 @@ describe('git-graph-rs.openFile', () => {
 		vscode.runCommand('git-graph-rs.openFile');
 		await flush();
 		assert.equal(lastError(), t('openFileMissingArgs'));
-	});
-});
-
-describe('repository resolution for Source Control commands', () => {
-	beforeEach(() => { doubles.repoManager.repos['/ws/a'] = { name: null }; });
-
-	it('amendLastCommit uses the argument repository, the active editor, or the only repository', async () => {
-		const amended = [];
-		doubles.dataSource.amendLastCommit = async (repo) => { amended.push(repo); return null; };
-
-		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a') });
-		await flush();
-		assert.equal(lastInfo(), t('amendedLastCommit', 'a'));
-
-		doubles.repoManager.repos['/ws/b'] = { name: null };
-		vscode.window.activeTextEditor = { document: { uri: vscode.Uri.file('/ws/b/file') } };
-		vscode.runCommand('git-graph-rs.amendLastCommit.zhCn');
-		await flush();
-
-		vscode.window.activeTextEditor = undefined;
-		vscode.responses.showQuickPick = [(items) => items[0], undefined];
-		vscode.runCommand('git-graph-rs.amendLastCommit');
-		await flush();
-		assert.equal(vscode.callsTo('showQuickPick')[0].args[1].placeHolder, t('selectRepoForCommand'));
-
-		vscode.runCommand('git-graph-rs.amendLastCommit'); // cancelled quick pick
-		await flush();
-		assert.deepEqual(amended, ['/ws/a', '/ws/b', '/ws/a']);
-
-		// A Source Control argument for a sub-folder resolves to the containing repository
-		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a/sub') });
-		await flush();
-		assert.equal(amended.at(-1), '/ws/a');
-
-		doubles.dataSource.amendLastCommit = async () => 'nothing staged';
-		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a') });
-		await flush();
-		assert.equal(lastError(), t('unableToAmendLastCommit', 'nothing staged'));
-	});
-
-	it('does nothing when no repository is known', async () => {
-		delete doubles.repoManager.repos['/ws/a'];
-		vscode.runCommand('git-graph-rs.amendLastCommit');
-		await flush();
-		assert.equal(vscode.callsTo('showQuickPick').length + vscode.callsTo('showErrorMessage').length + vscode.callsTo('showInformationMessage').length, 0);
-	});
-});
-
-describe('git-graph-rs.resetCurrentBranchToRemote', () => {
-	beforeEach(() => { doubles.repoManager.repos['/ws/a'] = { name: null }; });
-
-	it('confirms with the upstream name before resetting', async () => {
-		vscode.responses.showWarningMessage = [t('resetToRemoteButton')];
-		vscode.runCommand('git-graph-rs.resetCurrentBranchToRemote');
-		await flush();
-		const warning = vscode.callsTo('showWarningMessage')[0];
-		assert.equal(warning.args[0], t('resetToRemoteConfirm', 'origin/main'));
-		assert.deepEqual(warning.args[1], { modal: true });
-		assert.equal(lastInfo(), t('resetToRemoteDone', 'origin/main'));
-
-		vscode.responses.showWarningMessage = [undefined];
-		doubles.dataSource.resetCurrentBranchToRemote = async () => { throw new Error('must not run'); };
-		vscode.runCommand('git-graph-rs.resetCurrentBranchToRemote.zhCn');
-		await flush();
-		assert.equal(vscode.callsTo('showInformationMessage').length, 1);
-	});
-
-	it('reports a missing upstream and reset failures, and refuses without Git', async () => {
-		doubles.dataSource.upstream = null;
-		vscode.runCommand('git-graph-rs.resetCurrentBranchToRemote');
-		await flush();
-		assert.equal(lastError(), t('noUpstreamBranch'));
-
-		doubles.dataSource.upstream = 'origin/dev';
-		doubles.dataSource.resetError = 'dirty tree';
-		vscode.responses.showWarningMessage = [t('resetToRemoteButton')];
-		vscode.runCommand('git-graph-rs.resetCurrentBranchToRemote');
-		await flush();
-		assert.equal(lastError(), t('unableToResetToRemote', 'dirty tree'));
-
-		onDidChangeGitExecutable.emit(null);
-		vscode.runCommand('git-graph-rs.resetCurrentBranchToRemote');
-		await flush();
-		assert.equal(lastError(), t('unableToFindGit'));
-	});
-});
-
-describe('git-graph-rs.gerritPushRef', () => {
-	const tree = 't'.repeat(40), parent = 'p'.repeat(40);
-	beforeEach(() => {
-		doubles.repoManager.repos['/ws/a'] = { name: null };
-		doubles.dataSource.gitOutputs.set('rev-parse --abbrev-ref HEAD', 'feature\n');
-		doubles.dataSource.gitOutputs.set('log -1 --format=%B HEAD --', 'Subject\n\nBody\n');
-		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '\n');
-		doubles.dataSource.gitOutputs.set('show -s --format=%T%n%P%n%an <%ae> %at%n%cn <%ce> %ct%n%B HEAD', [tree, parent, 'A <a@x> 1', 'C <c@x> 2', 'Subject', '', 'Body'].join('\n'));
-	});
-
-	it('amends a Change-Id (after confirmation) and pushes to refs/for/<branch>, offering to open the change', async () => {
-		vscode.responses.showInformationMessage = [t('gerritAmendAndPushButton'), t('gerritOpenChange')];
-		vscode.responses['env.openExternal'] = [true];
-		doubles.dataSource.gitOutputs.set('push origin HEAD:refs/for/feature', 'remote:\nremote:   https://gerrit.example/c/proj/+/1234 Subject\nremote:\n');
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-
-		const amend = doubles.dataSource.commands[0];
-		assert.equal(amend[0], 'commit');
-		assert.equal(amend[1], '--amend');
-		assert.match(amend[3], /^Subject\n\nBody\n\nChange-Id: I[0-9a-f]{40}$/);
-		assert.equal(amend.length, 4); // no -S without signCommits
-		assert.equal(vscode.callsTo('showInformationMessage')[0].args[0], t('gerritAmendConfirm', amend[3].match(/Change-Id: (I[0-9a-f]{11})/)[1]));
-		assert.equal(vscode.callsTo('showInformationMessage')[1].args[0], t('gerritPushedWithUrl', 'https://gerrit.example/c/proj/+/1234'));
-		assert.equal(vscode.callsTo('env.openExternal')[0].args[0].toString(), 'https://gerrit.example/c/proj/+/1234');
-	});
-
-	it('skips the amend when HEAD already has a Change-Id, signs when configured, and reports a push without a URL', async () => {
-		doubles.dataSource.gitOutputs.set('log -1 --format=%B HEAD --', 'Subject\n\nChange-Id: I' + '1'.repeat(40) + '\n');
-		doubles.dataSource.gitOutputs.set('push upstream HEAD:refs/for/feature', 'done');
-		vscode.settings['gerrit.remote'] = 'upstream';
-		vscode.runCommand('git-graph-rs.gerritPushRef.zhCn');
-		await flush();
-		assert.equal(doubles.dataSource.commands.length, 0);
-		assert.equal(lastInfo(), t('gerritPushed', 'feature', 'upstream'));
-
-		doubles.dataSource.gitOutputs.set('log -1 --format=%B HEAD --', 'Subject\n');
-		vscode.settings['repository.sign.commits'] = true;
-		delete vscode.settings['gerrit.remote'];
-		doubles.dataSource.gitOutputs.set('push origin HEAD:refs/for/feature', 'done');
-		vscode.responses.showInformationMessage = [t('gerritAmendAndPushButton')];
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(doubles.dataSource.commands[0].at(-1), '-S');
-	});
-
-	it('refuses when HEAD was already pushed, when the amend is declined, or when the amend fails', async () => {
-		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '  origin/feature\n');
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritChangeIdPushedError', 'origin/feature'));
-
-		// The symbolic "origin/HEAD -> origin/main" line names the same branch as its target: the
-		// refusal must name the branch, not paste the arrow listing at the user.
-		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '  origin/HEAD -> origin/main\n  origin/main\n');
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritChangeIdPushedError', 'origin/main'));
-
-		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '');
-		vscode.responses.showInformationMessage = [t('gerritCancel')];
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritAmendAborted'));
-
-		vscode.responses.showInformationMessage = [t('gerritAmendAndPushButton')];
-		doubles.dataSource.runGitCommandError = 'hook rejected';
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), 'hook rejected');
-
-		doubles.dataSource.gitOutputs.set('log -1 --format=%B HEAD --', new Error('no HEAD'));
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), 'no HEAD');
-	});
-
-	it('validates the current branch and reports push failures', async () => {
-		doubles.dataSource.gitOutputs.set('rev-parse --abbrev-ref HEAD', new Error('fatal'));
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritNoCommits'));
-
-		doubles.dataSource.gitOutputs.set('rev-parse --abbrev-ref HEAD', 'HEAD');
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritDetachedHead'));
-
-		doubles.dataSource.gitOutputs.set('rev-parse --abbrev-ref HEAD', 'bad..name');
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritInvalidBranch', 'bad..name'));
-
-		doubles.dataSource.gitOutputs.set('rev-parse --abbrev-ref HEAD', 'feature');
-		doubles.dataSource.gitOutputs.set('log -1 --format=%B HEAD --', 'Change-Id: I' + '2'.repeat(40));
-		doubles.dataSource.gitOutputs.set('push origin HEAD:refs/for/feature', new Error('rejected'));
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('gerritPushFailed', 'rejected'));
-
-		onDidChangeGitExecutable.emit(null);
-		vscode.runCommand('git-graph-rs.gerritPushRef');
-		await flush();
-		assert.equal(lastError(), t('unableToFindGit'));
-	});
-});
-
-describe('git-graph-rs.gerritFetchCommitMsgHook', () => {
-	beforeEach(() => { doubles.repoManager.repos['/ws/a'] = { name: null }; });
-
-	it('reports installation, an up-to-date hook, failures, and the missing Git executable', async () => {
-		vscode.runCommand('git-graph-rs.gerritFetchCommitMsgHook');
-		await flush();
-		assert.equal(lastInfo(), t('gerritHookInstalled'));
-
-		doubles.dataSource.hookResult = { error: null, installed: false };
-		vscode.runCommand('git-graph-rs.gerritFetchCommitMsgHook.zhCn');
-		await flush();
-		assert.equal(lastInfo(), t('gerritHookUpToDate'));
-
-		doubles.dataSource.hookResult = { error: '404', installed: false };
-		vscode.runCommand('git-graph-rs.gerritFetchCommitMsgHook');
-		await flush();
-		assert.equal(lastError(), t('gerritHookFailed', '404'));
-
-		onDidChangeGitExecutable.emit(null);
-		vscode.runCommand('git-graph-rs.gerritFetchCommitMsgHook');
-		await flush();
-		assert.equal(lastError(), t('unableToFindGit'));
 	});
 });

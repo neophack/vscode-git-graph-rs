@@ -61,9 +61,19 @@ test.after(async () => {
 test('status reports the loaded view and repository', async () => {
 	const status = engine.status();
 	assert.equal(status.viewLoaded, true);
-	const normalise = (p) => p.replace(/\\/g, '/');
-	assert.equal(normalise(status.currentRepo), normalise(repo));
-	assert.ok(status.repos.map(normalise).includes(normalise(repo)));
+	// os.tmpdir() reports the 8.3 short form on this machine while the repo manager resolves
+	// the real long path, and realpathSync's 8.3 expansion is not deterministic here - compare
+	// by file identity (same dev+ino) instead of path spelling.
+	const samePath = (a, b) => {
+		try {
+			const sa = fs.statSync(a), sb = fs.statSync(b);
+			return sa.ino === sb.ino && sa.dev === sb.dev;
+		} catch {
+			return a === b;
+		}
+	};
+	assert.ok(samePath(status.currentRepo, repo));
+	assert.ok(status.repos.some((r) => samePath(r, repo)));
 });
 
 test('query repoInfo reads through the real pipeline', async () => {

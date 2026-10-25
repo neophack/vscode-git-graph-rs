@@ -45,9 +45,10 @@ const {
 	parseChangeRef, changeShard, parseLsRemoteChanges, limitChanges, buildFetchRefspecs, buildKeepPatterns,
 	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, limitChangeStates,
 	selectDisplayedChangeStates,
-	nextGerritSampleWindow, GERRIT_FETCH_WINDOW_FACTOR_MAX, GerritDataSource
-} = await import('../out/gerrit.js');
-const { NativeBackend } = await import('../out/backend/index.js');
+	nextGerritSampleWindow, GERRIT_FETCH_WINDOW_FACTOR_MAX
+} = await import('../out/extension/integrations/gerrit/gerritProtocol.js');
+const { GerritDataSource } = await import('../out/extension/integrations/gerrit/gerrit.js');
+const { NativeBackend } = await import('../out/extension/git/read/backendIndex.js');
 
 describe('change ref parsing', () => {
 	it('parses remote change refs and NoteDb meta refs', () => {

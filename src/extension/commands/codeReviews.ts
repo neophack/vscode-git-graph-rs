@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GitGraphView } from '../../gitGraphView';
+import { GitGraphView } from '../graphView/panel';
 import { t } from '../../i18n';
 import { CodeReviewData, CodeReviews } from '../../extensionState';
 import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
@@ -117,7 +117,7 @@ function getCodeReviewQuickPickItems(host: CommandHost, codeReviews: CodeReviews
 		});
 	});
 
-	return Promise.all(fetchCommits.map((fetch) => host.dataSource.getCommitSubject(fetch.repo, fetch.commitHash))).then(
+	return Promise.all(fetchCommits.map((fetch) => host.repo.read.getCommitSubject(fetch.repo, fetch.commitHash).catch(() => null))).then(
 		(subjects) => {
 			const commitSubjects: { [repo: string]: { [commitHash: string]: string } } = {};
 			subjects.forEach((subject, i) => {

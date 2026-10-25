@@ -46,7 +46,7 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 const created: unknown[][] = vi.hoisted(() => []);
-vi.mock('../../gitGraphView', () => ({
+vi.mock('../graphView/panel', () => ({
 	GitGraphView: {
 		createOrShow: (...args: unknown[]) => { created.push(args); }
 	}
@@ -102,10 +102,12 @@ function fakeHost(repos: { [repo: string]: { name: string } }, commits: Array<{ 
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
-		dataSource: {
-			searchHistory: async (repo: string, query: string) => {
-				searches.push([repo, query]);
-				return commits;
+		repo: {
+			read: {
+				searchHistory: async (repo: string, query: string) => {
+					searches.push([repo, query]);
+					return commits;
+				}
 			}
 		},
 		extensionState: {},
