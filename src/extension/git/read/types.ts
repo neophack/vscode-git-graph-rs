@@ -13,7 +13,7 @@
  * contract.
  */
 
-import { CommitOrdering } from '../shared/engine/protocol';
+import { CommitOrdering } from '../../../shared/engine/protocol';
 
 /** The synthetic hash the view uses for the "Uncommitted Changes" row. */
 export const UNCOMMITTED = '*';
@@ -48,7 +48,7 @@ export type {
 	CommitFile as GitCommitFile,
 	ConfigSnapshot as GitConfigSnapshot,
 	RemoteConfig as GitRemoteConfig
-} from '../shared/engine/protocol';
+} from '../../../shared/engine/protocol';
 
 /* ---------- Wire literals the extension names ---------- */
 

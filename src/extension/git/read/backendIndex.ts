@@ -3,20 +3,21 @@
  *
  * The extension asks for a `GitBackend` and gets one. Which implementation it is — and whether a
  * particular call was served by the Rust engine or by the `git` command line — is not the calling
- * code's concern, which is what lets the engine grow one capability at a time.
+ * code's concern, which is what lets the engine grow one capability at a time. This module is the
+ * successor of the historical `src/backend/index.ts` (kept as a compatibility re-export).
  */
 
-import { GitBackend, NativeBackend } from './api';
-import { isAddonAvailable, loadAddon, platformKey } from './addon';
-import { CliBackend } from './cliBackend';
-import { BackendCapability, BackendReport } from '../types';
+import { GitBackend, NativeBackend } from './gitReader';
+import { isAddonAvailable, loadAddon, platformKey } from './addonLoader';
+import { CliBackend } from './cli';
+import { BackendCapability, BackendReport } from '../../../types';
 import { GitBackendError } from './types';
-import { createFallbackReader } from '../extension/git/read/fallbackReader';
+import { createFallbackReader } from './fallbackReader';
 
 export * from './types';
-export { GitBackend } from './api';
-export { NativeBackend } from './api';
-export { CliBackend } from './cliBackend';
+export { GitBackend } from './gitReader';
+export { NativeBackend } from './gitReader';
+export { CliBackend } from './cli';
 
 export interface BackendOptions {
 	/** Force a particular backend, rather than preferring the engine. */

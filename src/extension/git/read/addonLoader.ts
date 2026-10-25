@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { EngineError, EngineMethod, EngineMethods } from '../shared/engine/protocol';
+import { EngineError, EngineMethod, EngineMethods } from '../../../shared/engine/protocol';
 import { GitBackendError, GitErrorKind } from './types';
 
 /**
@@ -76,7 +76,7 @@ export interface EnginePlatform {
  * extension runs over the `git` CLI, and the Settings widget's backend section shows the split.
  */
 export function enginePlatformTable(
-	root: string = path.join(__dirname, '..', '..')
+	root: string = path.join(__dirname, '..', '..', '..', '..')
 ): ReadonlyArray<EnginePlatform> {
 	return Object.keys(ENGINE_PLATFORMS).map((key) => {
 		const platform = ENGINE_PLATFORMS[key];
@@ -121,7 +121,7 @@ export function platformKey(
  * a VSIX built without one of the six targets) is reported the same way as an unknown platform:
  * both simply run over the `git` CLI backend for everything.
  */
-export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '..')): boolean {
+export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '..', '..', '..')): boolean {
 	try {
 		platformDirectory();
 	} catch {
@@ -160,7 +160,7 @@ let loadFailure: Error | null = null;
  * The failure is remembered: a missing binary will not start working on a retry, and the caller
  * (which falls back to the `git` CLI) would otherwise pay the filesystem probe on every request.
  */
-export function loadAddon(root: string = path.join(__dirname, '..', '..')): NativeAddon {
+export function loadAddon(root: string = path.join(__dirname, '..', '..', '..', '..')): NativeAddon {
 	if (cached !== null) return cached;
 	if (loadFailure !== null) throw loadFailure;
 

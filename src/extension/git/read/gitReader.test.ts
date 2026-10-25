@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cancel, request } from './addon';
-import { startCancellableRequest } from './api';
+import { cancel, request } from './addonLoader';
+import { startCancellableRequest } from './gitReader';
 
 /**
  * The cancellation-capable call shape (task 2.9) that the host scheduler of task 4.8 consumes:
@@ -9,7 +9,7 @@ import { startCancellableRequest } from './api';
  * tests pin the wiring, not the engine.
  */
 
-vi.mock('./addon', () => ({
+vi.mock('./addonLoader', () => ({
 	request: vi.fn(async () => 'ok-value'),
 	cancel: vi.fn(),
 	loadAddon: vi.fn(() => {

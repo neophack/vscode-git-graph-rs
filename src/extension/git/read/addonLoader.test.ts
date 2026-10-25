@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AddonCallOptions, cancel, NativeAddon, request } from './addon';
+import { AddonCallOptions, cancel, NativeAddon, request } from './addonLoader';
 import { GitBackendError } from './types';
 
 /**

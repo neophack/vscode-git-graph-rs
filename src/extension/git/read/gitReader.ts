@@ -3,12 +3,12 @@
  *
  * This is the seam the rewrite is built around. The extension talks to `GitBackend` and nothing
  * else; which implementation is behind it — the Rust engine or the `git` command line — is chosen
- * once, at startup, by `index.ts`. That makes the migration incremental: a capability the engine
- * does not have yet is answered by the CLI without the calling code knowing.
+ * once, at startup, by `backendIndex.ts`. That makes the migration incremental: a capability the
+ * engine does not have yet is answered by the CLI without the calling code knowing.
  */
 
-import { cancel, loadAddon, request } from './addon';
-import { GerritChangeState } from '../types';
+import { cancel, loadAddon, request } from './addonLoader';
+import { GerritChangeState } from '../../../types';
 import {
 	GitActivityCell,
 	GitAuthor,
@@ -31,7 +31,7 @@ import {
 	LogOptions,
 	RefReadOptions
 } from './types';
-import { EngineMethod, EngineMethods } from '../shared/engine/protocol';
+import { EngineMethod, EngineMethods } from '../../../shared/engine/protocol';
 
 /**
  * Everything the Git Graph View needs to read from a repository.

@@ -1,16 +1,16 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
-import { BinaryCompareView } from './binaryCompareView';
-import { DataSource } from './dataSource';
-import { HexDiffSession } from './hexDiff';
-import { isZhCn, t } from './i18n';
-import { ComparisonInitResponse, ComparisonRequest, ComparisonResponse } from './shared/protocol/comparison';
-import { GitFileChange } from './types';
-import { UNCOMMITTED, abbrevCommit } from './utils/git';
-import { getNonce } from './utils/format';
-import { viewDiff } from './utils/actions';
-import { Disposable, toDisposable } from './utils/disposable';
+import { createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from '../binaryCompare/binaryCompare';
+import { BinaryCompareView } from '../binaryCompare/viewController';
+import { DataSource } from '../../../dataSource';
+import { HexDiffSession } from '../binaryCompare/hexDiff';
+import { isZhCn, t } from '../../../i18n';
+import { ComparisonInitResponse, ComparisonRequest, ComparisonResponse } from '../../../shared/protocol/comparison';
+import { GitFileChange } from '../../../types';
+import { UNCOMMITTED, abbrevCommit } from '../../../utils/git';
+import { getNonce } from '../../../utils/format';
+import { viewDiff } from '../../../utils/actions';
+import { Disposable, toDisposable } from '../../../utils/disposable';
 
 /**
  * A webview tab that displays the changes between two commits in a GitHub-style layout: a header
