@@ -169,7 +169,9 @@ test('write actions declare how they are verified or are pure host commands', ()
 });
 
 test('deterministic refusal commands assert their captured notifications', () => {
-	const i18n = fs.readFileSync(path.join(rootDir, 'src', 'i18n.ts'), 'utf8');
+	// The shared dictionary of task 6.3: src/i18n.ts is a thin re-export, the messages live in
+	// src/shared/i18n (both interface languages).
+	const i18n = sourceFiles('src/shared/i18n/en.ts', 'src/shared/i18n/zh-cn.ts').map((file) => file.text).join('\n');
 	const deterministic = CATALOG.filter((a) => a.group === 'menu-vscode' && a.mutable && a.expectNotifications !== undefined);
 	// The two designed refusals of the fixture: the local-path remote offers no Gerrit server to
 	// fetch the commit-msg hook from, and main == origin/main after the reseed pushes the
@@ -180,7 +182,7 @@ test('deterministic refusal commands assert their captured notifications', () =>
 		// The captured text is the localized message: every needle must occur in the i18n sources
 		// (both interface languages) or it can never match.
 		for (const needle of action.expectNotifications) {
-			assert.ok(i18n.includes(needle), action.id + ': expectNotifications needle "' + needle + '" appears nowhere in src/i18n.ts');
+			assert.ok(i18n.includes(needle), action.id + ': expectNotifications needle "' + needle + '" appears nowhere in src/shared/i18n');
 		}
 	}
 });
