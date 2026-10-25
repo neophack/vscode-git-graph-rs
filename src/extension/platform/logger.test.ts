@@ -1,4 +1,24 @@
-import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The unified Logger has a vscode-wired half (absorbed from the former flat src/logger.ts): the
+ * host shape `new Logger(logFilePath?)` creates the 'Git Graph RS' channel through
+ * `vscode.window` at construction, so these tests run against a fake 'vscode' module (the
+ * structural half below keeps using the injected factory and needs no fake).
+ */
+const vscodeMock = vi.hoisted(() => ({
+	window: {
+		createOutputChannel: (_name: string): unknown => {
+			throw new Error('unexpected createOutputChannel call');
+		}
+	}
+}));
+
+vi.mock('vscode', () => vscodeMock);
+
 import { Logger, OutputChannelFactoryLike, OutputChannelLike } from './logger';
 
 /** A channel fake recording appended lines and optional-member calls. */
@@ -107,5 +127,103 @@ describe('Logger', () => {
 			logger.dispose();
 		}).not.toThrow();
 		expect(appendLine).toHaveBeenCalledWith('one');
+	});
+});
+
+describe('Logger (host-wired mode, absorbed from src/logger.ts)', () => {
+	let channel: FakeChannel;
+	let created: string[];
+
+	beforeEach(() => {
+		channel = new FakeChannel();
+		created = [];
+		vscodeMock.window.createOutputChannel = (name: string) => {
+			created.push(name);
+			return channel;
+		};
+	});
+
+	it('wires the channel from vscode.window and records nothing until enabled', () => {
+		const logger = new Logger();
+
+		expect(created).toEqual(['Git Graph RS']);
+		expect(logger.isEnabled()).toBe(false);
+		expect(logger.getLogFile()).toBeNull();
+
+		logger.log('not recorded');
+		logger.logError('not recorded either');
+
+		expect(channel.lines).toEqual([]);
+	});
+
+	it('mirrors timestamped lines to the log file once enabled', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
+		const logFile = path.join(directory, 'git-graph-rs.log');
+		const logger = new Logger(logFile);
+
+		logger.log('while disabled'); // dropped
+		logger.setEnabled(true);
+
+		expect(logger.isEnabled()).toBe(true);
+		expect(logger.getLogFile()).toBe(logFile);
+
+		logger.log('hello');
+		logger.logError('boom');
+
+		const contents = fs.readFileSync(logFile, 'utf8');
+		expect(contents).toContain('hello');
+		expect(contents).toContain('ERROR: boom');
+		expect(contents).not.toContain('while disabled');
+		// Every mirrored line is timestamped [YYYY-MM-DD HH:MM:SS.mmm]
+		expect(contents.match(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /gm)).toHaveLength(2);
+		expect(channel.lines).toHaveLength(2);
+	});
+
+	it('starts a fresh log file on every enable', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
+		const logFile = path.join(directory, 'git-graph-rs.log');
+		const logger = new Logger(logFile);
+
+		logger.setEnabled(true);
+		logger.log('first session');
+		logger.setEnabled(false);
+		logger.log('while disabled');
+		logger.setEnabled(true);
+
+		const contents = fs.readFileSync(logFile, 'utf8');
+		expect(contents).not.toContain('first session');
+		expect(contents).not.toContain('while disabled');
+		logger.log('second session');
+		expect(fs.readFileSync(logFile, 'utf8')).toContain('second session');
+	});
+
+	it('falls back to the channel alone when the log file location is unusable', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
+		const blocker = path.join(directory, 'blocker');
+		fs.writeFileSync(blocker, 'a file, not a directory');
+		const logger = new Logger(path.join(blocker, 'nested', 'git-graph-rs.log'));
+
+		logger.setEnabled(true);
+		expect(logger.getLogFile()).toBeNull();
+
+		logger.log('still on the channel');
+		expect(channel.lines.some((line) => line.indexOf('still on the channel') > -1)).toBe(true);
+	});
+
+	it('formats spawned commands through logCmd', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
+		const logger = new Logger(path.join(directory, 'git-graph-rs.log'));
+		logger.setEnabled(true);
+
+		logger.logCmd('git', ['log', '', '--format=%H%x00', 'spaced arg', '-n', '5'], 42);
+
+		expect(channel.lines.some((line) => line.indexOf('> git log "" --format=... "spaced arg" -n 5 (42 ms)') > -1)).toBe(true);
+	});
+
+	it('disposes the vscode-wired channel', () => {
+		const logger = new Logger();
+		logger.dispose();
+
+		expect(channel.disposed).toBe(1);
 	});
 });

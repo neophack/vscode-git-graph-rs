@@ -1,6 +1,27 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The module also carries the live per-repository reader absorbed from the former flat
+ * src/config.ts, which reads through `vscode.workspace.getConfiguration` - so a fake 'vscode'
+ * module backs it here. The snapshot tests below keep using plain injected workspaces and never
+ * touch the fake.
+ */
+const vscodeMock = vi.hoisted(() => ({
+	env: { language: 'en', uriScheme: 'vscode' },
+	Uri: { file: (p: string) => ({ fsPath: p }) },
+	ViewColumn: { Active: 1, Beside: -2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 },
+	workspace: {
+		getConfiguration: (_section?: string, _scope?: unknown): unknown => {
+			throw new Error('unexpected getConfiguration call');
+		}
+	}
+}));
+
+vi.mock('vscode', () => vscodeMock);
+
+import { CommitOrdering, DateFormatType, DateType, GitResetMode, TagType } from '../../types';
 import {
 	CONFIG_MIGRATIONS,
 	CONFIG_SECTION,
@@ -9,6 +30,7 @@ import {
 	ObservableWorkspaceLike,
 	WorkspaceConfigurationLike,
 	WorkspaceLike,
+	getConfig,
 	onConfigChange,
 	readWithMigrations,
 	takeSnapshot
@@ -273,5 +295,144 @@ describe('onConfigChange', () => {
 		unsubscribe();
 
 		expect(sizes).toEqual([18, 24]);
+	});
+});
+
+describe('getConfig (the legacy per-repository reader, absorbed from src/config.ts)', () => {
+	let scopes: unknown[];
+
+	beforeEach(() => {
+		scopes = [];
+		vscodeMock.env.language = 'en';
+		vscodeMock.env.uriScheme = 'vscode';
+	});
+
+	/** Point vscode.workspace.getConfiguration at a plain dotted-key map for the extension's section. */
+	function configure(values: Record<string, unknown>): void {
+		vscodeMock.workspace.getConfiguration = (section?: string, scope?: unknown) => {
+			scopes.push(scope);
+			return {
+				get: <T>(key: string, defaultValue?: T): T | undefined => {
+					// Any other section (the 'git' section of gitPaths) answers its default
+					if (section !== CONFIG_SECTION) return defaultValue;
+					const value = values[key];
+					return value !== undefined ? value as T : defaultValue;
+				}
+			};
+		};
+	}
+
+	it('reads from the git-graph-rs section, scoped to the repository when one is given', () => {
+		configure({});
+		getConfig();
+		expect(scopes).toEqual([undefined]);
+		getConfig('E:/some/repo');
+		expect(scopes[1]).toEqual({ fsPath: 'E:/some/repo' });
+	});
+
+	it('normalises keybindings: UNASSIGNED => NULL, CTRL/CMD + X => x, anything else => default', () => {
+		configure({
+			'keyboardShortcut.find': 'UNASSIGNED',
+			'keyboardShortcut.refresh': 'not a keybinding',
+			'keyboardShortcut.scrollToHead': 'CTRL/CMD + H'
+		});
+		const keybindings = getConfig().keybindings;
+		expect(keybindings.find).toBeNull();
+		expect(keybindings.refresh).toBe('r');
+		expect(keybindings.scrollToHead).toBe('h');
+	});
+
+	it('cooks the date format and date type', () => {
+		configure({ 'date.format': 'Relative' });
+		expect(getConfig().dateFormat).toEqual({ type: DateFormatType.Relative, iso: false });
+
+		configure({ 'date.format': 'ISO Date Only', 'date.type': 'Commit Date' });
+		const config = getConfig();
+		expect(config.dateFormat).toEqual({ type: DateFormatType.DateOnly, iso: true });
+		expect(config.dateType).toBe(DateType.Commit);
+	});
+
+	it('cooks dialog defaults (reset modes, tag type, reference input substitution)', () => {
+		configure({
+			'dialog.resetCurrentBranchToCommit.mode': 'Soft',
+			'dialog.resetUncommittedChanges.mode': 'Hard',
+			'dialog.addTag.type': 'Lightweight',
+			'dialog.general.referenceInputSpaceSubstitution': 'Underscore'
+		});
+		const dialogs = getConfig().dialogDefaults;
+		expect(dialogs.resetCommit.mode).toBe(GitResetMode.Soft);
+		expect(dialogs.resetUncommitted.mode).toBe(GitResetMode.Hard);
+		expect(dialogs.addTag.type).toBe(TagType.Lightweight);
+		expect(dialogs.general.referenceInputSpaceSubstitution).toBe('_');
+
+		configure({});
+		const defaults = getConfig().dialogDefaults;
+		expect(defaults.resetCommit.mode).toBe(GitResetMode.Mixed);
+		expect(defaults.resetUncommitted.mode).toBe(GitResetMode.Mixed);
+		expect(defaults.general.referenceInputSpaceSubstitution).toBeNull();
+	});
+
+	it('falls back to the default graph palette unless the configured one has a valid colour', () => {
+		configure({ 'graph.colours': ['#123456', 'not-a-colour'] });
+		expect(getConfig().graph.colours).toEqual(['#123456']);
+
+		configure({ 'graph.colours': ['nope', 'still nope'] });
+		const fallback = getConfig().graph.colours;
+		expect(fallback).toHaveLength(12);
+		expect(fallback[0]).toBe('#0085d9');
+	});
+
+	it('resolves the interface language: an explicit setting wins, "auto" follows the editor', () => {
+		configure({ 'interfaceLanguage': 'zh-cn' });
+		expect(getConfig().interfaceLanguage).toBe('zh-cn');
+		expect(getConfig().interfaceLanguageSetting).toBe('zh-cn');
+
+		configure({ 'interfaceLanguage': 'auto' });
+		vscodeMock.env.language = 'zh-CN';
+		expect(getConfig().interfaceLanguage).toBe('zh-cn');
+
+		vscodeMock.env.language = 'de';
+		expect(getConfig().interfaceLanguage).toBe('en');
+	});
+
+	it('cooks the commit order', () => {
+		configure({ 'repository.commits.order': 'topo' });
+		expect(getConfig().commitOrder).toBe(CommitOrdering.Topological);
+
+		configure({ 'repository.commits.order': 'author-date' });
+		expect(getConfig().commitOrder).toBe(CommitOrdering.AuthorDate);
+
+		configure({});
+		expect(getConfig().commitOrder).toBe(CommitOrdering.Date);
+	});
+
+	it('defaults mobileAdaptation per host when no scope sets it', () => {
+		// An explicitly set value wins on every host (VS Code's scope precedence)
+		vscodeMock.workspace.getConfiguration = () => ({
+			get: (_key: string, defaultValue?: unknown) => defaultValue,
+			inspect: (key: string) => key === 'mobileAdaptation' ? { workspaceFolderValue: false } : undefined,
+			has: (_key: string) => false
+		});
+		expect(getConfig().mobileAdaptation).toBe(false);
+
+		vscodeMock.workspace.getConfiguration = () => ({
+			get: (_key: string, defaultValue?: unknown) => defaultValue,
+			inspect: (_key: string) => undefined,
+			has: (_key: string) => false
+		});
+		// Unset: Git Graph Studio ('ggs') turns it on, VS Code keeps it off
+		vscodeMock.env.uriScheme = 'ggs';
+		expect(getConfig().mobileAdaptation).toBe(true);
+		vscodeMock.env.uriScheme = 'vscode';
+		expect(getConfig().mobileAdaptation).toBe(false);
+	});
+
+	it('reads the git.path setting of the git section for gitPaths', () => {
+		vscodeMock.workspace.getConfiguration = (section?: string) => ({
+			get: <T>(key: string, defaultValue?: T): T | undefined => section === 'git' && key === 'path'
+				? 'C:/tools/git/bin/git.exe' as unknown as T
+				: defaultValue
+		});
+		expect(getConfig().gitPaths).toEqual(['C:/tools/git/bin/git.exe']);
 	});
 });
