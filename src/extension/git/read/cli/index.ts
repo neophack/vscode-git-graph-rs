@@ -17,7 +17,9 @@
 
 import { GitBackend } from '../../../../backend/api';
 import {
+	AnnotateReadOptions,
 	GitActivityCell,
+	GitAnnotation,
 	GitAuthor,
 	GitAuthorStat,
 	GitBackendError,
@@ -33,6 +35,7 @@ import {
 	GitLineCounts,
 	GitRefData,
 	GitReflogPage,
+	GitRefSnapshot,
 	GitRepoInfo,
 	GitSignature,
 	GitStash,
@@ -68,11 +71,13 @@ import { getCommits, getUncommittedChangeCount } from './log';
 import { GitCli } from './process';
 import { getReflog } from './reflog';
 import {
+	annotate,
 	currentBranchName,
 	getCurrentBranchUpstream,
 	getRemotes,
 	getRepoChangeSignature,
 	getRepoInfo,
+	getRefSnapshot,
 	getRefs,
 	getStashes,
 	listChangeRefs
@@ -133,6 +138,16 @@ export class CliBackend implements GitBackend {
 
 	public getRefs(repo: string, options?: RefReadOptions): Promise<GitRefData> {
 		return getRefs(this.cli, repo, options);
+	}
+
+	/** The one-pass ref snapshot of a refs-only refresh (task 4.8), over the CLI's split ref scans. */
+	public getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot> {
+		return getRefSnapshot(this.cli, repo, options);
+	}
+
+	/** The CLI's refs-only re-annotation (task 4.8): one ref scan, no history walk. */
+	public annotate(repo: string, commits: ReadonlyArray<string>, options?: AnnotateReadOptions): Promise<GitAnnotation> {
+		return annotate(this.cli, repo, commits, options);
 	}
 
 	public getRepoChangeSignature(repo: string): Promise<string | null> {

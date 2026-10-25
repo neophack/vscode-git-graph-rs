@@ -26,6 +26,8 @@ import { TextMessageKey } from './shared/i18n';
 import { Logger } from './logger';
 import { RepoManager } from './extension/repos/repoManager';
 import { createPrewarmController } from './extension/repos/prewarm';
+import type { PrewarmReader } from './extension/repos/prewarm';
+import { hostScheduler } from './extension/graphView/scheduler';
 import { takeSnapshot } from './extension/platform/config';
 import { StatusBarItem } from './statusBarItem';
 import {
@@ -170,11 +172,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Prewarming (task 4.9): 2 s after activation, open engine handles and prefetch the first
 	// page of recently-opened repositories, one at a time. The reader rides the same
-	// executable-tracking cell as the view's reader, so a Git switch re-aims it too. The real
-	// interactive-busy scheduler arrives with task 4.8; until then prewarming yields while the
-	// view is still booting (the only state it can observe today).
+	// executable-tracking cell as the view's reader, so a Git switch re-aims it too. The
+	// prefetch reads run as background jobs of the host scheduler (task 4.8): they yield to any
+	// interactive request of the view, and the controller's own isBusy gate keeps the cycle
+	// boundaries yielding as well.
 	const prewarm = createPrewarmController({
-		readerFactory: () => forwardBackend(() => readerCell.backend),
+		readerFactory: () => prewarmReader(forwardBackend(() => readerCell.backend)),
 		recentRepos: () => repoManager.getRecentRepos(),
 		currentRepo: () => GitGraphView.currentPanel !== undefined ? GitGraphView.currentPanel.automationState().currentRepo : null,
 		isBusy: () => GitGraphView.currentPanel !== undefined && !GitGraphView.currentPanel.automationState().viewLoaded,
@@ -262,6 +265,21 @@ function buildBackend(gitExecutable: LegacyGitExecutable | null, logger: Logger)
 	return backend;
 }
 
+/**
+ * The prewarm controller's reader (task 4.9 wired onto task 4.8's scheduler): the handle is
+ * opened directly (cheap, and the controller tracks it), while the two prefetch reads run as
+ * background jobs of the host scheduler — one at a time, and yielded (abandoned) by any
+ * interactive request the view is making, which is exactly the prewarm policy of §3.8.2 D11.
+ */
+function prewarmReader(backend: GitBackend): PrewarmReader {
+	return {
+		openRepository: (repo) => backend.openRepository(repo),
+		closeRepository: (repo) => backend.closeRepository(repo),
+		getRepoInfo: (repo, options) => hostScheduler.run('prewarm:info:' + repo, 'background', () => backend.getRepoInfo(repo, options)),
+		getCommits: (repo, options) => hostScheduler.run('prewarm:commits:' + repo, 'background', () => backend.getCommits(repo, options))
+	};
+}
+
 /** A GitBackend forwarding every member to the current backend of a cell (rebuilt on Git changes). */
 function forwardBackend(current: () => GitBackend): GitBackend {
 	return {
@@ -272,6 +290,8 @@ function forwardBackend(current: () => GitBackend): GitBackend {
 		getRepoInfo: (repo, options) => current().getRepoInfo(repo, options),
 		getCommits: (repo, options, signal) => current().getCommits(repo, options, signal),
 		getRefs: (repo, options) => current().getRefs(repo, options),
+		getRefSnapshot: (repo, options) => current().getRefSnapshot(repo, options),
+		annotate: (repo, commits, options, signal) => current().annotate(repo, commits, options, signal),
 		getRepoChangeSignature: (repo) => current().getRepoChangeSignature(repo),
 		getCommitDetails: (repo, hash) => current().getCommitDetails(repo, hash),
 		getCommitSignature: (repo, hash) => current().getCommitSignature(repo, hash),

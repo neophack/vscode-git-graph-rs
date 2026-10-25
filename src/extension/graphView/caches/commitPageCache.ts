@@ -30,8 +30,9 @@ export class CommitPageCache {
 	 * Cache and start one page load. Eviction is by INSERTION order (the oldest inserted key),
 	 * not by access - matching the live implementation exactly: a repeatedly read entry is not
 	 * refreshed, so under sustained load over the limit the original entries rotate out.
-	 * A load that resolves with an ERROR result removes itself again (errors may be transient,
-	 * the next call must be allowed to retry) unless a newer load has already replaced the entry.
+	 * A load that settles with an ERROR result, or REJECTS (a superseded walk cancelled through
+	 * its signal, task 4.8), removes itself again - the next call must be allowed to retry -
+	 * unless a newer load has already replaced the entry.
 	 */
 	public put(key: string, load: () => Promise<GitCommitData>): Promise<GitCommitData> {
 		if (this.pages.size >= this.limit) {
@@ -40,12 +41,14 @@ export class CommitPageCache {
 		}
 		const promise = load();
 		this.pages.set(key, promise);
-		// The caller awaits the returned promise; this side-chain only drops error results, and
+		// The caller awaits the returned promise; this side-chain only drops failed entries, and
 		// its rejection arm must stay silent or a rejecting load would resurface here as an
 		// unhandled rejection - exactly what the extracted pipeline exists to eliminate.
 		promise.then((page) => {
 			if (page.error !== null && this.pages.get(key) === promise) this.pages.delete(key);
-		}, () => undefined);
+		}, () => {
+			if (this.pages.get(key) === promise) this.pages.delete(key);
+		});
 		return promise;
 	}
 

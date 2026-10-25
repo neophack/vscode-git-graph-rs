@@ -13,16 +13,21 @@ import type { RepoChangeEvent, RepoManager } from '../repos/repoManager';
 import { RepoFileWatcher } from '../repos/repoFileWatcher';
 import { TabIconColourTheme } from '../../types';
 import type { GitRepoSet, GitGraphViewSnapshot, LoadGitGraphViewTo, RequestLoadView, RequestMessage, ResponseLoadCommits, ResponseMessage } from '../../types';
+import type { RequestCommand, WriteEffect } from '../../shared/protocol/graphView';
+import { WRITE_EFFECTS } from '../../shared/protocol/graphView';
 import { showErrorMessage } from '../../utils/actions';
 import { Disposable, toDisposable } from '../../utils/disposable';
 import { CommitLoader } from './commitLoader';
-import type { LoadViewTicket } from './commitLoader';
+import type { CommitDataPort, LoadViewTicket } from './commitLoader';
+import { refreshAfterWrite } from './impactRefresh';
+import type { ImpactRefreshDeps } from './impactRefresh';
 import { dispatchRequest, isMutatingCommand } from './handlers/index';
 import type { HandlerContext } from './handlers/context';
 import { canLoadGraphView, getWebviewConfig, renderGraphViewHtml } from './html';
 import { watchForOrphanedTabs as watchOrphanedTabs } from './orphanedTabs';
+import { hostScheduler } from './scheduler';
 import type { LegacyViewPort, GitRunnerPort } from './gitRunner';
-import { createCommitLoader, createPanelPorts, createViewPort } from './panelContext';
+import { createCommitLoader, createLoaderReads, createPanelPorts, createViewPort } from './panelContext';
 import type { PanelRefreshIds } from './panelContext';
 import { BackgroundChangePoller } from './poller';
 
@@ -68,6 +73,16 @@ export class GitGraphView extends Disposable {
 	private readonly refreshIds: PanelRefreshIds = { loadRepoInfo: 0, loadCommits: 0, loadConfig: 0 };
 	/** The merged open-path read in flight for the current page, pushed when the page reports `ready`. */
 	private pendingViewLoad: { readonly request: RequestLoadView; readonly ticket: LoadViewTicket } | null = null;
+	/** The loader's reads port, shared with the write-path impact refresh (task 4.8). */
+	private readonly loaderReads: CommitDataPort;
+	/**
+	 * The write effects the GitWriter reported while a request is being dispatched (task 4.8):
+	 * the per-op truth the impact refresh prefers over the protocol's per-command table. Keyed by
+	 * repository, cleared as each dispatched request's finally block consumes it.
+	 */
+	private readonly observedEffects: Map<string, Set<WriteEffect>> = new Map();
+	/** > 0 while a webview request is being dispatched: the window the writer's effects collect in. */
+	private dispatchDepth = 0;
 
 	private isGraphViewLoaded: boolean = false;
 	private isPanelVisible: boolean = true;
@@ -192,7 +207,8 @@ export class GitGraphView extends Disposable {
 				dark: this.getResourcesUri('git-graph-rs-webview-icon-dark.svg')
 			};
 
-		this.loader = createCommitLoader(repo, git, logger);
+		this.loaderReads = createLoaderReads(repo);
+		this.loader = createCommitLoader(repo, git, logger, this.loaderReads);
 		this.ports = createPanelPorts({
 			repo: repo,
 			git: git,
@@ -205,10 +221,12 @@ export class GitGraphView extends Disposable {
 			pullRequests: this.pullRequests,
 			currentRepo: () => this.currentRepo
 		});
-		// Poll the repository for changes the file watcher may have missed
+		// Poll the repository for changes the file watcher may have missed. The signature read
+		// runs as a background job of the host scheduler (task 4.8): it yields to interactive
+		// requests instead of competing with them.
 		this.poller = new BackgroundChangePoller({
 			currentRepo: () => this.currentRepo,
-			getSignature: (repoPath) => this.repo.read.getRepoChangeSignature(repoPath),
+			getSignature: (repoPath) => hostScheduler.run('poll:' + repoPath, 'background', () => this.repo.read.getRepoChangeSignature(repoPath)),
 			onRepoChanged: () => {
 				this.loader.invalidateCommitCache();
 				this.sendMessage({ command: 'refresh' });
@@ -248,6 +266,16 @@ export class GitGraphView extends Disposable {
 		});
 
 		this.registerDisposables(
+			// The write-path impact collection (task 4.8): the GitWriter reports the effects of
+			// every op that ran while a request was being dispatched — the per-op truth the
+			// impact refresh prefers over the protocol's per-command table.
+			repo.write.onRepositoryChanged((repoPath, effects) => {
+				if (this.dispatchDepth === 0) return; // a write outside a dispatched request: the repo file watcher reports it
+				const observed = this.observedEffects.get(repoPath);
+				if (observed === undefined) this.observedEffects.set(repoPath, new Set(effects));
+				else for (const effect of effects) observed.add(effect);
+			}),
+
 			// Dispose Git Graph View resources when disposed
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
@@ -385,17 +413,18 @@ export class GitGraphView extends Disposable {
 
 	/**
 	 * Respond to a message sent from the front-end: route it through the exhaustive handler
-	 * table with the RepoFileWatcher muted, and drop the commit cache afterwards whenever the
-	 * command's handler can mutate the repository (the handler's `mutates` flag - the
-	 * replacement of the old REPO_MUTATING_COMMANDS set: these commands must invalidate the
-	 * cache directly, otherwise the webview's post-action refresh is served pre-action data,
-	 * e.g. a stale HEAD after a checkout).
+	 * table with the RepoFileWatcher muted. When the command's handler can mutate the
+	 * repository, the ONE refresh that follows is the impact-based partial update of task 4.8
+	 * (see {@link refreshAfterWrite}) — picked from the effects the GitWriter reported for the
+	 * dispatched request (the per-op truth) with the protocol's per-command table as the
+	 * fallback (a refused write, or a flow that bypassed the writer).
 	 * @param msg The message that was received.
 	 */
 	private async respondToMessage(msg: unknown): Promise<void> {
 		const command = typeof msg === 'object' && msg !== null ? (msg as { command?: unknown }).command : undefined;
 		const mutates = typeof command === 'string' && isMutatingCommand(command);
 		this.repoFileWatcher.mute();
+		this.dispatchDepth++;
 		try {
 			const result = await dispatchRequest(msg, this.buildContext());
 			if (result === 'unknown') {
@@ -410,14 +439,64 @@ export class GitGraphView extends Disposable {
 			this.logger.logError('Failed to handle "' + command + '" message: ' + error);
 			showErrorMessage(t('actionHandlingError'));
 		} finally {
+			this.dispatchDepth--;
 			this.repoFileWatcher.unmute();
-			if (mutates) {
+			if (mutates && typeof command === 'string') {
 				// The handler ran with the RepoFileWatcher muted, so any repository change it made
-				// bypassed the watcher-based cache invalidation. Drop the cached commit data even
-				// when the action failed: a partially completed action (e.g. a conflicted merge)
-				// may still have moved refs, and the cost of re-running Git once is negligible.
-				this.loader.invalidateCommitCache();
+				// bypassed the watcher-based invalidation — the pushed refresh below is the one
+				// refresh of this operation (the webview does not also refresh itself).
+				this.refreshAfterWrite(command, msg);
 			}
+		}
+	}
+
+	/**
+	 * Push the impact-based refresh of one completed write (task 4.8): the effects the GitWriter
+	 * reported for the dispatched repository — the per-op truth, e.g. a plain `createBranch` is
+	 * `refs` only — or, when none arrived, the protocol's per-command fallback. The impact
+	 * refresh itself (impactRefresh.ts) picks the minimal partial update per §3.8.3.
+	 */
+	private refreshAfterWrite(command: string, msg: unknown): void {
+		const repo = typeof msg === 'object' && msg !== null ? (msg as { repo?: unknown }).repo : undefined;
+		if (typeof repo !== 'string' || repo !== this.currentRepo) return; // the view shows another (or no) repository
+		const table = Object.prototype.hasOwnProperty.call(WRITE_EFFECTS, command) ? WRITE_EFFECTS[command as RequestCommand] : undefined;
+		const observed = this.observedEffects.get(repo);
+		this.observedEffects.delete(repo);
+		let effects: ReadonlyArray<WriteEffect> | null;
+		if (observed === undefined || observed.size === 0) {
+			// No writer event (a refused write, a flow that ran outside the writer) or an op that
+			// declares nothing: the per-command table's conservative union decides.
+			effects = table ?? null;
+		} else {
+			effects = [...observed];
+		}
+		if (effects === null || effects.length === 0) return;
+		const deps: ImpactRefreshDeps = {
+			reads: this.loaderReads,
+			view: this.loader,
+			getConfig: () => ({ showRemoteHeads: getConfig().showRemoteHeads }),
+			logger: this.logger,
+			refreshIds: () => ({ loadRepoInfo: this.refreshIds.loadRepoInfo, loadCommits: this.refreshIds.loadCommits }),
+			send: (message) => this.sendMessage(message),
+			pushConfig: (repoPath, remotes) => { void this.pushConfigAfterWrite(repoPath, remotes); }
+		};
+		// The impact read is what the user just acted on: interactive, so background work yields.
+		void hostScheduler.run('refresh:' + repo, 'interactive', () => refreshAfterWrite(deps, repo, effects as ReadonlyArray<WriteEffect>));
+	}
+
+	/**
+	 * The `config`-class partial update (task 4.8): drop the cached repository configuration and
+	 * push one fresh `loadConfig` response under the refresh id the view last used — never a
+	 * rejection: a failed read is logged and simply not pushed (the settings widget keeps its
+	 * previous data, exactly as an unrequested failed load would).
+	 */
+	private async pushConfigAfterWrite(repo: string, remotes: ReadonlyArray<string>): Promise<void> {
+		try {
+			this.ports.repoConfig.invalidate(repo);
+			const data = await this.ports.repoConfig.load(repo, remotes);
+			this.sendMessage({ command: 'loadConfig', repo: repo, refreshId: this.refreshIds.loadConfig, config: data.config, error: data.error });
+		} catch (error) {
+			this.logger.logError('Failed to push the configuration of ' + repo + ' after a write: ' + (error instanceof Error ? error.message : String(error)));
 		}
 	}
 

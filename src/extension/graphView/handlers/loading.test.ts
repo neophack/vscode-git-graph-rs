@@ -84,7 +84,16 @@ class WiringContext implements HandlerContext {
 				branches: ['main'], head: 'main', remotes: [], stashes: [], tags: [], error: null,
 				isRepo: true, operationState: { type: null, conflictedFiles: [], progress: null }
 			}),
-			getOperationState: () => Promise.resolve({ type: null, conflictedFiles: [], progress: null })
+			getOperationState: () => Promise.resolve({ type: null, conflictedFiles: [], progress: null }),
+			// The refs-only reads of task 4.8's impact refresh: unused by these handler tests,
+			// but part of the port the real loader reads through
+			getRefSnapshot: () => Promise.resolve({
+				refData: { head: 'a', heads: [], tags: [], remotes: [] },
+				branches: ['main'],
+				branchHead: 'main',
+				tagNames: []
+			}),
+			annotate: (_repo, commits) => Promise.resolve({ head: 'a', commits: commits.map((hash) => ({ hash: hash, heads: [], tags: [], remotes: [] })) })
 		};
 		// The production pairing under test: the real loader implements the port the table declares
 		this.loader = new CommitLoader({

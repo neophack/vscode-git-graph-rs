@@ -197,6 +197,121 @@ export const REQUEST_COMMANDS: ReadonlyArray<RequestCommand> = [
 ];
 
 /**
+ * What a write operation can change about the repository (REFACTOR-PLAN §3.8.3, task 4.8): the
+ * impact classes `CommitLoader.refreshAfter` picks the minimal refresh from. The single
+ * definition lives here (shared vocabulary); the write-op table (`extension/git/write/ops/op.ts`)
+ * re-exports it and declares it per op, and {@link WRITE_EFFECTS} aggregates it per command.
+ */
+export type WriteEffect = 'refs' | 'head' | 'commits' | 'worktree' | 'stash' | 'config';
+
+/**
+ * The impact classes each request command's write can produce (task 4.8): the UNION over the
+ * write ops the command's handler may run (a handler often picks between ops by its flags —
+ * `createBranch` with and without checkout — and a partially completed action may have run the
+ * heavier one). NULL for commands whose handler cannot modify the repository: those match
+ * `MUTATING_COMMANDS`' FALSE entries, and the host pushes no refresh for them.
+ *
+ * The host reads this table after a mutating handler completed (the panel's
+ * `refreshAfterWrite`) to push the minimal partial update per §3.8.3; the write-success side of
+ * the WEBVIEW does not refresh such a command itself — it waits for that push.
+ *
+ * One deliberate exception: `gerritSetFetchRefs` is NULL although it mutates. Its handler owns
+ * its own cache invalidation, and the reload must run under the integration's NEW fetch
+ * settings, which the webview (not the host's recorded last request) holds — so the webview
+ * keeps its full refresh for this one command.
+ */
+export const WRITE_EFFECTS: { readonly [K in RequestCommand]: ReadonlyArray<WriteEffect> | null } = {
+	abortOperation: ['head', 'worktree'],
+	addRemote: ['config', 'refs', 'commits'],
+	addTag: ['refs'],
+	applyStash: ['worktree'],
+	branchFromStash: ['refs', 'head', 'worktree', 'stash'],
+	checkoutBranch: ['refs', 'head', 'worktree', 'commits'],
+	checkoutCommit: ['head', 'worktree'],
+	cherrypickCommit: ['commits', 'head', 'worktree'],
+	cleanUntrackedFiles: ['worktree'],
+	commitBodies: null,
+	commitDetails: null,
+	commitFileCounts: null,
+	commitFixup: ['commits'],
+	commitSquash: ['commits'],
+	compareCommits: null,
+	continueOperation: ['commits', 'head', 'worktree'],
+	copyFilePath: null,
+	copyToClipboard: null,
+	countCommitsBefore: null,
+	createArchive: null,
+	createBranch: ['refs', 'head', 'worktree'],
+	createPullRequest: ['refs', 'config'],
+	deleteBranch: ['refs'],
+	deleteRemote: ['config', 'refs'],
+	deleteRemoteBranch: ['refs'],
+	deleteTag: ['refs'],
+	deleteUserDetails: ['config'],
+	dropCommit: ['commits', 'refs', 'head', 'worktree'],
+	dropStash: ['stash'],
+	editCommitMessage: ['commits', 'head'],
+	editRemote: ['config', 'refs'],
+	editUserDetails: ['config'],
+	endCodeReview: null,
+	exportRepoConfig: null,
+	fetch: ['refs', 'commits'],
+	fetchAvatar: null,
+	fetchIntoLocalBranch: ['refs', 'head', 'commits', 'worktree'],
+	fetchPullRequest: null,
+	gerritSetFetchRefs: null,
+	loadCommits: null,
+	loadConfig: null,
+	loadRepoInfo: null,
+	loadRepos: null,
+	loadView: null,
+	merge: ['commits', 'refs', 'head', 'worktree'],
+	openCompareTab: null,
+	openExtensionSettings: null,
+	openExternalDirDiff: null,
+	openExternalUrl: null,
+	openFile: null,
+	openLogFile: null,
+	openTerminal: null,
+	popStash: ['stash', 'worktree'],
+	predictConflicts: null,
+	pruneRemote: ['refs'],
+	pullBranch: ['refs', 'head', 'commits', 'worktree'],
+	pushBranch: ['refs', 'config'],
+	pushStash: ['stash', 'worktree'],
+	pushTag: ['refs'],
+	ready: null,
+	rebase: ['commits', 'refs', 'head', 'worktree'],
+	reflog: null,
+	renameBranch: ['refs', 'head'],
+	repoStatistics: null,
+	rescanForRepos: null,
+	resetFileToRevision: ['worktree'],
+	resetToCommit: ['head', 'worktree'],
+	revertCommit: ['commits', 'head', 'worktree'],
+	setGlobalSetting: null,
+	setGlobalViewState: null,
+	setInterfaceLanguage: null,
+	setRepoState: null,
+	setViewSnapshot: null,
+	setWorkspaceViewState: null,
+	showErrorMessage: null,
+	startCodeReview: null,
+	tagDetails: null,
+	undoLastCommit: ['head'],
+	updateCodeReview: null,
+	viewDiff: null,
+	viewDiffBinary: null,
+	viewDiffWithWorkingFile: null,
+	viewFileAtRevision: null,
+	viewScm: null,
+	worktreeAdd: ['refs', 'worktree'],
+	worktreeList: null,
+	worktreePrune: ['worktree'],
+	worktreeRemove: ['worktree']
+};
+
+/**
  * Whether each request's handler can modify the repository (its HEAD, refs, stash, index,
  * working tree or Git config) — the parallel definition of `GitGraphView.REPO_MUTATING_COMMANDS`
  * (src/gitGraphView.ts), which stays in place until task 4.2 wires this table into the message

@@ -18,9 +18,11 @@ import { archive as archiveOp } from '../git/write/ops/commits';
 import { isSafeRefName, isValidCommitHash } from '../git/write/argSafety';
 import type { LogOptions, RefReadOptions } from '../git/read/types';
 import { UNCOMMITTED } from '../git/read/types';
-import type { CommitLoadQuery } from './commitLoader';
+import type { CommitDataPort, CommitLoadQuery } from './commitLoader';
 import type { RepoInfoHalf } from './commitLoader';
 import { CommitLoader } from './commitLoader';
+import { hostScheduler } from './scheduler';
+import type { HostScheduler } from './scheduler';
 import { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GerritChangeState, ErrorInfo, GitStash, PullRequestInfo } from '../../types';
 import { GitFileStatus } from '../../types';
@@ -203,8 +205,11 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 			}, setting, value, previousValue)
 		},
 		pullRequests: {
-			fetchPullRequests: (repo) => fetchPullRequests(prDeps, repo),
-			fetchPullRequestHeadRefs: (repo: string, remote: PullRequestRemote) => fetchPullRequestHeadRefs(prDeps, repo, remote)
+			// Background jobs of the host scheduler (task 4.8): one at a time, yielded by any
+			// interactive request. The head-ref fetch runs Git writes; an abandonment severs the
+			// DELIVERY only, so a fetch already talking to Git still completes.
+			fetchPullRequests: (repo) => hostScheduler.run('pr:' + repo, 'background', () => fetchPullRequests(prDeps, repo)),
+			fetchPullRequestHeadRefs: (repo: string, remote: PullRequestRemote) => hostScheduler.run('prRefs:' + repo, 'background', () => fetchPullRequestHeadRefs(prDeps, repo, remote))
 		},
 		repoConfig: repoConfig,
 		gerrit: {
@@ -213,7 +218,24 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 	};
 }
 
-/* ---------- The staged commit loader's production reads (tasks 4.3 / 4.7) ---------- */
+/* ---------- The staged commit loader's production reads (tasks 4.3 / 4.7 / 4.8) ---------- */
+
+/**
+ * The CommitDataPort over the repository facade — the one port both the staged loader and the
+ * write-path impact refresh (task 4.8) read through: page walks, the uncommitted count, the
+ * repo-info half, the operation state, and the refs-only reads (`getRefSnapshot` / `annotate`)
+ * whose engine requests answer a refs-only refresh without any traversal.
+ */
+export function createLoaderReads(repo: ProductionGitRepository): CommitDataPort {
+	return {
+		getCommits: (repoPath, query, signal) => repo.read.getCommits(repoPath, logOptionsOf(query), signal),
+		getUncommittedChanges: (repoPath) => repo.read.getUncommittedChangeCount(repoPath, getConfig().showUntrackedFiles),
+		getRepoInfo: (repoPath, options) => loadRepoInfoHalf(repo, repoPath, options),
+		getOperationState: (repoPath) => repo.getOperationState(repoPath),
+		getRefSnapshot: (repoPath, options) => repo.read.getRefSnapshot(repoPath, options),
+		annotate: (repoPath, commits, options) => repo.read.annotate(repoPath, commits, options)
+	};
+}
 
 /**
  * The staged commit loader over the repository facade: the commit-page cache, the Gerrit pipeline
@@ -221,17 +243,14 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
  * getCommits assembled by hand are the read layer's `LogOptions` now) and the configuration at
  * load time exactly as the live inline pipeline did. The uncommitted row's message arrives
  * injected (`t` would drag the vscode-dependent config module into the loader), as do the clock
- * and the sleep the confirm loop re-checks under.
+ * and the sleep the confirm loop re-checks under. The reads port is injectable so the panel can
+ * share ONE port with the impact refresh; the scheduler (task 4.8) routes the page reads as
+ * interactive jobs and the follow-ups as background ones.
  */
-export function createCommitLoader(repo: ProductionGitRepository, git: GitRunnerPort, logger: Logger): CommitLoader {
+export function createCommitLoader(repo: ProductionGitRepository, git: GitRunnerPort, logger: Logger, reads: CommitDataPort = createLoaderReads(repo), scheduler: HostScheduler = hostScheduler): CommitLoader {
 	const gerrit = gerritDataSourceFor(git);
 	return new CommitLoader({
-		reads: {
-			getCommits: (repoPath, query, signal) => repo.read.getCommits(repoPath, logOptionsOf(query), signal),
-			getUncommittedChanges: (repoPath) => repo.read.getUncommittedChangeCount(repoPath, getConfig().showUntrackedFiles),
-			getRepoInfo: (repoPath, options) => loadRepoInfoHalf(repo, repoPath, options),
-			getOperationState: (repoPath) => repo.getOperationState(repoPath)
-		},
+		reads: reads,
 		gerrit: {
 			listRemoteChanges: (repoPath, remote) => gerrit.listRemoteChanges(repoPath, remote),
 			fetchChanges: (repoPath, remote, refspecs) => gerrit.fetchChanges(repoPath, remote, refspecs.slice()),
@@ -252,7 +271,8 @@ export function createCommitLoader(repo: ProductionGitRepository, git: GitRunner
 		formatUncommittedRow: (count) => t('uncommittedChangesRow', count),
 		stabiliser: new UncommittedCountStabiliser(PANEL_UNCOMMITTED_ZERO_CONFIRM_MS, PANEL_UNCOMMITTED_RECHECK_MS),
 		now: () => Date.now(),
-		sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+		sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+		scheduler: scheduler
 	});
 }
 

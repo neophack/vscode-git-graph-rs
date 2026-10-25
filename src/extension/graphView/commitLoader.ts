@@ -1,5 +1,7 @@
 import type { AbortLike } from '../git/process/gitProcess';
-import type { GitCommitData, RefReadOptions } from '../git/read/types';
+import type { AnnotateReadOptions, GitAnnotation, GitCommitData, GitRefSnapshot, RefReadOptions } from '../git/read/types';
+import { JobAbandonedError } from './scheduler';
+import type { HostScheduler } from './scheduler';
 import type {
 	CommitOrdering, ErrorInfo, GerritChangeState, GitCommit, GitOperationState, GitStash, RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView
 } from '../../types';
@@ -73,6 +75,16 @@ export interface CommitDataPort {
 	getRepoInfo(repo: string, options: RefReadOptions): Promise<RepoInfoHalf>;
 	/** The in-progress operation state the merged open-path response carries. */
 	getOperationState(repo: string): Promise<GitOperationState>;
+	/**
+	 * The one-pass ref snapshot of a refs-only refresh (task 4.8): the branch list, the
+	 * checked-out branch, the tag names and the ref data — no history walk.
+	 */
+	getRefSnapshot(repo: string, options: RefReadOptions): Promise<GitRefSnapshot>;
+	/**
+	 * Re-annotate the given commits with freshly read refs (task 4.8): the labels a full page
+	 * load of the same options would attach, without running one.
+	 */
+	annotate(repo: string, commits: ReadonlyArray<string>, options: AnnotateReadOptions): Promise<GitAnnotation>;
 }
 
 /** The repo-info half of a merged loadView response (the loadRepoInfo response fields, minus its envelope). */
@@ -157,6 +169,14 @@ export interface CommitLoaderDeps {
 	readonly uncommittedRecheckMs?: number;
 	/** The commit-page cache bound (GitGraphView's COMMIT_CACHE_LIMIT). */
 	readonly commitCacheLimit?: number;
+	/**
+	 * The host scheduler (task 4.8): when present, the initial page read runs as an INTERACTIVE
+	 * job (so background work — follow-ups, prewarming, PR fetches — yields to it, and a newer
+	 * page load of the same repository cancels the superseded walk in the engine) and the staged
+	 * follow-up chain runs as a BACKGROUND job (concurrency 1, yielded by any interactive
+	 * arrival). Absent in unit tests, which drive the reads directly.
+	 */
+	readonly scheduler?: HostScheduler;
 }
 
 /**
@@ -189,6 +209,13 @@ export class CommitLoader implements CommitLoaderPort {
 	 * its signal — the cooperative cancellation seam of the read backend (task 2.9/4.8).
 	 */
 	private readonly activeLoads: Map<string, AbortController> = new Map();
+	/**
+	 * The last load each repository was served (task 4.8): the request and the page (and the
+	 * Gerrit states) the newest delivered response carried. The write-path impact refresh
+	 * (impactRefresh.ts) reads it through the {@link ImpactRefreshView} accessors to re-annotate
+	 * the rendered page in place instead of re-walking history.
+	 */
+	private readonly lastLoads: Map<string, { msg: RequestLoadCommits; page: GitCommitData; states: GerritChangeState[] | null }> = new Map();
 	private disposed = false;
 	/**
 	 * Whether the webview is currently RENDERING a commit list (set once a `loadCommits` response
@@ -248,6 +275,7 @@ export class CommitLoader implements CommitLoaderPort {
 				if (run.signal.aborted) return;
 				send({ command: 'loadCommits', refreshId: msg.refreshId, onlyFollowFirstParent: msg.onlyFollowFirstParent, gerritStates: null, uncommittedPending: true, ...commitData });
 				this.noteViewHasCommits(commitData);
+				this.noteLoadedPage(msg, commitData, null);
 				this.deps.logger.log('Loaded ' + commitData.commits.length + ' commits in ' + (this.deps.now() - startTime) + ' ms');
 				this.launchFollowUps(msg, run, send, async () => {
 					const complete = await this.sendRemoteRefsFollowUp(msg, run, send, null, commitData, null, true, msg.hard);
@@ -260,6 +288,7 @@ export class CommitLoader implements CommitLoaderPort {
 				if (run.signal.aborted) return;
 				send({ command: 'loadCommits', refreshId: msg.refreshId, onlyFollowFirstParent: msg.onlyFollowFirstParent, gerritStates: page.states, uncommittedPending: true, ...page.commitData });
 				this.noteViewHasCommits(page.commitData);
+				this.noteLoadedPage(msg, page.commitData, page.states);
 				this.deps.logger.log('Loaded ' + page.commitData.commits.length + ' commits in ' + (this.deps.now() - startTime) + ' ms');
 				this.launchFollowUps(msg, run, send, async () => {
 					// Quirk kept from the live pipeline: the uncommitted follow-up carries the states of
@@ -283,6 +312,7 @@ export class CommitLoader implements CommitLoaderPort {
 				if (run.signal.aborted) return;
 				send({ command: 'loadCommits', refreshId: msg.refreshId, onlyFollowFirstParent: msg.onlyFollowFirstParent, gerritPending: true, gerritStates: staleStates, uncommittedPending: true, ...commitData });
 				this.noteViewHasCommits(commitData);
+				this.noteLoadedPage(msg, commitData, staleStates);
 				this.launchFollowUps(msg, run, send, async () => {
 					const complete = await this.sendRemoteRefsFollowUp(msg, run, send, staleRefs, commitData, staleStates, true, msg.hard);
 					const result = await this.loadCommitsGerritFollowUp(msg, run, send, staleRefs, complete);
@@ -358,6 +388,7 @@ export class CommitLoader implements CommitLoaderPort {
 			if (run.signal.aborted) return null;
 			if (page === null) return null;
 			this.deps.logger.log('Loaded the view of ' + msg.repo + ' (' + page.commits.length + ' commits) in ' + (this.deps.now() - startTime) + ' ms');
+			this.noteLoadedPage(commitsMsg, page, null);
 			const merged: ResponseLoadView = {
 				command: 'loadView',
 				repo: msg.repo,
@@ -479,16 +510,85 @@ export class CommitLoader implements CommitLoaderPort {
 		this.activeLoads.clear();
 	}
 
+	/* ---------- The write-path impact refresh view (task 4.8; see impactRefresh.ts) ---------- */
+
+	/** The last `loadCommits` request served for the repository (the impact refresh's options), or NULL when it never loaded. */
+	public lastLoadRequest(repo: string): RequestLoadCommits | null {
+		return this.lastLoads.get(repo)?.msg ?? null;
+	}
+
+	/** The page (without the synthetic uncommitted row) the newest delivered response carried. */
+	public lastRenderedPage(repo: string): GitCommitData | null {
+		return this.lastLoads.get(repo)?.page ?? null;
+	}
+
+	/** The Gerrit states the newest delivered response carried (NULL when it carried none). */
+	public cachedGerritStates(repo: string): GerritChangeState[] | null {
+		return this.lastLoads.get(repo)?.states ?? null;
+	}
+
+	/** Drop every cached commit page: a history-affecting write made them stale. */
+	public dropCachedPages(): void {
+		this.commitCache.clear();
+	}
+
+	/**
+	 * Re-run a recorded request as the incremental traversal refresh (task 4.8's `commits`
+	 * class): the same staged pipeline a `loadCommits` request runs, over the same refresh id —
+	 * the webview accepts it as the current view state's newest response and reconciles in place.
+	 */
+	public reload(msg: RequestLoadCommits, send: (response: ResponseLoadCommits) => void): Promise<void> {
+		return this.loadCommits(msg, send);
+	}
+
+	/**
+	 * The worktree-only impact refresh (task 4.8's `worktree` class): re-read the "Uncommitted
+	 * Changes" count and push the row update on the page the view last received — the same
+	 * stabiliser-gated delivery the load pipeline's follow-up performs (a zero that would remove
+	 * the row is re-checked across the confirm window; an unknown count delivers nothing).
+	 */
+	public async pushUncommittedRow(repo: string, msg: RequestLoadCommits, send: (response: ResponseLoadCommits) => void): Promise<void> {
+		const record = this.lastLoads.get(repo);
+		if (record === undefined) return;
+		if (!this.deps.getConfig().showUncommittedChanges) return;
+		let numUncommittedChanges = await this.readUncommittedChanges(repo);
+		let attemptsLeft = Math.ceil((2 * this.uncommittedZeroConfirmMs) / this.uncommittedRecheckMs);
+		while (true) {
+			if (this.disposed) return;
+			if (numUncommittedChanges === null) return; // unknown is not zero: the row keeps its last state
+			const outcome = this.deps.stabiliser.observe(numUncommittedChanges, this.deps.now());
+			if ('recheckAfterMs' in outcome) {
+				if (--attemptsLeft < 0) return;
+				await this.deps.sleep(outcome.recheckAfterMs);
+				numUncommittedChanges = await this.readUncommittedChanges(repo);
+				continue;
+			}
+			this.sendUncommittedChangesResponse(msg, send, record.page, record.states, outcome.send);
+			this.deps.stabiliser.delivered(outcome.send);
+			return;
+		}
+	}
+
+	/** Record the newest delivered page of a repository (the impact refresh's base, task 4.8). */
+	private noteLoadedPage(msg: RequestLoadCommits, page: GitCommitData, states: GerritChangeState[] | null): void {
+		this.lastLoads.set(msg.repo, { msg: msg, page: page, states: states });
+	}
+
 	/* ---------- Follow-up plumbing ---------- */
 
 	/**
 	 * Run the follow-up chain detached from the initial response, catching every error: a
 	 * rejecting follow-up read is answered with an error response (so the view is never left
-	 * hanging), never left as an unhandled rejection - the fix task 4.3 exists for.
+	 * hanging), never left as an unhandled rejection - the fix task 4.3 exists for. With a
+	 * scheduler (task 4.8) the chain runs as a BACKGROUND job: one at a time, and yielded by any
+	 * interactive arrival (a newer page load of the same repository supersedes the run the chain
+	 * belongs to anyway, so an abandonment is silently dropped, never surfaced as an error).
 	 */
 	private launchFollowUps(msg: RequestLoadCommits, run: AbortController, send: (response: ResponseLoadCommits) => void, chain: () => Promise<void>): void {
-		void chain().catch((error) => {
-			if (run.signal.aborted) return; // superseded: the newer request owns the view
+		const scheduler = this.deps.scheduler;
+		const started = scheduler === undefined ? chain() : scheduler.run('followUp:' + msg.repo, 'background', () => chain());
+		void started.catch((error) => {
+			if (run.signal.aborted || error instanceof JobAbandonedError) return; // superseded or yielded: the newer load owns the view
 			this.sendLoadError(msg, send, error);
 		});
 	}
@@ -555,6 +655,7 @@ export class CommitLoader implements CommitLoaderPort {
 				...(deferUncommittedChanges ? { uncommittedPending: true } : {}),
 				...complete
 			});
+			this.noteLoadedPage(msg, complete, gerritStates);
 			this.deps.logger.log('Loaded the remote refs of ' + msg.repo + ' in a follow-up response');
 		}
 		return complete;
@@ -633,6 +734,7 @@ export class CommitLoader implements CommitLoaderPort {
 			moreCommitsAvailable: commitData.moreCommitsAvailable,
 			error: null
 		});
+		this.noteLoadedPage(msg, commitData, gerritStates);
 	}
 
 	/** The synthetic "Uncommitted Changes" row the final follow-up prepends above HEAD. */
@@ -714,6 +816,7 @@ export class CommitLoader implements CommitLoaderPort {
 			uncommittedPending: true,
 			...commitData
 		});
+		this.noteLoadedPage(msg, commitData, states);
 	}
 
 	/**
@@ -761,7 +864,7 @@ export class CommitLoader implements CommitLoaderPort {
 			const cached = this.commitCache.get(key);
 			if (cached !== undefined) return cached;
 		}
-		return this.commitCache.put(key, () => this.deps.reads.getCommits(msg.repo, {
+		const query: CommitLoadQuery = {
 			branches: msg.branches,
 			authors: msg.authors,
 			maxCommits: msg.maxCommits,
@@ -777,6 +880,15 @@ export class CommitLoader implements CommitLoaderPort {
 			filterPath: msg.filterPath === undefined ? null : msg.filterPath,
 			deferUncommittedChanges: deferUncommittedChanges,
 			deferRemoteRefs: deferRemoteRefs
-		}, this.currentRun !== null ? this.currentRun.signal : undefined));
+		};
+		const runSignal = this.currentRun !== null ? this.currentRun.signal : undefined;
+		return this.commitCache.put(key, () => {
+			// Interactive through the scheduler (task 4.8): background work yields to the page
+			// read, and a newer load of the same repository cancels this walk in the engine (the
+			// scheduler's signal reaches the backend, which cancels the engine request by id).
+			const scheduler = this.deps.scheduler;
+			if (scheduler === undefined) return this.deps.reads.getCommits(msg.repo, query, runSignal);
+			return scheduler.run('load:' + msg.repo, 'interactive', (jobSignal) => this.deps.reads.getCommits(msg.repo, query, jobSignal));
+		});
 	}
 }
