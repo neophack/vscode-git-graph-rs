@@ -9,6 +9,8 @@
  *   node scripts/build-addon.mjs                       # debug, for the host platform
  *   node scripts/build-addon.mjs --release             # what ships
  *   node scripts/build-addon.mjs --target <triple>     # cross-compile
+ *   node scripts/build-addon.mjs --target <triple> --dry-run
+ *                                                      # print what would be built, build nothing
  *   node scripts/build-addon.mjs --target <triple> --cross-compile
  *                                                      # force the cross toolchain (cargo-zigbuild
  *                                                      # / cargo-xwin) even for the host's own OS
@@ -24,8 +26,22 @@
  * targets), installing either on first use. A target of the host's own OS family uses the
  * platform's own cross linker (the Visual Studio "C++ ARM64 build tools" component on Windows,
  * gcc-aarch64-linux-gnu on Linux). The binaries that ship come from
- * `.github/workflows/native-build.yml`, which builds the common targets on native runners (all
- * six on a `full` run); the niche ones it skips fall back to the `git` CLI backend.
+ * `.github/workflows/native-build.yml`, which builds the common targets on native runners; the
+ * niche ones it skips fall back to the `git` CLI backend.
+ *
+ * Binary compatibility floors (REFACTOR-PLAN §3.7.4, task 2.8 — see docs/adr/adr-0002):
+ *
+ * - Linux targets are ALWAYS built through `cargo zigbuild` (host builds included), so the glibc
+ *   floor is a property of this script, not of the runner: the *-gnu targets (armhf included)
+ *   pass zigbuild the target suffix `.2.17`, pinning the oldest glibc whose symbols may be
+ *   referenced (CentOS 7 / Ubuntu 14.04); the musl targets need no suffix. `cargo zigbuild` and
+ *   `zig` missing is a hard error with install instructions, never a silent native build.
+ * - Windows msvc targets build with `-C target-feature=+crt-static`, so the .node does not
+ *   depend on VCRUNTIME140.dll.
+ * - macOS targets build with `MACOSX_DEPLOYMENT_TARGET=10.13`.
+ *
+ * The floors are asserted on the built binaries by `scripts/build/check-binary-compat.mjs`,
+ * which CI runs with `BINARY_COMPAT_REQUIRED=1`.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -35,26 +51,56 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/** The oldest glibc whose symbols a *-gnu Linux binary may reference (§3.7.4, ADR 0002). */
+const GLIBC_FLOOR = '2.17';
+/** The oldest macOS the darwin binaries must load on (§3.7.4, ADR 0002). */
+const MACOS_DEPLOYMENT_TARGET = '10.13';
+
 /** Rust target triple -> the directory the extension loads that binary from. */
 const TARGET_DIRECTORIES = {
 	'x86_64-pc-windows-msvc': 'win32-x64-msvc',
 	'aarch64-pc-windows-msvc': 'win32-arm64-msvc',
 	'x86_64-unknown-linux-gnu': 'linux-x64-gnu',
 	'aarch64-unknown-linux-gnu': 'linux-arm64-gnu',
+	'x86_64-unknown-linux-musl': 'linux-x64-musl',
+	'aarch64-unknown-linux-musl': 'linux-arm64-musl',
+	'armv7-unknown-linux-gnueabihf': 'linux-armhf',
 	'x86_64-apple-darwin': 'darwin-x64',
 	'aarch64-apple-darwin': 'darwin-arm64'
 };
 
 function parseArguments(argv) {
-	const options = { release: false, target: null, crossCompile: false };
+	const options = { release: false, target: null, crossCompile: false, help: false, dryRun: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--release') options.release = true;
 		else if (argv[i] === '--target') options.target = argv[++i];
 		else if (argv[i].startsWith('--target=')) options.target = argv[i].slice('--target='.length);
 		else if (argv[i] === '--cross-compile') options.crossCompile = true;
+		else if (argv[i] === '--dry-run') options.dryRun = true;
+		else if (argv[i] === '--help' || argv[i] === '-h') options.help = true;
 		else throw new Error(`Unknown argument: ${argv[i]}`);
 	}
 	return options;
+}
+
+/** The usage text of this script (also the body of `--help`). */
+function usage() {
+	const targets = Object.keys(TARGET_DIRECTORIES);
+	console.log(
+		'Build the native addon into native/<platform>/git-graph.node.\n' +
+			'\n' +
+			'  node scripts/build-addon.mjs [--release] [--target <triple>] [--cross-compile] [--dry-run]\n' +
+			'\n' +
+			'  --release          optimized build (what ships)\n' +
+			'  --target <triple>  build for another target; one of:\n' +
+			`                       ${targets.join('\n                       ')}\n` +
+			'  --cross-compile    force the cross toolchain even for the host OS family\n' +
+			'  --dry-run          print the planned build steps without running anything\n' +
+			'\n' +
+			'Binary floors (docs/adr/adr-0002): Linux goes through cargo zigbuild (gnu targets pinned\n' +
+			`at glibc ${GLIBC_FLOOR}), Windows msvc links the CRT statically, macOS targets\n` +
+			`${MACOS_DEPLOYMENT_TARGET}. Assert them on built binaries with scripts/build/check-binary-compat.mjs.`
+	);
 }
 
 /** The target triple cargo will build for when none was asked for. */
@@ -74,6 +120,93 @@ function osFamilyOf(target) {
 	if (target.includes('linux')) return 'linux';
 	if (target.includes('apple')) return 'darwin';
 	return null;
+}
+
+/** glibc-linked Linux targets (…-linux-gnu, …-linux-gnueabihf) — musl ones are not. */
+function isLinuxGnuTarget(target) {
+	return osFamilyOf(target) === 'linux' && target.includes('gnu');
+}
+
+/** The `--target` cargo-zigbuild gets: gnu targets carry the `.2.17` glibc-floor suffix. */
+function zigbuildTargetSpecifier(target) {
+	return isLinuxGnuTarget(target) ? `${target}.${GLIBC_FLOOR}` : target;
+}
+
+/**
+ * The build environment for a target: the zig-findable base plus the §3.7.4 floors.
+ *
+ * - Windows msvc targets get `-C target-feature=+crt-static` via the target-specific RUSTFLAGS
+ *   variable (appended to whatever is already there so a local setup survives). Static CRT
+ *   means the .node does not import VCRUNTIME140.dll.
+ * - macOS targets carry `MACOSX_DEPLOYMENT_TARGET=10.13`, which both rustc and the Xcode linker
+ *   honour as the load floor.
+ *
+ * The returned object is always a copy, so decorating it never leaks into `process.env`.
+ */
+function buildEnvironmentFor(target) {
+	const env = { ...buildEnvironment() };
+	if (osFamilyOf(target) === 'windows') {
+		const key = `CARGO_TARGET_${target.toUpperCase().replace(/-/g, '_')}_RUSTFLAGS`;
+		const flags = `${env[key] ?? ''} -C target-feature=+crt-static`.trim();
+		console.log(`  ${key}=${flags}`);
+		env[key] = flags;
+	}
+	if (osFamilyOf(target) === 'darwin') {
+		console.log(`  MACOSX_DEPLOYMENT_TARGET=${MACOS_DEPLOYMENT_TARGET}`);
+		env.MACOSX_DEPLOYMENT_TARGET = MACOS_DEPLOYMENT_TARGET;
+	}
+	return env;
+}
+
+/**
+ * Build a Linux target through `cargo zigbuild` (§3.7.4: every Linux binary is built this way,
+ * host builds included, so the glibc floor never depends on the runner). cargo-zigbuild
+ * understands the `<triple>.2.17` suffix as "oldest glibc whose symbols may be referenced" and
+ * places the artifact under the unsuffixed target directory.
+ *
+ * Fails with install instructions when cargo-zigbuild or zig are missing — a native cargo build
+ * instead would silently pin the floor to the runner's own glibc, which is exactly what this
+ * route exists to prevent.
+ */
+function buildLinuxViaZigbuild(options, target, directory) {
+	const specifier = zigbuildTargetSpecifier(target);
+	const args = [
+		'zigbuild',
+		'--manifest-path', 'native/node/Cargo.toml',
+		...(options.release ? ['--release'] : []),
+		'--target', specifier
+	];
+	const artifact = path.join(root, 'target', target, options.release ? 'release' : 'debug', cargoArtifactName(target));
+	if (options.dryRun) {
+		console.log(`[dry-run] cargo ${args.join(' ')}`);
+		if (isLinuxGnuTarget(target)) {
+			console.log(`[dry-run]   glibc floor pinned at ${GLIBC_FLOOR} by the zigbuild target suffix`);
+		}
+		console.log(`[dry-run] artifact: ${path.relative(root, artifact)}`);
+		console.log(`[dry-run] placed as: native/${directory}/git-graph.node`);
+		return;
+	}
+
+	const probe = spawnSync('cargo', ['zigbuild', '--version'], { encoding: 'utf8' });
+	if (probe.error || probe.status !== 0) {
+		console.error(
+			'! `cargo zigbuild` is required to build Linux targets: it is what pins the glibc\n' +
+				`  floor at ${GLIBC_FLOOR} (REFACTOR-PLAN §3.7.4, docs/adr/adr-0002). A plain cargo build\n` +
+				'  would instead pin the floor to this machine\'s own glibc. Install the toolchain:\n' +
+				'    cargo install cargo-zigbuild\n' +
+				'    pip install ziglang      # or a zig from https://ziglang.org/download/ on the PATH'
+		);
+		process.exit(1);
+	}
+
+	console.log(`> cargo ${args.join(' ')}`);
+	const build = spawnSync('cargo', args, { cwd: root, stdio: 'inherit', env: buildEnvironmentFor(target) });
+	if (build.status !== 0) process.exit(build.status ?? 1);
+	if (!fs.existsSync(artifact)) {
+		console.error(`! cargo reported success but the artifact is not where it is expected: ${artifact}`);
+		process.exit(1);
+	}
+	place(artifact, target, directory, options);
 }
 
 /**
@@ -344,6 +477,10 @@ function place(artifact, target, directory, options) {
 
 function main() {
 	const options = parseArguments(process.argv.slice(2));
+	if (options.help) {
+		usage();
+		return;
+	}
 	const host = hostTarget();
 	const target = options.target ?? host;
 
@@ -356,8 +493,15 @@ function main() {
 		process.exit(1);
 	}
 
+	// Every Linux target — host builds included — goes through cargo zigbuild, which is what
+	// pins the glibc floor (see buildLinuxViaZigbuild). --cross-compile is implied there.
+	if (osFamilyOf(target) === 'linux') {
+		buildLinuxViaZigbuild(options, target, directory);
+		return;
+	}
+
 	const cli = path.join(root, 'node_modules', '@napi-rs', 'cli', 'dist', 'cli.js');
-	if (!fs.existsSync(cli)) {
+	if (!options.dryRun && !fs.existsSync(cli)) {
 		throw new Error('@napi-rs/cli is not installed. Run `npm install` first.');
 	}
 
@@ -366,6 +510,15 @@ function main() {
 	const forcedSameFamilyCross =
 		options.crossCompile && target !== host && osFamilyOf(target) === osFamilyOf(host);
 	if (forcedSameFamilyCross && osFamilyOf(target) === 'windows') {
+		if (options.dryRun) {
+			console.log(`[dry-run] forced same-family cross build of ${target}:`);
+			console.log('[dry-run]   linker rust-lld from the Rust toolchain, +crt-static RUSTFLAGS,');
+			console.log('[dry-run]   import libraries from the Windows SDK and cargo-xwin\'s cached ARM64 CRT');
+			console.log('[dry-run]   cargo build --manifest-path native/node/Cargo.toml' +
+				`${options.release ? ' --release' : ''} --target ${target}`);
+			console.log(`[dry-run] placed as: native/${directory}/git-graph.node`);
+			return;
+		}
 		buildWindowsArm64Locally(options, target, directory);
 		return;
 	}
@@ -373,7 +526,7 @@ function main() {
 	// napi build copies the artifact (plus a generated .d.ts) into --output-dir under its own
 	// platform-suffixed name; it is moved to the extension's layout below.
 	const staging = path.join(root, 'target', 'napi-build');
-	fs.rmSync(staging, { recursive: true, force: true });
+	if (!options.dryRun) fs.rmSync(staging, { recursive: true, force: true });
 
 	const args = [
 		cli,
@@ -394,8 +547,16 @@ function main() {
 		process.exit(1);
 	}
 
+	if (options.dryRun) {
+		console.log(`[dry-run] napi ${args.slice(1).join(' ')}`);
+		buildEnvironmentFor(target); // only for its log lines: the env floors this build carries
+		console.log(`[dry-run] artifact: ${path.relative(root, path.join(staging, '<platform>.node'))}`);
+		console.log(`[dry-run] placed as: native/${directory}/git-graph.node`);
+		return;
+	}
+
 	console.log(`> napi ${args.slice(1).join(' ')}`);
-	const build = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit', env: buildEnvironment() });
+	const build = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit', env: buildEnvironmentFor(target) });
 	if (build.status !== 0) process.exit(build.status ?? 1);
 
 	const artifacts = fs.existsSync(staging)
