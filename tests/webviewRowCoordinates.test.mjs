@@ -115,9 +115,8 @@ describe('on-screen row coordinates stay frozen in a repository longer than the 
 
 /* The multi-stage load pipeline (first response without the working-tree status, remote-refs
  * follow-up, then the Uncommitted Changes row with its count) is covered against the REAL
- * extension host, on a real repository, by webviewRealPipeline.test.mjs - and once more in a real
- * browser by tests/browserRepro (realPipelineLoop). A third, simulated copy of that same scenario
- * used to live here; it asserted nothing the other two do not. */
+ * extension host, on a real repository, by webviewRealPipeline.test.mjs. A simulated copy of
+ * that same scenario used to live here; it asserted nothing the other one does not. */
 
 describe('on-screen row coordinates stay frozen while the repository moves (full render)', () => {
 	it('files being edited, the count ticking up, a commit, and repeated idle refreshes never move a visible row', async () => {
