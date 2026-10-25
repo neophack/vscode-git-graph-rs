@@ -141,6 +141,7 @@ export function observeElemScroll(elem: HTMLElement | null, initialScrollTop: nu
 	if (elem === null) return;
 	let timeout: number | null = null;
 	elem.scroll(0, initialScrollTop);
+	// Passive (task 5.10): the handler never prevents the default scroll
 	elem.addEventListener('scroll', () => {
 		onScroll(elem.scrollTop);
 		if (timeout !== null) window.clearTimeout(timeout);
@@ -148,7 +149,7 @@ export function observeElemScroll(elem: HTMLElement | null, initialScrollTop: nu
 			onScrolled();
 			timeout = null;
 		}, 250);
-	});
+	}, { passive: true });
 }
 
 /** The value of a VS Code theme variable set on the document element. */

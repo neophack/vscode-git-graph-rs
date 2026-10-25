@@ -214,7 +214,7 @@ export class HexView {
 			next: <HTMLButtonElement>byId('hexNextBtn')
 		};
 		this.applyBytesPerRow();
-		this.els.scroller.addEventListener('scroll', () => this.queueRender());
+		this.els.scroller.addEventListener('scroll', () => this.queueRender(), { passive: true });
 		this.els.prev.addEventListener('click', () => this.navigate(-1));
 		this.els.next.addEventListener('click', () => this.navigate(1));
 		// Delegated on the view's own stable element - its content is rebuilt on every render, but

@@ -9,6 +9,7 @@ import { html, insertHtml } from '../../common/html';
 import { strings } from '../../common/i18n/index';
 import * as GG from '../../common/protocol';
 import { GraphContext } from '../context';
+import { measureGraphColumn } from './measure';
 import { getCommitOrdering } from '../state/repoSettings';
 import { COLUMN_AUTO, COLUMN_HIDDEN } from './layoutMode';
 
@@ -44,9 +45,11 @@ export class ColumnLayout {
 		// padding, and deriving new padding from it makes the graph column width oscillate between
 		// calls while the window is being resized.
 		graphColElem.style.padding = '';
-		const colWidth = graphColElem.offsetWidth;
+		// The two layout READS of this pass, batched (measure.ts) before the writes below
+		const metrics = measureGraphColumn(graphColElem, ctx.dom.view);
+		const colWidth = metrics.graphColumnWidth;
 		let graphWidth = ctx.graph.getContentWidth();
-		const maxWidth = Math.round(ctx.dom.view.clientWidth * 0.333);
+		const maxWidth = Math.round(metrics.viewWidth * 0.333);
 		if (Math.max(graphWidth, colWidth) > maxWidth) {
 			ctx.graph.limitMaxWidth(maxWidth);
 			graphWidth = maxWidth;
@@ -238,7 +241,7 @@ export class ColumnLayout {
 			const toggleColumnState = (col: number, defaultWidth: number) => {
 				columnWidths[col] = columnWidths[col] !== COLUMN_HIDDEN ? COLUMN_HIDDEN : columnWidths[0] === COLUMN_AUTO ? COLUMN_AUTO : defaultWidth - COLUMN_LEFT_RIGHT_PADDING;
 				ctx.persistence.saveColumnWidths(columnWidths);
-				ctx.table.render();
+				ctx.renderScheduler.request();
 			};
 
 			const commitOrdering = getCommitOrdering(store.repoState.commitOrdering, store.config);
@@ -269,7 +272,7 @@ export class ColumnLayout {
 							for (let i = 2; i < columnWidths.length; i++) columnWidths[i] = columnWidths[i] === COLUMN_HIDDEN ? COLUMN_HIDDEN : COLUMN_AUTO;
 							columnWidths[0] = COLUMN_AUTO;
 							ctx.persistence.saveColumnWidths(columnWidths);
-							ctx.table.render();
+							ctx.renderScheduler.request();
 						}
 					}
 				]

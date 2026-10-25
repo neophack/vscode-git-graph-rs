@@ -17,6 +17,7 @@ import type { ColumnLayout } from './render/columns';
 import type { CommitTable } from './render/commitTable';
 import type { GraphView } from './render/graphSvg';
 import type { LayoutMode } from './render/layoutMode';
+import type { RenderScheduler } from './render/scheduler';
 import type { Viewport } from './render/viewport';
 import type { Persistence } from './state/persistence';
 import type { Store } from './state/store';
@@ -64,6 +65,13 @@ export interface GraphContext {
 	readonly graph: GraphView;
 	readonly table: CommitTable;
 	readonly columns: ColumnLayout;
+	/**
+	 * The one render pass of the view (task 5.10): requesters that can wait a frame call
+	 * `renderScheduler.request()` and merge into a single render; paths that must measure the DOM
+	 * they just wrote call `renderSync()`, which satisfies the pending requests instead of adding
+	 * another pass.
+	 */
+	readonly renderScheduler: RenderScheduler;
 	readonly viewport: Viewport;
 	readonly loader: RepoLoader;
 	readonly commitBodies: CommitBodies;

@@ -27,6 +27,7 @@ import { ColumnLayout } from './render/columns';
 import { CommitTable } from './render/commitTable';
 import { GraphView } from './render/graphSvg';
 import { LayoutMode } from './render/layoutMode';
+import { RenderScheduler } from './render/scheduler';
 import { Viewport } from './render/viewport';
 import { createResponseRouter } from './responses';
 import { decodePersistedWebViewState, Persistence } from './state/persistence';
@@ -107,6 +108,11 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	ctx.viewport = new Viewport(getContext);
 	ctx.table = new CommitTable(getContext);
 	ctx.columns = new ColumnLayout(getContext);
+	// The single render pass (task 5.10): store changes flow through the scheduler, which merges
+	// every request made before the frame into ONE render - a response with several changed slices
+	// of the store renders once, not once per change
+	ctx.renderScheduler = new RenderScheduler(() => ctx.table.render());
+	store.onRenderChange(() => ctx.renderScheduler.request());
 	ctx.loader = new RepoLoader(getContext);
 	ctx.commitBodies = new CommitBodies(getContext);
 	ctx.details = new CommitDetails(getContext);

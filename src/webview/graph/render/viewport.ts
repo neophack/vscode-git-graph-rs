@@ -287,19 +287,20 @@ export class Viewport {
 			// the find query that forced the full render was just cleared): re-render, which
 			// re-arms windowed rendering when canVirtualize() now holds. Without this, the
 			// whole commit list stays in the DOM until the next data change re-renders it.
-			if (this.canVirtualize()) ctx.table.render();
+			if (this.canVirtualize()) ctx.renderScheduler.renderSync();
 			return;
 		}
 		if (!this.canVirtualize()) {
 			// Windowed rendering is no longer allowed (e.g. a find query became active): fall back
 			// to a full render, otherwise scrolling would keep swapping the windowed rows in and out
-			ctx.table.render();
+			ctx.renderScheduler.renderSync();
 			return;
 		}
 		const range = this.computeVisibleRange();
 		if (range.start === this.renderedRange.start && range.end === this.renderedRange.end) return;
-		ctx.table.renderTable();
-		ctx.table.renderGraph();
+		// Synchronous (inside the scroll event's frame callback, where the caller already coalesced
+		// the scroll burst): the newly exposed rows must exist when this frame paints
+		ctx.renderScheduler.renderSync();
 		if (this.getScrollLeadRows() > 0) this.scheduleLeadRetighten();
 	}
 
@@ -323,7 +324,8 @@ export class Viewport {
 	 */
 	public exitWindowedRender() {
 		if (this.renderedRange === null) return;
-		this.ctx().table.render();
+		// Synchronous: the caller scans the rendered rows the moment this returns
+		this.ctx().renderScheduler.renderSync();
 	}
 
 

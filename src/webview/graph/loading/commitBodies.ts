@@ -107,9 +107,9 @@ export class CommitBodies {
 			: requested !== undefined ? requested : [];
 		this.resolveWaiters(settled);
 		if (!received) return;
-		const table = this.ctx().table;
-		table.renderTable();
-		table.renderGraph();
+		// Coalesced (task 5.10): the bodies becoming visible a frame later is imperceptible, and a
+		// burst of body responses merges into one render
+		this.ctx().renderScheduler.request();
 	}
 
 	/**

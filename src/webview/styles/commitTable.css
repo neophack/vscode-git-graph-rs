@@ -3,6 +3,17 @@
 #commitTable{
 	z-index:1;
 }
+/*
+ * Render containment (REFACTOR-PLAN task 5.10): a commit row's internal layout and paint are
+ * isolated from the rest of the table, so patching one row (a ref moving, the uncommitted count
+ * changing) neither re-lays out its siblings nor invalidates their paint. Chromium 52+ (the VS
+ * Code floor of 69 has it); the absolutely positioned column-resize handles keep their own
+ * containing block (the relatively positioned cell), and every popup (help tooltips, menus) lives
+ * outside the rows, so clipping to the row bounds is invisible.
+ */
+#commitTable tr.commit{
+	contain:layout paint;
+}
 #commitTable table{
 	width:100%;
 	border-collapse:collapse;

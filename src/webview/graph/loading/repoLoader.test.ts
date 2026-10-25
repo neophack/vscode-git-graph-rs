@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as GG from '../../common/protocol';
 import type { GraphContext } from '../context';
+import { RenderScheduler } from '../render/scheduler';
 import { RepoLoader } from './repoLoader';
 
 /**
@@ -58,6 +59,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 		scrollTop: 0,
 		repoState: repoState,
 		hasCurrentRepo: () => false,
+		invalidateRender: () => undefined,
 		getBranchGlobPatterns: () => [] as string[],
 		getBranchOptions: () => [] as unknown[],
 		getAuthorOptions: () => [] as unknown[],
@@ -86,6 +88,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 	const noop = () => undefined;
 	const ctx = {
 		store: store,
+		renderScheduler: new RenderScheduler(noop),
 		bridge: {
 			send: (message: unknown) => { sent.push(message as SentMessage); }
 		},
