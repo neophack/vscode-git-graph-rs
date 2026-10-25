@@ -1,21 +1,21 @@
 import * as vscode from 'vscode';
 import { t } from '../../i18n';
 import { showErrorMessage } from '../../utils/actions';
+import type { AutomationModules } from '../../automation/modules';
 import type { CommandHost } from './context';
 
-/* The automation-testing capability ships only in the automation build (the default build's
- * packaging moves out/automation aside), so these modules load conditionally. */
-type AutomationModules = {
-	runAutomationSuite: typeof import('../../automation/suiteRunner').runAutomationSuite;
-	showAutomationReport: typeof import('../../automation/reportView').showAutomationReport;
-};
+/* The automation-testing capability is a compile-time build variant (task 6.2): the dist build
+ * defines __AUTOMATION__ through the gate in src/automation/modules.ts, which either bundles
+ * the modules in (the automation build) or dead-code-eliminates the requires entirely (the
+ * default build — no automation code in the bundle). The out/ (tsc) tree keeps the v1.0
+ * load-when-present behavior: the default packaging variant removes out/automation/ WHOLE,
+ * so the gate module's own require sits in a try/catch — its absence IS the "not an automation
+ * build" signal. */
 let automation: AutomationModules | null = null;
 try {
 	// eslint-disable-next-line @typescript-eslint/no-var-requires
-	const suiteRunner = require('../../automation/suiteRunner') as typeof import('../../automation/suiteRunner');
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
-	const reportView = require('../../automation/reportView') as typeof import('../../automation/reportView');
-	automation = { runAutomationSuite: suiteRunner.runAutomationSuite, showAutomationReport: reportView.showAutomationReport };
+	const { loadAutomationModules } = require('../../automation/modules') as typeof import('../../automation/modules');
+	automation = loadAutomationModules();
 } catch (_) { /* the automation modules are absent from this build: not an error */ }
 
 /**

@@ -1,20 +1,28 @@
 /**
- * The automation-testing capability is a packaging variant, not a runtime setting: the default
- * build (the default, `npm run package`) ships WITHOUT it, the automation build
- * (`build-and-install.bat automation`, `npm run package:automation`) ships WITH it.
+ * The automation-testing capability is a BUILD VARIANT of the extension: the default build (the
+ * default, `npm run package`) ships WITHOUT it, the automation build (`build-and-install.bat
+ * automation`, `npm run package:automation`) ships WITH it.
  *
- * This module is the shared mechanism both wrappers and scripts/package-platforms.mjs use:
+ * Since task 6.2 the dist/ side of the variant is a COMPILE-TIME switch: both package wrappers
+ * first build the dist bundle in their mode (buildDist below — `__AUTOMATION__` defined false
+ * or true by scripts/build/build.mjs), so the VSIX's dist/ tree is either automation-free
+ * (dist/extension.js) or bundles the whole subsystem (dist/automation/extension.js).
+ *
+ * What remains of the v1.0 file substitution is the OUT/-tree half, needed exactly as long as
+ * package.json's `main` points into out/: out/extension.js decides at RUNTIME (a load-when-
+ * present require), so the default VSIX must not carry out/automation:
  *   - withAutomationExcluded(task): moves out/automation/ and resources/automation/ aside for
- *     the duration of a vsce run, then restores them (the extension host never loads them in
- *     the default build — extension.ts/commands.ts gate their requires, and the view page
- *     tolerates the shim's absence).
+ *     the duration of a vsce run, then restores them. When packaging flips to dist as `main`
+ *     (the wave-1 dist pipeline's plan), this is the piece task 6.2 deletes.
  *   - withAutomationContributions(task): temporarily adds the automation contributions (the
  *     Run Automation Test command + editor-title button, and the nls titles) to package.json /
- *     package.nls.json / package.nls.zh-cn.json, then restores the originals.
+ *     package.nls.json / package.nls.zh-cn.json, then restores the originals. This one stays in
+ *     every world: declaring the command is a manifest concern, not a code concern.
  *
  * Both are self-healing: a leftover backup from a killed previous run is restored first.
  */
 
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,6 +34,13 @@ const require = createRequire(import.meta.url);
 
 /** Directories whose absence defines the default (no-automation) build. */
 const AUTOMATION_DIRS = ['out/automation', 'resources/automation'];
+/**
+ * Entries of out/automation the default build KEEPS (task 6.2): graphViewPort.js is the view's
+ * injected-port seam, imported by out/gitGraphView.js unconditionally — view plumbing, not
+ * automation-suite code (no catalog, no server, no runner), so it stays while the suite's
+ * modules move aside.
+ */
+const AUTOMATION_KEEP = /^graphViewPort\./;
 /** Files the automation build's contributions patch (restored from <file>.automation-bak). */
 const CONTRIBUTION_FILES = ['package.json', 'package.nls.json', 'package.nls.zh-cn.json'];
 
@@ -80,14 +95,25 @@ function moveDir(source, target) {
 	}
 }
 
-/** Run `task` with the automation modules absent from the working tree (restored after). */
+/** Run `task` with the automation suite's modules absent from the working tree (restored after). */
 export async function withAutomationExcluded(task, root = rootDir) {
 	const stashRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-automation-stash-'));
 	const stashed = [];
 	try {
 		for (const dir of AUTOMATION_DIRS) {
 			const abs = path.join(root, dir);
-			if (fs.existsSync(abs)) {
+			if (!fs.existsSync(abs)) continue;
+			if (dir === 'out/automation') {
+				// The graphViewPort seam stays (see AUTOMATION_KEEP); everything else in the
+				// directory is the automation suite.
+				for (const entry of fs.readdirSync(abs)) {
+					if (AUTOMATION_KEEP.test(entry)) continue;
+					const entryAbs = path.join(abs, entry);
+					const aside = path.join(stashRoot, dir.replace(/\//g, '_') + '_' + entry);
+					moveDir(entryAbs, aside);
+					stashed.push({ abs: entryAbs, aside });
+				}
+			} else {
 				const aside = path.join(stashRoot, dir.replace(/\//g, '_'));
 				moveDir(abs, aside);
 				stashed.push({ abs, aside });
@@ -132,6 +158,21 @@ export async function withAutomationContributions(task, root = rootDir) {
 		return await task();
 	} finally {
 		restoreLeftoverBackups(root);
+	}
+}
+
+/**
+ * Build the dist/ bundle in the given compile-time automation mode (task 6.2): false (the
+ * default) emits dist/extension.js with every automation require eliminated; true emits
+ * dist/automation/extension.js with the automation modules bundled in. Exits the process on a
+ * build failure — packaging a stale bundle is worse than not packaging.
+ */
+export function buildDist(automation = false) {
+	const args = [path.join(rootDir, 'scripts', 'build', 'build.mjs'), '--production'];
+	if (automation) args.push('--automation');
+	const result = spawnSync(process.execPath, args, { cwd: rootDir, stdio: 'inherit' });
+	if (result.status !== 0) {
+		process.exit(result.status ?? 1);
 	}
 }
 

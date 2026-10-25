@@ -19,9 +19,12 @@ const sandboxRoot = path.join(os.tmpdir(), 'gg-automation-packaging-test');
 
 function writeSandbox() {
 	fs.rmSync(sandboxRoot, { recursive: true, force: true });
-	fs.mkdirSync(path.join(sandboxRoot, 'out', 'automation'), { recursive: true });
+	fs.mkdirSync(path.join(sandboxRoot, 'out', 'automation', 'catalog'), { recursive: true });
 	fs.mkdirSync(path.join(sandboxRoot, 'resources', 'automation'), { recursive: true });
 	fs.writeFileSync(path.join(sandboxRoot, 'out', 'automation', 'server.js'), 'module.exports = {};\n');
+	fs.writeFileSync(path.join(sandboxRoot, 'out', 'automation', 'catalog', 'controlBar.js'), 'module.exports = {};\n');
+	// The view's port seam (task 6.2): kept by the exclusion — out/gitGraphView.js requires it.
+	fs.writeFileSync(path.join(sandboxRoot, 'out', 'automation', 'graphViewPort.js'), 'exports.graphViewPort = {};\n');
 	fs.writeFileSync(path.join(sandboxRoot, 'resources', 'automation', 'shim.js'), '// shim\n');
 	fs.writeFileSync(path.join(sandboxRoot, 'package.json'), JSON.stringify({
 		contributes: {
@@ -64,13 +67,20 @@ test('withAutomationContributions injects the contributions for the task and res
 	}
 });
 
-test('withAutomationExcluded moves the automation modules aside and restores them', async () => {
+test('withAutomationExcluded moves the automation suite aside and restores it', async () => {
 	writeSandbox();
 	await withAutomationExcluded(async () => {
-		assert.equal(fs.existsSync(path.join(sandboxRoot, 'out', 'automation')), false);
+		const kept = fs.readdirSync(path.join(sandboxRoot, 'out', 'automation'));
+		// Only the view's port seam survives (out/gitGraphView.js requires it unconditionally);
+		// the suite's modules and the in-page shim are gone.
+		assert.deepEqual(kept.filter((name) => !name.endsWith('.map') && !name.endsWith('.d.ts')), ['graphViewPort.js']);
+		assert.equal(fs.existsSync(path.join(sandboxRoot, 'out', 'automation', 'server.js')), false);
+		assert.equal(fs.existsSync(path.join(sandboxRoot, 'out', 'automation', 'catalog')), false);
 		assert.equal(fs.existsSync(path.join(sandboxRoot, 'resources', 'automation')), false);
 	}, sandboxRoot);
 	assert.equal(fs.readFileSync(path.join(sandboxRoot, 'out', 'automation', 'server.js'), 'utf8'), 'module.exports = {};\n');
+	assert.equal(fs.readFileSync(path.join(sandboxRoot, 'out', 'automation', 'catalog', 'controlBar.js'), 'utf8'), 'module.exports = {};\n');
+	assert.equal(fs.readFileSync(path.join(sandboxRoot, 'out', 'automation', 'graphViewPort.js'), 'utf8'), 'exports.graphViewPort = {};\n');
 	assert.equal(fs.readFileSync(path.join(sandboxRoot, 'resources', 'automation', 'shim.js'), 'utf8'), '// shim\n');
 });
 
@@ -94,7 +104,12 @@ test('the compiled extension loads with the automation modules absent (the defau
 	fs.cpSync(path.join(rootDir, 'out'), path.join(copyRoot, 'out'), { recursive: true });
 	fs.cpSync(path.join(rootDir, 'resources'), path.join(copyRoot, 'resources'), { recursive: true });
 	try {
-		fs.rmSync(path.join(copyRoot, 'out', 'automation'), { recursive: true, force: true });
+		// Mirror withAutomationExcluded: the automation suite's modules are gone, the view's
+		// port seam (out/automation/graphViewPort.js, required by out/gitGraphView.js) stays.
+		for (const entry of fs.readdirSync(path.join(copyRoot, 'out', 'automation'))) {
+			if (entry.startsWith('graphViewPort.')) continue;
+			fs.rmSync(path.join(copyRoot, 'out', 'automation', entry), { recursive: true, force: true });
+		}
 		fs.rmSync(path.join(copyRoot, 'resources', 'automation'), { recursive: true, force: true });
 		const probe = path.join(copyRoot, 'probe.cjs');
 		fs.writeFileSync(probe, `

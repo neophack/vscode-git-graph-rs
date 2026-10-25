@@ -5,9 +5,11 @@
  * launchers, and chains the webview pipeline (scripts/build/webview.mjs) that emits
  * media/out.min.{js,css}.
  *
- *   dist/extension.js           the host, one file on the node10.11 target; only `vscode`, the
- *                               original-fs fallback and the optional automation modules stay
- *                               outside the bundle
+ *   dist/extension.js           the host, one file on the node10.11 target; only `vscode` and the
+ *                               original-fs fallback stay outside the bundle
+ *   dist/automation/extension.js  the same host built with `--automation`: __AUTOMATION__ is
+ *                               defined truthy, so the automation subsystem's gate keeps its
+ *                               requires and the automation modules are bundled in
  *   dist/askpass/askpassMain.js git's credential helper, spawned by the askpass launchers
  *   dist/askpass/askpass*.sh    the launchers git runs via GIT_ASKPASS (LF endings, exec bit)
  *   media/out.min.js|css        the webview, produced by scripts/build/webview.mjs
@@ -31,12 +33,17 @@
  *    dist/askpass/, so each of its five `__dirname` uses is rewritten to
  *    `path.join(__dirname, 'askpass')`.
  *
- * The automation modules stay external: the default build ships without them (commands.ts
- * requires them inside a try/catch that treats their absence as "not an automation build"),
- * exactly like the v1.0 packaging.
+ * The automation subsystem is a compile-time build variant (REFACTOR-PLAN task 6.2): the
+ * `__AUTOMATION__` define decides it. In the default build the flag is false and the gate in
+ * src/automation/modules.ts is dead-code-eliminated, so no automation module (catalog, server,
+ * suite runner) enters the bundle at all; with `--automation` the flag is true, the gate's
+ * requires survive and the modules are bundled (nothing about them stays external). The out/
+ * (tsc) tree defines nothing — there the gate loads the modules exactly when the packaging
+ * variant put them in place, the v1.0 behavior.
  *
  *   node scripts/build/build.mjs              # development build (sourcemap, not minified)
  *   node scripts/build/build.mjs --production # what ships (minified, no sourcemaps)
+ *   node scripts/build/build.mjs --automation # the automation-testing build variant
  *
  * After the webview build, the ES2018 compatibility gate (scripts/build/compat.mjs) scans the
  * emitted artifacts and fails the build on a violation. Type checking stays with the tsc
@@ -54,6 +61,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const dist = path.join(root, 'dist');
 const production = process.argv.includes('--production');
 const debugWebview = process.argv.includes('debug');
+// The automation-testing build variant (task 6.2): __AUTOMATION__ defined truthy, the automation
+// modules bundled in, everything emitted under dist/automation/ so the default dist/extension.js
+// and the automation artifact can coexist (and be checked against each other) in one tree.
+const automationBuild = process.argv.includes('--automation');
+const hostOut = automationBuild ? path.join(dist, 'automation') : dist;
 
 const common = {
 	bundle: true,
@@ -103,13 +115,17 @@ const hostAdapter = {
 const hostEntry = {
 	...common,
 	entryPoints: { extension: 'src/extension.ts' },
-	outdir: 'dist',
+	outdir: automationBuild ? path.relative(root, hostOut) : 'dist',
 	platform: 'node',
 	format: 'cjs',
 	target: 'node10.11',
+	// The compile-time automation switch (task 6.2): false dead-code-eliminates the gate's
+	// requires (so no automation module enters the default bundle — nothing about them needs to
+	// stay external in either mode); true keeps them, and the modules are bundled in.
+	define: { __AUTOMATION__: automationBuild ? 'true' : 'false' },
 	// The original-fs fallback require stays a runtime require (it only resolves inside VS
-	// Code's Electron host); the automation modules ship only in the automation build.
-	external: ['vscode', 'original-fs', './automation/suiteRunner', './automation/reportView'],
+	// Code's Electron host).
+	external: ['vscode', 'original-fs'],
 	plugins: [hostAdapter],
 	tsconfig: path.join(root, 'src', 'tsconfig.json')
 };
@@ -117,7 +133,7 @@ const hostEntry = {
 const askpassEntry = {
 	...common,
 	entryPoints: { askpassMain: 'src/askpass/askpassMain.ts' },
-	outdir: 'dist/askpass',
+	outdir: automationBuild ? path.relative(root, path.join(hostOut, 'askpass')) : 'dist/askpass',
 	platform: 'node',
 	format: 'cjs',
 	target: 'node10.11',
@@ -126,6 +142,10 @@ const askpassEntry = {
 
 /** Remove the previous outputs, so a stale file never survives a build that no longer emits it. */
 function cleanOutputs() {
+	if (automationBuild) {
+		fs.rmSync(path.join(dist, 'automation'), { recursive: true, force: true });
+		return;
+	}
 	for (const name of ['extension.js', 'extension.js.map']) {
 		fs.rmSync(path.join(dist, name), { force: true });
 	}
@@ -140,7 +160,7 @@ function cleanOutputs() {
  */
 function copyAskpassScripts() {
 	const source = path.join(root, 'src', 'askpass');
-	const target = path.join(dist, 'askpass');
+	const target = path.join(hostOut, 'askpass');
 	fs.mkdirSync(target, { recursive: true });
 	for (const name of fs.readdirSync(source).filter((name) => name.endsWith('.sh')).sort()) {
 		const contents = fs.readFileSync(path.join(source, name), 'utf8').replace(/\r\n/g, '\n');
@@ -169,7 +189,7 @@ async function main() {
 		esbuild.build({ absWorkingDir: root, ...askpassEntry })
 	]);
 	copyAskpassScripts();
-	console.log(`Bundled dist/ in ${Date.now() - started} ms (${production ? 'production' : 'development'})`);
+	console.log(`Bundled ${automationBuild ? 'dist/automation' : 'dist/'} in ${Date.now() - started} ms (${production ? 'production' : 'development'})`);
 
 	buildWebview();
 

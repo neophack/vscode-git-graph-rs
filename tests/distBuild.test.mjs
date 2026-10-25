@@ -59,13 +59,37 @@ test('the host bundle keeps only the declared externals outside the bundle', { s
 	// scripts); node builtins are allowed for those just as for real requires.
 	for (const match of source.matchAll(/require\("([^"]+)"\)/g)) specifiers.add(match[1]);
 	assert.ok(specifiers.has('vscode'), 'the vscode API must stay external');
-	const allowed = new Set(['vscode', 'original-fs', './automation/suiteRunner', './automation/reportView']);
+	// The automation modules are NOT allowed as externals any more: the compile-time
+	// __AUTOMATION__ switch (task 6.2) either eliminates their requires (default build) or
+	// bundles them in (dist/automation), so a require of them here means the gate broke.
+	const allowed = new Set(['vscode', 'original-fs']);
 	const unexpected = [...specifiers].filter((specifier) => !allowed.has(specifier) && !Module.builtinModules.includes(specifier));
 	assert.deepEqual(unexpected, [], 'every require must be a node builtin or a declared external');
 });
 
+test('the default host bundle carries no automation module code', { skip }, () => {
+	// The compile-time switch's core guarantee (task 6.2): with __AUTOMATION__ false the gate in
+	// src/automation/modules.ts is dead-code-eliminated, so no catalog, server or suite-runner
+	// content enters dist/extension.js. Catalog action ids and the runner's strings exist only
+	// in the automation modules, so their absence here is the proof. (The automation variant of
+	// this bundle, dist/automation/extension.js, is covered by tests/distAutomation.test.mjs.)
+	const source = fs.readFileSync(extensionBundle, 'utf8');
+	const automationMarkers = [
+		'menu-commit/add-tag',           // a catalog action id (catalog/ domain files)
+		'control-bar/author-dropdown',   // the catalog's first action id
+		'native save dialog',            // NATIVE_SAVE_DIALOG_SKIP_REASON
+		'Reset the fixture repository'   // suiteRunner's reseed record title
+	];
+	for (const marker of automationMarkers) {
+		assert.ok(!source.includes(marker), `the default bundle must not contain the automation marker "${marker}"`);
+	}
+});
+
 test('dist/ contains exactly the host bundle and the askpass helper', { skip }, () => {
-	assert.deepEqual(walk(path.join(root, 'dist'), '.js'), ['dist/askpass/askpassMain.js', 'dist/extension.js']);
+	// dist/automation/ (the --automation variant, verified by tests/distAutomation.test.mjs) may
+	// sit beside the default artifacts; it is not part of THIS bundle's contract.
+	const files = walk(path.join(root, 'dist'), '.js').filter((file) => !file.startsWith('dist/automation/'));
+	assert.deepEqual(files, ['dist/askpass/askpassMain.js', 'dist/extension.js']);
 });
 
 test('the askpass launchers ship beside the helper with LF endings', { skip }, () => {
