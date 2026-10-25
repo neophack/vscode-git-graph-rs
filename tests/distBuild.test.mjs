@@ -151,6 +151,17 @@ test('the VSIX manifest contract: the packaged file list is exactly the allowlis
 			assert.ok(set.has(`media/vendor/${vendor}`), `media/vendor/${vendor} must ship in the VSIX`);
 		}
 	}
+	// The on-demand chunks of task 5.9's code splitting: the entry reaches them through
+	// relative dynamic import(), so a chunk left out of the VSIX breaks the first open of its
+	// widget (and the zh-cn string table, and the Markdown renderer).
+	const chunksDir = path.join(root, 'media', 'chunks');
+	if (fs.existsSync(chunksDir)) {
+		for (const chunk of fs.readdirSync(chunksDir)) {
+			if (chunk.endsWith('.js')) {
+				assert.ok(set.has(`media/chunks/${chunk}`), `media/chunks/${chunk} must ship in the VSIX`);
+			}
+		}
+	}
 	const nativeDir = path.join(root, 'native');
 	if (fs.existsSync(nativeDir)) {
 		for (const entry of fs.readdirSync(nativeDir)) {

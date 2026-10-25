@@ -12,11 +12,19 @@ import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
 import { helpTooltipAttrs, html, setHtml } from '../../common/html';
 import { ELLIPSIS, formatStr, markup, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { abbrevCommit } from '../../common/util';
 import { currentBranchHtml } from '../actions/dialogActions';
 import { GraphContext } from '../context';
 import { ContextMenuActions } from './contextMenu';
+import { ReflogViewSurface } from './surfaces';
+import reflogCss from '../../styles/reflogView.css';
+import panelsCss from '../../styles/mobile/panels.css';
+
+// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+injectOnDemandStyles(reflogCss);
+injectOnDemandStyles(panelsCss);
 
 const REFLOG_PAGE_SIZE = 200;
 
@@ -40,7 +48,7 @@ export function classifyReflogAction(message: string): string {
 	return 'reflogDefault';
 }
 
-export class ReflogView {
+export class ReflogView implements ReflogViewSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;

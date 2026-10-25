@@ -362,7 +362,10 @@ export async function bootRealView(repo) {
 		window.Element.prototype.scroll = function () {};
 		window.Element.prototype.scrollTo = function () {};
 
-		window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.min.js'), 'utf8'));
+		/* Task 5.9's entry is an ES module (window.eval cannot run it): execute the build's
+		 * single-file IIFE variant of the same entry instead (identical module graph, the
+		 * on-demand imports inlined rather than chunked). */
+		window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.testbundle.js'), 'utf8'));
 		window.dispatchEvent(new window.Event('load'));
 	} catch (error) {
 		extensionToWebview = null;

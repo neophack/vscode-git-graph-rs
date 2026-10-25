@@ -9,12 +9,20 @@ import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
 import { escapeHtml, helpTooltipAttrs, html, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
+import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { abbrevCommit } from '../../common/util';
 import { GraphContext } from '../context';
 import { DialogInputType } from './dialog';
+import { WorktreeDialogSurface } from './surfaces';
+import worktreeCss from '../../styles/worktreeDialog.css';
+import panelsCss from '../../styles/mobile/panels.css';
 
-export class WorktreeDialog {
+// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+injectOnDemandStyles(worktreeCss);
+injectOnDemandStyles(panelsCss);
+
+export class WorktreeDialog implements WorktreeDialogSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;

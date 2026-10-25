@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as GG from '../../common/protocol';
+import { captureFirstPaintSnapshot, configFingerprint, FIRST_PAINT_SNAPSHOT_VERSION } from '../state/firstPaint';
+import type { FirstPaintSnapshot } from '../state/firstPaint';
+import type { WebViewState } from '../state/types';
 import type { GraphContext } from '../context';
 import { RepoLoader } from './repoLoader';
 
@@ -66,6 +69,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 		getCommitId: () => null,
 		config: {
 			repoDropdownOrder: 'alphabetical',
+			snapshotFirstPaint: true,
 			initialLoadCommits: 100,
 			commitOrdering: GG.CommitOrdering.Date,
 			showRemoteBranches: true,
@@ -78,7 +82,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 			onRepoLoad: { scrollToHead: false, showCheckedOutBranch: false, showSpecificBranches: [] }
 		},
 		refreshState: {
-			inProgress: false, hard: false, configChanges: false, requestingRepoInfo: false,
+			inProgress: false, snapshotRefreshing: false, hard: false, configChanges: false, requestingRepoInfo: false,
 			repoInfoChanges: false, requestingConfig: false,
 			loadRepoInfoRefreshId: 0, loadCommitsRefreshId: 0, loadConfigRefreshId: 0
 		}
@@ -89,7 +93,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 		bridge: {
 			send: (message: unknown) => { sent.push(message as SentMessage); }
 		},
-		persistence: { saveState: noop, saveRepoStateValue: noop },
+		persistence: { saveState: noop, saveRepoStateValue: noop, scheduleFirstPaintCapture: noop },
 		controls: {
 			renderRepoDropdownOptions: noop, syncShowRemoteBranches: noop, renderFetchButton: noop,
 			renderFilterButton: noop, renderRefreshButton: noop, renderToolbarText: noop,
@@ -190,5 +194,171 @@ describe('RepoLoader open path (task 4.7)', () => {
 		const commands = sent.map((message) => message.command);
 		expect(commands).toContain('loadCommits'); // one partial refresh, under the repository's own options
 		expect(commands).not.toContain('loadRepoInfo');
+	});
+});
+
+/** A persisted state whose firstPaint snapshot matches the fake context's repo and config. */
+function stateWithSnapshot(ctx: GraphContext, snapshot: FirstPaintSnapshot | null): WebViewState {
+	return {
+		currentRepo: '/repo',
+		currentRepoLoading: false,
+		gitRepos: ctx.store.repos,
+		gitBranches: ['main'],
+		gitBranchHead: 'main',
+		gitConfig: null,
+		gitRemotes: ['origin'],
+		gitStashes: [],
+		gitTags: [],
+		commitHead: snapshot !== null ? snapshot.head : null,
+		currentBranches: null,
+		currentAuthors: null,
+		moreCommitsAvailable: false,
+		maxCommits: 500,
+		onlyFollowFirstParent: false,
+		scrollTop: 0,
+		findWidget: { text: '', currentHash: null, visible: false },
+		settingsWidget: { currentRepo: null, scrollTop: 0, repoColumnScrollTop: 0, globalColumnScrollTop: 0 },
+		firstPaint: snapshot
+	} as unknown as WebViewState;
+}
+
+/** A snapshot of the given commits under the fake context's own configuration. */
+function snapshotOf(ctx: GraphContext, hashes: string[]): FirstPaintSnapshot {
+	return captureFirstPaintSnapshot({
+		repo: '/repo',
+		head: hashes.length > 0 ? hashes[0] : null,
+		config: ctx.store.config,
+		commits: hashes.map((hash) => commit(hash) as unknown as GG.GitCommit),
+		moreCommitsAvailable: true,
+		maxCommits: 500,
+		onlyFollowFirstParent: false,
+		uncommittedCount: null,
+		scrollTop: 0,
+		rowHeight: 24,
+		viewHeight: 600
+	})!;
+}
+
+describe('first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9)', () => {
+	it('paints a valid snapshot at boot: the rows seed immediately and the refresh button spins until the push lands', () => {
+		const { ctx, store } = fakeContext();
+		let refreshButtonRenderings = 0;
+		(ctx.controls as unknown as { renderRefreshButton: () => void }).renderRefreshButton = () => { refreshButtonRenderings++; };
+		const snapshot = snapshotOf(ctx, ['c1']);
+		const loader = new RepoLoader(() => ctx);
+
+		loader.start(stateWithSnapshot(ctx, snapshot), '/repo', null);
+
+		// The snapshot's rows went through the ordinary loadCommits path ...
+		expect((store.commits as { hash: string }[])[0].hash).toBe('c1');
+		expect(store.commitHead).toBe('c1');
+		expect(store.maxCommits).toBe(500);
+		expect((store.refreshState as { snapshotRefreshing: boolean }).snapshotRefreshing).toBe(true);
+		// ... and the "refreshing" marker reached the refresh button
+		expect(refreshButtonRenderings).toBeGreaterThan(0);
+	});
+
+	it('skips the snapshot when it belongs to another repository', () => {
+		const { ctx, store } = fakeContext();
+		const snapshot = { ...snapshotOf(ctx, ['c1']), repo: '/other-repo' };
+		const loader = new RepoLoader(() => ctx);
+
+		loader.start(stateWithSnapshot(ctx, snapshot), '/repo', null);
+
+		expect((store.commits as unknown[])).toEqual([]);
+		expect((store.refreshState as { snapshotRefreshing: boolean }).snapshotRefreshing).toBe(false);
+	});
+
+	it('skips the snapshot when the configuration changed since it was captured', () => {
+		const { ctx, store } = fakeContext();
+		const snapshot = { ...snapshotOf(ctx, ['c1']), configFingerprint: configFingerprint({} as GG.GitGraphViewConfig) };
+		const loader = new RepoLoader(() => ctx);
+
+		loader.start(stateWithSnapshot(ctx, snapshot), '/repo', null);
+
+		expect((store.commits as unknown[])).toEqual([]);
+	});
+
+	it('skips a corrupt or foreign-version snapshot (never a throw, never a paint)', () => {
+		const { ctx, store } = fakeContext();
+		const good = snapshotOf(ctx, ['c1']);
+		const corrupt = JSON.parse(JSON.stringify(good)) as Record<string, unknown>;
+		delete corrupt.commits;
+		const foreign = { ...good, version: FIRST_PAINT_SNAPSHOT_VERSION + 1 };
+		const loader = new RepoLoader(() => ctx);
+
+		loader.start(stateWithSnapshot(ctx, corrupt as unknown as FirstPaintSnapshot), '/repo', null);
+		expect((store.commits as unknown[])).toEqual([]);
+
+		loader.start(stateWithSnapshot(ctx, foreign), '/repo', null);
+		expect((store.commits as unknown[])).toEqual([]);
+	});
+
+	it('skips the snapshot when the git-graph-rs.snapshotFirstPaint setting is off', () => {
+		const { ctx, store } = fakeContext();
+		(ctx.store as unknown as { config: { snapshotFirstPaint: boolean } }).config.snapshotFirstPaint = false;
+		const loader = new RepoLoader(() => ctx);
+
+		loader.start(stateWithSnapshot(ctx, snapshotOf(ctx, ['c1'])), '/repo', null);
+
+		expect((store.commits as unknown[])).toEqual([]);
+	});
+
+	it('reconciles without re-rendering when the pushed data matches the painted snapshot (the seamless update)', () => {
+		const { ctx, store } = fakeContext();
+		const renders: number[] = [];
+		const anchors: Array<{ hash: string, offset: number, atTop: boolean }> = [];
+		// The real CommitTable.render records the branch head the rows were built for (the
+		// equality path of the seamless update reads it) - the fake mirrors that
+		(ctx.table as unknown as { render: () => void }).render = () => {
+			renders.push(renders.length);
+			(store as unknown as { renderedGitBranchHead: string | null }).renderedGitBranchHead = (store as unknown as { gitBranchHead: string | null }).gitBranchHead;
+		};
+		(ctx.viewport as unknown as { captureViewportAnchor: () => unknown }).captureViewportAnchor = () => {
+			const anchor = { hash: 'c1', offset: 0, atTop: true };
+			anchors.push(anchor);
+			return anchor;
+		};
+		let appliedAnchors = 0;
+		(ctx.viewport as unknown as { applyViewportAnchor: (anchor: unknown) => void }).applyViewportAnchor = () => { appliedAnchors++; };
+		const snapshot = snapshotOf(ctx, ['c1']);
+		const loader = new RepoLoader(() => ctx);
+		loader.start(stateWithSnapshot(ctx, snapshot), '/repo', null);
+		expect(renders).toHaveLength(1); // the paint rendered exactly once
+		appliedAnchors = 0; // drop the paint's own (NULL) anchor applications
+
+		loader.processLoadView(pushedLoadView(7));
+
+		// Identical data reconciles to NOTHING: no second render, no captured anchor, no applied
+		// anchor - the painted rows keep their DOM nodes and their coordinates by construction
+		expect(renders).toHaveLength(1);
+		expect(anchors).toEqual([]);
+		expect(appliedAnchors).toBe(0);
+		expect((store.refreshState as { snapshotRefreshing: boolean }).snapshotRefreshing).toBe(false);
+	});
+
+	it('reconciles a moved HEAD through the anchored rebuild (rows keyed by hash, coordinates stable)', () => {
+		const { ctx, store } = fakeContext();
+		const applied: Array<{ hash: string, offset: number, atTop: boolean } | null> = [];
+		const anchor = { hash: 'c1', offset: 5, atTop: true };
+		(ctx.viewport as unknown as { captureViewportAnchor: () => unknown }).captureViewportAnchor = () => anchor;
+		(ctx.viewport as unknown as { applyViewportAnchor: (a: unknown) => void }).applyViewportAnchor = (a) => { applied.push(a as { hash: string, offset: number, atTop: boolean }); };
+		const snapshot = snapshotOf(ctx, ['c1']);
+		const loader = new RepoLoader(() => ctx);
+		loader.start(stateWithSnapshot(ctx, snapshot), '/repo', null);
+		applied.length = 0; // drop the paint's own (NULL) anchor applications
+
+		// The push carries a rewritten history: a new head commit above c1
+		const pushed = pushedLoadView(7);
+		(pushed.commits as { commits: GG.GitCommit[], head: string }).commits = [commit('c0') as unknown as GG.GitCommit, commit('c1') as unknown as GG.GitCommit];
+		(pushed.commits as { head: string }).head = 'c0';
+		loader.processLoadView(pushed);
+
+		// The anchored rebuild ran: the anchor captured from the visible row was re-applied, so
+		// the row the user was looking at keeps its position while the new commit lands above it
+		expect((store.commits as { hash: string }[]).map((c) => c.hash)).toEqual(['c0', 'c1']);
+		expect(applied.length).toBeGreaterThan(0);
+		expect(applied.every((a) => a !== null && a.hash === 'c1')).toBe(true);
+		expect((store.refreshState as { snapshotRefreshing: boolean }).snapshotRefreshing).toBe(false);
 	});
 });

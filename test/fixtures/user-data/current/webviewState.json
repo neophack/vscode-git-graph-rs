@@ -1,5 +1,6 @@
 {
-	"version": 1,
+	"version": 2,
+	"firstPaint": null,
 	"currentRepo": "E:\\dev\\project",
 	"currentRepoLoading": false,
 	"gitRepos": {

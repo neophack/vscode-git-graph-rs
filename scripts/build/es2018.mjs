@@ -30,9 +30,13 @@ const LOGICAL_ASSIGNMENT_OR_NULLISH = new Map([
  * @param classFieldsAllowed Whether class property declarations are accepted: TypeScript sources
  * declare their class members (the compiler lowers any initialiser into the constructor), while a
  * class field in emitted JavaScript is ES2022 syntax.
+ * @param dynamicImportAllowed Whether dynamic `import()` is accepted: it is ES2020 *syntax*, but
+ * the webview's runtime floor runs it natively (Chromium 63+; the floor is Chromium 69 - task
+ * 5.9's on-demand splitting relies on it), while the host's Node 10.11 floor does not - so the
+ * webview checks pass it and every host check keeps rejecting it.
  * @returns One "line:column description" entry per violation.
  */
-export function findPostEs2018Syntax(text, fileName, classFieldsAllowed) {
+export function findPostEs2018Syntax(text, fileName, classFieldsAllowed, dynamicImportAllowed) {
 	const isTs = fileName.endsWith('.ts');
 	const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, isTs ? ts.ScriptKind.TS : ts.ScriptKind.JS);
 	const problems = [];
@@ -47,7 +51,7 @@ export function findPostEs2018Syntax(text, fileName, classFieldsAllowed) {
 			case ts.SyntaxKind.ElementAccessExpression:
 			case ts.SyntaxKind.CallExpression:
 				if (node.questionDotToken !== undefined) report(node, 'optional chaining (?., ES2020)');
-				if (node.kind === ts.SyntaxKind.CallExpression && node.expression.kind === ts.SyntaxKind.ImportKeyword) report(node, 'dynamic import() (ES2020)');
+				if (!dynamicImportAllowed && node.kind === ts.SyntaxKind.CallExpression && node.expression.kind === ts.SyntaxKind.ImportKeyword) report(node, 'dynamic import() (ES2020)');
 				break;
 			case ts.SyntaxKind.BinaryExpression: {
 				const description = LOGICAL_ASSIGNMENT_OR_NULLISH.get(node.operatorToken.kind);
@@ -91,13 +95,16 @@ export function findPostEs2018Syntax(text, fileName, classFieldsAllowed) {
  * Check files against the ES2018 floor.
  * @param files The files to check.
  * @param root The directory the reported paths are relative to.
+ * @param options.dynamicImportAllowed Accept dynamic `import()` (the webview floor runs it
+ * natively; see {@link findPostEs2018Syntax}). Default FALSE (the host's Node floor lacks it).
  * @returns One message per violation.
  */
-export function checkFiles(files, root) {
+export function checkFiles(files, root, options) {
+	const allowDynamicImport = options !== undefined && options.allowDynamicImport === true;
 	const problems = [];
 	for (const file of files) {
 		const relative = path.relative(root, file).split(path.sep).join('/');
-		for (const problem of findPostEs2018Syntax(fs.readFileSync(file, 'utf8'), file, file.endsWith('.ts'))) {
+		for (const problem of findPostEs2018Syntax(fs.readFileSync(file, 'utf8'), file, file.endsWith('.ts'), allowDynamicImport)) {
 			problems.push(relative + ':' + problem);
 		}
 	}

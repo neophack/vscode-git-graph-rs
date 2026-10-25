@@ -86,6 +86,7 @@ export class Store {
 		this.maxCommits = initialState.config.initialLoadCommits;
 		this.refreshState = {
 			inProgress: false,
+			snapshotRefreshing: false,
 			hard: true,
 			loadRepoInfoRefreshId: initialState.loadRepoInfoRefreshId,
 			loadCommitsRefreshId: initialState.loadCommitsRefreshId,

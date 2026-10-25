@@ -25,10 +25,7 @@ import type { ConflictBanner } from './widgets/conflictBanner';
 import type { ContextMenu } from './widgets/contextMenu';
 import type { Dialog } from './widgets/dialog';
 import type { FindWidget } from './widgets/findWidget';
-import type { ReflogView } from './widgets/reflogView';
-import type { SettingsWidget } from './widgets/settings/settingsWidget';
-import type { StatisticsView } from './widgets/statisticsView';
-import type { WorktreeDialog } from './widgets/worktreeDialog';
+import type { ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './widgets/surfaces';
 
 /** The static skeleton of the view, rendered by the extension host. */
 export interface ViewDom {
@@ -42,13 +39,19 @@ export interface ViewDom {
 	readonly footer: HTMLElement;
 }
 
+/**
+ * The view's widgets. The Settings widget, Reflog view, Worktree dialog and Statistics view are
+ * LAZY (task 5.9): the context holds their facades, which load the real modules through dynamic
+ * import() on first use (widgets/lazy.ts) - only the Find widget and the Conflict banner sit in
+ * the first-paint bundle with the table, the graph and the control bar.
+ */
 export interface Widgets {
 	readonly find: FindWidget;
-	readonly settings: SettingsWidget;
+	readonly settings: SettingsWidgetSurface;
 	readonly conflictBanner: ConflictBanner;
-	readonly reflog: ReflogView;
-	readonly worktree: WorktreeDialog;
-	readonly statistics: StatisticsView;
+	readonly reflog: ReflogViewSurface;
+	readonly worktree: WorktreeDialogSurface;
+	readonly statistics: StatisticsViewSurface;
 }
 
 export interface GraphContext {

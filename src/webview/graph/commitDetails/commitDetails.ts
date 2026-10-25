@@ -15,7 +15,7 @@ import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
 import { ExpandedCommit, FileTreeFolder } from '../state/types';
-import { hasMarkdown, renderMarkdown } from '../text/markdown';
+import { hasMarkdown, isMarkdownLoaded, loadMarkdown, renderMarkdown } from '../text/markdown';
 import { CLASS_EXTERNAL_URL, CLASS_INTERNAL_URL, TextFormatter } from '../text/textFormatter';
 import { makeFileViewInteractive } from './fileActions';
 import { alterFileTreeFileReviewed, alterFileTreeFolderOpen, createFileTree, generateFileViewHtml, getFilesInTree, haveFilesChanged, setFileTreeReviewed, updateFileTreeHtml, updateFileTreeHtmlFileReviewed } from './fileTree';
@@ -304,6 +304,18 @@ export class CommitDetails {
 	private renderCommitMessageBody(expandedCommit: ExpandedCommit, body: string, textFormatter: TextFormatter): SafeHtml {
 		const offerToggle = this.store.config.markdown && hasMarkdown(body);
 		const showMarkdown = offerToggle && expandedCommit.showMarkdown;
+		if (showMarkdown && !isMarkdownLoaded()) {
+			// The Markdown renderer's on-demand chunk has not landed yet (task 5.9): paint the
+			// plain inline-formatted body now - never blank, never blocked - and swap in the
+			// rendered Markdown the moment the module resolves, provided this same commit is
+			// still the open one.
+			void loadMarkdown().then(() => {
+				if (this.store.expandedCommit !== expandedCommit) return;
+				const bodyElem = document.getElementById('cdvMessageBody');
+				if (bodyElem !== null) setHtml(bodyElem, renderMarkdown(body));
+			}, () => undefined);
+			return html`<span id="cdvMessageBody">${textFormatter.format(body)}</span>${offerToggle ? html`<span id="cdvMarkdownToggle" class="cdvMarkdownToggle" role="button" tabindex="0">${strings.plainTextToggleLabel}</span>` : ''}`;
+		}
 		return html`<span id="cdvMessageBody">${showMarkdown ? renderMarkdown(body) : textFormatter.format(body)}</span>${offerToggle ? html`<span id="cdvMarkdownToggle" class="cdvMarkdownToggle" role="button" tabindex="0">${showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel}</span>` : ''}`;
 	}
 
@@ -647,7 +659,14 @@ export class CommitDetails {
 		const bodyElem = document.getElementById('cdvMessageBody'), toggleElem = document.getElementById('cdvMarkdownToggle');
 		if (bodyElem === null || toggleElem === null) return;
 		const body = getCdvMessageBody(expandedCommit.commitDetails.body, this.ctx().layout.isMobileLayout());
-		setHtml(bodyElem, expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body));
+		const renderBody = () => setHtml(bodyElem, expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body));
+		if (expandedCommit.showMarkdown && !isMarkdownLoaded()) {
+			// Flipping to Markdown before the on-demand renderer landed (task 5.9): keep the
+			// toggle's label in sync immediately and paint the rendered body once it resolves
+			void loadMarkdown().then(renderBody, () => undefined);
+		} else {
+			renderBody();
+		}
 		toggleElem.textContent = expandedCommit.showMarkdown ? strings.plainTextToggleLabel : strings.markdownToggleLabel;
 	}
 

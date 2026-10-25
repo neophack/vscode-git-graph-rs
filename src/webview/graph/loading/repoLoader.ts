@@ -20,6 +20,7 @@ import { getRepoDropdownOptions } from '../controlBar/controlBar';
 import { GraphContext } from '../context';
 import { gerritStatesEqual, refreshGerritReviewDialog } from '../integrations/gerrit';
 import { pullRequestMapsEqual } from '../integrations/pullRequests';
+import { configFingerprint, decodeFirstPaintSnapshot } from '../state/firstPaint';
 import {
 	getIncludeCommitsMentionedByReflogs, getCommitOrdering, getOnlyFollowFirstParent, getOnRepoLoadShowCheckedOutBranch,
 	getOnRepoLoadShowSpecificBranches, getShowRemoteBranches, getShowStashes, getShowTags
@@ -82,9 +83,11 @@ export class RepoLoader {
 
 		// The pushed response finalises through the same response processing as a refresh's; the
 		// refresh state itself stays idle (the push is host-initiated, not a request cycle), and
-		// the loading skeleton shows until the pushed commits arrive.
+		// the loading skeleton shows until the pushed commits arrive - unless the first-paint
+		// snapshot (D10, task 5.9) already put the previous session's rows on screen.
 		store.refreshState.hard = false;
-		if (store.commits.length === 0) {
+		const snapshotPainted = this.paintFirstPaintSnapshot(prevState);
+		if (store.commits.length === 0 && !snapshotPainted) {
 			ctx.table.showLoadingSkeleton();
 		}
 
@@ -95,6 +98,43 @@ export class RepoLoader {
 			store.compareSourceHash = prevState.compareSourceHash;
 			ctx.persistence.saveState();
 		}
+	}
+
+	/**
+	 * Paint the first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9): the previous session's
+	 * rows go on screen IMMEDIATELY, marked "refreshing", and the pushed `loadView` data
+	 * reconciles them when it lands - through this same loadCommits path, whose equality check
+	 * leaves identical rows untouched (the seamless update) and whose anchored rebuild replaces
+	 * the rest without a coordinate jump. The snapshot is skipped unless it is decodable, belongs
+	 * to the repository being opened, and was rendered under the configuration this page booted
+	 * with; HEAD cannot be checked before the data arrives, so it travels with the snapshot and
+	 * the reconciliation is what replaces rows under a moved HEAD.
+	 * @returns TRUE when the snapshot painted.
+	 */
+	private paintFirstPaintSnapshot(prevState: WebViewState | null): boolean {
+		const ctx = this.ctx(), store = ctx.store;
+		if (prevState == null || !store.config.snapshotFirstPaint) return false; // absent state arrives as undefined, not null
+		const snapshot = decodeFirstPaintSnapshot(prevState.firstPaint);
+		if (snapshot === null) return false; // absent, corrupt, or a foreign snapshot version
+		if (snapshot.repo !== store.currentRepo) return false; // another repository's rows
+		if (snapshot.configFingerprint !== configFingerprint(store.config)) return false; // another configuration's rendering
+
+		// Seed exactly what the pushed response reconciles against: the commits, their head and
+		// the bookkeeping the equality check reads. The repo-info half (branches, remotes,
+		// selections) stays to the push, exactly as on an ordinary boot.
+		store.currentRepoLoading = true;
+		store.gitBranchHead = typeof prevState.gitBranchHead === 'string' ? prevState.gitBranchHead : null; // the pushed repo info re-reads and confirms it
+		store.maxCommits = snapshot.maxCommits;
+		store.uncommittedCount = snapshot.uncommittedCount;
+		store.scrollTop = snapshot.scrollTop;
+		ctx.viewport.restoreScrollTop = snapshot.scrollTop;
+		this.loadCommits(snapshot.commits.slice(), snapshot.head, [], snapshot.moreCommitsAvailable, snapshot.onlyFollowFirstParent);
+
+		// The "refreshing" marker: the refresh button spins until the pushed data lands (the
+		// paint's own loadCommits call ran with the flag still unset)
+		store.refreshState.snapshotRefreshing = true;
+		ctx.controls.renderRefreshButton();
+		return true;
 	}
 
 
@@ -340,6 +380,7 @@ export class RepoLoader {
 
 	private loadCommits(commits: GG.GitCommit[], commitHead: string | null, tags: ReadonlyArray<string>, moreAvailable: boolean, onlyFollowFirstParent: boolean, uncommittedPending: boolean = false) {
 		const ctx = this.ctx(), store = ctx.store, viewport = ctx.viewport;
+		this.clearSnapshotRefreshing();
 		// This list of tags is just used to provide additional information in the dialogs. Tag information included in commits is used for all other purposes (e.g. rendering, context menus)
 		const tagsChanged = !arraysStrictlyEqual(store.gitTags, tags);
 		store.gitTags = tags;
@@ -398,6 +439,7 @@ export class RepoLoader {
 				ctx.persistence.saveState();
 			}
 			this.finaliseLoadCommits();
+			ctx.persistence.scheduleFirstPaintCapture();
 			return;
 		}
 
@@ -482,6 +524,17 @@ export class RepoLoader {
 
 		this.finaliseLoadCommits();
 		this.requestAvatars(avatarsNeeded);
+		// A stable commits render is the first-paint snapshot's capture point (D10): debounced, so
+		// a rapid load-more sequence captures once, at its end
+		ctx.persistence.scheduleFirstPaintCapture();
+	}
+
+	/** End the "refreshing" marker of a painted snapshot once commits data is applied again. */
+	private clearSnapshotRefreshing() {
+		const ctx = this.ctx(), store = ctx.store;
+		if (!store.refreshState.snapshotRefreshing) return;
+		store.refreshState.snapshotRefreshing = false;
+		ctx.controls.renderRefreshButton();
 	}
 
 	private finaliseLoadCommits() {
@@ -628,6 +681,7 @@ export class RepoLoader {
 	public clearCommits() {
 		const ctx = this.ctx(), store = ctx.store;
 		ctx.closeDialogAndContextMenu();
+		this.clearSnapshotRefreshing();
 		store.moreCommitsAvailable = false;
 		this.pendingScrollCommitHash = null;
 		this.countCommitsBeforePending = false;

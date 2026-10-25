@@ -14,6 +14,7 @@
 
 import { escapeHtml, raw, SafeHtml } from '../../common/html';
 import { CLASS_EXTERNAL_URL } from './textFormatter';
+import type MarkdownIt from 'markdown-it';
 
 /**
  * The token shape of markdown-it (media/vendor/markdown-it.min.js, loaded before the webview
@@ -37,9 +38,36 @@ interface MarkdownItToken {
 	attrGet(name: string): string | number | null;
 }
 
-declare const markdownit: {
-	parse(src: string, env: object): MarkdownItToken[];
-};
+/* The Markdown renderer loads ON DEMAND (task 5.9): markdown-it is one of the heaviest
+   dependencies of the webview and the Commit Details View is the only consumer, so it sits in an
+   on-demand chunk (see loadMarkdown) and the idle prefetch after the first paint usually has it
+   ready before the first click on a commit. */
+let markdownit: MarkdownIt | null = null;
+let markdownLoader: Promise<void> | null = null;
+
+/** TRUE once the Markdown renderer's module has loaded. */
+export function isMarkdownLoaded(): boolean {
+	return markdownit !== null;
+}
+
+/**
+ * Load the Markdown renderer (idempotent). The instance mirrors the pre-task-5.9 vendor build:
+ * html disabled (raw HTML embedded in a commit message is never treated as markup, even before
+ * this module's own token-based safety pass), no linkify, line breaks on.
+ */
+export function loadMarkdown(): Promise<void> {
+	if (markdownit !== null) return Promise.resolve();
+	if (markdownLoader === null) {
+		markdownLoader = import('markdown-it').then((m) => {
+			markdownit = new m.default({ html: false, linkify: false, breaks: true });
+			markdownLoader = null;
+		}, (error) => {
+			markdownLoader = null;
+			throw error;
+		});
+	}
+	return markdownLoader;
+}
 
 /**
  * A conservative heuristic for whether a commit message is worth offering a Markdown/Plain
@@ -73,7 +101,16 @@ function escapeText(text: string) {
  * @param text The raw commit message.
  */
 export function renderMarkdown(text: string): SafeHtml {
-	const tokens = markdownit.parse(text, {});
+	if (markdownit === null) {
+		// Called before the module loaded (the caller renders this only as a placeholder - the
+		// Commit Details View re-renders the body once loadMarkdown resolves): plain text, so the
+		// message is never blank and never unescaped.
+		return raw(escapeHtml(text).html);
+	}
+	// The one cast across markdown-it's ambient declaration (see markdown-it.d.ts): the loose
+	// object[] stands only for markdown-it's own richer token type, whose fields this module's
+	// MarkdownItToken mirrors by hand - renderRange reads exactly those fields.
+	const tokens = markdownit.parse(text, {}) as MarkdownItToken[];
 	return raw(renderRange(tokens, 0, tokens.length));
 }
 

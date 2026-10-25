@@ -11,17 +11,21 @@
  * entries as SafeHtml - a markup entry can never be used as text by accident, and text can never
  * be inserted unescaped.
  *
- * `setInterfaceLanguage` (called at start-up with the `git-graph-rs.interfaceLanguage` setting
+ * `ensureInterfaceLanguage` (called at start-up with the `git-graph-rs.interfaceLanguage` setting
  * forwarded by the extension host) switches both. `strings` and `markup` are live bindings, so
  * every importer reads the active table.
+ *
+ * The zh-cn table loads ON DEMAND (task 5.9): it is one of the largest single modules of the
+ * webview and an English page never needs it, so it joins the page as an on-demand chunk through
+ * dynamic import() - the boot awaits it only when the configured language is Chinese, before
+ * anything renders. A language change of a RUNNING page regenerates the page anyway (the
+ * extension host's rule), so the async load happens exactly once per page.
  */
 
-export * from '../../../shared/i18n';
-
 import { escapeHtml, isSafeHtml, raw, SafeHtml } from '../html';
-import { STRINGS_EN, SharedStrings } from '../../../shared/i18n';
-import { STRINGS_ZH_CN } from '../../../shared/i18n';
-import { substitutePlaceholders } from '../../../shared/i18n';
+import { STRINGS_EN } from '../../../shared/i18n/en';
+import type { SharedStrings } from '../../../shared/i18n/en';
+import { substitutePlaceholders } from '../../../shared/i18n/format';
 
 /** The entries of the string tables that are markup templates. */
 export const MARKUP_KEYS = [
@@ -78,14 +82,36 @@ export function getInterfaceLanguage(): string {
 	return interfaceLanguage;
 }
 
+/** The zh-cn table once loaded (NULL until then: an English page never imports it). */
+let stringsZhCn: SharedStrings | null = null;
+
 /**
- * Switch the active string table (called during start-up).
+ * Switch to the configured interface language, loading the Chinese table first when it is
+ * needed (on demand, task 5.9). Callers that only ever switch BACK to English may use the
+ * synchronous {@link setInterfaceLanguage}.
+ * @param lang The language code ('zh-cn'; anything else selects English).
+ */
+export function ensureInterfaceLanguage(lang: string): Promise<void> {
+	if (lang !== 'zh-cn' || stringsZhCn !== null) {
+		setInterfaceLanguage(lang);
+		return Promise.resolve();
+	}
+	return import('../../../shared/i18n/zh-cn').then((m) => {
+		stringsZhCn = m.STRINGS_ZH_CN;
+		setInterfaceLanguage('zh-cn');
+	});
+}
+
+/**
+ * Switch the active string table synchronously. A 'zh-cn' whose table has not been loaded
+ * (see {@link ensureInterfaceLanguage}) keeps English - the boot always awaits the table before
+ * rendering, so this can only mean a table-less page, where English is the safe default.
  * @param lang The language code ('zh-cn'; anything else selects English).
  */
 export function setInterfaceLanguage(lang: string) {
-	if (lang === 'zh-cn') {
-		if (markupZhCn === null) markupZhCn = markupOf(STRINGS_ZH_CN);
-		strings = STRINGS_ZH_CN;
+	if (lang === 'zh-cn' && stringsZhCn !== null) {
+		if (markupZhCn === null) markupZhCn = markupOf(stringsZhCn);
+		strings = stringsZhCn;
 		markup = markupZhCn;
 		interfaceLanguage = 'zh-cn';
 	} else {

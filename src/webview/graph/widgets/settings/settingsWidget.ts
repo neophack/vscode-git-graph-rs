@@ -9,16 +9,25 @@ import { addListenerToClass, alterClass, CLASS_ACTIVE, CLASS_LOADING, CLASS_TRAN
 import { helpTooltipAttrs, html, SafeHtml, setHtml } from '../../../common/html';
 import { ELLIPSIS, formatStr, markup, strings } from '../../../common/i18n/index';
 import { SVG_ICONS } from '../../../common/icons';
+import { injectOnDemandStyles } from '../../../common/onDemandStyles';
 import * as GG from '../../../common/protocol';
 import { arraysStrictlyEqualIgnoringOrder, formatCommaSeparatedList, getRepoName } from '../../../common/util';
 import { GraphContext } from '../../context';
 import { getIncludeCommitsMentionedByReflogs, getOnlyFollowFirstParent, getOnRepoLoadShowCheckedOutBranch, getOnRepoLoadShowSpecificBranches, getShowStashes, getShowTags } from '../../state/repoSettings';
 import { SettingsWidgetState, TargetType } from '../../state/types';
 import { DialogInputType } from '../dialog';
+import { SettingsWidgetSurface } from '../surfaces';
 import { showIssueLinkingDialog, showPullRequestIntegrationDialog1 } from './integrationDialogs';
 import { checkbox, dateFormatSettingValue, numberRow, renderBackendSection, selectRow } from './settingsHtml';
+import settingsCss from '../../../styles/settingsWidget.css';
+import panelsCss from '../../../styles/mobile/panels.css';
 
-export class SettingsWidget {
+// This module sits in an on-demand chunk (task 5.9): its stylesheets ride the chunk as text (the
+// mobile panel rules are shared with the other on-demand overlays, and deduplicate on injection)
+injectOnDemandStyles(settingsCss);
+injectOnDemandStyles(panelsCss);
+
+export class SettingsWidget implements SettingsWidgetSurface {
 	private currentRepo: string | null = null;
 	private repo: Readonly<GG.GitRepoState> | null = null;
 	private config: Readonly<GG.GitRepoConfig> | null = null;

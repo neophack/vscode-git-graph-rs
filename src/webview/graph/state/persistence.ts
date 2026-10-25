@@ -6,6 +6,7 @@
 
 import { HostBridge } from '../../common/host/bridge';
 import * as GG from '../../common/protocol';
+import { captureFirstPaintSnapshot, FirstPaintSnapshot } from './firstPaint';
 import { Store } from './store';
 import { FindWidgetState, SettingsWidgetState, WebViewState } from './types';
 
@@ -20,8 +21,10 @@ export interface PersistedWidgets {
  * data"): the WebViewState FIELDS are a frozen public contract (§2.2, the same as v1.0), so
  * the version travels as an extra field on the persisted record rather than as a reshape.
  * Readers written before versioning existed answer the same record without the stamp.
+ *
+ * Version 2 added the `firstPaint` snapshot field (3.8.2 D10, task 5.9).
  */
-export const WEBVIEW_STATE_VERSION = 1;
+export const WEBVIEW_STATE_VERSION = 2;
 
 /** The persisted WebViewState together with its schema version stamp. */
 export type VersionedWebViewState = WebViewState & { readonly version: number };
@@ -34,7 +37,9 @@ export type VersionedWebViewState = WebViewState & { readonly version: number };
  * fields through every step so a newer writer's data survives the upgrade.
  */
 export const WEBVIEW_STATE_MIGRATIONS: ReadonlyArray<(state: Record<string, unknown>) => Record<string, unknown>> = [
-	(state) => state
+	(state) => state,
+	// v1 -> v2 (task 5.9): the first-paint snapshot field arrives - a v1 record simply has none
+	(state) => ({ ...state, firstPaint: state.firstPaint === undefined ? null : state.firstPaint })
 ];
 
 /**
@@ -71,6 +76,12 @@ export function encodePersistedWebViewState(state: WebViewState): VersionedWebVi
 export class Persistence {
 	/** The pending (debounced) report of the view state to the extension (see saveState). */
 	private viewSnapshotTimer: number | null = null;
+	/** The pending (debounced) capture of the first-paint snapshot (see scheduleFirstPaintCapture). */
+	private firstPaintTimer: number | null = null;
+	/** The last captured first-paint snapshot (kept between the debounced captures so every saveState writes it). */
+	private firstPaint: FirstPaintSnapshot | null = null;
+	/** Measures the view for the snapshot's visible-window check (the loader wires this to the layout). */
+	private viewMetrics: () => { rowHeight: number, viewHeight: number } = () => ({ rowHeight: 0, viewHeight: 0 });
 	private widgets: PersistedWidgets | null = null;
 
 	constructor(private readonly store: Store, private readonly bridge: HostBridge<WebViewState>) { }
@@ -78,6 +89,42 @@ export class Persistence {
 	/** Connect the widgets whose state is persisted (they are created after the persistence). */
 	public setWidgets(widgets: PersistedWidgets) {
 		this.widgets = widgets;
+	}
+
+	/** Connect the view measurements the first-paint snapshot's visible-window check reads. */
+	public setViewMetrics(metrics: () => { rowHeight: number, viewHeight: number }) {
+		this.viewMetrics = metrics;
+	}
+
+	/**
+	 * Schedule the capture of the first-paint snapshot (debounced: every stable commits render
+	 * calls this, and a rapid load-more sequence must capture once, at its end). The captured
+	 * snapshot is written into the webview state by the saveState the capture triggers; a NULL
+	 * capture (the cap could not retain the visible window) CLEARS the last snapshot, so a
+	 * repo state that stopped being snapshot-worthy does not keep repainting a stale one.
+	 */
+	public scheduleFirstPaintCapture() {
+		if (this.firstPaintTimer !== null) window.clearTimeout(this.firstPaintTimer);
+		this.firstPaintTimer = window.setTimeout(() => {
+			this.firstPaintTimer = null;
+			const store = this.store, metrics = this.viewMetrics();
+			this.firstPaint = store.config.snapshotFirstPaint && store.hasCurrentRepo()
+				? captureFirstPaintSnapshot({
+					repo: store.currentRepo,
+					head: store.commitHead,
+					config: store.config,
+					commits: store.commits,
+					moreCommitsAvailable: store.moreCommitsAvailable,
+					maxCommits: store.maxCommits,
+					onlyFollowFirstParent: store.onlyFollowFirstParent,
+					uncommittedCount: store.uncommittedCount,
+					scrollTop: store.scrollTop,
+					rowHeight: metrics.rowHeight,
+					viewHeight: metrics.viewHeight
+				})
+				: null;
+			this.saveState();
+		}, 500);
 	}
 
 	/**
@@ -119,7 +166,8 @@ export class Persistence {
 			findWidget: widgets.getFindWidgetState(),
 			settingsWidget: widgets.getSettingsWidgetState(),
 			commitPathFilter: store.commitPathFilter,
-			compareSourceHash: store.compareSourceHash
+			compareSourceHash: store.compareSourceHash,
+			firstPaint: this.firstPaint
 		}));
 
 		// Mirror the part of the state a page reload restores to the extension: an Extension Host

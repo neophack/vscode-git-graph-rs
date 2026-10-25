@@ -273,7 +273,11 @@ export async function bootView(total, options = {}) {
 		});
 	} catch (e) { /* jsdom variant without a configurable offsetHeight: the rect emulation above carries the tests */ }
 
-	window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.min.js'), 'utf8'));
+	/* The ESM entry chunk of task 5.9's code splitting cannot run under window.eval, so the
+	 * harness executes the build's single-file IIFE variant of the SAME entry
+	 * (media/out.testbundle.js, emitted by scripts/build/webview.mjs) - identical module graph,
+	 * the on-demand imports inlined rather than chunked. */
+	window.eval(fs.readFileSync(path.join(rootDir, 'media', 'out.testbundle.js'), 'utf8'));
 	window.dispatchEvent(new window.Event('load'));
 
 	const dispatch = (message) => {
