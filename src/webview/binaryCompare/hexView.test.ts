@@ -10,8 +10,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { formatBytes } from './hexCopy';
 import { hexAsciiChar, hexColsTemplate, hexRulerHtml } from './hexGrid';
-import { formatBytes, HexView } from './hexView';
+import { HexView } from './hexView';
 import { compareStrings, compareMarkup, format } from './strings';
 
 /** The byte mask and row helpers the assertions reason in. */

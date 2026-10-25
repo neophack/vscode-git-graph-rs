@@ -2,24 +2,21 @@
  * The hex comparison view: two panes side by side, each the hex editor's offset | bytes | gutter |
  * ASCII grid. Only the visible rows are kept in the DOM and requested from the extension host, so
  * a file of any size scrolls smoothly and costs the same memory. Ported out of the host's template
- * string (task 6.1); the grid geometry lives in hexGrid.ts, the protocol in
- * shared/protocol/binaryCompare.
+ * string (task 6.1): the grid geometry is hexGrid.ts, the selection and copy machinery hexCopy.ts.
  */
+
 
 import { escapeHtml, html, joinHtml, raw, setHtml } from '../common/html';
 import type { BinaryCompareRequest, BinaryCompareResponse, HexRowData } from '../../shared/protocol/binaryCompare';
 import { compareMarkup, compareStrings as s, format } from './strings';
-import { HexGridContext, hexColsTemplate, hexOffsetDigitsFor, hexOffsetText, hexOffCh, hexRowHtml, hexRulerHtml, hexSideCh, HEX_OFFSET_DIGITS, HEXDIGITS } from './hexGrid';
+import { HexCell, HexCopy } from './hexCopy';
+import { HexGridContext, hexColsTemplate, hexOffsetDigitsFor, hexOffsetText, hexOffCh, hexRowHtml, hexRulerHtml, hexSideCh, HEX_OFFSET_DIGITS } from './hexGrid';
 
-/** Height of one row, in pixels (matches the text diff's line height). */
+/** Height of one row in pixels (the text diff's line height). */
 const HEX_ROW_H = 19;
-/** The row cache keeps at most this many rows (see the eviction in the hexRows handler). Copy
- *  reads through that same cache, so a selection is only guaranteed copyable while every one of
- *  its rows fits in it beside the viewport's own rows: the Copy limit derives from the capacity
- *  (with a margin for the viewport) rather than promising sizes the cache would evict halfway
- *  through the fetch. */
+/** The row cache keeps at most this many rows; hexCopy's copy limit derives from it. */
 const HEX_ROW_CACHE_MAX = 6000;
-/** Each side of the row is padded 12px, like the hex viewer's rows. */
+/** Each side of the row is padded 12px, like the hex viewer's. */
 const HEX_SIDE_PAD = 12;
 
 interface HexEls {
@@ -36,28 +33,9 @@ interface HexEls {
 	next: HTMLButtonElement;
 }
 
-/** A pending getHexRows fetch made for a copy (as opposed to the viewport's own, independent
- *  one): resolves TRUE once every row it asked for is cached, FALSE on a reply that reported an
- *  error or an intervening layout change. */
-interface CopyWaiter {
-	first: number;
-	last: number;
-	layoutVersion: number;
-	resolve(ok: boolean): void;
-}
-
-/** The byte a hex or ASCII cell under a delegated event stands for (its row, column, side and
- *  pane), or NULL anywhere else in the view. */
-export interface HexCell {
-	row: number;
-	col: number;
-	side: 'o' | 'n';
-	pane: 'hex' | 'ascii';
-}
-
 export interface HexViewEnv {
 	/** The element the views render into (the page's #diffArea). */
-	readonly root: HTMLElement;
+	root: HTMLElement;
 	/** Post a protocol request to the extension host. */
 	send(message: BinaryCompareRequest): void;
 	/** The view failed to load: show the localised error in place of the view. */
@@ -83,26 +61,22 @@ export class HexView {
 	private pending = false;
 	private els: HexEls | null = null;
 	private scrollQueued = false;
-
-	/* A selection is a span of grid position, not file address: [anchor, head] as linear indices
-	   row*bytesPerRow+col, painted the same on both sides - the position a drag picks, not the
-	   bytes there, since the two sides can differ at it. -1 means "not placed yet"; both
-	   invalidated whenever the row width changes, since the linear index's meaning depends on it. */
-	private selAnchor = -1;
-	private selHead = -1;
-	/* The side ('o'/'n') and pane ('hex'/'ascii') a drag or click started in - a plain Copy reads
-	   that side, and 'smart' format follows that pane the way the hex viewer's own Copy does. The
-	   right-click menu overrides both with wherever it landed. */
-	private selSide: 'o' | 'n' = 'o';
-	private selPane: 'hex' | 'ascii' = 'hex';
-	private dragging = false;
-	/* The absolute row index of the view element's first child - renderViewport keeps it current -
-	   so a delegated event on a cell can recover that cell's row from its position in the DOM
-	   without the row's own address (which a differing side may not have). */
+	/* The absolute row index of the view element's first child (renderViewport keeps it current):
+	   a delegated event on a cell recovers its row from its DOM position, without the row's own
+	   address, which a differing side may not have. */
 	private viewFirstRow = 0;
-	private copyWaiters: CopyWaiter[] = [];
+	private dragging = false;
 	private menuEl: HTMLElement | null = null;
 	private copyStatusTimer: ReturnType<typeof setTimeout> | null = null;
+	private readonly copy = new HexCopy({
+		bytesPerRow: () => this.bytesPerRow,
+		offDigits: () => this.offDigits,
+		layoutVersion: () => this.layoutVersion,
+		isActive: () => this.active,
+		row: (row) => this.rows.get(row),
+		send: (message) => this.env.send(message),
+		copyStatus: (text) => this.setCopyStatus(text)
+	});
 
 	public constructor(private readonly env: HexViewEnv) {}
 
@@ -111,7 +85,7 @@ export class HexView {
 		return {
 			bytesPerRow: view.bytesPerRow,
 			offDigits: view.offDigits,
-			isSelected(rowIndex, col) { return view.cellSelected(rowIndex, col); }
+			isSelected(rowIndex, col) { return view.copy.cellSelected(rowIndex, col); }
 		};
 	}
 
@@ -134,8 +108,8 @@ export class HexView {
 	}
 
 	/** The hex view fits the window: both sides at 16 bytes per row need 2 * hexSideCh(16)
-	 *  character cells plus the sides' padding, so narrower windows step down to 12/8/4 bytes per
-	 *  row. The probe measures the rows' own font, so a font change re-picks correctly. */
+	 *  character cells plus padding, so narrower windows step down to 12/8/4 bytes per row. The
+	 *  probe measures the rows' own font, so a font change re-picks correctly. */
 	private pickBytesPerRow(): number {
 		const probe = document.createElement('span');
 		probe.style.visibility = 'hidden';
@@ -163,7 +137,8 @@ export class HexView {
 
 	/** The row width is changing: the selection's linear indices are over the OLD width,
 	 *  meaningless (and liable to point at the wrong bytes) under the new one. */
-	public refreshLayout() {		this.bytesPerRow = this.pickBytesPerRow();
+	public refreshLayout() {
+		this.bytesPerRow = this.pickBytesPerRow();
 		this.applyBytesPerRow();
 		if (this.els !== null) setHtml(this.els.view, html``);
 		this.rows.clear();
@@ -171,8 +146,8 @@ export class HexView {
 		this.sections = null;
 		this.diffs = [];
 		this.diffPos = -1;
-		this.clearSelection();
-		this.cancelCopyWaiters();
+		this.dragging = false;
+		this.copy.reset();
 		this.updateNav();
 		this.env.send({ command: 'getHexInfo', index: this.index, bytesPerRow: this.bytesPerRow });
 	}
@@ -188,6 +163,7 @@ export class HexView {
 	public enter(index: number) {
 		this.active = true;
 		this.index = index;
+		this.copy.setActiveIndex(index);
 		this.totalRows = 0;
 		this.sameSize = false;
 		this.layoutVersion = 0;
@@ -198,8 +174,8 @@ export class HexView {
 		this.pending = false;
 		this.offDigits = HEX_OFFSET_DIGITS; // the sizes are not known yet: the floor until hexInfo answers
 		this.bytesPerRow = this.pickBytesPerRow();
-		this.clearSelection();
-		this.cancelCopyWaiters();
+		this.dragging = false;
+		this.copy.reset();
 		this.viewFirstRow = 0;
 		this.closeMenu();
 		const root = this.env.root;
@@ -254,13 +230,12 @@ export class HexView {
 		this.env.send({ command: 'getHexInfo', index: index, bytesPerRow: this.bytesPerRow });
 	}
 
-	/** Leave the view (another view entered, or the view errored): drop the DOM and settle any
-	 *  in-flight copy fetch. */
+	/** Leave the view (another entered, or it errored): drop the DOM, settle in-flight copies. */
 	public leave() {
 		this.active = false;
 		this.els = null;
 		this.closeMenu();
-		this.cancelCopyWaiters();
+		this.copy.cancelCopyWaiters();
 	}
 
 	private queueRender() {
@@ -406,7 +381,7 @@ export class HexView {
 			if (!this.active || msg.index !== this.index) {
 				// The page moved on (or this pane's index isn't the active one): a copy fetch may
 				// still be waiting on this exact reply, so it must not be left hanging forever.
-				this.resolveCopyWaiters(msg.start, false);
+				this.copy.resolveCopyWaiters(msg.start, false);
 				return true;
 			}
 			this.pending = false;
@@ -420,7 +395,7 @@ export class HexView {
 					this.rows.delete(oldest.value);
 				}
 			}
-			this.resolveCopyWaiters(msg.start, msg.error === null);
+			this.copy.resolveCopyWaiters(msg.start, msg.error === null);
 			this.renderViewport();
 			return true;
 		}
@@ -434,41 +409,33 @@ export class HexView {
 		return false;
 	}
 
-	/* ---------- Selection & copy ---------- */
-
 	public hasSelection(): boolean {
-		return this.selAnchor >= 0 && this.selHead >= 0 && this.selAnchor !== this.selHead;
+		return this.copy.hasSelection();
 	}
 
-	private selStart(): number {
-		return Math.min(this.selAnchor, this.selHead);
-	}
-
-	private selEnd(): number {
-		return Math.max(this.selAnchor, this.selHead);
-	}
-
-	/** Whether grid position (rowIndex, col) - not a file address - falls in the selection.
-	 *  rowIndex < 0 stands for "no real row" (the probe row the grid is measured with), which
-	 *  never selects. */
 	public cellSelected(rowIndex: number, col: number): boolean {
-		if (rowIndex < 0 || !this.hasSelection()) return false;
-		const idx = rowIndex * this.bytesPerRow + col;
-		return idx >= this.selStart() && idx <= this.selEnd();
+		return this.copy.cellSelected(rowIndex, col);
+	}
+
+	public placeSelection(anchor: number, head: number, side: 'o' | 'n', pane: 'hex' | 'ascii') {
+		this.copy.placeSelection(anchor, head, side, pane);
 	}
 
 	public clearSelection() {
-		this.selAnchor = -1;
-		this.selHead = -1;
 		this.dragging = false;
+		this.copy.clearSelection();
 	}
 
-	/** Place a selection the way a drag would (anchor, head, the side and pane it started in). */
-	public placeSelection(anchor: number, head: number, side: 'o' | 'n', pane: 'hex' | 'ascii') {
-		this.selAnchor = anchor;
-		this.selHead = head;
-		this.selSide = side;
-		this.selPane = pane;
+	public async copySelection(copyFormat: string, side: 'o' | 'n', pane: 'hex' | 'ascii') {
+		await this.copy.copySelection(copyFormat, side, pane);
+	}
+
+	public copyAddress(cell: HexCell | null) {
+		this.copy.copyAddress(cell);
+	}
+
+	public waiterCount(): number {
+		return this.copy.waiterCount();
 	}
 
 	/** The byte a hex or ASCII cell under a delegated event stands for: its row (recovered from
@@ -503,17 +470,11 @@ export class HexView {
 		event.preventDefault();
 		this.dragging = true;
 		const idx = cell.row * this.bytesPerRow + cell.col;
-		if (event.shiftKey && this.selAnchor >= 0) {
-			this.selHead = idx;
-			this.selSide = cell.side;
-			this.selPane = cell.pane;
-			this.renderViewport();
-			return;
+		if (event.shiftKey && this.copy.anchor() >= 0) {
+			this.copy.setHead(idx, cell.side, cell.pane);
+		} else {
+			this.copy.placeSelection(idx, idx, cell.side, cell.pane);
 		}
-		this.selAnchor = idx;
-		this.selHead = idx;
-		this.selSide = cell.side;
-		this.selPane = cell.pane;
 		this.renderViewport();
 	}
 
@@ -522,12 +483,10 @@ export class HexView {
 		const cell = this.cellAt(event.target);
 		if (cell === null) return;
 		const idx = cell.row * this.bytesPerRow + cell.col;
-		if (idx === this.selHead) return;
-		this.selHead = idx;
+		if (idx === this.copy.head()) return;
+		this.copy.setHead(idx, cell.side, cell.pane);
 		this.renderViewport();
 	}
-
-	/* ---------- The right-click menu ---------- */
 
 	/* Nothing in this page's own bundle draws a menu (the main Git Graph view's is a separate,
 	   much larger script this lightweight page does not include), so this is a minimal
@@ -582,9 +541,9 @@ export class HexView {
 		event.preventDefault();
 		this.dragging = false;
 		const cell = this.cellAt(event.target);
-		const selected = this.hasSelection();
-		const side = cell !== null ? cell.side : this.selSide;
-		const pane = cell !== null ? cell.pane : this.selPane;
+		const selected = this.copy.hasSelection();
+		const side = cell !== null ? cell.side : this.copy.side();
+		const pane = cell !== null ? cell.pane : this.copy.pane();
 		const sideLabel = side === 'o' ? s.compareImageCaptionOld : s.compareImageCaptionNew;
 		const copyItem = (label: string, copyFormat: string) => ({
 			label: label + ' \u2014 ' + sideLabel,
@@ -603,164 +562,12 @@ export class HexView {
 		]);
 	}
 
-	/* ---------- Copy ---------- */
-
 	private setCopyStatus(text: string) {
 		if (this.els === null) return;
 		this.els.copyStatus.textContent = text;
 		if (this.copyStatusTimer !== null) clearTimeout(this.copyStatusTimer);
 		const copyStatus = this.els.copyStatus;
 		this.copyStatusTimer = setTimeout(() => { copyStatus.textContent = ''; }, 4000);
-	}
-
-	/** Settles every pending copy fetch that asked for rows starting at `start` (the viewport's
-	 *  own request can share that start, so a reply is only ever a PARTIAL cover of what a waiter
-	 *  asked for) - ok FALSE settles the waiter failed outright (an erroring reply, or one that
-	 *  belongs to a page or layout the waiter is no longer part of); a successful reply settles
-	 *  the waiter only once every row it asked for is actually cached, and leaves it pending
-	 *  otherwise, for the copy's own complete reply to finish. */
-	private resolveCopyWaiters(start: number, ok: boolean) {
-		for (let i = this.copyWaiters.length - 1; i >= 0; i--) {
-			const waiter = this.copyWaiters[i];
-			if (waiter.first !== start) continue;
-			if (!ok || waiter.layoutVersion !== this.layoutVersion) {
-				this.copyWaiters.splice(i, 1);
-				waiter.resolve(false);
-				continue;
-			}
-			let complete = true;
-			for (let row = waiter.first; row <= waiter.last; row++) {
-				if (!this.rows.has(row)) { complete = false; break; }
-			}
-			if (complete) {
-				this.copyWaiters.splice(i, 1);
-				waiter.resolve(true);
-			}
-		}
-	}
-
-	/** Settle every pending copy fetch as failed: a row-width change or a re-entry gives the
-	 *  waiters' row indices a new meaning, so whatever reply arrives next answers a question
-	 *  nobody asked any more. Resolving (rather than dropping) matters because
-	 *  ensureRowsCached is still awaiting each waiter. */
-	private cancelCopyWaiters() {
-		for (const waiter of this.copyWaiters) waiter.resolve(false);
-		this.copyWaiters = [];
-	}
-
-	/** The number of copy fetches still in flight (asserted by the tests). */
-	public waiterCount(): number {
-		return this.copyWaiters.length;
-	}
-
-	/** Makes sure rows [first, last] are cached, fetching whatever is missing in batches (the
-	 *  host caps a single getHexRows at 512 rows) - the viewport's own request (pending) is
-	 *  independent and may be in flight at the same time; the two never collide because each
-	 *  waiter is only resolved by the one reply whose start matches what it asked for. */
-	private async ensureRowsCached(first: number, last: number): Promise<boolean> {
-		for (let row = first; row <= last;) {
-			if (this.rows.has(row)) { row++; continue; }
-			const end = Math.min(last, row + 511);
-			const layoutVersion = this.layoutVersion;
-			const ok = await new Promise<boolean>((resolve) => {
-				this.copyWaiters.push({ first: row, last: end, layoutVersion: layoutVersion, resolve: resolve });
-				this.env.send({ command: 'getHexRows', index: this.index, start: row, count: end - row + 1 });
-			});
-			if (!ok) return false;
-			row = end + 1;
-		}
-		return true;
-	}
-
-	/** One side's bytes over grid positions [cellStart, cellEnd] (inclusive, linear row*width+col
-	 *  indices) - only the positions that side actually has a byte at; a position past a short
-	 *  row, or a row with nothing cached, contributes nothing (NULL: the row was never fetched -
-	 *  the caller is expected to have awaited ensureRowsCached first). */
-	private readSideBytes(side: 'o' | 'n', rowFirst: number, rowLast: number, cellStart: number, cellEnd: number): number[] | null {
-		const out: number[] = [];
-		for (let row = rowFirst; row <= rowLast; row++) {
-			const cached = this.rows.get(row);
-			if (cached === undefined) return null;
-			const b64 = side === 'o' ? cached.ob : cached.nb;
-			const bytes = b64 === '' ? '' : atob(b64);
-			const rowBase = row * this.bytesPerRow;
-			const colFrom = Math.max(0, cellStart - rowBase);
-			const colTo = Math.min(this.bytesPerRow - 1, cellEnd - rowBase);
-			for (let col = colFrom; col <= colTo; col++) {
-				if (col < bytes.length) out.push(bytes.charCodeAt(col) & 0xff);
-			}
-		}
-		return out;
-	}
-
-	/** Copies the selection in one of the hex viewer's own formats, reading side's file over the
-	 *  selected grid span - 'smart' honours pane: hex bytes from the hex pane, raw text from the
-	 *  ASCII pane, the way the standalone hex editor's Copy does. */
-	public async copySelection(copyFormat: string, side: 'o' | 'n', pane: 'hex' | 'ascii') {
-		if (!this.hasSelection()) return;
-		const start = this.selStart(), end = this.selEnd();
-		if (end - start + 1 > (HEX_ROW_CACHE_MAX - 1024) * this.bytesPerRow) {
-			this.setCopyStatus(format(s.compareHexCopyTooLarge, (end - start + 1).toLocaleString()));
-			return;
-		}
-		const rowFirst = Math.floor(start / this.bytesPerRow), rowLast = Math.floor(end / this.bytesPerRow);
-		const ok = await this.ensureRowsCached(rowFirst, rowLast);
-		// The page may have left the hex view, the selection may have been cleared, or the layout
-		// may have changed, while the fetch was in flight.
-		if (!this.active || !this.hasSelection() || this.selStart() !== start || this.selEnd() !== end) return;
-		if (!ok) {
-			this.setCopyStatus(s.compareHexCopyReadFailed);
-			return;
-		}
-		const bytes = this.readSideBytes(side, rowFirst, rowLast, start, end);
-		if (bytes === null) {
-			this.setCopyStatus(s.compareHexCopyReadFailed);
-			return;
-		}
-		const text = formatBytes(bytes, copyFormat, pane);
-		this.env.send({ command: 'copyToClipboard', type: 'Hex Bytes', data: text });
-		this.setCopyStatus(format(s.compareHexCopyDone, side === 'o' ? s.compareImageCaptionOld : s.compareImageCaptionNew));
-	}
-
-	/** The real address behind grid position (row, col) on one side - NULL when that side has no
-	 *  byte there (a short row, or a row not yet cached). */
-	private addressAt(row: number, col: number, side: 'o' | 'n'): string | null {
-		const cached = this.rows.get(row);
-		if (cached === undefined) return null;
-		const offset = side === 'o' ? cached.o : cached.n;
-		if (offset < 0) return null;
-		const b64 = side === 'o' ? cached.ob : cached.nb;
-		const length = b64 === '' ? 0 : atob(b64).length;
-		if (col >= length) return null;
-		return hexOffsetText(offset + col, this.offDigits);
-	}
-
-	/** Copies the address(es) behind the right-click: with a selection, both sides' real start-end
-	 *  spans for that grid span (which can genuinely differ - a diff aligns by position, not
-	 *  address); over a lone byte with nothing selected, that byte's own side's address. Every row
-	 *  involved is one the user has already clicked or dragged over, so it is already cached - no
-	 *  fetch is needed here the way Copy's selection body needs one. */
-	public copyAddress(cell: HexCell | null) {
-		let text: string | null = null;
-		if (this.hasSelection()) {
-			const start = this.selStart(), end = this.selEnd();
-			const rowFirst = Math.floor(start / this.bytesPerRow), colFirst = start - rowFirst * this.bytesPerRow;
-			const rowLast = Math.floor(end / this.bytesPerRow), colLast = end - rowLast * this.bytesPerRow;
-			const oldFrom = this.addressAt(rowFirst, colFirst, 'o'), oldTo = this.addressAt(rowLast, colLast, 'o');
-			const newFrom = this.addressAt(rowFirst, colFirst, 'n'), newTo = this.addressAt(rowLast, colLast, 'n');
-			const oldText = oldFrom !== null && oldTo !== null ? oldFrom + '-' + oldTo : '\u2014';
-			const newText = newFrom !== null && newTo !== null ? newFrom + '-' + newTo : '\u2014';
-			text = s.compareImageCaptionOld + ' ' + oldText + '   ' + s.compareImageCaptionNew + ' ' + newText;
-		} else if (cell !== null) {
-			const address = this.addressAt(cell.row, cell.col, cell.side);
-			// A bare address is ambiguous in a comparison - the same position can hold different
-			// addresses on the two sides - so the lone byte names its side too, the way the
-			// selection path names both.
-			if (address !== null) text = (cell.side === 'o' ? s.compareImageCaptionOld : s.compareImageCaptionNew) + ' ' + address;
-		}
-		if (text === null) return;
-		this.env.send({ command: 'copyToClipboard', type: 'Address', data: text });
-		this.setCopyStatus(s.compareHexCopyDoneAddress);
 	}
 
 	/** One row's markup at an absolute grid position (the tests assert the painted selection). */
@@ -778,26 +585,6 @@ export class HexView {
 			offsetText: (offset: number) => hexOffsetText(offset, this.offDigits)
 		};
 	}
-
-	/** The element an id names, once the view is built (the tests read the rendered state). */
-	public element(id: string): HTMLElement | null {
-		return this.active ? byId(id) : null;
-	}
-}
-
-/** Format one side's bytes the way the hex viewer's own Copy does: 'smart' follows the pane the
- *  drag started in (raw text from the ASCII pane, hex bytes from the hex pane). */
-export function formatBytes(bytes: ReadonlyArray<number>, copyFormat: string, pane: string): string {
-	if (copyFormat === 'base64') return btoa(bytesToLatin1(bytes));
-	if (copyFormat === 'c') return bytes.map((b) => '0x' + HEXDIGITS[b]).join(', ');
-	if (copyFormat === 'text' || (copyFormat === 'smart' && pane === 'ascii')) return bytesToLatin1(bytes);
-	return bytes.map((b) => HEXDIGITS[b]).join('');
-}
-
-function bytesToLatin1(bytes: ReadonlyArray<number>): string {
-	let text = '';
-	for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
-	return text;
 }
 
 function byId(id: string): HTMLElement {
@@ -805,8 +592,7 @@ function byId(id: string): HTMLElement {
 	return el !== null ? el : document.createElement('div');
 }
 
-/** Schedule a callback on the next frame, or synchronously where no rAF exists (the stub DOMs of
- *  the tests, older hosts). */
+/** Schedule a callback on the next frame, or synchronously without rAF (the test stubs). */
 export function frame(run: () => void) {
 	const raf = window.requestAnimationFrame;
 	if (typeof raf === 'function') raf(() => run());
