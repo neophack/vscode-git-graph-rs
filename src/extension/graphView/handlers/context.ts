@@ -38,9 +38,10 @@ export interface UiPort {
 
 /**
  * The commit-loading machinery the handlers need. The production implementation is the
- * CommitLoader extracted from GitGraphView in task 4.3 (staged loadCommits responses, the
- * commit-page cache, the Gerrit cache and staleness set); until then panel.ts wires an adapter
- * over the legacy GitGraphView state.
+ * CommitLoader extracted from GitGraphView in task 4.3 (src/extension/graphView/commitLoader.ts:
+ * staged loadCommits responses, the commit-page cache, the Gerrit cache and staleness set); the
+ * Panel cutover (task 4.4) is what constructs it in the live path, replacing the still-live
+ * inline pipeline of src/gitGraphView.ts.
  */
 export interface CommitLoaderPort {
 	/**
