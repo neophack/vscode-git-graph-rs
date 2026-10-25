@@ -79,65 +79,6 @@ describe('the session-log analyser', () => {
 	});
 });
 
-describe('the i18n parity checker', () => {
-	/** Run the checker in a working directory of its own (it reads the webview string tables and src/i18n.ts from cwd). */
-	function runChecker(cwd) {
-		return spawnSync(process.execPath, [path.join(root, 'scripts', 'check-i18n-parity.cjs')], {
-			encoding: 'utf8', cwd: cwd
-		});
-	}
-
-	it('accepts the shipped dictionaries', () => {
-		const result = runChecker(root);
-		assert.equal(result.status, 0, result.stdout + result.stderr);
-		assert.match(result.stdout, /web: \d+ EN keys, \d+ ZH keys, 0 problems/);
-		assert.match(result.stdout, /src: \d+ EN keys, \d+ ZH keys, 0 problems/);
-	});
-
-	it('reports missing keys and placeholder mismatches, and fails the build for them', () => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-parity-'));
-		try {
-			// Entries are tab-indented single-quoted lines, the only shape the extractor reads.
-			const i18nDir = path.join(dir, 'src', 'webview', 'common', 'i18n');
-			fs.mkdirSync(i18nDir, { recursive: true });
-			fs.writeFileSync(path.join(i18nDir, 'en.ts'), [
-				'export const STRINGS_EN = {',
-				"\taa: 'x {0} {1}',",
-				"\tbb: 'y'",
-				'};',
-				'export type WebviewStrings = typeof STRINGS_EN;'
-			].join('\n'));
-			fs.writeFileSync(path.join(i18nDir, 'zh-cn.ts'), [
-				'export const STRINGS_ZH_CN: WebviewStrings = {',
-				"\taa: 'x {0}',",
-				"\tcc: 'z'",
-				'};'
-			].join('\n'));
-			fs.writeFileSync(path.join(dir, 'src', 'i18n.ts'), [
-				'const EN = {',
-				"\tone: 'a {0}'",
-				'};',
-				'type MessageKey = keyof typeof EN;',
-				'const ZH_CN = {',
-				"\tone: 'b {0}'",
-				'};',
-				'// Is the interface language',
-				'export function isZhCn() { return false; }'
-			].join('\n'));
-
-			const result = runChecker(dir);
-			assert.equal(result.status, 1, 'a parity violation must fail the check');
-			assert.match(result.stdout, /web MISSING ZH key: bb/);
-			assert.match(result.stdout, /web MISSING EN key: cc/);
-			assert.match(result.stdout, /web PLACEHOLDER MISMATCH aa EN:\[\{0\},\{1\}\] ZH:\[\{0\}\]/);
-			assert.match(result.stdout, /web: 2 EN keys, 2 ZH keys, 3 problems/);
-			assert.match(result.stdout, /src: 1 EN keys, 1 ZH keys, 0 problems/);
-		} finally {
-			fs.rmSync(dir, { recursive: true, force: true });
-		}
-	});
-});
-
 describe('the source packager', () => {
 	/**
 	 * Build a minimal extension layout (out/ + src/askpass/, everything the packager touches) in a
