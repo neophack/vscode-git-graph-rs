@@ -1,4 +1,4 @@
-# ADR 0005: The plan's open decisions D1–D15 are ratified as built
+# ADR 0006: The plan's open decisions D1–D15 are ratified as built
 
 - Status: accepted
 - Date: 2026-10-26
@@ -8,7 +8,7 @@
 
 REFACTOR-PLAN §10 listed fifteen decisions (D1–D15) with recommendations. The waves that
 landed since (Phases 1–6, tasks 0.6/1.10 through 6.x) implemented each recommendation; this
-ADR records the ratification so §10 stops reading as "to be made".
+ADR (renumbered from 0005 when the critical-JS recalibration took the number) records the ratification so §10 stops reading as "to be made".
 
 ## Decision
 
