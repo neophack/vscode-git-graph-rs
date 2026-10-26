@@ -199,7 +199,6 @@ function measureSizes() {
 		'media/comparison.min.css',
 		'media/binaryCompare.min.js',
 		'media/binaryCompare.min.css',
-		'media/vendor/markdown-it.min.js',
 		'media/vendor/highlight.min.js'
 	].map((file) => ({ file, bytes: statIfExists(file) }));
 
@@ -210,10 +209,11 @@ function measureSizes() {
 	if (vsixBytes !== null) fs.rmSync(path.join(root, vsixPath));
 
 	// The first-paint payload the §3.8.1 size budget governs: everything the main view's HTML
-	// loads as a plain <script> before the bundle (src/extension/graphView/html.ts: the vendored
-	// markdown-it then out.min.js) plus its stylesheet. highlight.min.js belongs to the
-	// comparison page, not the main view's first paint.
-	const firstPaintJs = ['media/out.min.js', 'media/vendor/markdown-it.min.js']
+	// loads as a plain <script> before the bundle (src/extension/graphView/html.ts) plus its
+	// stylesheet. highlight.min.js belongs to the comparison page, not the main view, and the
+	// Markdown renderer rides the on-demand chunks (media/chunks/markdown-it-*.js), not the
+	// first-paint scripts.
+	const firstPaintJs = ['media/out.min.js']
 		.map((file) => statIfExists(file) ?? 0)
 		.reduce((a, b) => a + b, 0);
 	const firstPaintCss = statIfExists('media/out.min.css') ?? 0;
@@ -394,9 +394,9 @@ ${sizes.artifacts.map((entry) => `| ${entry.file} | ${formatBytes(entry.bytes)} 
 The generator deletes the VSIX after measuring it; \`npm run package\` recreates it at any time.
 
 First-paint payload of the main view (what the §3.8.1 size budget governs — the plain \`<script>\`
-entries in the webview HTML, \`src/extension/graphView/html.ts\`, plus its stylesheet):
-\`vendor/markdown-it.min.js\` is still unconditional (Phase 1 task 1.9 moves it to on-demand);
-\`vendor/highlight.min.js\` is loaded by the comparison page, not the main view.
+entries in the webview HTML, \`src/extension/graphView/html.ts\`, plus its stylesheet): the Markdown
+renderer loads on demand (\`media/chunks/markdown-it-*.js\`), and \`vendor/highlight.min.js\` is
+loaded by the comparison page, not the main view.
 
 | Quantity | Value | Budget (§3.8.1) |
 |---|---|---|

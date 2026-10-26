@@ -444,18 +444,39 @@ export async function editCommitMessage(ctx: WriteFlowContext, repo: Repo, commi
 
 		const rebaseArgs = parents.length === 1 ? ['rebase', '-i', '--autostash', '--root'] : ['rebase', '-i', '--autostash', commitHash + '^'];
 
-		// Editor scripts git invokes with the todo / commit-message file path appended as the last
-		// argument. The author and the message file path reach the exec line through environment
-		// variables only: embedding them in the todo text would let a name containing `$` or a
-		// backtick be interpreted by the exec shell.
-		const seqEditorFile = path.join(os.tmpdir(), 'gg-amend-seq-' + Date.now() + '.js');
-		const msgEditorFile = path.join(os.tmpdir(), 'gg-amend-msg-' + Date.now() + '.js');
-		const messageFile = path.join(os.tmpdir(), 'gg-amend-message-' + Date.now() + '.txt');
-		const authorFile = path.join(os.tmpdir(), 'gg-amend-author-' + Date.now() + '.txt');
+		// The editors git invokes are real scripts shipped beside the host bundle
+		// (dist/editors/{sequence,message}.js, built by scripts/build/build.mjs the same way as
+		// the askpass helper; in the out/ tree tsc emits them beside this module, and the
+		// source-run test tree resolves the repo's dist/ instead). Data reaches them only
+		// through argv and the environment: git appends the todo / editor file path to the
+		// editor command, the commit hash rides that command line, and the staged message and
+		// author travel as FILES whose paths name the environment variables - nothing
+		// user-provided is ever embedded in code a shell executes.
+		const editorScript = (name: string): string | null => {
+			const candidates = [
+				path.join(__dirname, 'editors', name),
+				// The vitest tree: this module runs from src/extension/graphView, the built
+				// scripts sit in the repository's dist/ (built before the suite, like out/).
+				path.join(__dirname, '..', '..', '..', 'dist', 'editors', name)
+			];
+			return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+		};
+		const sequenceEditor = editorScript('sequence.js');
+		const messageEditor = editorScript('message.js');
+		if (sequenceEditor === null || messageEditor === null) {
+			return 'The rebase editor scripts are missing from the extension directory (dist/editors); rebuild the extension and try again.';
+		}
+
+		// One private staging directory per rebase (fs.mkdtemp is unique and 0700 on POSIX),
+		// holding the staged message and author files; the whole directory is removed in the
+		// finally below, not the individual files.
+		const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-amend-'));
+		const messageFile = path.join(stagingDir, 'message.txt');
+		const authorFile = path.join(stagingDir, 'author.txt');
 		const node = '"' + process.execPath + '"';
 		const extraEnv: { [key: string]: string } = {
-			GIT_SEQUENCE_EDITOR: node + ' "' + seqEditorFile + '" ' + commitHash,
-			GIT_EDITOR: node + ' "' + msgEditorFile + '" "' + messageFile + '"',
+			GIT_SEQUENCE_EDITOR: node + ' "' + sequenceEditor + '" ' + commitHash,
+			GIT_EDITOR: node + ' "' + messageEditor + '" "' + messageFile + '"',
 			// The extension host may run inside the Electron binary; without this an Electron
 			// process.execPath would launch a window instead of the editor script.
 			ELECTRON_RUN_AS_NODE: '1'
@@ -466,12 +487,10 @@ export async function editCommitMessage(ctx: WriteFlowContext, repo: Repo, commi
 		}
 
 		try {
-			fs.writeFileSync(seqEditorFile, author === null
-				? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
-				: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
-			fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
-			fs.writeFileSync(messageFile, message);
-			if (author !== null) fs.writeFileSync(authorFile, author);
+			// Owner-only (0o600) where the platform honors the mode; Windows maps it to the
+			// read-only bit, which a freshly written text file never sets.
+			fs.writeFileSync(messageFile, message, { mode: 0o600 });
+			if (author !== null) fs.writeFileSync(authorFile, author, { mode: 0o600 });
 			const result = await ctx.git.collect(rebaseArgs, repo, { env: extraEnv });
 			if (result.code !== 0) throw new Error(commandFailureText(result));
 			return null;
@@ -480,7 +499,7 @@ export async function editCommitMessage(ctx: WriteFlowContext, repo: Repo, commi
 			await ctx.git.collect(['rebase', '--abort'], repo);
 			return thrown instanceof Error ? thrown.message : String(thrown);
 		} finally {
-			for (const file of [seqEditorFile, msgEditorFile, messageFile, authorFile]) fs.unlink(file, () => undefined);
+			fs.rmSync(stagingDir, { recursive: true, force: true });
 		}
 	} catch (error) {
 		return error instanceof Error ? error.message : String(error);

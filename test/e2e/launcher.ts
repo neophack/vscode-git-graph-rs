@@ -69,7 +69,6 @@ function buildAutomationDist(): void {
 	// The vendored webview assets the packaged view loads (media/vendor) — the same chain
 	// package-with-automation runs before vsce.
 	runNode('scripts/package-highlight.js', []);
-	runNode('scripts/package-markdown.js', []);
 }
 
 /** Stage the extension under test: a package.json pointing at the automation bundle + the runtime trees. */

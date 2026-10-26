@@ -4,9 +4,11 @@
 # (and is caught by the manifest test in test/tooling/distBuild.test.ts) rather than leaking in.
 **
 
-# The dist pipeline's output (scripts/build/build.mjs): the host bundle, and the askpass
-# launchers + helper git's credential prompts run (enumerated rather than !dist/askpass/** so a
-# development build's source maps can never slip into a package). dist/automation/ (the
+# The dist pipeline's output (scripts/build/build.mjs): the host bundle, the askpass
+# launchers + helper git's credential prompts run, and the rebase editors git runs as
+# GIT_SEQUENCE_EDITOR / GIT_EDITOR (writeFlows' automated reword rebase) — all enumerated rather
+# than !dist/** so a development build's source maps can never slip into a package.
+# dist/automation/ (the
 # --automation variant) is deliberately NOT re-included here: the default VSIX carries no
 # automation code — the compile-time switch keeps it out of dist/extension.js, and this list
 # keeps the variant's files out even when a previous local automation build left them in the
@@ -16,6 +18,8 @@
 !dist/askpass/askpass.sh
 !dist/askpass/askpass-empty.sh
 !dist/askpass/askpassMain.js
+!dist/editors/sequence.js
+!dist/editors/message.js
 
 # The webview bundle (scripts/build/webview.mjs output, kept at media/ this wave): the
 # first-paint entry plus the on-demand chunks of task 5.9's code splitting (the entry reaches

@@ -44,19 +44,23 @@ const DEFAULT_BUNDLE_NEGATES = [
 	'!dist/extension.js',
 	'!dist/askpass/askpass.sh',
 	'!dist/askpass/askpass-empty.sh',
-	'!dist/askpass/askpassMain.js'
+	'!dist/askpass/askpassMain.js',
+	'!dist/editors/sequence.js',
+	'!dist/editors/message.js'
 ];
 const AUTOMATION_NEGATES = [
 	'!dist/automation/extension.js',
 	'!dist/automation/askpass/askpass.sh',
 	'!dist/automation/askpass/askpass-empty.sh',
 	'!dist/automation/askpass/askpassMain.js',
+	'!dist/automation/editors/sequence.js',
+	'!dist/automation/editors/message.js',
 	'!resources/automation/shim.js'
 ];
 /** package.json's `main` for the duration of the automation vsce run. */
 const AUTOMATION_MAIN = './dist/automation/extension.js';
 /** The vendored webview assets the packaged view loads (the allowlist ships media/vendor). */
-const VENDOR_SCRIPTS = ['package-highlight.js', 'package-markdown.js'];
+const VENDOR_SCRIPTS = ['package-highlight.js'];
 
 const CONTRIBUTIONS = {
 	command: {

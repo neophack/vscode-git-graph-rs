@@ -86,7 +86,6 @@ jobs:
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js
-          node scripts/package-markdown.js
 
       - name: Record the base run (the same-machine baseline)
         if: github.event_name == 'pull_request'
@@ -98,7 +97,6 @@ jobs:
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js
-          node scripts/package-markdown.js
           node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --record
 
       - name: Run the PR gates against the base baseline

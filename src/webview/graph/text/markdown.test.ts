@@ -7,9 +7,9 @@
  * walk's core job is that no token's raw text ever reaches the DOM as anything but escaped text
  * or a hand-chosen safe tag/attribute.
  *
- * The REAL markdown-it library is used - the same construction as scripts/markdown-entry.js
- * (the vendored instance the webview loads as `window.markdownit`): html disabled, so raw HTML
- * in the source is never even recognised as a distinct token type.
+ * The REAL markdown-it library is used - the same construction the on-demand
+ * media/chunks/markdown-it-*.js chunk applies when it loads `window.markdownit`: html
+ * disabled, so raw HTML in the source is never even recognised as a distinct token type.
  */
 
 import { describe, expect, it } from 'vitest';

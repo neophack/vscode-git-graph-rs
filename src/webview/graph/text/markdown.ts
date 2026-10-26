@@ -17,8 +17,8 @@ import { CLASS_EXTERNAL_URL } from './textFormatter';
 import type MarkdownIt from 'markdown-it';
 
 /**
- * The token shape of markdown-it (media/vendor/markdown-it.min.js, loaded before the webview
- * bundle): only the fields this renderer consumes, verified against markdown-it 12.3.2.
+ * The token shape of markdown-it (the on-demand media/chunks/markdown-it-*.js the webview
+ * loads): only the fields this renderer consumes, verified against markdown-it 12.3.2.
  */
 interface MarkdownItToken {
 	readonly type: string;

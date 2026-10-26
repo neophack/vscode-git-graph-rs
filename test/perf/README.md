@@ -12,7 +12,7 @@ Prerequisites (all three gates):
 npm run build:ts                       # the compiled out/ tree the harnesses drive
 node scripts/build-addon.mjs           # the engine addon (native/<platform>/git-graph.node)
 npm run build:dist -- --production     # dist/ + media/ (what P5 measures)
-node scripts/package-highlight.js && node scripts/package-markdown.js   # media/vendor for P5
+node scripts/package-highlight.js   # media/vendor for P5
 ```
 
 ## Running

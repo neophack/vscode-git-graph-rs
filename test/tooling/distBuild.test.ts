@@ -94,7 +94,12 @@ describe('the unified dist pipeline (build.mjs)', () => {
 		// dist/automation/ (the --automation variant, verified by distAutomation.test.ts) may
 		// sit beside the default artifacts; it is not part of THIS bundle's contract.
 		const files = walk(path.join(root, 'dist'), '.js').filter((file) => !file.startsWith('dist/automation/'));
-		assert.deepEqual(files, ['dist/askpass/askpassMain.js', 'dist/extension.js']);
+		assert.deepEqual(files, [
+			'dist/askpass/askpassMain.js',
+			'dist/editors/message.js',
+			'dist/editors/sequence.js',
+			'dist/extension.js',
+		]);
 	});
 
 	maybeIt('the askpass launchers ship beside the helper with LF endings', () => {
@@ -155,7 +160,7 @@ describe('the unified dist pipeline (build.mjs)', () => {
 		// The vendored webview assets and the engine binaries are build products; whichever are
 		// present on this machine must be packaged (a missing one would 404 or silently disable
 		// the engine in the shipped extension).
-		for (const vendor of ['markdown-it.min.js', 'highlight.min.js']) {
+		for (const vendor of ['highlight.min.js']) {
 			if (fs.existsSync(path.join(root, 'media', 'vendor', vendor))) {
 				assert.ok(set.has(`media/vendor/${vendor}`), `media/vendor/${vendor} must ship in the VSIX`);
 			}

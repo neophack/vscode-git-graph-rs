@@ -11,8 +11,8 @@
  * gates its own bundle through the very same functions.
  *
  * The vendored media/vendor/*.js upstream builds are deliberately not scanned: the prebuilt
- * markdown-it.min.js already ships ES2019 optional catch binding, and replacing those artifacts
- * is tracked separately from this gate.
+ * highlight.js bundle is not downleveled by our esbuild configuration, and replacing those
+ * artifacts is tracked separately from this gate.
  *
  *   node scripts/build/compat.mjs   # checks the dist/ bundles and media/out.min.js
  */

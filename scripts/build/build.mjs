@@ -12,6 +12,10 @@
  *                               requires and the automation modules are bundled in
  *   dist/askpass/askpassMain.js git's credential helper, spawned by the askpass launchers
  *   dist/askpass/askpass*.sh    the launchers git runs via GIT_ASKPASS (LF endings, exec bit)
+ *   dist/editors/{sequence,message}.js  the rebase editors git runs as GIT_SEQUENCE_EDITOR /
+ *                               GIT_EDITOR for writeFlows' automated reword rebase (the same
+ *                               separate-entry pattern as the askpass helper: they run as their
+ *                               own short-lived node processes, outside the host bundle)
  *   media/out.min.js|css        the webview, produced by scripts/build/webview.mjs
  *
  * What bundling changes about the sources' path assumptions, patched here at build time only
@@ -145,6 +149,23 @@ const askpassEntry = {
 	tsconfig: path.join(root, 'src', 'tsconfig.json')
 };
 
+// The rebase editors (S2): standalone scripts git spawns as GIT_SEQUENCE_EDITOR / GIT_EDITOR, so
+// like the askpass helper they get their own cjs bundles outside the host bundle. The entry names
+// match what writeFlows looks up at runtime ('editors/sequence.js' and 'editors/message.js'
+// beside the module's compiled location, which is dist/ bundled and the out/ tree under tsc).
+const editorsEntry = {
+	...common,
+	entryPoints: {
+		sequence: 'src/extension/graphView/editors/sequence.ts',
+		message: 'src/extension/graphView/editors/message.ts'
+	},
+	outdir: automationBuild ? path.relative(root, path.join(hostOut, 'editors')) : 'dist/editors',
+	platform: 'node',
+	format: 'cjs',
+	target: 'node10.11',
+	tsconfig: path.join(root, 'src', 'tsconfig.json')
+};
+
 /** Remove the previous outputs, so a stale file never survives a build that no longer emits it. */
 function cleanOutputs() {
 	if (automationBuild) {
@@ -155,6 +176,7 @@ function cleanOutputs() {
 		fs.rmSync(path.join(dist, name), { force: true });
 	}
 	fs.rmSync(path.join(dist, 'askpass'), { recursive: true, force: true });
+	fs.rmSync(path.join(dist, 'editors'), { recursive: true, force: true });
 }
 
 /**
@@ -236,7 +258,8 @@ async function main() {
 	const started = Date.now();
 	await Promise.all([
 		esbuild.build({ absWorkingDir: root, ...hostEntry }),
-		esbuild.build({ absWorkingDir: root, ...askpassEntry })
+		esbuild.build({ absWorkingDir: root, ...askpassEntry }),
+		esbuild.build({ absWorkingDir: root, ...editorsEntry })
 	]);
 	copyAskpassScripts();
 	console.log(`Bundled ${automationBuild ? 'dist/automation' : 'dist/'} in ${Date.now() - started} ms (${production ? 'production' : 'development'})`);
