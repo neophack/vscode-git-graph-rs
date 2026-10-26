@@ -7,10 +7,10 @@ import { GraphContext } from '../context';
 import { UNCOMMITTED } from '../../common/util';
 
 /**
- * Touch screens have no right click: in the mobile layout a long press - one finger held still for
- * LONG_PRESS_MS - dispatches a `contextmenu` event at the pressed element, so every context menu
- * the view offers (commits, refs, files, the column headers) opens from a long press exactly as it
- * does from a right click, and the mobile stylesheet shows it as a bottom action sheet.
+ * Touch screens have no right click: in the phone and tablet layouts a long press - one finger held
+ * still for LONG_PRESS_MS - dispatches a `contextmenu` event at the pressed element, so every
+ * context menu the view offers (commits, refs, files, the column headers) opens from a long press
+ * exactly as it does from a right click: a bottom action sheet on a phone, a popover on a tablet.
  *
  * Mobile browsers differ: Android raises its own `contextmenu` for a long press (possibly before
  * this timer), iOS Safari never does. Whichever comes first wins and the other is suppressed, and
@@ -32,7 +32,7 @@ export function observeLongPress(ctx: GraphContext) {
 		cancelTimer();
 		touchActive = true;
 		menuOpened = false;
-		if (!ctx.layout.isMobileLayout() || e.touches.length !== 1) return;
+		if (!ctx.layout.isTouchLayout() || e.touches.length !== 1) return;
 		if (e.target instanceof Element && e.target.closest('#fastScroller') !== null) return; // holding the scroller still is not a long press
 		startX = e.touches[0].clientX;
 		startY = e.touches[0].clientY;

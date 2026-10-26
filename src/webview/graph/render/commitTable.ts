@@ -107,19 +107,26 @@ export class CommitTable {
 	}
 
 	/**
-	 * Re-render when a resize crossed the narrow window breakpoint: the Date, Author and Commit
-	 * columns are hidden below it and restored above it. Called by the resize observer, where a
-	 * plain render would never run (ordinary resizes only reflow the graph).
+	 * Re-render when a resize (or the setting) switched the layout: the phone layout hides the
+	 * Date, Author and Commit columns, and each layout places the Commit Details View differently.
+	 * Called by the resize observer, where a plain render would never run (ordinary resizes only
+	 * reflow the graph).
 	 */
 	public updateNarrowWindowLayout() {
-		const ctx = this.ctx();
-		if (ctx.layout.isNarrowWindow() === ctx.layout.isMobileLayout()) return;
-		if (ctx.store.expandedCommit !== null && ctx.store.config.commitDetailsView.location !== GG.CommitDetailsViewLocation.DockedToBottom) {
-			// The mobile layout always shows the Commit Details View as a full-screen sheet (docked),
-			// the wide layout inline in the table (as configured): the open view's element is of the
-			// other kind, so close it rather than leave a docked <div> in the table or vice versa
-			ctx.details.close(false);
+		const ctx = this.ctx(), next = ctx.layout.decide(), previous = ctx.layout.getRenderedLayout();
+		if (next === previous) {
+			// Same layout, new window size: the tablet side pane tracks the window width
+			if (next === 'tablet') ctx.layout.apply(next);
+			return;
 		}
+		// Each layout has its own Commit Details View: a full-screen sheet on a phone, the side pane
+		// on a tablet, inline in the table (or docked to the bottom, as configured) in the wide
+		// layout. Only the docked bottom panel and the phone sheet share an element (the stylesheet
+		// alone moves it); otherwise the open view's element belongs to the old layout, so close it
+		// rather than leave a docked <div> in the table, a sheet beside the list, or vice versa
+		const configuredDocked = ctx.store.config.commitDetailsView.location === GG.CommitDetailsViewLocation.DockedToBottom;
+		const sharesElement = configuredDocked && ((previous === 'wide' && next === 'phone') || (previous === 'phone' && next === 'wide'));
+		if (ctx.store.expandedCommit !== null && !sharesElement) ctx.details.close(false);
 		this.render();
 	}
 
@@ -170,10 +177,10 @@ export class CommitTable {
 		const cdvElem = store.expandedCommit !== null && !ctx.layout.isCdvDocked() ? document.getElementById('cdv') : null;
 		if (cdvElem !== null && cdvElem.parentNode !== null) cdvElem.parentNode.removeChild(cdvElem);
 
-		// The narrow window (mobile) layout is re-evaluated on every render, before any row is
+		// The layout (wide, phone or tablet) is re-evaluated on every render, before any row is
 		// built; the resize observer compares against this record to re-render exactly when a
 		// resize crosses the breakpoint
-		ctx.layout.apply(ctx.layout.isNarrowWindow());
+		ctx.layout.apply(ctx.layout.decide());
 
 		const rowContext = this.createRowContext();
 		const colVisibility = rowContext.colVisibility;

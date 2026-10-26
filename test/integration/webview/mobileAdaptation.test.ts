@@ -49,7 +49,7 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 		assert.ok(toggle !== null, 'the switch is rendered in the settings widget');
 		assert.ok(toggle!.closest('#settingsGlobalColumn') !== null, 'the switch lives in the Global Settings column');
 		assert.equal(toggle!.checked, false, 'the switch defaults to off');
-		assert.match(toggle!.closest('#settingsMobileAdaptation')!.textContent!, /Mobile layout for narrow windows/, 'the switch is labelled');
+		assert.match(toggle!.closest('#settingsMobileAdaptation')!.textContent!, /Use phone and tablet layouts/, 'the switch is labelled');
 
 		// Toggling it sends a setGlobalSetting request, which the extension host writes to the
 		// VS Code User Settings (WRITABLE_GLOBAL_SETTINGS whitelists 'mobileAdaptation')
@@ -139,5 +139,67 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 		// The hiding is scoped: the wide layout (no body.mobileMode) keeps its native scrollbar
 		const withoutScoped = sheet.replace(/body\.mobileMode #view(\{|::-webkit-scrollbar\s*\{)[^}]*\}/g, '');
 		assert.ok(!/(^|[^.\w-])#view\s*\{[^}]*scrollbar-width/.test(withoutScoped), 'no unscoped #view rule hides the wide layout\'s scrollbar');
+	});
+});
+
+describe('the tablet (mobileAdaptation, wide view) layout', () => {
+	async function bootTablet(total: number) {
+		const h = await bootView(total);
+		setViewWidth(h, 1000);
+		const config = clonedConfig(h);
+		config.mobileAdaptation = true;
+		h.dispatch({ command: 'configChanged', config: config });
+		await h.pump();
+		return h;
+	}
+
+	it('renders single-line rows with every column, and no overflow sheet', async () => {
+		const h = await bootTablet(30);
+		const body = h.document.body;
+		assert.ok(body.classList.contains('tabletMode'), 'the tablet layout is rendered');
+		assert.ok(body.classList.contains('touchMode'), 'with the shared touch tokens');
+		assert.ok(!body.classList.contains('mobileMode'), 'not the phone layout');
+		assert.equal(body.style.getPropertyValue('--git-graph-rowHeight'), '40px', 'rows are 40px touch rows');
+		assert.ok(h.document.querySelector('#tableColHeaders .dateCol') !== null, 'the Date column is kept');
+		assert.ok(h.document.querySelector('#tableColHeaders .authorCol') !== null, 'the Author column is kept');
+		assert.equal(h.rows()[0].querySelector('.mobileMeta'), null, 'rows are single-line (no phone meta line)');
+	});
+
+	it('opens the commit details in a side pane beside the list, and gives the width back on close', async () => {
+		const h = await bootTablet(30);
+		h.rows()[1].click();
+		await h.pump();
+		await sleep(50);
+
+		const cdv = h.document.getElementById('cdv')!;
+		assert.ok(cdv !== null && cdv.classList.contains('docked'), 'the details opened docked');
+		assert.equal(cdv.parentElement, h.document.body, 'on <body>, beside the list');
+		assert.ok(h.document.body.classList.contains('sidePaneOpen'), 'the list makes room for the side pane');
+		assert.equal(h.viewElem.style.bottom, '', 'nothing is reserved below the list');
+		assert.ok(h.document.getElementById('cdvMobileTitle') !== null, 'the pane has a title bar naming the commit');
+		assert.ok(h.document.querySelector('#cdvSummary .cdvmTitle') !== null, 'the summary card leads with the subject');
+		assert.ok(h.document.querySelector('#cdvFilesHeader #cdvFileViewTypeList') !== null, 'the file view controls sit in the Files header');
+
+		// "More actions" opens the commit's menu as a popover on <body> (beside the pane, not in #view)
+		h.document.getElementById('cdvMobileActions')!.click();
+		const menu = h.document.querySelector('.contextMenu')!;
+		assert.ok(menu !== null && menu.parentElement === h.document.body, 'the commit menu opened, framed by the page');
+
+		h.document.getElementById('cdvClose')!.click();
+		await h.pump();
+		assert.equal(h.document.getElementById('cdv'), null, 'the pane closed');
+		assert.ok(!h.document.body.classList.contains('sidePaneOpen'), 'the list took its width back');
+	});
+
+	it('returns to the original layout when the setting is unchecked', async () => {
+		const h = await bootTablet(30);
+		const config = clonedConfig(h);
+		config.mobileAdaptation = false;
+		h.dispatch({ command: 'configChanged', config: config });
+		await h.pump();
+
+		const body = h.document.body;
+		for (const name of ['tabletMode', 'touchMode', 'mobileMode', 'narrowWindow']) assert.ok(!body.classList.contains(name), 'no ' + name + ' class');
+		assert.equal(body.style.getPropertyValue('--git-graph-rowHeight'), h.ROW_HEIGHT + 'px', 'the configured row height is back');
 	});
 });

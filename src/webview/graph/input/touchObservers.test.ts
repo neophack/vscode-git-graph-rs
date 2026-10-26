@@ -19,7 +19,7 @@ import { observeFastScroller, observeLongPress } from './touchObservers';
 /* The observer registers its listeners on the shared document once; whether the mobile layout is
  * rendered is decided at event time, so a mutable flag drives both layouts. */
 let mobileLayout = false;
-observeLongPress({ layout: { isMobileLayout: () => mobileLayout } } as unknown as GraphContext);
+observeLongPress({ layout: { isMobileLayout: () => mobileLayout, isTouchLayout: () => mobileLayout } } as unknown as GraphContext);
 
 beforeEach(() => {
 	document.body.textContent = '';

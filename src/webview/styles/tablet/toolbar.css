@@ -1,0 +1,208 @@
+/* ---------- Toolbar: one 48px row ----------
+ * [repo ▾] [branch ▾] [author ▾] (Remote) .................. (⌖)(⌕)(⏚)(▤)(>_)(⚙)(⤓)(⟳)
+ * The phone keeps only the essentials in its app bar; a tablet has the width for every control,
+ * so nothing moves into an overflow sheet. Left: the filters as capsules (the phone's capsule
+ * language at tablet density - leading icon, chevron, no border). Right: the actions as round
+ * icon buttons in one flex row (the wide layout positions them absolutely). Flat and solid,
+ * separated from the list by a hairline. */
+
+body.tabletMode #headerRow{
+	position:sticky;
+	top:0;
+	z-index:12;
+	background-color:var(--m-bg);
+}
+body.tabletMode #controls{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	box-sizing:border-box;
+	min-height:var(--m-bar);
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:6px 8px 6px 12px;
+	padding:6px max(8px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+	border-bottom:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	line-height:normal;
+	text-align:left;
+	white-space:nowrap;
+	font-weight:normal;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	body.tabletMode #controls > * + * { margin-left: 8px; }
+}
+body.tabletMode.vscode-high-contrast #controls{
+	border-bottom-color:var(--m-sep);
+}
+
+/* The filters */
+body.tabletMode #repoControl, body.tabletMode #branchControl, body.tabletMode #authorControl{
+	display:flex;
+	align-items:center;
+	flex:0 1 auto;
+	min-width:0;
+	margin:0;
+}
+body.tabletMode #controls.singleRepo #repoControl,
+body.tabletMode #repoControlLabel, body.tabletMode #branchControlLabel, body.tabletMode #authorControlLabel{
+	display:none;
+}
+body.tabletMode #repoDropdown, body.tabletMode #branchDropdown, body.tabletMode #authorDropdown{
+	flex:1 1 auto;
+	min-width:0;
+	margin:0;
+}
+body.tabletMode #controls .dropdownCurrentValue{
+	position:relative;
+	min-width:0;
+	/* over the narrow window caps (9vw / 12vw / 16vw) of controlBar.css and responsive.css */
+	max-width:22vw !important;
+	height:32px;
+	line-height:32px;
+	box-sizing:border-box;
+	padding:0 28px 0 32px;
+	border:none;
+	border-radius:16px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:13px;
+	font-weight:600;
+	letter-spacing:-0.005em;
+	transition:background-color 120ms var(--gg-ease, ease-out);
+}
+body.tabletMode #controls.singleRepo .dropdownCurrentValue{
+	max-width:26vw !important;
+}
+body.tabletMode #controls .dropdownCurrentValue:active, body.tabletMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
+	border-radius:16px;
+	background-color:var(--m-pressed);
+}
+/* The shared capsule icons (mobile/appBar.css), placed for the 32px capsule */
+body.tabletMode #controls .dropdownCurrentValue::before{
+	left:12px;
+	top:9px;
+}
+body.tabletMode #controls .dropdownCurrentValue::after, body.tabletMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	top:10px;
+	right:10px;
+}
+/* The author filter's leading icon: a person */
+body.tabletMode #authorDropdown .dropdownCurrentValue::before{
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 1.5c-2.7 0-5.5 1.35-5.5 3.25V14h11v-1.25C13.5 10.85 10.7 9.5 8 9.5z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 1.5c-2.7 0-5.5 1.35-5.5 3.25V14h11v-1.25C13.5 10.85 10.7 9.5 8 9.5z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+/* "Show Remote Branches": a filter chip, filled with the accent while on. The checkbox stays the
+   control (hidden); the chip is its label text, so the :checked state styles it without script. */
+body.tabletMode #showRemoteBranchesControl{
+	position:relative;
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	margin:0;
+}
+body.tabletMode #showRemoteBranchesControl > .customCheckbox{
+	display:none;
+}
+body.tabletMode #showRemoteBranchesCheckbox{
+	position:absolute;
+	opacity:0;
+	pointer-events:none;
+}
+body.tabletMode #showRemoteBranchesLabel{
+	display:inline-block;
+	height:32px;
+	line-height:32px;
+	padding:0 12px;
+	border-radius:16px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:13px;
+	font-weight:600;
+	transition:background-color 120ms var(--gg-ease, ease-out), color 120ms var(--gg-ease, ease-out);
+}
+body.tabletMode #showRemoteBranchesControl:active #showRemoteBranchesLabel{
+	background-color:var(--m-pressed);
+}
+body.tabletMode #showRemoteBranchesCheckbox:checked ~ #showRemoteBranchesLabel{
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+
+/* The actions: round icon buttons, right-aligned */
+body.tabletMode #controlBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+/* Two ids, to out-rank controlBar.css's "#controls.fetchSupported #currentBtn{right:…}" offsets */
+body.tabletMode #controls #controlBtns > div{
+	position:relative;
+	top:auto;
+	right:auto;
+	flex:none;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-target);
+	height:var(--m-target);
+	margin:0;
+	border-radius:50%;
+	color:var(--m-fg);
+	cursor:pointer;
+}
+/* controlBar.css shows the fetch button with "#controls.fetchSupported #fetchBtn": mirror it, and
+   keep the phone's ⋯ overflow button hidden (both over the button rule above) */
+body.tabletMode #controls #controlBtns > #fetchBtn, body.tabletMode #controls #controlBtns > #mobileMoreBtn{
+	display:none;
+}
+body.tabletMode #controls.fetchSupported #controlBtns > #fetchBtn{
+	display:flex;
+}
+body.tabletMode #controlBtns > div:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.tabletMode #controlBtns svg{
+	position:static;
+	width:18px !important;
+	height:18px !important;
+	fill:var(--m-fg);
+	stroke-width:0 !important;
+	opacity:0.85;
+}
+body.tabletMode #controlBtns > div:active svg{
+	opacity:1;
+}
+body.tabletMode #controlBtns > #filterBtn.active{
+	background-color:var(--m-fill);
+}
+body.tabletMode #controlBtns > #filterBtn.active svg{
+	fill:var(--m-accent);
+	opacity:1;
+}
+body.tabletMode #refreshBtn svg{
+	width:16px !important;
+	height:16px !important;
+}
+body.tabletMode #refreshBtn.refreshing svg{
+	width:13px !important;
+}
+
+/* The pinned commits row: chips at touch size */
+body.tabletMode #pinnedControls{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:6px 12px;
+	padding:6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+	border-bottom:0.5px solid var(--m-sep);
+}
+body.tabletMode .pinnedChip{
+	margin:0 3px;
+	padding:3px 10px;
+	font-size:12px;
+	line-height:20px;
+	border-radius:13px;
+}

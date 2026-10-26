@@ -22,12 +22,16 @@ import gerritReviewCss from './gerritReview.css';
 import mobileCommitDetailsCss from './mobile/commitDetails.css';
 import mobileContextMenuCss from './mobile/contextMenu.css';
 import mobileDialogCss from './mobile/dialog.css';
+import tabletCommitDetailsCss from './tablet/commitDetails.css';
+import tabletOverlaysCss from './tablet/overlays.css';
 
 injectOnDemandStyles(dialogCss);
 injectOnDemandStyles(mobileDialogCss);
 injectOnDemandStyles(contextMenuCss);
 injectOnDemandStyles(mobileContextMenuCss);
+injectOnDemandStyles(tabletOverlaysCss);
 injectOnDemandStyles(commitDetailsCss);
 injectOnDemandStyles(mobileCommitDetailsCss);
+injectOnDemandStyles(tabletCommitDetailsCss);
 injectOnDemandStyles(fileTreeCss);
 injectOnDemandStyles(gerritReviewCss);

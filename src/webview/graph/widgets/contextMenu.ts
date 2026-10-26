@@ -1,4 +1,4 @@
-import { alterClass, CLASS_MOBILE_MODE, removeClassFromAll } from '../../common/dom';
+import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, removeClassFromAll } from '../../common/dom';
 import { html, joinHtml, SafeHtml, setHtml } from '../../common/html';
 import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
@@ -44,7 +44,11 @@ export class ContextMenu {
 	 * @param onClose Invoked when the context menu closes.
 	 * @param className An additional class name of the context menu.
 	 */
-	public show(actions: ContextMenuActions, checked: boolean, target: ContextMenuTarget | null, event: MouseEvent, frameElem: HTMLElement, onClose: (() => void) | null = null, className: string | null = null) {
+	public show(actions: ContextMenuActions, checked: boolean, target: ContextMenuTarget | null, event: MouseEvent, requestedFrameElem: HTMLElement, onClose: (() => void) | null = null, className: string | null = null) {
+		// The tablet layout's popovers are framed by the whole page: a menu opened from the side
+		// pane (beside #view, not inside it) must stay next to its anchor rather than be pushed back
+		// over the list, and on <body> no stacking context of #view can hide it under the pane
+		const frameElem = document.body.classList.contains(CLASS_TABLET_MODE) ? document.body : requestedFrameElem;
 		// The menu's styles are on demand (task 5.9's CSS split): kick their chunk so the first
 		// menu of a session is styled as soon as the (idle-prefetched) chunk arrives
 		ensureWidgetStyles(() => import('../../styles/onDemand'));

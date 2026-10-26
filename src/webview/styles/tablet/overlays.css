@@ -1,0 +1,129 @@
+/* ---------- Context menus and dialogs: popovers and form sheets ----------
+ * Context menus open where the finger (or pointer) is, as anchored popovers: ContextMenu.show
+ * frames them by the whole page in the tablet layout, so a menu opened from the side pane stays
+ * beside it. Dialogs are form sheets: a centred card at tablet density, flat filled fields,
+ * capsule buttons. One soft shadow and a hairline lift each surface off the content - no borders,
+ * no gradients. Loaded on demand with the other overlay styles (styles/onDemand.ts). */
+
+/* Context menus */
+body.tabletMode .contextMenu{
+	min-width:220px;
+	padding:6px;
+	border-radius:12px;
+	background-color:var(--m-sheet);
+	box-shadow:0 8px 28px rgba(0,0,0,0.22), 0 0 0 0.5px var(--m-sep);
+	color:var(--m-fg);
+	font-size:13px;
+	z-index:45;
+}
+body.tabletMode.vscode-high-contrast .contextMenu{
+	box-shadow:none;
+	outline:1px solid var(--m-sep);
+}
+body.tabletMode .contextMenu li.contextMenuItem{
+	display:flex;
+	align-items:center;
+	min-height:36px;
+	box-sizing:border-box;
+	padding:0 12px;
+	border-radius:8px;
+	line-height:18px;
+}
+body.tabletMode .contextMenu li.contextMenuItem:hover{
+	background-color:transparent;
+	color:inherit;
+}
+body.tabletMode .contextMenu li.contextMenuItem:active{
+	background-color:var(--vscode-menu-selectionBackground, var(--m-pressed));
+	color:var(--vscode-menu-selectionForeground, var(--m-fg));
+}
+body.tabletMode .contextMenu li.contextMenuDivider{
+	margin:6px 4px;
+	border-top:0.5px solid var(--m-sep);
+	opacity:1;
+}
+body.tabletMode .contextMenu.checked li.contextMenuItem{
+	padding-left:34px;
+}
+body.tabletMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
+	left:12px;
+}
+
+/* Dialogs */
+body.tabletMode .dialog{
+	max-width:calc(100vw - 48px);
+	max-height:calc(100vh - 48px);
+	overflow-y:auto;
+	box-sizing:border-box;
+	border:none;
+	border-radius:14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 16px 48px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
+	color:var(--m-fg);
+	font-size:14px;
+	line-height:20px;
+}
+body.tabletMode.vscode-high-contrast .dialog{
+	box-shadow:none;
+	border:1px solid var(--m-sep);
+}
+body.tabletMode .dialogContent{
+	padding:20px 20px 16px;
+	font-size:14px;
+	line-height:20px;
+}
+body.tabletMode .dialogContent > table.dialogForm td{
+	padding-top:10px;
+}
+body.tabletMode .dialogContent > table.dialogForm input[type=text], body.tabletMode .dialogContent > table.dialogForm textarea{
+	min-height:36px;
+	padding:8px 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:16px;
+	line-height:20px;
+}
+body.tabletMode .dialogContent > table.dialogForm input[type=text]:focus, body.tabletMode .dialogContent > table.dialogForm textarea:focus{
+	box-shadow:0 0 0 1px var(--vscode-focusBorder);
+}
+body.tabletMode .dialog .roundedBtn{
+	min-width:88px;
+	height:36px;
+	box-sizing:border-box;
+	margin:16px 4px 0;
+	padding:0 18px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:14px;
+	font-weight:600;
+	line-height:36px;
+}
+body.tabletMode .dialog .roundedBtn:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.tabletMode .dialog #dialogAction{
+	border:none;
+	box-shadow:none;
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+body.tabletMode .dialog #dialogAction:hover{
+	background-color:var(--m-accent-fill);
+}
+body.tabletMode .dialog.noInput #dialogAction, body.tabletMode .dialog.inputInvalid #dialogAction{
+	opacity:0.45;
+}
+body.tabletMode #dialogCloseIcon{
+	top:8px;
+	right:8px;
+	width:30px;
+	height:30px;
+	border-radius:50%;
+	background-color:var(--m-fill);
+	opacity:1;
+}

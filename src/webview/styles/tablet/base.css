@@ -1,0 +1,79 @@
+/*
+ * Tablet layout
+ *
+ * Active while <body> carries .tabletMode: the git-graph-rs.mobileAdaptation Extension Setting
+ * ("Phone and tablet layouts") is enabled and the view is wider than the phone breakpoint (600px,
+ * decided per render in render/layoutMode.ts). It shares the touch tokens of mobile/base.css
+ * (body.touchMode) and tightens them: a tablet has the room of a desktop and the finger of a phone.
+ *
+ * The visual language is flat and compact, after iPadOS, Material 3 large-screen and Meta's tablet
+ * apps: one solid surface, no shadows on resting content, hairline separators instead of borders,
+ * capsule controls, a 48px toolbar, 40px single-line rows that keep every column, and the
+ * canonical list-detail split - the commit details open in a side pane beside the list instead of
+ * covering it. Every colour derives from the VS Code theme variables, so dark, light and high
+ * contrast themes all work; pressed states replace hover, and edges respect the safe area insets.
+ */
+
+body.tabletMode{
+	--m-bar:48px;
+	--m-target:36px;
+	--m-radius:10px;
+	/* The selected row's wash: the accent at low strength (a neutral fill without color-mix) */
+	--t-selected:rgba(128,128,128,0.18);
+	--t-selected-pressed:rgba(128,128,128,0.26);
+	--t-header:var(--vscode-editor-background, #1e1e1e);
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.tabletMode{
+		--t-selected:color-mix(in srgb, var(--m-accent-fill) 22%, transparent);
+		--t-selected-pressed:color-mix(in srgb, var(--m-accent-fill) 32%, transparent);
+	}
+}
+
+/* ---------- The list-detail split ----------
+ * The commit details are the side pane (styles/tablet/commitDetails.css): while it is open the
+ * list gives up exactly the pane's width (--gg-pane-width, set by layoutMode.ts from the window
+ * width), so both stay fully visible. Nothing is ever reserved below the list. The list snaps to
+ * its new width (no transition): the graph column's auto layout measures it right after the switch,
+ * and only the pane itself animates in. */
+body.tabletMode #view{
+	bottom:0 !important;
+}
+body.tabletMode.sidePaneOpen #view{
+	right:var(--gg-pane-width, 380px);
+}
+
+/* A slim scroll indicator, as the platforms draw it: no track, a rounded thumb */
+body.tabletMode #view::-webkit-scrollbar{
+	width:8px;
+	height:8px;
+}
+body.tabletMode #view::-webkit-scrollbar-track{
+	background:transparent;
+}
+body.tabletMode #view::-webkit-scrollbar-thumb{
+	border:2px solid transparent;
+	border-radius:4px;
+	background-clip:padding-box;
+	background-color:var(--m-sep);
+}
+
+/* The footer's "Load More Commits": a flat capsule */
+body.tabletMode #loadMoreCommitsBtn{
+	width:auto;
+	display:table;
+	height:36px;
+	margin:14px auto 18px;
+	padding:0 20px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	line-height:36px;
+	font-size:13px;
+	font-weight:600;
+}
+body.tabletMode #loadMoreCommitsBtn:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}

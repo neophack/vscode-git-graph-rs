@@ -1,0 +1,117 @@
+/* ---------- Commit list: 40px single-line rows ----------
+ * [graph] subject ......................... [refs]   date      author      hash
+ * The phone folds the columns into a two-line row; a tablet keeps every column on one line at
+ * touch height (layoutMode.ts TABLET_ROW_HEIGHT, uniform as windowed rendering requires). Flat:
+ * no column rules, one hairline per row drawn as an inset shadow (it takes no height) and kept off
+ * the graph cell so the branch lines run unbroken; secondary columns in the secondary colour;
+ * the open commit carries an accent wash rather than a grey bar. */
+
+/* Column headers: a quiet label row, not a grid */
+body.tabletMode #commitTable th{
+	height:30px;
+	box-sizing:border-box;
+	padding:0 12px;
+	border-bottom:none;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+	background-color:var(--t-header);
+	color:var(--m-fg-2);
+	font-size:11px;
+	font-weight:600;
+	letter-spacing:0.04em;
+	line-height:30px;
+	text-transform:uppercase;
+}
+body.tabletMode .commit > td, body.tabletMode #tableColHeaders > th{
+	border-right:none;
+}
+
+/* Rows */
+body.tabletMode #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	line-height:var(--git-graph-rowHeight);
+	vertical-align:middle;
+	padding:0 12px;
+	font-size:13px;
+}
+body.tabletMode #commitTable tr.commit td:first-child{
+	padding:0 4px;
+}
+body.tabletMode #commitTable tr.commit td + td{
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.tabletMode #commitTable tr.commit td.dateCol, body.tabletMode #commitTable tr.commit td.authorCol, body.tabletMode #commitTable tr.commit td.text:not(.dateCol):not(.authorCol){
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+body.tabletMode #commitTable tr.commit td.text:not(.dateCol):not(.authorCol){
+	font-family:var(--m-mono);
+	font-size:12px;
+}
+body.tabletMode #commitTable tr.commit span.description{
+	align-items:center;
+	height:var(--git-graph-rowHeight);
+}
+body.tabletMode #commitTable tr.commit span.description .text{
+	font-size:14px;
+	font-weight:500;
+	letter-spacing:-0.005em;
+	color:var(--m-fg);
+}
+body.tabletMode #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.tabletMode #commitTable .commitHeadDot{
+	margin-top:0;
+	align-self:center;
+}
+
+/* Pressed and selected states replace hover: a finger has no hover, and a pointer on a tablet
+   (trackpad, stylus) still reads the same flat wash */
+body.tabletMode #commitTable tr.commit:hover{
+	background-color:transparent;
+}
+body.tabletMode #commitTable tr.commit:active, body.tabletMode #commitTable tr.commit.contextMenuActive, body.tabletMode #commitTable tr.commit.dialogActive, body.tabletMode #commitTable tr.commit.graphVertexActive{
+	background-color:var(--m-pressed);
+}
+body.tabletMode #commitTable tr.commit.commitDetailsOpen, body.tabletMode #commitTable tr.commit.commitDetailsOpen:hover{
+	background-color:var(--t-selected);
+}
+body.tabletMode #commitTable tr.commit.commitDetailsOpen:active, body.tabletMode #commitTable tr.commit.commitDetailsOpen.contextMenuActive, body.tabletMode #commitTable tr.commit.commitDetailsOpen.dialogActive{
+	background-color:var(--t-selected-pressed);
+}
+
+/* Ref labels: flat tinted pills - the ref's graph colour marks it, no outline */
+body.tabletMode .gitRef{
+	height:22px;
+	line-height:22px;
+	margin-top:0;
+	margin-right:6px;
+	vertical-align:middle;
+	border:none;
+	border-radius:6px;
+	background-color:var(--m-fill);
+	font-size:12px;
+}
+body.tabletMode .gitRef > svg{
+	width:14px;
+	height:14px;
+	padding:4px 3px 4px 5px;
+	background-color:transparent;
+	fill:var(--git-graph-color);
+}
+body.tabletMode .gitRefName, body.tabletMode .gitRefHeadRemote{
+	height:22px;
+	line-height:22px;
+	padding:0 7px 0 2px;
+}
+body.tabletMode .gitRefHeadRemote{
+	padding-left:7px;
+	border-left:0.5px solid var(--m-sep);
+}
+body.tabletMode .gitRef.active{
+	box-shadow:inset 0 0 0 1px var(--git-graph-color);
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef{
+	align-self:center;
+}

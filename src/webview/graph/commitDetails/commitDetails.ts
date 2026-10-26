@@ -72,6 +72,11 @@ export class CommitDetails {
 		if (isDocked) {
 			ctx.dom.view.style.bottom = '0px';
 		}
+		if (ctx.layout.isCdvSidePane()) {
+			// The tablet layout's list-detail split: the list takes the pane's width back
+			ctx.layout.closeSidePane();
+			ctx.columns.applyGraphColumnAutoLayout();
+		}
 		if (expandedCommit.commitElem !== null) {
 			expandedCommit.commitElem.classList.remove(CLASS_COMMIT_DETAILS_OPEN);
 		}
@@ -278,9 +283,9 @@ export class CommitDetails {
 
 	/* Rendering */
 
-	/** The element the file list scrolls in: #cdvFiles in the wide layout; in the mobile sheet the whole #cdvContent scrolls (summary and files together). */
+	/** The element the file list scrolls in: #cdvFiles in the wide layout; in the phone sheet and the tablet side pane the whole #cdvContent scrolls (summary and files together). */
 	public getFilesScrollElemId() {
-		return this.ctx().layout.isMobileLayout() ? 'cdvContent' : 'cdvFiles';
+		return this.ctx().layout.isTouchLayout() ? 'cdvContent' : 'cdvFiles';
 	}
 
 	private getFileViewType() {
@@ -331,11 +336,12 @@ export class CommitDetails {
 	}
 
 	private mobileNote(content: SafeHtml | string): SafeHtml {
-		return this.ctx().layout.isMobileLayout() ? html`<div class="cdvmNote">${content}</div>` : html`${content}`;
+		return this.ctx().layout.isTouchLayout() ? html`<div class="cdvmNote">${content}</div>` : html`${content}`;
 	}
 
 	private renderSummary(expandedCommit: ExpandedCommit, commitOrder: { from: string, to: string }): SafeHtml {
-		const ctx = this.ctx(), store = ctx.store, isMobile = ctx.layout.isMobileLayout();
+		// The phone sheet and the tablet side pane share the stacked summary card
+		const ctx = this.ctx(), store = ctx.store, isMobile = ctx.layout.isTouchLayout();
 		if (expandedCommit.compareWithHash !== null) {
 			// Commit comparison should be shown
 			return this.mobileNote(formatStr(markup.displayingChangesFromTo, commitOrder.from, commitOrder.to !== UNCOMMITTED ? commitOrder.to : strings.uncommittedChangesLabel));
@@ -385,7 +391,9 @@ export class CommitDetails {
 		const isDocked = layout.isCdvDocked();
 		const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		const codeReviewPossible = !expandedCommit.loading && commitOrder.to !== UNCOMMITTED;
-		const isMobile = layout.isMobileLayout();
+		// The phone sheet and the tablet side pane share one structure: a title bar over a single
+		// scrolling page (summary card, "Files" header, file list)
+		const isMobile = layout.isTouchLayout();
 		const mobileActionsPossible = isMobile && !expandedCommit.loading && expandedCommit.compareWithHash === null && expandedCommitLoaded;
 		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (expandedCommitLoaded && store.commits[store.commitLookup[expandedCommit.commitHash]].parents.length > 0));
 
@@ -399,6 +407,11 @@ export class CommitDetails {
 			this.setHeight(elem, isDocked);
 			if (isDocked) {
 				document.body.appendChild(elem);
+				if (layout.isCdvSidePane()) {
+					// The tablet layout's list-detail split: the list narrows to make room for the pane
+					layout.openSidePane();
+					ctx.columns.applyGraphColumnAutoLayout();
+				}
 			} else {
 				insertAfter(elem, expandedCommit.commitElem);
 			}
@@ -579,7 +592,8 @@ export class CommitDetails {
 
 		const heightPx = height + 'px';
 		elem.style.height = heightPx;
-		if (isDocked) ctx.dom.view.style.bottom = heightPx;
+		// The tablet side pane spans the full height beside the list: nothing is reserved below it
+		if (isDocked && !ctx.layout.isCdvSidePane()) ctx.dom.view.style.bottom = heightPx;
 	}
 
 	private setDivider() {
@@ -669,7 +683,7 @@ export class CommitDetails {
 		const textFormatter = this.createMessageFormatter();
 		const bodyElem = document.getElementById('cdvMessageBody'), toggleElem = document.getElementById('cdvMarkdownToggle');
 		if (bodyElem === null || toggleElem === null) return;
-		const body = getCdvMessageBody(expandedCommit.commitDetails.body, this.ctx().layout.isMobileLayout());
+		const body = getCdvMessageBody(expandedCommit.commitDetails.body, this.ctx().layout.isTouchLayout());
 		const renderBody = () => setHtml(bodyElem, expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body));
 		if (expandedCommit.showMarkdown && !isMarkdownLoaded()) {
 			// Flipping to Markdown before the on-demand renderer landed (task 5.9): keep the

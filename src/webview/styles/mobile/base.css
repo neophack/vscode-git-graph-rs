@@ -1,10 +1,13 @@
 /*
- * Mobile layout (docs/MOBILE-DESIGN.md)
+ * Touch layouts: phone and tablet
  *
- * Active while <body> carries .mobileMode: the git-graph-rs.mobileAdaptation Extension Setting is
- * enabled and the view is at most 600px wide (decided per render in web/main.ts). Every rule is
- * scoped under body.mobileMode, so the wide layout is untouched (the few unscoped rules below only
- * hide the mobile-only elements there).
+ * The git-graph-rs.mobileAdaptation Extension Setting ("Phone and tablet layouts") switches the
+ * view to a touch layout, decided per render by render/layoutMode.ts: <body> carries .mobileMode
+ * while the view is at most 600px wide, .tabletMode above that, and .touchMode with either. The
+ * tokens below (and the Commit Details sheet styles both layouts share) are scoped under
+ * body.touchMode; phone-only rules under body.mobileMode, tablet-only rules (styles/tablet/) under
+ * body.tabletMode. With the setting off none of the classes is set and the wide layout is
+ * untouched (the few unscoped rules below only hide the touch-only elements there).
  *
  * The visual language is flat and compact, after iOS / Material 3: no borders where a fill or a
  * hairline will do, capsule controls, a 52px app bar, 52px two-line rows, grouped "inset" lists,
@@ -19,7 +22,7 @@
 	display:none;
 }
 
-body.mobileMode{
+body.touchMode{
 	/* The literal fallbacks (the VS Code Dark+ palette) keep every surface solid in an environment
 	   that injects none of the theme variables (e.g. the standalone browser repro page): without
 	   them var() is invalid at computed-value time and the sheets render fully transparent. */
@@ -50,16 +53,16 @@ body.mobileMode{
 	text-size-adjust:100%;
 }
 @supports (color:color-mix(in srgb, red, blue)){
-	body.mobileMode{
+	body.touchMode{
 		--m-surface:color-mix(in srgb, var(--m-fg) 6%, var(--m-bg));
 		--m-fill:color-mix(in srgb, var(--m-fg) 10%, transparent);
 		--m-pressed:color-mix(in srgb, var(--m-fg) 14%, transparent);
 		--m-sep:color-mix(in srgb, var(--m-fg) 14%, transparent);
 	}
 }
-body.mobileMode.vscode-high-contrast{
+body.touchMode.vscode-high-contrast{
 	--m-sep:var(--vscode-contrastBorder, rgba(128,128,128,0.6));
 }
-body.mobileMode input, body.mobileMode textarea, body.mobileMode select{
+body.touchMode input, body.touchMode textarea, body.touchMode select{
 	font-size:16px !important;
 }

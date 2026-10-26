@@ -7,6 +7,9 @@ export const CLASS_FOCUSSED = 'focussed';
 export const CLASS_LOADING = 'loading';
 export const CLASS_MOBILE_MODE = 'mobileMode';
 export const CLASS_SELECTED = 'selected';
+export const CLASS_TABLET_MODE = 'tabletMode';
+/** Set with either touch layout (phone or tablet): the shared touch tokens and sheet styles key on it. */
+export const CLASS_TOUCH_MODE = 'touchMode';
 export const CLASS_TRANSITION = 'transition';
 
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';

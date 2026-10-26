@@ -17,6 +17,7 @@ import { LayoutMode } from './layoutMode';
 
 const ROW_HEIGHT = 24;
 const MOBILE_ROW_HEIGHT = 52;
+const TABLET_ROW_HEIGHT = 40;
 
 /** A store carrying only the settings the layout decision reads. */
 function makeStore(mobileAdaptation: boolean) {
@@ -44,28 +45,34 @@ beforeEach(() => {
 	document.body.removeAttribute('style');
 });
 
-describe('the narrow window (mobileAdaptation) layout decision', () => {
-	it('leaves the display untouched while the setting is disabled, even below the breakpoint', () => {
-		const layout = new LayoutMode(makeStore(false), makeViewElem(400));
-		expect(layout.isNarrowWindow()).toBe(false);
-		layout.apply(layout.isNarrowWindow());
+describe('the phone and tablet (mobileAdaptation) layout decision', () => {
+	it('leaves the display untouched while the setting is disabled, at every width', () => {
+		for (const width of [400, 1200]) {
+			const layout = new LayoutMode(makeStore(false), makeViewElem(width));
+			expect(layout.decide()).toBe('wide');
+			expect(layout.isNarrowWindow()).toBe(false);
+			layout.apply(layout.decide());
 
-		expect(document.body.classList.contains('narrowWindow')).toBe(false);
-		expect(document.body.classList.contains('mobileMode')).toBe(false);
-		expect(layout.getRowHeight()).toBe(ROW_HEIGHT);
-		expect(layout.getColumnVisibility()).toEqual({ date: true, author: true, commit: true });
-		expect(layout.getNumColumns()).toBe(5);
-		expect(layout.isCdvDocked()).toBe(false); // as configured (inline)
+			expect(document.body.className).toBe('');
+			expect(layout.isTouchLayout()).toBe(false);
+			expect(layout.getRowHeight()).toBe(ROW_HEIGHT);
+			expect(layout.getColumnVisibility()).toEqual({ date: true, author: true, commit: true });
+			expect(layout.getNumColumns()).toBe(5);
+			expect(layout.isCdvDocked()).toBe(false); // as configured (inline)
+		}
 	});
 
-	it('switches to the mobile layout in a narrow view: classes, row height, hidden columns, docked details', () => {
+	it('switches to the phone layout in a narrow view: classes, row height, hidden columns, docked details', () => {
 		const store = makeStore(true);
 		const layout = new LayoutMode(store, makeViewElem(400));
+		expect(layout.decide()).toBe('phone');
 		expect(layout.isNarrowWindow()).toBe(true);
-		layout.apply(true);
+		layout.apply('phone');
 
 		expect(document.body.classList.contains('narrowWindow')).toBe(true);
 		expect(document.body.classList.contains('mobileMode')).toBe(true);
+		expect(document.body.classList.contains('touchMode')).toBe(true);
+		expect(document.body.classList.contains('tabletMode')).toBe(false);
 		expect(document.body.style.getPropertyValue('--git-graph-rowHeight')).toBe(MOBILE_ROW_HEIGHT + 'px');
 		expect(layout.getRowHeight()).toBe(MOBILE_ROW_HEIGHT);
 		expect(layout.getColumnVisibility()).toEqual({ date: false, author: false, commit: false });
@@ -77,23 +84,96 @@ describe('the narrow window (mobileAdaptation) layout decision', () => {
 		expect(store.config.graph.grid.offsetY).toBe(MOBILE_ROW_HEIGHT / 2);
 	});
 
-	it('restores the wide layout when the view widens past the breakpoint', () => {
+	it('switches to the tablet layout above the breakpoint: classes, touch row height, every column, the side pane', () => {
+		const store = makeStore(true);
+		const layout = new LayoutMode(store, makeViewElem(1000));
+		expect(layout.decide()).toBe('tablet');
+		expect(layout.isNarrowWindow()).toBe(false);
+		layout.apply('tablet');
+
+		expect(document.body.classList.contains('tabletMode')).toBe(true);
+		expect(document.body.classList.contains('touchMode')).toBe(true);
+		expect(document.body.classList.contains('mobileMode')).toBe(false);
+		expect(document.body.classList.contains('narrowWindow')).toBe(false);
+		expect(layout.isTabletLayout()).toBe(true);
+		expect(layout.isMobileLayout()).toBe(false);
+		expect(layout.getRowHeight()).toBe(TABLET_ROW_HEIGHT);
+		expect(document.body.style.getPropertyValue('--git-graph-rowHeight')).toBe(TABLET_ROW_HEIGHT + 'px');
+		// A tablet keeps every column on one line, as the wide layout does
+		expect(layout.getColumnVisibility()).toEqual({ date: true, author: true, commit: true });
+		expect(layout.getNumColumns()).toBe(5);
+		// The Commit Details View is the side pane, 40% of the window (within its bounds)
+		expect(layout.isCdvDocked()).toBe(true);
+		expect(layout.isCdvSidePane()).toBe(true);
+		expect(document.body.style.getPropertyValue('--gg-pane-width')).toBe('400px');
+		expect(store.config.graph.grid.y).toBe(TABLET_ROW_HEIGHT);
+	});
+
+	it('keeps a taller configured row height in the tablet layout', () => {
+		const store = makeStore(true);
+		(store.config.graph as { rowHeight: number }).rowHeight = 48;
+		const layout = new LayoutMode(store, makeViewElem(1000));
+		layout.apply('tablet');
+		expect(layout.getRowHeight()).toBe(48);
+	});
+
+	it('bounds the side pane width on very narrow and very wide windows', () => {
+		new LayoutMode(makeStore(true), makeViewElem(640)).apply('tablet');
+		expect(document.body.style.getPropertyValue('--gg-pane-width')).toBe('320px');
+		new LayoutMode(makeStore(true), makeViewElem(2400)).apply('tablet');
+		expect(document.body.style.getPropertyValue('--gg-pane-width')).toBe('460px');
+	});
+
+	it('decides by the window, not by the list the open side pane narrowed', () => {
+		const viewElem = makeViewElem(900);
+		const layout = new LayoutMode(makeStore(true), viewElem);
+		layout.apply('tablet');
+		layout.openSidePane();
+		expect(document.body.classList.contains('sidePaneOpen')).toBe(true);
+
+		// The pane takes 360px of the 900px window: the 540px list must not flip the view to the phone layout
+		Object.defineProperty(viewElem, 'clientWidth', { get: () => 540, configurable: true });
+		expect(layout.decide()).toBe('tablet');
+
+		layout.closeSidePane();
+		expect(document.body.classList.contains('sidePaneOpen')).toBe(false);
+	});
+
+	it('moves between the phone and tablet layouts as the view crosses the breakpoint', () => {
 		const viewElem = makeViewElem(400);
 		const layout = new LayoutMode(makeStore(true), viewElem);
-		layout.apply(layout.isNarrowWindow());
+		layout.apply(layout.decide());
+		expect(layout.isMobileLayout()).toBe(true);
 
 		Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200, configurable: true });
-		expect(layout.isNarrowWindow()).toBe(false);
-		layout.apply(false);
+		expect(layout.decide()).toBe('tablet');
+		layout.apply('tablet');
 
 		expect(document.body.classList.contains('narrowWindow')).toBe(false);
 		expect(document.body.classList.contains('mobileMode')).toBe(false);
-		expect(document.body.style.getPropertyValue('--git-graph-rowHeight')).toBe(ROW_HEIGHT + 'px');
+		expect(document.body.classList.contains('tabletMode')).toBe(true);
+		expect(document.body.style.getPropertyValue('--git-graph-rowHeight')).toBe(TABLET_ROW_HEIGHT + 'px');
 		expect(layout.getColumnVisibility()).toEqual({ date: true, author: true, commit: true });
+	});
+
+	it('restores the original layout when the setting is turned off', () => {
+		const store = makeStore(true);
+		const layout = new LayoutMode(store, makeViewElem(1200));
+		layout.apply(layout.decide());
+		layout.openSidePane();
+
+		(store.config as { mobileAdaptation: boolean }).mobileAdaptation = false;
+		expect(layout.decide()).toBe('wide');
+		layout.apply('wide');
+
+		expect(document.body.className).toBe('');
+		expect(layout.getRowHeight()).toBe(ROW_HEIGHT);
+		expect(layout.isCdvDocked()).toBe(false);
 	});
 
 	it('keeps the wide layout for an unmeasured view (width 0, a hidden background tab)', () => {
 		const layout = new LayoutMode(makeStore(true), makeViewElem(0));
+		expect(layout.decide()).toBe('wide');
 		expect(layout.isNarrowWindow()).toBe(false);
 	});
 

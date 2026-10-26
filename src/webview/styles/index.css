@@ -1,6 +1,8 @@
 /* The webview stylesheet. The import order is the cascade order: the base styles, then the
- * widgets, then the mobile layout (every rule scoped under body.mobileMode, so it overrides the
- * wide layout), then the overlay widgets. Bundled into media/out.min.css by scripts/build/webview.mjs.
+ * widgets, then the touch layouts - the phone (mobile/, scoped under body.mobileMode) and the
+ * tablet (tablet/, under body.tabletMode), both sharing the tokens of body.touchMode, so they
+ * override the wide layout - then the overlay widgets. Bundled into media/out.min.css by
+ * scripts/build/webview.mjs.
  *
  * CRITICAL only (task 5.9): this file is the first paint's stylesheet - the table, the graph and
  * the control bar. Everything that only a user action brings on screen loads on demand: the Find
@@ -32,3 +34,7 @@
 @import "./mobile/overflowSheet.css";
 @import "./mobile/commitList.css";
 @import "./mobile/fastScroller.css";
+@import "./tablet/base.css";
+@import "./tablet/toolbar.css";
+@import "./tablet/commitList.css";
+@import "./tablet/dropdown.css";

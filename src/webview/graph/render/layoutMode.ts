@@ -1,18 +1,30 @@
 /**
- * The layout the commit table is rendered in: the wide (desktop) layout, or the narrow window
- * (mobile) layout the `mobileAdaptation` Extension Setting enables below NARROW_WINDOW_MAX_WIDTH.
+ * The layout the commit table is rendered in. While the `mobileAdaptation` Extension Setting
+ * ("Phone and tablet layouts") is off, the view always keeps the wide (desktop) layout. While it
+ * is on, the view's width picks one of the two touch layouts: the phone layout up to
+ * NARROW_WINDOW_MAX_WIDTH, the tablet layout above it.
+ *
  * The layout is decided once per render, so everything that reasons about the rows in the DOM -
  * their height, the Commit Details View placement - agrees with what is actually on screen, even
  * mid-resize.
  */
 
-import { alterClass, CLASS_MOBILE_MODE } from '../../common/dom';
+import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, CLASS_TOUCH_MODE } from '../../common/dom';
 import * as GG from '../../common/protocol';
 import { Store } from '../state/store';
 
+/** The wide (desktop) layout, or one of the two touch layouts of the `mobileAdaptation` setting. */
+export type LayoutKind = 'wide' | 'phone' | 'tablet';
+
 const NARROW_WINDOW_MAX_WIDTH = 600;
-/** The two-line commit row of the mobile layout: subject + meta line, above the 48px touch minimum. */
+/** The two-line commit row of the phone layout: subject + meta line, above the 48px touch minimum. */
 const MOBILE_ROW_HEIGHT = 52;
+/** The single-line commit row of the tablet layout: compact, yet a comfortable full-width touch target. */
+const TABLET_ROW_HEIGHT = 40;
+/** The bounds of the tablet layout's Commit Details side pane, and its share of the window width. */
+const SIDE_PANE_MIN_WIDTH = 320, SIDE_PANE_MAX_WIDTH = 460, SIDE_PANE_SHARE = 0.4;
+/** The <body> class the tablet stylesheet keys on while the side pane is open. */
+const CLASS_SIDE_PANE_OPEN = 'sidePaneOpen';
 
 export const COLUMN_HIDDEN = -100;
 export const COLUMN_AUTO = -101;
@@ -24,48 +36,85 @@ export interface ColumnVisibility {
 }
 
 export class LayoutMode {
-	/** Whether the last render used the narrow window (mobile) layout. */
-	private renderedNarrowWindow = false;
+	/** The layout the last render used. */
+	private rendered: LayoutKind = 'wide';
+	/** The width the open side pane takes from the view (0 while it is closed). */
+	private sidePaneWidth = 0;
 
 	constructor(private readonly store: Store, private readonly viewElem: HTMLElement) { }
 
 	/**
-	 * Should the commit table use the narrow window (mobile) layout? Active only while the
-	 * `mobileAdaptation` Extension Setting is enabled and the view is at most
-	 * NARROW_WINDOW_MAX_WIDTH pixels wide. An unmeasured view (width 0: a hidden background tab)
-	 * keeps the wide layout, so the columns don't flash away and back on the next show.
+	 * The layout the view should use now. An unmeasured view (width 0: a hidden background tab)
+	 * keeps the wide layout, so the columns don't flash away and back on the next show. The open
+	 * side pane narrows the view, so its width is added back: the layout follows the window,
+	 * never the pane it opened itself.
 	 */
-	public isNarrowWindow() {
-		if (!this.store.config.mobileAdaptation) return false;
-		const width = this.viewElem.clientWidth || document.documentElement.clientWidth;
-		return width > 0 && width <= NARROW_WINDOW_MAX_WIDTH;
+	public decide(): LayoutKind {
+		if (!this.store.config.mobileAdaptation) return 'wide';
+		const width = this.getWindowWidth();
+		if (width <= 0) return 'wide';
+		return width <= NARROW_WINDOW_MAX_WIDTH ? 'phone' : 'tablet';
 	}
 
-	/** Is the mobile layout currently rendered. */
+	/** Should the commit table use the narrow window (phone) layout? */
+	public isNarrowWindow() {
+		return this.decide() === 'phone';
+	}
+
+	/** The layout currently rendered. */
+	public getRenderedLayout(): LayoutKind {
+		return this.rendered;
+	}
+
+	/** Is the phone layout currently rendered. */
 	public isMobileLayout() {
-		return this.renderedNarrowWindow;
+		return this.rendered === 'phone';
+	}
+
+	/** Is the tablet layout currently rendered. */
+	public isTabletLayout() {
+		return this.rendered === 'tablet';
+	}
+
+	/** Is one of the touch layouts (phone or tablet) currently rendered. */
+	public isTouchLayout() {
+		return this.rendered !== 'wide';
 	}
 
 	/**
 	 * The uniform height of a commit row in the current layout: the configured graph.rowHeight,
-	 * or the taller two-line row of the mobile layout (a 48px+ touch target).
+	 * the taller two-line row of the phone layout, or the single-line touch row of the tablet layout.
 	 */
 	public getRowHeight() {
-		return this.renderedNarrowWindow ? MOBILE_ROW_HEIGHT : this.store.config.graph.rowHeight;
+		switch (this.rendered) {
+			case 'phone':
+				return MOBILE_ROW_HEIGHT;
+			case 'tablet':
+				return Math.max(TABLET_ROW_HEIGHT, this.store.config.graph.rowHeight);
+			default:
+				return this.store.config.graph.rowHeight;
+		}
 	}
 
 	/**
-	 * Switch the rendered layout between the wide and the mobile one: the <body> classes the
-	 * mobile styles key on, the row height CSS variable, and - when the layout actually changes -
-	 * the graph grid, so the vertices line up with the new rows before the next render gets to
-	 * measure them.
+	 * Switch the rendered layout: the <body> classes the touch styles key on, the row height CSS
+	 * variable, the side pane width, and - when the layout actually changes - the graph grid, so the
+	 * vertices line up with the new rows before the next render gets to measure them.
 	 */
-	public apply(narrow: boolean) {
-		const changed = narrow !== this.renderedNarrowWindow;
-		this.renderedNarrowWindow = narrow;
-		alterClass(document.body, 'narrowWindow', narrow);
-		alterClass(document.body, CLASS_MOBILE_MODE, narrow);
+	public apply(kind: LayoutKind) {
+		const changed = kind !== this.rendered;
+		this.rendered = kind;
+		if (kind !== 'tablet') this.closeSidePane();
+		alterClass(document.body, 'narrowWindow', kind === 'phone');
+		alterClass(document.body, CLASS_MOBILE_MODE, kind === 'phone');
+		alterClass(document.body, CLASS_TABLET_MODE, kind === 'tablet');
+		alterClass(document.body, CLASS_TOUCH_MODE, kind !== 'wide');
 		document.body.style.setProperty('--git-graph-rowHeight', this.getRowHeight() + 'px');
+		if (kind === 'tablet') {
+			const paneWidth = Math.round(Math.min(SIDE_PANE_MAX_WIDTH, Math.max(SIDE_PANE_MIN_WIDTH, this.getWindowWidth() * SIDE_PANE_SHARE)));
+			document.body.style.setProperty('--gg-pane-width', paneWidth + 'px');
+			if (this.sidePaneWidth > 0) this.sidePaneWidth = paneWidth;
+		}
 		if (changed) this.resetGraphRowGrid();
 	}
 
@@ -79,8 +128,8 @@ export class LayoutMode {
 	/** Which of the optional columns (Date, Author, Commit) are visible. */
 	public getColumnVisibility(): ColumnVisibility {
 		if (this.isNarrowWindow()) {
-			// Narrow window (mobile) layout: the Date, Author and Commit columns are hidden so the
-			// graph and the commit messages fit a phone-width view; the wide layout is unchanged
+			// Phone layout: the Date, Author and Commit columns are hidden so the graph and the
+			// commit messages fit a phone-width view; the wide and tablet layouts are unchanged
 			return { date: false, author: false, commit: false };
 		}
 		const colWidths = this.store.repoState.columnWidths;
@@ -98,8 +147,35 @@ export class LayoutMode {
 		return 2 + (colVisibility.date ? 1 : 0) + (colVisibility.author ? 1 : 0) + (colVisibility.commit ? 1 : 0);
 	}
 
-	/** Is the Commit Details View docked to the bottom (always in the mobile layout, where it is a full-screen sheet). */
+	/**
+	 * Is the Commit Details View docked rather than inline in the table: as configured, and always
+	 * in the touch layouts - a full-screen sheet on a phone, the side pane on a tablet.
+	 */
 	public isCdvDocked() {
-		return this.store.config.commitDetailsView.location === GG.CommitDetailsViewLocation.DockedToBottom || this.isMobileLayout();
+		return this.store.config.commitDetailsView.location === GG.CommitDetailsViewLocation.DockedToBottom || this.isTouchLayout();
+	}
+
+	/** Is the docked Commit Details View the tablet layout's side pane (beside the list, not below it). */
+	public isCdvSidePane() {
+		return this.isTabletLayout();
+	}
+
+	/** Reserve the side pane's width beside the commit list (the tablet layout's list-detail split). */
+	public openSidePane() {
+		const paneWidth = parseInt(document.body.style.getPropertyValue('--gg-pane-width'), 10);
+		this.sidePaneWidth = paneWidth > 0 ? paneWidth : SIDE_PANE_MIN_WIDTH;
+		alterClass(document.body, CLASS_SIDE_PANE_OPEN, true);
+	}
+
+	/** Give the side pane's width back to the commit list. */
+	public closeSidePane() {
+		this.sidePaneWidth = 0;
+		alterClass(document.body, CLASS_SIDE_PANE_OPEN, false);
+	}
+
+	/** The width the view would have without the side pane: the window the layout is chosen for. */
+	private getWindowWidth() {
+		const viewWidth = this.viewElem.clientWidth;
+		return viewWidth > 0 ? viewWidth + this.sidePaneWidth : document.documentElement.clientWidth;
 	}
 }
