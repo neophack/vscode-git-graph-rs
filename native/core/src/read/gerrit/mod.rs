@@ -22,11 +22,34 @@ mod meta;
 mod state;
 
 use crate::error::{Result, ResultExt};
-use crate::model::GerritChangeState;
+use crate::model::{GerritChangeEvent, GerritChangeState};
 use crate::repository::Repo;
 
-use meta::read_meta_history;
+use meta::{read_meta_history, MetaCommitRecord};
 use state::parse_meta_history;
+
+/// Parse one `NoteDb` meta commit message through Gerrit's grammar, without a repository.
+///
+/// The pure half of [`parse_gerrit_metas`]: that function reads a meta ref's history and feeds
+/// every record to the same parser in `meta` that this exposes. `committer` and `timestamp` are
+/// the meta commit's own signature (who wrote the record, when); the returned event, when the
+/// message is a recognised review event, carries the derived kind, patchset and labels.
+///
+/// This is the engine-facing entry for the boundary fuzzing of optimization plan R7: the
+/// always-on property tests and the cargo-fuzz target drive exactly this function with
+/// pseudo-random bytes, so a panic here is found before it reaches a user's repository data.
+pub fn parse_meta_message(
+    committer: &str,
+    timestamp: i64,
+    message: &str,
+) -> Option<GerritChangeEvent> {
+    meta::parse_meta_commit(&MetaCommitRecord {
+        committer: committer.to_string(),
+        timestamp,
+        message: message.to_string(),
+    })
+    .map(|parsed| parsed.event)
+}
 
 /// Parse the `NoteDb` meta histories of the given changes into their states, in one pass.
 ///

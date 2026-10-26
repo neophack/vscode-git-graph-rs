@@ -1,0 +1,33 @@
+[package]
+name = "git-graph-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.git-graph-core]
+path = ".."
+
+[[bin]]
+name = "protocol_request"
+path = "fuzz_targets/protocol_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gerrit_meta"
+path = "fuzz_targets/gerrit_meta.rs"
+test = false
+doc = false
+bench = false
+
+# This crate is its own cargo workspace (optimization plan R7): it never joins the
+# repository's main workspace, so this nightly-only, libFuzzer-linked crate can never break
+# `cargo check --workspace` on Windows or stable.
+[workspace]

@@ -52,6 +52,10 @@ tempfile = "3"
 # Dev-dependencies never reach a (non-test) release build, so the addon still ships without
 # `ts-rs` compiled in.
 git-graph-core = { path = ".", features = ["ts"] }
+# Structured pseudo-random input generation for the always-on boundary property tests
+# (optimization plan R7, `tests/fuzz_boundary.rs`). A dev-dependency only: the engine
+# itself never generates test data.
+arbitrary = { version = "1", default-features = false }
 # Microbenchmarks of the read path (refactor plan, task 2.11). Only the bench harness itself:
 # no plotters, no rayon, so `cargo test` — which compiles the benches — stays light.
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }

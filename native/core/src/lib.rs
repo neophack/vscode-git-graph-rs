@@ -22,9 +22,11 @@
 //! the Node binding exercise the engine through the four surfaces above, exactly as an outside
 //! integration would.
 //!
-//! The one deliberate exception is [`IncrementalStore`]: the incremental-traversal cache's
+//! The two deliberate exceptions are [`IncrementalStore`]: the incremental-traversal cache's
 //! control surface, kept nameable for this package's own integration tests and benchmarks (see
-//! its documentation for why they cannot do without it).
+//! its documentation for why they cannot do without it), and [`parse_gerrit_meta_message`],
+//! the pure half of the Gerrit meta parser that the boundary fuzzing drives (see its
+//! documentation).
 
 pub mod engine;
 pub mod error;
@@ -58,6 +60,15 @@ pub use error::{Error, ErrorKind, Result};
 /// Hidden from the docs; may change between minor versions.
 #[doc(hidden)]
 pub use read::incremental::Store as IncrementalStore;
+
+/// The pure Gerrit `NoteDb` meta message parser (`read::gerrit::parse_meta_message`), so the
+/// boundary fuzzing of optimization plan R7 — the always-on property tests in this crate and
+/// the cargo-fuzz target under `native/core/fuzz` — can feed it arbitrary bytes without a
+/// repository. The `parse_gerrit_metas` protocol method reads meta refs and serves every
+/// record to the same parser, so a panic found here is a panic the view would have hit on
+/// real repository data. Hidden from the docs; may change between minor versions.
+#[doc(hidden)]
+pub use read::gerrit::parse_meta_message as parse_gerrit_meta_message;
 
 /// The engine's version, so a host that links it can tell whether an installed package's
 /// backend process would answer identically (and can then skip the process entirely).

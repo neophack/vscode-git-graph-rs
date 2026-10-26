@@ -1,0 +1,79 @@
+name: Fuzz
+
+# Boundary fuzzing for the Rust engine (optimization plan R7): the two decoders that take
+# bytes from outside the process — the protocol request decoder (host JSON) and the Gerrit
+# NoteDb meta parser (repository bytes) — under libFuzzer, nightly. `catch_unwind` at the
+# N-API boundary keeps a panic from taking down the host, but a panic still means a silent
+# CLI fallback, so a crash found here is a bug: commit it as a fixed regression test in
+# native/core/tests/fuzz_boundary.rs (see native/core/fuzz/README.md for the policy).
+#
+# This workflow never runs on push or pull_request: the always-on property tests in
+# native/core/tests/fuzz_boundary.rs cover the same entry functions on every `cargo test`,
+# and ten-minute libFuzzer campaigns do not belong in the per-PR critical path.
+#
+# Third-party actions are pinned by commit SHA per the S4 policy in the optimization plan
+# (Dependabot keeps the pins current); GitHub-owned actions follow the tag pinning used
+# across this repository's other workflows.
+
+on:
+  schedule:
+    # Nightly, off the hour and away from the top of the night's CI rush.
+    - cron: '47 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A nightly run superseded by the next one (or by a manual dispatch) does not need to finish.
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: cargo-fuzz (protocol_request, gerrit_meta)
+    runs-on: ubuntu-latest
+    # Two ten-minute campaigns plus toolchain and build time.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nightly is required: cargo-fuzz builds with `-Zsanitizer=fuzzer`. The explicit
+      # `+nightly` on every cargo invocation below overrides the repository's
+      # rust-toolchain.toml, which pins the stable dev toolchain.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: nightly
+
+      # The fuzz crate is its own workspace, so its build cache is keyed on it alone.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/core/fuzz
+
+      # Installs cargo-fuzz at a pinned version (S4: no `curl | sh`, no floating installs).
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-fuzz@0.13.2
+
+      # Each campaign runs for ten minutes of wall time. Any crash makes cargo-fuzz exit
+      # nonzero, which fails the job; the crashing input is saved under
+      # native/core/fuzz/artifacts/<target>/ and uploaded below.
+      - name: Fuzz the protocol request decoder (10 minutes)
+        working-directory: native/core/fuzz
+        run: cargo +nightly fuzz run protocol_request -- -max_total_time=600
+
+      - name: Fuzz the Gerrit meta parser (10 minutes)
+        working-directory: native/core/fuzz
+        run: cargo +nightly fuzz run gerrit_meta -- -max_total_time=600
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ github.run_id }}
+          path: native/core/fuzz/artifacts
+          if-no-files-found: ignore

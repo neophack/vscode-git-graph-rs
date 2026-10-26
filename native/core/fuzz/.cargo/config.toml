@@ -1,0 +1,5 @@
+# The fuzz workspace keeps its own target directory. The repository root's .cargo/config.toml
+# points the MAIN workspace at one shared target directory across checkouts; this nightly-only,
+# sanitizer-instrumented crate must not share it with those builds.
+[build]
+target-dir = "target"
