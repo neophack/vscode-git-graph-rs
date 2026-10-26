@@ -31,7 +31,12 @@ export const EXTERNAL_ACTIONS: readonly AutomationAction[] = [
 					+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
 					+ 'var rows=document.querySelectorAll("tr.commit .description span.text");'
 					+ 'for(var i=0;i<rows.length;i++){if(rows[i].textContent.indexOf(want)!==-1)return resolve("the externally committed row rendered without any view interaction");}'
-					+ 'if(++n>160)return reject(new Error("the external commit never appeared in the view (watcher-driven refresh missing?)"));'
+					+ 'if(++n>160)return reject(new Error("the external commit never appeared in the view (watcher-driven refresh missing?)'
+					// The page state at the moment the wait gave up: how many rows the windowed
+					// renderer holds, where the view is scrolled, and what the first rows show —
+					// "the refresh never landed" and "it landed outside the rendered window" are
+					// different failures, and this is how to tell them apart.
+					+ ' [rows "+rows.length+", scrollTop "+document.getElementById("view").scrollTop+", refreshMessages "+(document.body.getAttribute("data-gg-refresh")||"0")+", first: "+Array.prototype.slice.call(rows,0,3).map(function(r){return r.textContent.slice(0,30);}).join(" | ")+"]"));'
 					+ 'setTimeout(t,125);};t();});})()'
 			}
 		],

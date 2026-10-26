@@ -310,6 +310,13 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 	};
 
 	return (msg: GG.ResponseMessage) => {
+		// The window's message channel is shared. The automation shim receives its step batches
+		// as window messages too ({ __automation: ... } — no `command`), and a webview may see
+		// other non-protocol events. A message that is not a protocol response — no `command`, or
+		// one the exhaustive table above has no handler for — is not for this router and is
+		// dropped silently: dispatching it used to throw `handlers[msg.command] is not a function`
+		// and surface an error dialog that occluded the view for the rest of the session.
+		if (typeof msg !== 'object' || msg === null || !Object.prototype.hasOwnProperty.call(handlers, msg.command)) return;
 		try {
 			(<(message: GG.ResponseMessage) => void>handlers[msg.command])(msg);
 		} catch (error) {

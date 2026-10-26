@@ -4,8 +4,24 @@
  * See catalog.ts for the assembled catalog and the fixture-stable facts the entries rely on.
  */
 
-import { AutomationAction } from './types';
+import { AutomationAction, UiStep } from './types';
 import { bi, DISMISS_ERROR_DIALOG_STEP, DIALOG_ASSERT_STEPS } from './helpers';
+
+/**
+ * Bring the "Uncommitted Changes" row — always the FIRST row — back into the windowed DOM before
+ * an action right-clicks it. The write pass's order puts this group right after menu-commit,
+ * whose target row lives wherever {{commit}} resolved (deep history included): under windowed
+ * rendering the top rows physically leave the DOM while the view is scrolled there, so without
+ * this barrier the very first step fails "no element matches tr#uncommittedChanges" on a view the
+ * previous action left scrolled down.
+ */
+const UNCOMMITTED_ROW_STEPS: readonly UiStep[] = [
+	{ op: 'eval', expr: '(function(){var v=document.getElementById("view");v.scrollTop=0;v.dispatchEvent(new Event("scroll"));return 0;})()' },
+	{ op: 'waitFor', selector: 'tr#uncommittedChanges' }
+];
+
+/** The scroll half alone (a read action that SKIPS on a clean tree must not wait for the row). */
+const SCROLL_TOP_STEP: UiStep = UNCOMMITTED_ROW_STEPS[0];
 
 export const MENUS_UNCOMMITTED_ACTIONS: readonly AutomationAction[] = [
 	/* ---------- Uncommitted changes context menu ---------- */
@@ -22,6 +38,7 @@ export const MENUS_UNCOMMITTED_ACTIONS: readonly AutomationAction[] = [
 		// The directories checkbox keeps its default (on); cleaning always carries a data-loss
 		// risk, so a second (risk acknowledgement) dialog follows the confirmation.
 		ui: [
+			...UNCOMMITTED_ROW_STEPS,
 			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Clean untracked files…', '清理未跟踪文件…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			...DIALOG_ASSERT_STEPS,
@@ -43,6 +60,7 @@ export const MENUS_UNCOMMITTED_ACTIONS: readonly AutomationAction[] = [
 		// The row only renders while the working tree has uncommitted changes: on a clean tree
 		// there is nothing to right-click, and the action skips.
 		ui: [
+			SCROLL_TOP_STEP,
 			{ op: 'skipIfAbsent', selector: 'tr#uncommittedChanges' },
 			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Open Source Control View', '打开源代码管理视图') }
 		],
@@ -58,6 +76,7 @@ export const MENUS_UNCOMMITTED_ACTIONS: readonly AutomationAction[] = [
 		// The mode selector is a CustomSelect left at its default (Mixed — no data-loss
 		// warning). Resets 'HEAD', moving neither HEAD nor the branch name.
 		ui: [
+			...UNCOMMITTED_ROW_STEPS,
 			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Reset uncommitted changes…', '重置未提交的更改…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			...DIALOG_ASSERT_STEPS,
@@ -75,6 +94,7 @@ export const MENUS_UNCOMMITTED_ACTIONS: readonly AutomationAction[] = [
 		mutable: true,
 		// Message + include-untracked checkbox (default on, matching the request template).
 		ui: [
+			...UNCOMMITTED_ROW_STEPS,
 			{ op: 'contextmenu', selector: 'tr#uncommittedChanges', item: bi('Stash uncommitted changes…', '贮藏未提交的更改…') },
 			{ op: 'waitFor', selector: '.dialog' },
 			...DIALOG_ASSERT_STEPS,

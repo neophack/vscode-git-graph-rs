@@ -229,9 +229,14 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	await git(['-C', repo, 'checkout', '-f', '-B', 'main', 'origin/main']);
 
 	// Every branch but main goes (write actions created some; local-ahead is re-seeded below).
-	const branches = await git(['-C', repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads']);
-	for (const name of lines(branches)) {
-		if (name !== 'main') await git(['-C', repo, 'branch', '-D', name]);
+	// The deletion goes by FULL refname: `%(refname:short)` renders refs/heads/HEAD (a local
+	// branch literally named HEAD — a write action fetching a remote's HEAD ref into a local
+	// branch creates exactly that) as the ambiguous short form "heads/HEAD", which `branch -D`
+	// then cannot resolve ("branch not found"), failing the whole reseed. update-ref -d takes
+	// the full ref and no name resolution at all.
+	const branches = await git(['-C', repo, 'for-each-ref', '--format=%(refname)', 'refs/heads']);
+	for (const ref of lines(branches)) {
+		if (ref !== 'refs/heads/main') await git(['-C', repo, 'update-ref', '-d', ref]);
 	}
 
 	// Tags: drop write-added ones by dropping all of them and re-fetching exactly the remote's set.
@@ -243,8 +248,13 @@ export async function reseedFixtureClone(repo: string): Promise<void> {
 	}
 
 	// Untracked leftovers of the write pass (archives, worktree directories, files a branch
-	// switch stranded); also removes the marker, which is restored right after.
-	await git(['-C', repo, 'clean', '-fd']);
+	// switch stranded); also removes the marker, which is restored right after. The editor's own
+	// workspace configuration directory (.vscode — launch/tasks/settings of the folder this
+	// repository lives in) is EXCLUDED: deleting it mid-session silently rewrites the session's
+	// configuration (an E2E run loses its enableLog/initialLoad settings the moment the reseed
+	// runs, which once made every later failure undiagnosable) and VS Code keeps watching a file
+	// that no longer exists.
+	await git(['-C', repo, 'clean', '-fd', '-e', '.vscode']);
 	fs.writeFileSync(path.join(repo, '.gg-fixture'), JSON.stringify(marker, null, 2) + '\n');
 	await seedRepo(repo);
 
@@ -343,11 +353,20 @@ async function reloadViewAfterGeneration(server: AutomationServer): Promise<void
 	const refreshExpr = '(function(){'
 		+ 'var b=document.getElementById("refreshBtn");'
 		+ 'if(b===null)throw new Error("refresh button missing");'
-		+ 'b.click();'
+		// The generation and the reload race the host's watcher/poll-driven soft refreshes: a
+		// click while one is in flight JOINS that cycle, whose loadRepoInfo/loadCommits responses
+		// can be invalidated by the next 'refresh' push of the still-churning repository. Wait for
+		// the button to be IDLE first (no cycle in progress, no painted snapshot pending), so the
+		// click starts a clean cycle whose responses are the ones this wait observes.
 		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		+ 'if(b.className.split(/\\s+/).indexOf("refreshing")!==-1){'
+		+ 'if(++n>250)return reject(new Error("a refresh cycle never finished before the reload could start"));'
+		+ 'return setTimeout(t,100);}'
+		+ 'b.click();return resolve("clicked");};t();});})()'
+		+ '.then(function(){return new Promise(function(resolve,reject){var n=0;var t=function(){'
 		+ 'if(document.querySelector(\'tr.commit[data-id="0"]\')!==null)return resolve("reloaded");'
 		+ 'if(++n>250)return reject(new Error("the view never rendered the generated commits"));'
-		+ 'setTimeout(t,100);};t();});})()';
+		+ 'setTimeout(t,100);};t();});})';
 	const configExpr = '(function(){'
 		+ 'var sb=document.getElementById("settingsBtn");'
 		+ 'if(sb===null)throw new Error("settings button missing");'
@@ -400,6 +419,13 @@ async function syncViewAfterReseed(server: AutomationServer, repo: string): Prom
 		+ 'if(b===null)throw new Error("refresh button missing");'
 		+ 'b.click();'
 		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+		// The hard refresh anchors the rebuild on the commit the view was reading (task 5.10's
+		// pre-collapse anchor): after a read phase that scrolled deep (Load More Commits), the
+		// reloaded list renders back around that DEEP position and the newest row never enters
+		// the windowed DOM. The wait needs the TOP of the list, so every tick pins the scroll
+		// there — the scroll event re-renders the window around row 0, and the tick that lands
+		// after the anchor's own re-application wins (setting scrollTop is idempotent).
+		+ 'var v=document.getElementById("view");if(v!==null&&v.scrollTop!==0)v.scrollTop=0;'
 		+ 'if(document.querySelector(\'tr.commit[data-hash="' + newest + '"]\')!==null)return resolve("reloaded");'
 		+ 'if(++n>250)return reject(new Error("the view never rendered the reseeded repository"));'
 		+ 'setTimeout(t,100);};t();});})()';
@@ -724,13 +750,16 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 		// untouched — a hidden-tags read suite there simply shows the tag actions failing.
 		if (fixture || fixtureGenerated) await ensureSuiteViewOptions(server, options.logger);
 		const readRuns = await runPhase('read', readActions, 0);
+		options.logger.log('[fixture] read phase done: ' + readRuns.length + ' runs; includeWrite=' + includeWrite + ', writeActions=' + writeActions.length);
 		let writeRuns: ActionRunRecord[] = [];
 		if (includeWrite) {
 			try {
+				options.logger.log('[fixture] between-phases reseed starting');
 				await reseedFixtureClone(repo);
 				// The reseed's fresh stash/local-ahead hashes must be on the page before the first
 				// write action resolves its placeholders against the engine (see syncViewAfterReseed).
 				await syncViewAfterReseed(server, repo);
+				options.logger.log('[fixture] between-phases reseed + view sync done');
 			} catch (error) {
 				// A failed reseed must not cost the user the whole report (it once aborted the run
 				// after the read phase, leaving no report at all): record it as a failed write-suite
@@ -747,13 +776,16 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				// The write actions' tag/stash/remote-branch targets depend on the same canonical
 				// options the read phase was ensured against (a poisoned override fails the whole
 				// menu-tag / menu-stash / menu-remote-branch groups "row never rendered").
+				options.logger.log('[fixture] ensuring view options before the write phase');
 				await ensureSuiteViewOptions(server, options.logger);
+				options.logger.log('[fixture] write phase starting: ' + writeActions.length + ' actions');
 				// The read phase's Repos dropdown action may have loaded the submodule through the
 				// engine (a fresh warm handle); on histories that predate the submodule its `sub/`
 				// tree is untracked, and a memory-mapped handle would make the write phase's clean
 				// fail to delete it on Windows. Drop the handle before any write action runs.
 				bridge.closeRepository(submoduleDir);
 				writeRuns = await runPhase('write', writeActions, readActions.length);
+				options.logger.log('[fixture] write phase done: ' + writeRuns.length + ' runs');
 				// The write phase leaves its own mutations in the repository — created branches and
 				// tags, made commits, rewritten history. One final in-place reseed ends the run on
 				// the same pristine seeded state it started from, so the user's repository does not
