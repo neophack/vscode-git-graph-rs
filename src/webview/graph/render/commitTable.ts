@@ -5,7 +5,7 @@
  */
 
 import { formatCompactDate, formatShortDate } from '../../common/dates';
-import { insertAfter } from '../../common/dom';
+import { insertAfter, makeKeyboardActivatable } from '../../common/dom';
 import { html, parseHtmlRow, raw, SafeHtml, setHtml } from '../../common/html';
 import { strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
@@ -15,6 +15,7 @@ import { GraphContext } from '../context';
 import { measureGraphRender } from './measure';
 import { TextFormatter } from '../text/textFormatter';
 import { getCommitRowHtml, RowContext } from './commitRow';
+import { TableKeyboard } from './tableKeyboard';
 
 const FORMATTED_TEXT_CACHE_LIMIT = 5000;
 
@@ -68,6 +69,10 @@ export class CommitTable {
 	private renderedHeaderKey: string | null = null;
 	/** The markup the footer was last set to (see setFooter): unchanged content is never swapped. */
 	private footerHtml: string | null = null;
+	/** The grid's keyboard behaviour (roving tabindex, arrow navigation, Enter, Shift+F10). */
+	private readonly keyboard = new TableKeyboard(() => this.ctx());
+	/** The element the keyboard listeners are delegated to (attached on the first render; NULL until then). */
+	private keyboardAttachedTo: HTMLElement | null = null;
 
 	/**
 	 * Cache of formatted message texts (keyed by the raw text): commit subjects repeat heavily in
@@ -169,6 +174,13 @@ export class CommitTable {
 	 */
 	public renderTable() {
 		const ctx = this.ctx(), store = ctx.store, viewport = ctx.viewport;
+		// The keyboard routing is delegated onto the table's container element (which exists from
+		// the start; only the <table> inside it is created below): attaching once, on the first
+		// render, keeps every later reconciliation free of listener bookkeeping
+		if (this.keyboardAttachedTo === null) {
+			this.keyboard.attach(ctx.dom.table);
+			this.keyboardAttachedTo = ctx.dom.table;
+		}
 		// The expanded Commit Details View is a <tr> living inside this table (non-docked layout).
 		// Detach it while the rows are reconciled and put it back afterwards: it must not be
 		// treated as one of the commit rows, and re-creating it would discard its scroll position,
@@ -185,7 +197,7 @@ export class CommitTable {
 		const rowContext = this.createRowContext();
 		const colVisibility = rowContext.colVisibility;
 
-		const headerHtml = html`<tr id="tableColHeaders"><th id="tableHeaderGraphCol" class="tableColHeader" data-col="0">${strings.columnGraph}</th><th class="tableColHeader" data-col="1">${strings.columnDescription}</th>${colVisibility.date ? html`<th class="tableColHeader dateCol" data-col="2">${strings.columnDate}</th>` : ''}${colVisibility.author ? html`<th class="tableColHeader authorCol" data-col="3">${strings.columnAuthor}</th>` : ''}${colVisibility.commit ? html`<th class="tableColHeader commitCol" data-col="4">${strings.columnCommit}</th>` : ''}</tr>`;
+		const headerHtml = html`<tr id="tableColHeaders" role="row" aria-rowindex="1"><th id="tableHeaderGraphCol" class="tableColHeader" role="columnheader" data-col="0">${strings.columnGraph}</th><th class="tableColHeader" role="columnheader" data-col="1">${strings.columnDescription}</th>${colVisibility.date ? html`<th class="tableColHeader dateCol" role="columnheader" data-col="2">${strings.columnDate}</th>` : ''}${colVisibility.author ? html`<th class="tableColHeader authorCol" role="columnheader" data-col="3">${strings.columnAuthor}</th>` : ''}${colVisibility.commit ? html`<th class="tableColHeader commitCol" role="columnheader" data-col="4">${strings.columnCommit}</th>` : ''}</tr>`;
 
 		// A full re-render can shrink the commit list (e.g. applying a path filter). A stale scroll
 		// position beyond the shrunken list is clamped BEFORE the rendered window is computed,
@@ -207,8 +219,16 @@ export class CommitTable {
 		// reconciling the rows below can reuse the DOM nodes that did not change.
 		let tableBody = <HTMLElement | null>this.tableElem.querySelector('table > tbody');
 		if (tableBody === null) {
-			setHtml(this.tableElem, html`<table><tbody></tbody></table>`);
+			setHtml(this.tableElem, html`<table role="grid"><tbody></tbody></table>`);
 			tableBody = <HTMLElement>this.tableElem.querySelector('table > tbody')!;
+		}
+		// The grid's row count covers the rendered header row plus every loaded commit, rendered or
+		// not (the windowed render keeps only a slice in the DOM): this is what lets a screen reader
+		// announce "row 97 of 1001" instead of the DOM row's position in the rendered window.
+		const gridElem = <HTMLElement | null>this.tableElem.querySelector('table');
+		if (gridElem !== null) {
+			const rowCount = String(store.commits.length + 1);
+			if (gridElem.getAttribute('aria-rowcount') !== rowCount) gridElem.setAttribute('aria-rowcount', rowCount);
 		}
 		// Rebuild the header row only when the set of visible columns actually changes - never by
 		// comparing its markup, which the column-resizing code decorates with inline widths, so it
@@ -226,6 +246,9 @@ export class CommitTable {
 		this.syncSpacerRow(tableBody, true, viewport.renderedRange !== null ? from : 0);
 		this.syncCommitRows(rowContext, from, to);
 		this.syncSpacerRow(tableBody, false, viewport.renderedRange !== null ? store.commits.length - to : 0);
+		// The reconciliation above may have built, moved or dropped rows: re-establish the grid's
+		// single roving tab stop afterwards (it follows the focused commit's hash)
+		this.keyboard.syncRovingTabindex();
 
 		if (cdvElem !== null) {
 			// Re-attach it now, before the expandedCommit handling below runs: the details view
@@ -234,15 +257,18 @@ export class CommitTable {
 			const commitElem = this.findCommitElem(store.getCommitId(store.expandedCommit!.commitHash));
 			if (commitElem !== null) insertAfter(cdvElem, commitElem);
 		}
-		const footerSwapped = this.setFooter(store.moreCommitsAvailable ? html`<div id="loadMoreCommitsBtn" class="roundedBtn">${strings.loadMoreCommits}</div>` : html``);
+		const footerSwapped = this.setFooter(store.moreCommitsAvailable ? html`<div id="loadMoreCommitsBtn" class="roundedBtn" role="button" tabindex="0">${strings.loadMoreCommits}</div>` : html``);
 		ctx.columns.makeTableResizable();
 		ctx.widgets.find.refresh();
 		store.renderedGitBranchHead = store.gitBranchHead;
 
 		if (store.moreCommitsAvailable && footerSwapped) {
 			// Only a freshly swapped footer needs the listener: an untouched button keeps the one
-			// attached when it was created
-			document.getElementById('loadMoreCommitsBtn')!.addEventListener('click', () => {
+			// attached when it was created. The button is a <div> (not a native <button>), so it is
+			// also made keyboard activatable (Enter / Space, on top of the markup's role/tabindex)
+			const loadMoreBtn = document.getElementById('loadMoreCommitsBtn')!;
+			makeKeyboardActivatable(loadMoreBtn);
+			loadMoreBtn.addEventListener('click', () => {
 				ctx.loader.loadMoreCommits();
 			});
 		}
@@ -437,6 +463,7 @@ export class CommitTable {
 				const signature = rowHtml.html
 					.replace(/ data-id="\d+"/, '')
 					.replace(/ data-color="\d+"/, '')
+					.replace(/ aria-rowindex="\d+"/, '')
 					.replace(/^<tr class="commit current/, '<tr class="commit');
 
 				if (row === undefined || this.rowSignatures.get(row) !== signature) {
@@ -478,6 +505,10 @@ export class CommitTable {
 	private restampRow(row: HTMLElement, i: number, hash: string, rowContext: RowContext, tableBody: HTMLElement, cursor: Node | null) {
 		if (row.dataset.id !== String(i)) row.dataset.id = String(i);
 		if (row.dataset.color !== String(rowContext.vertexColours[i])) row.dataset.color = String(rowContext.vertexColours[i]);
+		// The absolute grid row (the header row is 1, the first commit 2): like the index label
+		// above, it changes when rows arrive or leave above the window without the row changing
+		const rowIndex = String(i + 2);
+		if (row.getAttribute('aria-rowindex') !== rowIndex) row.setAttribute('aria-rowindex', rowIndex);
 		row.classList.toggle('current', hash === rowContext.currentHash);
 		// Moving an already-placed node is skipped: the move is only there to absorb rows inserted
 		// or removed above, and a needless reinsertion would still show up as a DOM mutation

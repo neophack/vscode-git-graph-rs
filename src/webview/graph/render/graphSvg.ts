@@ -50,6 +50,10 @@ export class GraphView {
 	constructor(private readonly store: Store, elem: HTMLElement, private readonly viewElem: HTMLElement, private readonly deps: GraphDeps) {
 		this.contentElem = elem.parentElement!;
 		this.svg = document.createElementNS(SVG_NAMESPACE, 'svg');
+		// The graph is decoration as far as assistive technology is concerned (F5 accessibility):
+		// every commit and ref it draws is carried by the commit table's rows, so exposing the SVG
+		// would only duplicate the information in an unusable form
+		this.svg.setAttribute('aria-hidden', 'true');
 		const defs = this.svg.appendChild(document.createElementNS(SVG_NAMESPACE, 'defs'));
 
 		const linearGradient = defs.appendChild(document.createElementNS(SVG_NAMESPACE, 'linearGradient'));

@@ -18,6 +18,9 @@ export type CustomSelectData = {
 	readonly multiple: true;
 };
 
+/** Namespaces the options' ids (a dialog opens at most a handful of selects, one page at a time). */
+let customSelectCount = 0;
+
 /**
  * The custom select inputs used in dialogs (single or multiple selection, keyboard navigable).
  */
@@ -27,6 +30,8 @@ export class CustomSelect {
 	private lastSelected: number = -1;
 	private focussed: number = -1;
 	private open: boolean;
+	/** The prefix of the options' ids, referenced by the combobox's aria-activedescendant. */
+	private readonly idBase: string;
 
 	private dialogElem: HTMLElement | null;
 	private elem: HTMLElement | null;
@@ -45,6 +50,10 @@ export class CustomSelect {
 		this.selected = data.options.map(() => false);
 		this.open = false;
 		this.dialogElem = dialogElem;
+		// Unique across the page's lifetime (dialogs never coexist, but their ids must never be
+		// reused while a stale element lingers in a fade-out): a module-level counter namespaces
+		// the options' ids, which the combobox's aria-activedescendant points at
+		this.idBase = 'customSelect' + (customSelectCount++).toString() + 'Option';
 
 		container.className = 'customSelectContainer';
 		this.elem = container;
@@ -52,6 +61,13 @@ export class CustomSelect {
 		const currentElem = document.createElement('div');
 		currentElem.className = 'customSelectCurrent';
 		currentElem.tabIndex = tabIndex;
+		// Combobox semantics (F5 accessibility): the closed control announces itself as a combobox
+		// with the current value, the open list is its listbox, and the keyboard-highlighted option
+		// (which keeps the focus on the combobox itself) is its aria-activedescendant
+		currentElem.setAttribute('role', 'combobox');
+		currentElem.setAttribute('aria-haspopup', 'listbox');
+		currentElem.setAttribute('aria-expanded', 'false');
+		if (data.name !== '') currentElem.setAttribute('aria-label', data.name);
 		this.currentElem = currentElem;
 		container.appendChild(currentElem);
 
@@ -183,6 +199,12 @@ export class CustomSelect {
 				alterClass(newlyFocussedOption, CLASS_FOCUSSED, true);
 			}
 		}
+		// The focus stays on the combobox while the list is open: point aria-activedescendant at
+		// the highlighted option instead (or clear it when the pointer left the list)
+		if (this.currentElem !== null) {
+			if (index > -1) this.currentElem.setAttribute('aria-activedescendant', this.idBase + index.toString());
+			else this.currentElem.removeAttribute('aria-activedescendant');
+		}
 	}
 
 	private render(open: boolean) {
@@ -190,6 +212,7 @@ export class CustomSelect {
 
 		if (this.open !== open) {
 			this.open = open;
+			this.currentElem.setAttribute('aria-expanded', open ? 'true' : 'false');
 			if (open) {
 				if (this.optionsElem !== null) {
 					this.optionsElem.remove();
@@ -201,9 +224,11 @@ export class CustomSelect {
 				this.optionsElem.style.width = currentElemRect.width + 'px';
 				this.optionsElem.style.maxHeight = Math.max(document.body.clientHeight - currentElemRect.top - currentElemRect.height - 2, 50) + 'px';
 				this.optionsElem.className = 'customSelectOptions' + (this.data.multiple ? ' multiple' : '');
+				this.optionsElem.setAttribute('role', 'listbox');
+				if (this.data.multiple) this.optionsElem.setAttribute('aria-multiselectable', 'true');
 				const icon = this.data.multiple ? html`<div class="selectedIcon">${SVG_ICONS.check}</div>` : '';
 				setHtml(this.optionsElem, html`${this.data.options.map((option, index) =>
-					html`<div class="customSelectOption" data-index="${index}">${icon}${option.name}</div>`
+					html`<div class="customSelectOption" role="option" id="${this.idBase + index.toString()}" data-index="${index}">${icon}${option.name}</div>`
 				)}`);
 				addListenerToCollectionElems(this.optionsElem.children, 'mousemove', (e) => {
 					if (!e.target) return;
@@ -242,6 +267,7 @@ export class CustomSelect {
 				const elemIndex = parseInt((<HTMLElement>optionElems[i]).dataset.index!);
 				alterClass(optionElems[i], CLASS_SELECTED, this.selected[elemIndex]);
 				alterClass(optionElems[i], CLASS_FOCUSSED, this.focussed === elemIndex);
+				(<HTMLElement>optionElems[i]).setAttribute('aria-selected', this.selected[elemIndex] ? 'true' : 'false');
 			}
 		}
 	}

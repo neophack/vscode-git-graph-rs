@@ -1,8 +1,8 @@
 import { DATA_LOSS_WARNING_IMAGE } from '../../common/assets';
-import { alterClass, removeClassFromAll } from '../../common/dom';
+import { alterClass, handledEvent, makeKeyboardActivatable, removeClassFromAll } from '../../common/dom';
 import { EventOverlay } from '../../common/eventOverlay';
 import { hideHelpTooltip } from '../../common/helpTooltip';
-import { helpTooltipAttrs, html, joinHtml, SafeHtml, setHtml } from '../../common/html';
+import { helpTooltipAttrs, html, joinHtml, SafeHtml, setHtml, unescapeHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
@@ -111,6 +111,8 @@ export class Dialog {
 	private actioned: (() => void) | null = null;
 	private type: DialogType | null = null;
 	private customSelects: { [inputIndex: string]: CustomSelect } = {};
+	/** Where the focus returns to when the dialog closes (wherever it sat when the dialog opened). */
+	private previouslyFocused: HTMLElement | null = null;
 
 	private static readonly WHITESPACE_REGEXP = /\s/gu;
 
@@ -191,11 +193,17 @@ export class Dialog {
 		const multiElement = inputs.length > 1;
 		const multiCheckbox = multiElement && inputs.every((input) => input.type === DialogInputType.Checkbox);
 		const infoColRequired = inputs.some((input) => input.type !== DialogInputType.Checkbox && input.type !== DialogInputType.Radio && input.info);
+		// The inputs' accessible names (F5 accessibility; also the axe gate's `label` rule): the
+		// visible name sits in a neighbouring table cell rather than a <label>, so the inputs that
+		// are not label-wrapped carry it as an aria-label. A single unnamed input is named by the
+		// dialog's message (e.g. a reference-name prompt whose instruction sits right above it).
+		const messageText = typeof message === 'string' ? message : unescapeHtml(message.html.replace(/<[^>]*>/gu, ' ')).replace(/\s+/gu, ' ').trim();
+		const labelAttr = (label: string) => label !== '' ? html` aria-label="${label}"` : '';
 		const inputRows = inputs.map((input, id) => {
 			let inputHtml: SafeHtml;
 			if (input.type === DialogInputType.Radio) {
 				inputHtml = html`<td class="inputCol"${infoColRequired ? html` colspan="2"` : ''}><span class="dialogFormRadio">${joinHtml(input.options.map((option, optionId) =>
-					html`<label><input type="radio" name="dialogInput${id}" value="${optionId}"${option.value === input.default ? html` checked` : ''} tabindex="${id + 1}"/><span class="customRadio"></span>${option.name}</label>`
+					html`<label><input type="radio" name="dialogInput${id}" value="${optionId}"${option.value === input.default ? html` checked` : ''}/><span class="customRadio"></span>${option.name}</label>`
 				), html`<br>`)}</span></td>`;
 			} else {
 				const infoHtml = input.info ? html`<span ${helpTooltipAttrs(input.info, 'dialogInfo')}>${SVG_ICONS.info}</span>` : '';
@@ -203,11 +211,16 @@ export class Dialog {
 				if (input.type === DialogInputType.Select) {
 					inputHtml = html`<td class="inputCol"><div id="dialogFormSelect${id}"></div></td>${infoCol}`;
 				} else if (input.type === DialogInputType.Checkbox) {
-					inputHtml = html`<td class="inputCol"${infoColRequired ? html` colspan="2"` : ''}><span class="dialogFormCheckbox"><label><input id="dialogInput${id}" type="checkbox"${input.value ? html` checked` : ''} tabindex="${id + 1}"/><span class="customCheckbox"></span>${multiElement && !multiCheckbox ? '' : input.name}</label>${infoHtml}</span></td>`;
+					// The checkbox is label-wrapped, except in a mixed multi-input form where its name
+					// cell carries the name instead (then the label element is visually empty)
+					const checkboxLabel = multiElement && !multiCheckbox ? input.name : '';
+					inputHtml = html`<td class="inputCol"${infoColRequired ? html` colspan="2"` : ''}><span class="dialogFormCheckbox"><label><input id="dialogInput${id}" type="checkbox"${input.value ? html` checked` : ''}${labelAttr(checkboxLabel)}/><span class="customCheckbox"></span>${checkboxLabel === '' ? input.name : ''}</label>${infoHtml}</span></td>`;
 				} else if (input.type === DialogInputType.Textarea) {
-					inputHtml = html`<td class="inputCol"><textarea id="dialogInput${id}"${input.placeholder !== null ? html` placeholder="${input.placeholder}"` : ''} tabindex="${id + 1}" rows="${input.lines || 4}" style="resize:vertical;width:100%;font-family:inherit;padding:4px;box-sizing:border-box;margin-top:2px;">${input.default}</textarea></td>${infoCol}`;
+					const textareaLabel = input.name !== '' ? input.name : (inputs.length === 1 ? messageText : '');
+					inputHtml = html`<td class="inputCol"><textarea id="dialogInput${id}"${input.placeholder !== null ? html` placeholder="${input.placeholder}"` : ''}${labelAttr(textareaLabel)} rows="${input.lines || 4}" style="resize:vertical;width:100%;font-family:inherit;padding:4px;box-sizing:border-box;margin-top:2px;">${input.default}</textarea></td>${infoCol}`;
 				} else {
-					inputHtml = html`<td class="inputCol"><input id="dialogInput${id}" type="text" value="${input.default}"${input.type === DialogInputType.Text && input.placeholder !== null ? html` placeholder="${input.placeholder}"` : ''} tabindex="${id + 1}"/></td>${infoCol}`;
+					const textLabel = input.name !== '' ? input.name : (inputs.length === 1 ? messageText : '');
+					inputHtml = html`<td class="inputCol"><input id="dialogInput${id}" type="text" value="${input.default}"${input.type === DialogInputType.Text && input.placeholder !== null ? html` placeholder="${input.placeholder}"` : ''}${labelAttr(textLabel)}/></td>${infoCol}`;
 				}
 			}
 			return html`<tr${input.type === DialogInputType.Radio ? html` class="mediumField"` : input.type !== DialogInputType.Checkbox ? html` class="largeField"` : ''}>${multiElement && !multiCheckbox ? html`<td>${input.name}: </td>` : ''}${inputHtml}</tr>`;
@@ -250,10 +263,18 @@ export class Dialog {
 			secondaryActioned(values);
 		} : null, target);
 
-		// Create custom select inputs
+		// Create custom select inputs. The tabIndex 0 keeps the combobox out of the axe gate's
+		// `tabindex` rule (positive tabindex values break the natural tab order); the dialog's DOM
+		// order already places each select between the inputs it belongs between.
 		inputs.forEach((input, index) => {
 			if (input.type === DialogInputType.Select) {
-				this.customSelects[index.toString()] = new CustomSelect(input, document.getElementById('dialogFormSelect' + index)!, index + 1, this.elem!);
+				this.customSelects[index.toString()] = new CustomSelect(input, document.getElementById('dialogFormSelect' + index)!, 0, this.elem!);
+				if (input.name === '') {
+					// A single unnamed select is named by the dialog's message, like the other
+					// unnamed single inputs (the CustomSelect only names itself from data.name)
+					const currentElem = document.querySelector('#dialogFormSelect' + index.toString() + ' .customSelectCurrent');
+					if (currentElem !== null) currentElem.setAttribute('aria-label', messageText);
+				}
 			}
 		});
 
@@ -318,7 +339,11 @@ export class Dialog {
 		const closeIcon = document.createElement('span');
 		closeIcon.id = 'dialogCloseIcon';
 		closeIcon.title = strings.dialogClose;
+		closeIcon.setAttribute('aria-label', strings.dialogClose);
 		setHtml(closeIcon, SVG_ICONS.close);
+		// The icon is a plain <span>: give it the button semantics and the Enter / Space activation
+		// of one, so the replaced Close button stays reachable from the keyboard
+		makeKeyboardActivatable(closeIcon);
 		closeIcon.addEventListener('click', () => this.close());
 		this.elem.appendChild(closeIcon);
 	}
@@ -388,10 +413,44 @@ export class Dialog {
 
 		const dialog = document.createElement('div'), dialogContent = document.createElement('div');
 		dialog.className = 'dialog';
+		// The dialog semantics (F5 accessibility): a modal dialog with a name. The name comes from
+		// the dialog's own text content (the message or the form labels), whitespace-collapsed and
+		// capped - it names the dialog for screen readers and the axe gate's aria-dialog-name rule.
+		dialog.setAttribute('role', 'dialog');
+		dialog.setAttribute('aria-modal', 'true');
 		dialogContent.className = 'dialogContent';
 		setHtml(dialogContent, html`${message}<br>${actionName !== null ? html`<div id="dialogAction" class="roundedBtn" role="button" tabindex="0">${actionName}</div>` : ''}<div id="dialogSecondaryAction" class="roundedBtn" role="button" tabindex="0">${secondaryActionName}</div>`);
+		const labelText = dialogContent.textContent !== null ? dialogContent.textContent.replace(/\s+/gu, ' ').trim() : '';
+		if (labelText !== '') dialog.setAttribute('aria-label', labelText.length > 120 ? labelText.substring(0, 117) + '...' : labelText);
+		// The focus trap (F5 accessibility): Tab and Shift+Tab cycle inside the dialog, so the
+		// keyboard can reach neither the page behind it nor the browser outside the webview. The
+		// document-level handler keeps its keys (Enter submits, Escape closes); the trap only owns Tab.
+		dialog.addEventListener('keydown', (e) => {
+			if (e.key !== 'Tab') return;
+			const focusable = Dialog.getFocusableElems(dialog);
+			if (focusable.length === 0) {
+				handledEvent(e);
+				return;
+			}
+			const first = focusable[0], last = focusable[focusable.length - 1];
+			const active = document.activeElement;
+			const activeInside = active instanceof HTMLElement && focusable.indexOf(active) > -1;
+			if (e.shiftKey) {
+				if (!activeInside || active === first) {
+					last.focus();
+					handledEvent(e);
+				}
+			} else if (!activeInside || active === last) {
+				first.focus();
+				handledEvent(e);
+			}
+		});
 		dialog.appendChild(dialogContent);
 		this.elem = dialog;
+		// The restore target: wherever the focus sat when the dialog opened - except <body>, whose
+		// focus() is a no-op and which is where the focus already is when no control holds it
+		const previouslyFocused = document.activeElement;
+		this.previouslyFocused = previouslyFocused instanceof HTMLElement && previouslyFocused !== document.body ? previouslyFocused : null;
 		document.body.appendChild(dialog);
 
 		const docHeight = document.body.clientHeight;
@@ -407,9 +466,32 @@ export class Dialog {
 		}
 		document.getElementById('dialogSecondaryAction')!.addEventListener('click', secondaryActioned !== null ? secondaryActioned : () => this.close());
 
+		// The initial focus (F5 accessibility): the primary action, or the Close button when there
+		// is no primary action - a dialog never opens with the focus left on <body>. A form whose
+		// first input is a text field overrides this afterwards (showForm focuses that input when
+		// show returns), which is the one case where an input is the better landing place.
+		const initialFocus = <HTMLElement | null>(dialog.querySelector('#dialogAction') || dialog.querySelector('#dialogSecondaryAction'));
+		const focusIsInside = document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement);
+		if (initialFocus !== null && !focusIsInside) initialFocus.focus();
+
 		if (this.target !== null && this.target.type !== TargetType.Repo) {
 			alterClass(this.target.elem, CLASS_DIALOG_ACTIVE, true);
 		}
+	}
+
+	/** The dialog's focusable elements, in DOM (tab) order: real controls plus the tabindex-carrying divs, excluding the disabled and the hidden. */
+	private static getFocusableElems(root: HTMLElement): HTMLElement[] {
+		const candidates = root.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex]');
+		const elems: HTMLElement[] = [];
+		for (let i = 0; i < candidates.length; i++) {
+			const elem = candidates[i];
+			if (elem.matches(':disabled')) continue;
+			// Hidden controls (the Close button replaced by the ✕ icon) must not catch the trap
+			const style = window.getComputedStyle(elem);
+			if (style.display === 'none' || style.visibility === 'hidden') continue;
+			elems.push(elem);
+		}
+		return elems;
 	}
 
 	/** Close the dialog (if one is open). */
@@ -421,6 +503,15 @@ export class Dialog {
 			// Space/Enter pressed right after the click cannot re-activate the old handler
 			// (keyboard activation bypasses the fade's pointer-events: none).
 			if (document.activeElement instanceof HTMLElement && elem.contains(document.activeElement)) document.activeElement.blur();
+			// Focus restore (F5 accessibility): back to where the dialog was opened from, when that
+			// element still exists and the focus is free (on <body>) or still inside the closing
+			// dialog - never steal it from wherever the user has moved it
+			const active = document.activeElement;
+			const focusIsFreeOrInsideDialog = active === null || active === document.body
+				|| (active instanceof Node && elem.contains(active));
+			if (focusIsFreeOrInsideDialog && this.previouslyFocused !== null && this.previouslyFocused.isConnected) {
+				this.previouslyFocused.focus();
+			}
 			elem.classList.add('closing');
 			window.setTimeout(() => elem.remove(), 180);
 			this.elem = null;
@@ -431,6 +522,7 @@ export class Dialog {
 		this.customSelects = {};
 		this.actioned = null;
 		this.type = null;
+		this.previouslyFocused = null;
 	}
 
 	/** Close the "action running" dialog (if it is the one open). */

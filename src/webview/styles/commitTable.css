@@ -14,6 +14,18 @@
 #commitTable tr.commit{
 	contain:layout paint;
 }
+/* Keyboard focus (F5 accessibility): the focused commit row carries the grid's roving tab stop
+   (render/tableKeyboard.ts), so the focus must be visible when it arrives from the keyboard.
+   Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
+   whole rule): a :focus-only duplicate keeps the outline on 69. */
+#commitTable tr.commit:focus{
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline-offset:-1px;
+}
+#commitTable tr.commit:focus-visible{
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline-offset:-1px;
+}
 #commitTable table{
 	width:100%;
 	border-collapse:collapse;

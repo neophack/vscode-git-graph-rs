@@ -1,4 +1,4 @@
-import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, removeClassFromAll } from '../../common/dom';
+import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, handledEvent, removeClassFromAll } from '../../common/dom';
 import { html, joinHtml, SafeHtml, setHtml } from '../../common/html';
 import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
@@ -24,6 +24,8 @@ export class ContextMenu {
 	private elem: HTMLElement | null = null;
 	private onClose: (() => void) | null = null;
 	private target: ContextMenuTarget | null = null;
+	/** The element to return the focus to when the menu closes (the invoker, or wherever focus sat when it opened). */
+	private focusToReturn: HTMLElement | null = null;
 
 	/**
 	 * @param findCommitElem Resolve the rendered row of the commit at an index (NULL if it isn't rendered).
@@ -60,7 +62,13 @@ export class ContextMenu {
 			for (let j = 0; j < actions[i].length; j++) {
 				const action = actions[i][j];
 				if (action.visible) {
-					items.push(html`<li class="contextMenuItem" data-index="${handlers.length}">${checked ? html`<span class="contextMenuItemCheck">${action.checked ? SVG_ICONS.check : ''}</span>` : ''}${action.title}</li>`);
+					// Menu semantics (F5 accessibility): the items are menuitems the keyboard can walk
+					// (tabindex="-1", focused with focus()); a checked menu's items are
+					// menuitemcheckboxes carrying their check state
+					const itemAttrs = checked
+						? html`role="menuitemcheckbox" aria-checked="${action.checked ? 'true' : 'false'}" tabindex="-1"`
+						: html`role="menuitem" tabindex="-1"`;
+					items.push(html`<li class="contextMenuItem" data-index="${handlers.length}" ${itemAttrs}>${checked ? html`<span class="contextMenuItemCheck">${action.checked ? SVG_ICONS.check : ''}</span>` : ''}${action.title}</li>`);
 					handlers.push(action.onClick);
 				}
 			}
@@ -71,8 +79,9 @@ export class ContextMenu {
 
 		const menu = document.createElement('ul');
 		menu.className = 'contextMenu' + (checked ? ' checked' : '') + (className !== null ? ' ' + className : '');
+		menu.setAttribute('role', 'menu');
 		menu.style.opacity = '0';
-		setHtml(menu, joinHtml(groups, html`<li class="contextMenuDivider"></li>`));
+		setHtml(menu, joinHtml(groups, html`<li class="contextMenuDivider" role="separator"></li>`));
 		// The mobile layout shows the menu as a full-screen action sheet (see the mobile section of
 		// contextMenu.css), so it must live on <body>: inside a frame such as #view (position:fixed,
 		// a stacking context of its own) no z-index could lift it above the Commit Details sheet it
@@ -119,6 +128,38 @@ export class ContextMenu {
 			e.stopPropagation();
 		});
 
+		menu.addEventListener('keydown', (e) => {
+			// Arrow-key navigation of the menu items (F5 accessibility): the focus walks the items,
+			// wrapping at either end; Home / End jump to the first / last item. Escape is left to the
+			// document-level handler (it closes the menu, and close() below returns the focus).
+			if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+				const items = <HTMLElement[]>Array.from(menu.getElementsByClassName('contextMenuItem'));
+				if (items.length === 0) return;
+				const current = items.indexOf(<HTMLElement>document.activeElement);
+				let next: number;
+				if (e.key === 'Home') next = 0;
+				else if (e.key === 'End') next = items.length - 1;
+				else if (current === -1) next = e.key === 'ArrowDown' ? 0 : items.length - 1;
+				else next = e.key === 'ArrowDown' ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
+				items[next].focus();
+				handledEvent(e);
+			} else if (e.key === 'Tab') {
+				// Tab moves the focus out of the menu: close it first, so what is on screen matches
+				// where the focus is going (close() returns the focus to the invoker on the way)
+				this.close();
+			}
+		});
+
+		// A menu takes the focus when it opens (F5 accessibility): the first item is focused, so the
+		// keyboard flow continues from the menu itself, and closing it can return the focus to where
+		// it came from. Saved after the close() above, so replacing one menu with another chains the
+		// focus back through the first menu's invoker. <body> is not saved: its focus() is a no-op,
+		// and it is where the focus already sits when no control holds it.
+		const focusBeforeMenu = document.activeElement;
+		this.focusToReturn = focusBeforeMenu instanceof HTMLElement && focusBeforeMenu !== document.body ? focusBeforeMenu : null;
+		const firstItem = <HTMLElement | null>menu.querySelector('.contextMenuItem');
+		if (firstItem !== null) firstItem.focus();
+
 		this.target = target;
 		if (this.target !== null && this.target.type !== TargetType.Repo) {
 			alterClass(this.target.elem, CLASS_CONTEXT_MENU_ACTIVE, true);
@@ -128,6 +169,15 @@ export class ContextMenu {
 	/** Close the context menu (if one is open). */
 	public close() {
 		if (this.elem !== null) {
+			// Return the focus to the invoker (F5 accessibility) when it is still usable and the
+			// focus is free (on <body>) or still inside the menu being removed - never steal it
+			// from wherever the user has moved it
+			const active = document.activeElement;
+			const focusIsFreeOrInsideMenu = active === null || active === document.body
+				|| (active instanceof Node && this.elem.contains(active));
+			if (focusIsFreeOrInsideMenu && this.focusToReturn !== null && this.focusToReturn.isConnected) {
+				this.focusToReturn.focus();
+			}
 			this.elem.remove();
 			this.elem = null;
 		}
@@ -137,6 +187,7 @@ export class ContextMenu {
 			this.onClose = null;
 		}
 		this.target = null;
+		this.focusToReturn = null;
 	}
 
 	/**

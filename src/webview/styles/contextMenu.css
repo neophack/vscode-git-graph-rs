@@ -38,7 +38,27 @@ body.vscode-high-contrast .contextMenu{
 	background-color:var(--gg-menu-selected-background, var(--vscode-menu-selectionBackground));
 	color:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
 }
+/* Keyboard focus (F5 accessibility): the menu is keyboard navigable (arrow keys move the focus),
+   so the focused item reads like the hovered one. Chromium 69 fallback (:focus-visible needs
+   Chrome 86, and an unknown pseudo-class drops the whole rule): a :focus-only duplicate keeps
+   the styling on 69. */
+.contextMenu li.contextMenuItem:focus{
+	background-color:var(--gg-menu-selected-background, var(--vscode-menu-selectionBackground));
+	color:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline-offset:-1px;
+}
+.contextMenu li.contextMenuItem:focus-visible{
+	background-color:var(--gg-menu-selected-background, var(--vscode-menu-selectionBackground));
+	color:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline-offset:-1px;
+}
 body.vscode-high-contrast .contextMenu li.contextMenuItem:hover{
+	outline:1px solid var(--vscode-menu-selectionBorder, transparent);
+	outline-offset:-2px;
+}
+body.vscode-high-contrast .contextMenu li.contextMenuItem:focus{
 	outline:1px solid var(--vscode-menu-selectionBorder, transparent);
 	outline-offset:-2px;
 }

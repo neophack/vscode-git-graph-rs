@@ -71,21 +71,26 @@ export function getCommitRowHtml(i: number, ctx: RowContext): SafeHtml {
 	const branchLabels = getBranchLabels(commit.heads, commit.remotes, config.referenceLabels.combineLocalAndRemoteBranchLabels);
 	let refBranches: SafeHtml = html``, branchCheckedOutAtCommit: string | null = null;
 
+	// The ref labels' accessible names (F5 accessibility): the icon-plus-abbreviated-text spans
+	// read as just the ref name, which loses what kind of ref it is - the aria-label says it
+	// ("branch main"; the checked-out branch is marked ", HEAD"). Git's own vocabulary, not UI
+	// prose, so it is not part of the string tables.
+	const branchRefAttrs = (name: string, active: boolean) => html`aria-label="branch ${name}${active ? ', HEAD' : ''}"`;
 	for (let j = 0; j < branchLabels.heads.length; j++) {
 		const head = branchLabels.heads[j];
 		const refActive = head.name === ctx.gitBranchHead;
-		const refHtml = html`<span class="gitRef head${refActive ? ' active' : ''}" data-name="${head.name}">${SVG_ICONS.branch}<span class="gitRefName" data-fullref="${head.name}">${head.name}</span>${head.remotes.map((remote) =>
+		const refHtml = html`<span class="gitRef head${refActive ? ' active' : ''}" data-name="${head.name}" ${branchRefAttrs(head.name, refActive)}>${SVG_ICONS.branch}<span class="gitRefName" data-fullref="${head.name}">${head.name}</span>${head.remotes.map((remote) =>
 			html`<span class="gitRefHeadRemote" data-remote="${remote}" data-fullref="${remote + '/' + head.name}">${remote}</span>`)}</span>`;
 		refBranches = refActive ? html`${refHtml}${refBranches}` : html`${refBranches}${refHtml}`;
 		if (refActive) branchCheckedOutAtCommit = ctx.gitBranchHead;
 	}
 	for (let j = 0; j < branchLabels.remotes.length; j++) {
 		const remote = branchLabels.remotes[j];
-		refBranches = html`${refBranches}<span class="gitRef remote" data-name="${remote.name}" data-remote="${remote.remote !== null ? remote.remote : ''}">${SVG_ICONS.branch}<span class="gitRefName" data-fullref="${remote.name}">${remote.name}</span></span>`;
+		refBranches = html`${refBranches}<span class="gitRef remote" data-name="${remote.name}" data-remote="${remote.remote !== null ? remote.remote : ''}" ${branchRefAttrs(remote.name, false)}>${SVG_ICONS.branch}<span class="gitRefName" data-fullref="${remote.name}">${remote.name}</span></span>`;
 	}
 
 	const refTags = getTagLabels(commit.tags).map((tag) =>
-		html`<span class="gitRef tag" data-name="${tag.name}" data-tagtype="${tag.annotated ? 'annotated' : 'lightweight'}">${SVG_ICONS.tag}<span class="gitRefName" data-fullref="${tag.name}">${tag.name}</span>${tag.remotes.map((remote) =>
+		html`<span class="gitRef tag" data-name="${tag.name}" data-tagtype="${tag.annotated ? 'annotated' : 'lightweight'}" aria-label="tag ${tag.name}">${SVG_ICONS.tag}<span class="gitRefName" data-fullref="${tag.name}">${tag.name}</span>${tag.remotes.map((remote) =>
 			html`<span class="gitRefHeadRemote" data-remote="${remote}" data-fullref="${remote + '/tags/' + tag.name}">${remote}</span>`)}</span>`);
 
 	let refGerrit: SafeHtml | string = '';
@@ -98,7 +103,7 @@ export function getCommitRowHtml(i: number, ctx: RowContext): SafeHtml {
 	const refPullRequest: SafeHtml | string = typeof pullRequest !== 'undefined' ? getPullRequestBadgeHtml(pullRequest) : '';
 
 	if (commit.stash !== null) {
-		refBranches = html`<span class="gitRef stash" data-name="${commit.stash.selector}">${SVG_ICONS.stash}<span class="gitRefName" data-fullref="${commit.stash.selector}">${commit.stash.selector.substring(5)}</span></span>${refBranches}`;
+		refBranches = html`<span class="gitRef stash" data-name="${commit.stash.selector}" aria-label="stash ${commit.stash.selector.substring(5)}">${SVG_ICONS.stash}<span class="gitRefName" data-fullref="${commit.stash.selector}">${commit.stash.selector.substring(5)}</span></span>${refBranches}`;
 	}
 
 	const commitDot = commit.hash === ctx.commitHead
@@ -117,7 +122,13 @@ export function getCommitRowHtml(i: number, ctx: RowContext): SafeHtml {
 	const openChangesBtn = commit.parents.length > 0
 		? html`<span class="openChangesBtn" title="${formatStr(strings.openChangesTitleWithSubject, openChangesSubject)}">${SVG_ICONS.openChanges}</span>`
 		: '';
-	const rowOpen = (rest: SafeHtml) => html`<tr class="commit${commit.hash === ctx.currentHash ? ' current' : ''}${ctx.mutedCommits[i] ? ' mute' : ''}"${commit.hash !== UNCOMMITTED ? '' : raw(' id="uncommittedChanges"')} data-id="${i}" data-hash="${commit.hash}" data-color="${ctx.vertexColours[i]}">${rest}</tr>`;
+	// The grid row semantics (F5 accessibility): role="row" under the table's role="grid", the
+	// ABSOLUTE row index (the header row is 1, the first commit 2 - the windowed render keeps only
+	// a slice of the rows in the DOM, so the DOM position is not the grid position), and
+	// tabindex="-1" - the table's roving tabindex (render/tableKeyboard.ts) makes exactly one row
+	// the Tab stop. The markup values are restamped in place when a row's position changes without
+	// the row changing (the keyed patch), so they must not take part in the signature comparison.
+	const rowOpen = (rest: SafeHtml) => html`<tr class="commit${commit.hash === ctx.currentHash ? ' current' : ''}${ctx.mutedCommits[i] ? ' mute' : ''}" role="row" aria-rowindex="${i + 2}" tabindex="-1"${commit.hash !== UNCOMMITTED ? '' : raw(' id="uncommittedChanges"')} data-id="${i}" data-hash="${commit.hash}" data-color="${ctx.vertexColours[i]}">${rest}</tr>`;
 
 	if (ctx.narrow) {
 		// The mobile layout drops the Date, Author and Commit columns. Its two-line row reads
