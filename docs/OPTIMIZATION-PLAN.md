@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | Accepted with M0 in progress (§12); §10 decisions D-1, D-2, D-4 still open |
+| Status | M0 complete; wave 1 (§12) landed R1–R4, R8, V1, V2, V4, S2, F6, F7 and the F2 groundwork. D-1 and D-4 taken per the recommendations; D-2 still open (needs P3/P4 data) |
 
 ---
 
@@ -692,3 +692,77 @@ Deviations from the text above:
   otherwise failed 1–3 different load-sensitive tests per run.
 
 Found, not fixed: `docs/performance.md` still cites the deleted `scripts/bench.mjs`.
+
+### Wave 1: M1 ∥ M2 ∥ M3 groundwork (branch `task/m0-gates`, 2026-10-27)
+
+Seven parallel agents over disjoint file domains; integrated and landed as ten workstream
+commits. Landed: **R1, R2, R3, R4, R8, V1, V2, V4, S2, F6, F7**, plus the F2 transition-table
+core (unwired, per the order-of-risk rule). Every gate green: `npm run check`, the full test
+suite (143 files), the size gate.
+
+Decisions taken per the recommendations: **D-1** (`untrustedWorkspaces: "limited"`,
+engine-only reads, no writes, no CLI) and **D-4** (engine compute cap 2, in the binding).
+
+Measured while doing it, correcting this plan:
+
+- **The 1.82 MSRV was fiction.** 67 of 194 locked crates declare `rust-version` above 1.82
+  (gix 0.90 and the napi 3 families need 1.88); `cargo +1.82 check` cannot even resolve the
+  workspace. `rust-version` is now 1.88, and `docs/compatibility.md` + REFACTOR-PLAN §3.7.4
+  follow. `rust-gates.yml` holds it with `cargo check --locked` and adds cargo-deny.
+- **The 165 KB highlight.js was already a 35-language subset**, not the full build. Trimmed to
+  27 languages (164,741 → 136,226 bytes; the dropped ones ride `highlightAuto`).
+- **F7 tripped the fresh VSIX size gate at +2.56%**: esbuild cannot tree-shake object
+  properties, so both single-file IIFE pages embedded the full bilingual dictionaries
+  (+149 KB each). Fixed with a generated 141-key subset redirected at build time
+  (`gen-compare-subset.mjs`, drift-checked by `check:generated`); the pages are back to
+  60/76 KB and the VSIX lands at **+0.42%** over baseline.
+- **The S2 rewrite fixed a real bug**: the old generated editor code matched only abbreviated
+  hashes, gluing the commit subject onto the author-change `exec` line (git read the subject
+  words as pathspecs). Regression-covered now.
+- **The V2 sketch was unsafe on engine-less machines**: a backend built with `gitPath: null`
+  degrades to `CliBackend('git')`, which would run the CLI in an untrusted folder. Restricted
+  mode uses an explicit `engineOnly` backend plus an `unavailable` proxy instead.
+- **R3's constraint is hard**: under N-API 3 no background thread can settle a promise
+  (napi-rs's deferred is N-API 4-gated precisely for that). Design: free slot → inline on the
+  caller's libuv thread; overflow → two dedicated Rust workers; one sentinel AsyncTask per
+  overflow episode delivers results. Max uv occupancy while waiting: one parked thread.
+- **DoD #3's Rust backlog is empty** (31 production `.rs` files, none over 600): the R8a
+  splits and moving the incremental store's inline tests to `incremental/tests.rs`.
+
+Deviations from the text above:
+
+- **R2**: the byte budget defaults to 64 MiB; the host-tunable budget through `open` params is
+  deferred. The `engineStats` protocol method feeds V5 later.
+- **R4**: `missing_docs` deferred (it would flood dozens of files at once);
+  `cargo-deny`'s config is CI-verified only (not installed locally); `multiple-versions` is
+  warn, not deny (duplicates exist in the gix tree today); `unsafe_code = "forbid"` is
+  engine-only — in the binding, napi-derive's generated `#[allow(unsafe_code)]` makes a forbid
+  a hard E0453 error, so that crate keeps a scoped, documented allow.
+- **R8b**: the musl/armhf binaries build and ship, but `addonLoader.ts` cannot select them yet
+  (libc/armv7 detection is the follow-up), the C3 alpine/centos smoke is still open, and the
+  build job's missing cargo-zigbuild install turned out to affect the existing linux-gnu legs
+  too — fixed for all of them.
+- **V2**: webview write buttons in restricted mode surface the misleading no-Git error (a
+  protocol change to disable them properly is out of scope); the restricted banner is
+  per-session; `spawnStream` cannot await the deferred Git resolution and can error once in
+  the ~50 ms first-activation window.
+- **F6**: `styles/tablet/**` still has the per-device layout (same merge treatment is the
+  follow-up); the comparison/binaryCompare standalone sheets still read `--vscode-*` directly
+  (they do not import tokens.css); `out.min.css` is 63 KB against the 60 KB budget line — an
+  overflow that predates this wave (61 KB), now 3 KB over after the defensive token fallbacks.
+- **F2**: the state machine (11 states, 8 events, 136 tests) is deliberately unwired; the
+  wiring sketch lives in the module docs, and three flag-machine hazards are already provably
+  gone from the table (a pushed `loadView` can no longer stomp a running cycle).
+
+Found, not fixed:
+
+- `dropdown.test.ts` leaks a timer that surfaces as a post-teardown error under heavy parallel
+  load (all 143 files green on re-run; the file is untouched by this wave).
+- `docs/baseline-2026-10.md` still names the removed vendor file; regenerate with
+  `npm run baseline`.
+- `docs/performance.md` / `scripts/bench.mjs` (from M0), and the activation budget (≤ 20 ms
+  sync) remains unmeasured until P1.
+
+Remaining for M1: A1 (flat-root drain), A2 (composition root), A3 (process adapter — the
+19-call-site argSafety finding from M0 still stands), A6, A7, V3, S5 remainder. Remaining for
+M2: R5, R6, R7, P1, P2. Remaining for M3: F1, F3, F4, F5, V3 webview side, and the F2 wiring.

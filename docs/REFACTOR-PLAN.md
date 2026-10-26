@@ -456,7 +456,7 @@ Callers get either "present" or NULL, and must handle the NULL branch. Every com
 | New Linux targets | Add `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` (Alpine containers, matching the platform VSIXs `alpine-x64`/`alpine-arm64`) and `armv7-unknown-linux-gnueabihf` (`linux-armhf`, e.g. Raspberry Pi); `addonLoader` distinguishes glibc from musl |
 | macOS | Set `MACOSX_DEPLOYMENT_TARGET=10.13` explicitly; CI asserts minos with `vtool -show-build` (or `otool -l`) |
 | Windows | `-C target-feature=+crt-static`, no VC++ runtime dependency. Since Rust 1.78 the MSVC target requires Windows 10, so Windows 7/8.1 go through the CLI (D9) |
-| MSRV | `rust-toolchain.toml` pins the dev toolchain; CI additionally runs `cargo +1.82 check` to hold the `rust-version` line |
+| MSRV | `rust-toolchain.toml` pins the dev toolchain; CI additionally runs `cargo +1.88 check` to hold the `rust-version` line (raised from 1.82: the gix 0.90 and napi 3 dependency floors require it) |
 | Failure classification | `addonLoader` distinguishes: no binary for the platform / insufficient N-API version / libc mismatch / load exception / runtime panic (converted to an error via `catch_unwind`). Every class falls back to the CLI, logs once, and is displayed on the settings page |
 
 ### 3.8 Performance architecture
@@ -848,7 +848,7 @@ The acceptance conclusions are checked item by item by the PR author in the PR d
 - [ ] CI asserts that the Linux gnu binary references no `GLIBC_` version above 2.17. Verify: the `objdump -T` step in CI.
 - [ ] The macOS binary's minos is 10.13; the Windows binary does not depend on `VCRUNTIME140.dll`. Verify: the `vtool` / `dumpbin /dependents` steps in CI.
 - [ ] Produces the musl ×2 and armhf binaries plus the three platform VSIXs `alpine-x64`, `alpine-arm64`, and `linux-armhf`. Verify: the CI artifact list.
-- [ ] `cargo +1.82 check --workspace` passes; C3 passes. Verify: CI.
+- [ ] `cargo +1.88 check --workspace` passes; C3 passes. Verify: CI.
 
 **2.9 Cooperative cancellation**
 - [ ] Cancelling a full traversal of an M/L repository returns `Cancelled` within ≤ 10 ms. Verify: timed in tests.
@@ -1385,7 +1385,7 @@ insiders failures only warn without blocking, but get an issue within 2 business
 ## 8. CI end state
 
 ```
-lint-and-typecheck (ubuntu)   : eslint (incl. n/compat) · stylelint · depcruise · tsc -b · cargo fmt · clippy · ts-rs drift check · cargo +1.82 check
+lint-and-typecheck (ubuntu)   : eslint (incl. n/compat) · stylelint · depcruise · tsc -b · cargo fmt · clippy · ts-rs drift check · cargo +1.88 check
 engine (3 OS)                 : cargo test (llvm-cov on ubuntu)
 build-addon (matrix)          : gnu targets via zigbuild (glibc 2.17); add musl ×2, armhf; artifact symbol-version / minos assertions
 unit-and-integration (3 OS)   : npm run build (incl. es-check = C1) · vitest run --coverage (thresholds)

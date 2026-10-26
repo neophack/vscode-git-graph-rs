@@ -56,5 +56,5 @@ Related floor decisions:
   preflight and failure classification are future work.
 - **Windows 7/8.1**: run the CLI fallback; Rust ≥1.78 msvc targets require Windows 10 (plan
   decision D9).
-- **MSRV**: `rust-version = "1.82"` at the workspace root, held by a `cargo +1.82 check
+- **MSRV**: `rust-version = "1.88"` at the workspace root, held by a `cargo +1.88 check
   --workspace` CI job.
