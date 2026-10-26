@@ -30,6 +30,11 @@ fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
 
 /// Commit counts per author, across all refs, merge commits excluded - what
 /// `git shortlog -sne --all --no-merges` aggregates into, `.mailmap` applied as shortlog applies it.
+// The token stays by value: every engine read entry point takes `cancel: Cancel` the same
+// way (see `crate::cancel`), and the call sites pass `Cancel::none()`/`ctx.cancel()` from
+// `engine.rs` and `protocol.rs`. Taking `&Cancel` here is only worth it as one engine-wide
+// change that moves every entry point at once, not piecemeal per module.
+#[allow(clippy::needless_pass_by_value)]
 pub fn author_stats(repo: &Repo, cancel: Cancel) -> Result<Vec<GitAuthorStat>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();
@@ -91,6 +96,8 @@ pub fn author_stats(repo: &Repo, cancel: Cancel) -> Result<Vec<GitAuthorStat>> {
 /// the same rule the ported TypeScript/CLI implementation applies to `%aI`'s printed digits, so a
 /// commit made at 11pm in the author's timezone bins as "night" regardless of what time it was
 /// for whoever happens to be viewing the graph.
+// `cancel` by value for the same engine-wide reason as `author_stats` above.
+#[allow(clippy::needless_pass_by_value)]
 pub fn activity_heatmap(repo: &Repo, cancel: Cancel) -> Result<Vec<GitActivityCell>> {
     let tips = all_tips_with_stash(repo)?;
     let git = repo.borrow();

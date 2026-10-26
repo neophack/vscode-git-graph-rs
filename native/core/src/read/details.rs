@@ -175,7 +175,7 @@ pub fn commit_subject(repo: &Repo, hash: &str) -> Result<String> {
     let id = crate::repository::resolve_commit_in(&git, hash)?;
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
     let encoding = CommitEncoding::of(&commit);
-    Ok(collapse_whitespace(crate::text::commit_subject(
+    Ok(collapse_whitespace(&crate::text::commit_subject(
         &commit, &encoding,
     )))
 }
@@ -270,7 +270,7 @@ pub fn tag_details(repo: &Repo, tag_name: &str) -> Result<GitTagDetails> {
                 tagger_date: tagger.map(|t| t.seconds()).unwrap_or(0),
                 // The decoded message excludes the signature, which is what the message the
                 // dialogue shows must exclude.
-                message: strip_trailing_blank_lines(tag.message.to_string()),
+                message: strip_trailing_blank_lines(&tag.message.to_string()),
                 signature: tag.signature.map(|_| unverified_signature()),
             })
         }
@@ -287,7 +287,7 @@ pub fn tag_details(repo: &Repo, tag_name: &str) -> Result<GitTagDetails> {
                 tagger_name: String::new(),
                 tagger_email: String::new(),
                 tagger_date: 0,
-                message: strip_trailing_blank_lines(message),
+                message: strip_trailing_blank_lines(&message),
                 signature: None,
             })
         }
@@ -345,7 +345,7 @@ fn strip_one_newline(mut body: String) -> String {
 
 /// Remove the trailing blank lines of a message, as the original's tag-details parsing did before
 /// handing the message to the dialogue.
-fn strip_trailing_blank_lines(message: String) -> String {
+fn strip_trailing_blank_lines(message: &str) -> String {
     // Split the way the original's `EOL_REGEX` (`\r\n|\r|\n`) splits, drop the trailing empty
     // lines, and re-join with plain newlines.
     let mut lines: Vec<&str> = message
@@ -360,6 +360,6 @@ fn strip_trailing_blank_lines(message: String) -> String {
 }
 
 /// Trim and collapse every run of whitespace into a single space.
-fn collapse_whitespace(text: String) -> String {
+fn collapse_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

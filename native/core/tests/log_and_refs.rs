@@ -298,7 +298,7 @@ fn a_merge_carrying_a_branchs_changes_in_stays_out_of_the_filtered_log() {
 
     // The merge is treesame to the feature side for src, and to the main side for docs, so neither
     // filtered log shows it — matching `git log -- <path>`, which simplifies it away.
-    for (path, expected) in [("src", vec![feature, base.clone()]), ("docs", vec![main])] {
+    for (path, expected) in [("src", vec![feature, base]), ("docs", vec![main])] {
         let options = LogOptions {
             filter_paths: vec![path.to_string()],
             ..all_refs(100, CommitOrdering::Date)

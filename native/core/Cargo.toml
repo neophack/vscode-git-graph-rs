@@ -6,6 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# The pure engine: no unsafe (forbidden via the workspace rust lints) plus the
+# workspace clippy subset.
+[lints]
+workspace = true
+
 [dependencies]
 gix = { version = "0.90", default-features = false, features = [
     "revision",

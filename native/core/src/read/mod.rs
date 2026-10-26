@@ -4,7 +4,7 @@
 //! Each module answers one family of questions against a `crate::repository::Repo` handle:
 //! `log`/`graph`/`incremental` walk commits, `refs` scans refs, `details`/`diff`/`blob` read
 //! commits' metadata, file pairs and contents, `status`/`stash`/`config`/`stats` cover the
-//! working tree, stashes, settings and statistics, and `gerrit` parses NoteDb meta histories.
+//! working tree, stashes, settings and statistics, and `gerrit` parses `NoteDb` meta histories.
 //! They are the implementation, not the contract: the public surface is the engine and the
 //! protocol on top of them, and this tree is visible only inside the crate — the integration
 //! tests and benchmarks drive it through `Engine` and `protocol` like any other caller.

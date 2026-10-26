@@ -5,6 +5,9 @@
 //! stay warm, the caches stay populated, and re-issuing the request answers exactly what it
 //! answered before. These tests pin both halves on a generated large fixture.
 
+// The `ask*` helpers take `params` by value so every call site can pass a `json!` literal.
+#![allow(clippy::needless_pass_by_value)]
+
 #[macro_use]
 mod common;
 

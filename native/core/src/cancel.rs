@@ -69,7 +69,7 @@ impl Cancel {
     ///
     /// `iteration` is the loop's own counter (1-based); the check itself is the flag read above.
     pub fn check(&self, iteration: usize) -> Result<()> {
-        if iteration % CHECK_INTERVAL == 0 && self.is_cancelled() {
+        if iteration.is_multiple_of(CHECK_INTERVAL) && self.is_cancelled() {
             return Err(Error::cancelled());
         }
         Ok(())

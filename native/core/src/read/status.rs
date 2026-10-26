@@ -44,6 +44,10 @@ struct PathState {
 /// `renames` picks how staged deletions and additions are paired: [`Renames::AsStatus`] follows the
 /// configuration exactly as `git status` does, [`Renames::Always`] pairs them as
 /// `git diff --find-renames` does whatever the configuration says.
+// The token stays by value: the public wrappers below forward it, and their call sites in
+// `engine.rs` and `protocol.rs` pass `Cancel::none()`/`ctx.cancel()`; taking `&Cancel` here
+// without flipping those entry points too would just move the finding to the wrappers.
+#[allow(clippy::needless_pass_by_value)]
 fn scan(
     repo: &Repo,
     include_untracked: bool,

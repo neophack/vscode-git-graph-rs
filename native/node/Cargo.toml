@@ -9,6 +9,21 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
+# This crate cannot inherit `[lints] workspace = true`: cargo forbids mixing the
+# workspace key with package overrides, and napi-derive's macro-generated
+# registration code contains `#[allow(unsafe_code)]`, which is hard-incompatible
+# with the workspace's `unsafe_code = "forbid"` (E0453). So the binding mirrors
+# the workspace clippy subset and takes the one scoped allow it needs - keep the
+# clippy list in sync with [workspace.lints.clippy] in the root Cargo.toml.
+[lints.rust]
+unsafe_code = "allow"
+[lints.clippy]
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+inefficient_to_string = "warn"
+large_types_passed_by_value = "warn"
+doc_markdown = "warn"
+
 [dependencies]
 git-graph-core = { path = "../core" }
 napi = { version = "3", default-features = false, features = ["napi3", "dyn-symbols"] }

@@ -1,8 +1,8 @@
-//! The Gerrit NoteDb meta parser's repository walk: the ref scan and meta-history reads that feed
+//! The Gerrit `NoteDb` meta parser's repository walk: the ref scan and meta-history reads that feed
 //! the pure message grammar (whose cases live in `read/gerrit.rs`'s unit tests).
 //!
 //! The repository test builds a meta history with `git commit-tree` plumbing (exactly the records
-//! Gerrit's NoteDb writes) under `refs/remotes/<remote>/changes/.../meta`, the ref a Gerrit fetch
+//! Gerrit's `NoteDb` writes) under `refs/remotes/<remote>/changes/.../meta`, the ref a Gerrit fetch
 //! leaves behind.
 
 #[macro_use]
@@ -49,7 +49,7 @@ fn list_change_refs(repo: &TestRepo, remote: &str) -> Vec<(String, String)> {
 
 /* ---------- The repository walk ---------- */
 
-/// One NoteDb meta commit, built with plumbing at the fixture clock's next tick: the committer
+/// One `NoteDb` meta commit, built with plumbing at the fixture clock's next tick: the committer
 /// (the Gerrit user that acted) and an increasing timestamp, so newest-first order is exact.
 fn commit_meta(
     repo: &TestRepo,

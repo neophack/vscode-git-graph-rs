@@ -116,7 +116,7 @@ pub fn annotate(repo: &Repo, params: &AnnotateParams) -> Result<AnnotateResult> 
         .collect();
     annotate_refs(&snapshot.ref_data, &options, &mut commits);
     Ok(AnnotateResult {
-        head: snapshot.ref_data.head.clone(),
+        head: snapshot.ref_data.head,
         commits: commits
             .into_iter()
             .map(|commit| GitCommitRefs {

@@ -1,0 +1,61 @@
+# cargo-deny configuration, verified in CI only (`.github/workflows/rust-gates.yml`) —
+# cargo-deny is not part of the local dev toolchain. Checked checks: `advisories`,
+# `bans` (duplicate versions and wildcards), `licenses`, `sources`.
+
+[graph]
+# The union of features the workspace can build, so the graph covers every optional
+# dependency that can end up in a release binary.
+all-features = true
+# The platform matrix the extension ships for (R8 plans to add musl/armhf targets
+# here when they enter the build matrix). Target-specific dependencies — windows-sys
+# and friends — are only resolved for the targets that list them, so a license or
+# advisory hidden behind one platform would be missed without these.
+targets = [
+	{ triple = "x86_64-pc-windows-msvc" },
+	{ triple = "x86_64-unknown-linux-gnu" },
+	{ triple = "aarch64-unknown-linux-gnu" },
+	{ triple = "aarch64-apple-darwin" },
+]
+
+[advisories]
+version = 2
+# A yanked dependency is a lockfile refresh away from being unbuildable, but the
+# lockfile itself still resolves: warn (visible in the CI log) rather than deny,
+# so a yanked-in-the-night crate does not block every unrelated PR.
+yanked = "warn"
+
+[bans]
+# The gix tree currently carries several duplicate versions (e.g. hashbrown via
+# dashmap). Warn keeps the set visible in every CI log; promoting to "deny" with a
+# reviewed `skip` list is a follow-up once the duplicate set has been triaged.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[licenses]
+version = 2
+# The permissive set the dependency graph actually uses (194 locked packages):
+# gix/gitoxide, ts-rs, base64 and the napi crates are MIT OR Apache-2.0; sha1_smol
+# is BSD-3-Clause; encoding_rs is (Apache-2.0 OR MIT) AND BSD-3-Clause;
+# unicode-ident is (MIT OR Apache-2.0) AND Unicode-3.0; Zlib-only crates come in
+# with libz-sys's orbit. CC0-1.0/MIT-0 cover the OR-options that also offer them.
+# Copyleft options that only ever appear as one side of an OR (LGPL-2.1-or-later,
+# Unlicense) resolve through MIT and are deliberately not allowlisted.
+allow = [
+	"MIT",
+	"MIT-0",
+	"Apache-2.0",
+	"Apache-2.0 WITH LLVM-exception",
+	"BSD-2-Clause",
+	"BSD-3-Clause",
+	"ISC",
+	"CC0-1.0",
+	"Unicode-3.0",
+	"Unicode-DFS-2016",
+	"Zlib",
+]
+
+[sources]
+# Crates come from crates.io or the workspace; anything else (an unknown registry
+# or a git dependency) must be a deliberate decision recorded here.
+unknown-registry = "deny"
+unknown-git = "deny"

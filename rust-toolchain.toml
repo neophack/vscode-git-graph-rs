@@ -1,0 +1,10 @@
+# Pins the development toolchain so a new stable release cannot break unrelated PRs:
+# clippy grows new lints every six weeks, and CI ("dtolnay/rust-toolchain@stable" legs)
+# builds whatever stable happens to be current. With this file, rustup resolves the
+# 1.97.1 toolchain for every cargo/rustc invocation in this repository (the explicit
+# `cargo +<version>` MSRV check in rust-gates.yml overrides it on purpose).
+# Bump deliberately, in a PR that fixes whatever the new stable's clippy reports.
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

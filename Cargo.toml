@@ -5,7 +5,14 @@ members = ["native/core", "native/node"]
 [workspace.package]
 version = "1.1.0"
 edition = "2021"
-rust-version = "1.82"
+# The MSRV, held by the `msrv` job in .github/workflows/rust-gates.yml, which runs
+# `cargo check --workspace --locked` on exactly this version. It is 1.88, not the 1.82
+# REFACTOR-PLAN §3.7.4 documented: gix 0.90 and napi 3 — and 65 other locked crates
+# behind them — declare rust-version 1.85 through 1.88, so a 1.82 toolchain cannot
+# even resolve the workspace. Restoring 1.82 requires downgrading those crates; until
+# then this line states the floor that actually builds. Keep the workflow's toolchain
+# in sync when this changes.
+rust-version = "1.88"
 license = "MIT"
 
 [workspace.dependencies]
@@ -14,6 +21,25 @@ regex = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Lints inherited by every crate that opts in with `[lints] workspace = true`.
+# `unsafe_code = "forbid"` turns the "no unsafe in the engine" rule into a compile
+# error. `git-graph-core` inherits this table wholesale. The N-API binding
+# (`native/node`) cannot: napi-derive generates `#[allow(unsafe_code)]` code that
+# `forbid` rejects outright, and cargo does not allow a crate to override
+# individual inherited lints - so that crate declares its own `[lints]` table with
+# the one scoped allow it needs.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# A small clippy::pedantic subset, chosen for signal over noise. Levels are "warn";
+# CI runs clippy with `-D warnings`, so these fail the build there.
+[workspace.lints.clippy]
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+inefficient_to_string = "warn"
+large_types_passed_by_value = "warn"
+doc_markdown = "warn"
 
 [profile.release]
 opt-level = "s"

@@ -1,0 +1,55 @@
+name: Rust gates
+
+# Toolchain and supply-chain gates for the Rust engine (optimization plan, R4):
+# the MSRV floor (REFACTOR-PLAN §3.7.4) and cargo-deny (licenses, advisories,
+# duplicate versions). The lint and test gates stay in native-build.yml, on the
+# pinned dev toolchain from rust-toolchain.toml.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msrv:
+    # Keep this version in sync with `rust-version` in the root Cargo.toml, which
+    # documents why it is 1.88 (the gix 0.90 / napi 3 dependency floor) rather than
+    # the 1.82 REFACTOR-PLAN §3.7.4 originally documented.
+    name: MSRV check (rust-version 1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The rust-toolchain.toml pin (dev toolchain) must not apply to this job:
+      # every cargo invocation below has to resolve the MSRV, not the pinned stable.
+      # RUSTUP_TOOLCHAIN outranks the toolchain file for rustup's resolution.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.88'
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # Holds the `rust-version` line: a dependency or language feature that needs
+      # a newer compiler fails here instead of in a user's build.
+      - name: Check the workspace on the MSRV toolchain
+        env:
+          RUSTUP_TOOLCHAIN: '1.88'
+        run: cargo check --workspace --locked
+
+  deny:
+    name: cargo-deny (licenses, advisories, duplicates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The action bundles cargo-deny and runs `cargo deny check` with the
+      # arguments below, against cargo-deny.toml at the repo root.
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: --hide-inclusion-graph advisories bans licenses sources

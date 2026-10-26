@@ -123,9 +123,8 @@ pub fn submodules(repo: &Repo) -> Result<Vec<String>> {
         return Ok(Vec::new());
     }
 
-    let file =
-        gix::config::File::from_path_no_includes(modules.clone(), gix::config::Source::Worktree)
-            .map_err(|e| Error::git(format!("Could not read .gitmodules: {e}")))?;
+    let file = gix::config::File::from_path_no_includes(modules, gix::config::Source::Worktree)
+        .map_err(|e| Error::git(format!("Could not read .gitmodules: {e}")))?;
 
     let mut roots: Vec<String> = Vec::new();
     if let Some(sections) = file.sections_by_name("submodule") {

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// One review event parsed out of a NoteDb meta commit, in the shape the webview renders.
+/// One review event parsed out of a `NoteDb` meta commit, in the shape the webview renders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GerritChangeEvent {
