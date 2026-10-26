@@ -2,13 +2,12 @@
  * The `mobileAdaptation` default is host-aware: Git Graph Studio (uriScheme 'ggs') enables the
  * narrow-window phone layout out of the box — the studio's remote phone sessions are the
  * layout's audience — while VS Code keeps the marketplace default (off). An explicitly set value
- * always wins on every host, and the studio default is SEEDED into the settings store once at
- * activation (so the studio's own Settings dialog, which reads the store, agrees with the
- * runtime default) — never overwriting a value the user set or reset.
+ * always wins on every host, and since OPTIMIZATION-PLAN V1 the studio default lives in the
+ * config readers themselves: activation never writes user settings to seed it.
  *
- * Ported from tests/mobileAdaptationDefault.test.mjs (REFACTOR-PLAN task 7.1); assertions are
- * unchanged. The activation seeding is exercised against the real activate() booted on a
- * throwaway repository, the same shape extensionHost.test.ts uses.
+ * Ported from tests/mobileAdaptationDefault.test.mjs (REFACTOR-PLAN task 7.1). The reader
+ * assertions are unchanged; the activation describe was rewritten when the seeding write was
+ * replaced by the snapshot-reader default (it now asserts the absence of that write).
  */
 
 import assert from 'node:assert/strict';
@@ -85,7 +84,7 @@ describe('the mobileAdaptation host-aware default (config.ts)', () => {
 	});
 });
 
-describe('the activation seeds the studio default once (extension.ts)', () => {
+describe('activation never seeds the studio default into the settings store (extension.ts, OPTIMIZATION-PLAN V1)', () => {
 	const activationContext = (name: string) => ({
 		subscriptions: [] as Array<{ dispose(): void }>,
 		extensionPath: root,
@@ -102,20 +101,19 @@ describe('the activation seeds the studio default once (extension.ts)', () => {
 		return () => { for (const subscription of context.subscriptions) subscription.dispose(); };
 	};
 
-	it('writes true into the global settings when the studio host has no value set', async () => {
+	it('leaves the settings store untouched while the reader still answers the studio default', async () => {
 		vscodeState.resetCalls();
 		delete vscodeState.settings.mobileAdaptation;
 
 		const dispose = await run('global-storage-1');
 
-		const seeds = seedCalls();
-		assert.equal(seeds.length, 1, 'exactly one seed write happened');
-		assert.equal(seeds[0].args[2], true, 'it seeds the phone layout ON');
-		assert.equal(vscodeState.settings.mobileAdaptation, true, 'the store now carries the default');
+		assert.equal(seedCalls().length, 0, 'no mobileAdaptation write happens at activation');
+		assert.equal(vscodeState.settings.mobileAdaptation, undefined, 'the store is left alone (the default is expressed by the readers)');
+		assert.equal(getConfig().mobileAdaptation, true, 'the runtime answer under the studio host is still ON');
 		dispose();
 	});
 
-	it('never touches a value the user set (an explicit OFF after a reset stays off)', async () => {
+	it('never touches a value the user set (an explicit OFF stays off)', async () => {
 		vscodeState.resetCalls();
 		vscodeState.settings.mobileAdaptation = false;
 
@@ -123,10 +121,11 @@ describe('the activation seeds the studio default once (extension.ts)', () => {
 
 		assert.equal(seedCalls().length, 0, 'no seed write for an explicitly set value');
 		assert.equal(vscodeState.settings.mobileAdaptation, false, 'the explicit OFF is untouched');
+		assert.equal(getConfig().mobileAdaptation, false, 'the reader honours the explicit OFF');
 		dispose();
 	});
 
-	it('does not seed under VS Code', async () => {
+	it('does not write under VS Code either', async () => {
 		// the modules read the stub object at call time, so the scheme is flipped on it
 		stub.env.uriScheme = 'vscode';
 		vscodeState.resetCalls();

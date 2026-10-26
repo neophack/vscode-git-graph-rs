@@ -1,6 +1,8 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { hasEngineForPlatform, isAddonAvailable, platformKey } from './extension/git/read/addonLoader';
+import { createGitResolution } from './extension/git/executable/gitResolution';
 import { AskpassManager } from './askpass/askpassManager';
 import { AvatarManager } from './extension/integrations/avatars/avatarManager';
 import { CommandManager } from './extension/commands';
@@ -31,6 +33,7 @@ import type { PrewarmReader } from './extension/repos/prewarm';
 import { hostScheduler } from './extension/graphView/scheduler';
 import { takeSnapshot } from './extension/platform/config';
 import { StatusBarItem } from './extension/statusBar';
+import { createTrustGate } from './extension/platform/workspaceTrust';
 import {
 	GitExecutable as LegacyGitExecutable,
 	findGit,
@@ -48,6 +51,14 @@ import { EventEmitter } from './utils/event';
  * declines), the single `GitProcess` every write and runner spawn goes through, the GitWriter
  * over it, and the `GitRepository` facade every consumer runs on (the view, the commands, the
  * repository manager, the avatars, the diff documents and the two auxiliary views).
+ *
+ * Activation never waits for a `git` spawn (OPTIMIZATION-PLAN V1): commands, the webview panel
+ * serializer and the text document content provider are registered synchronously first, and the
+ * Git executable is resolved in the background — the last good record from globalState answers
+ * immediately, and every Git-CLI-dependent path awaits the resolution instead of activation
+ * doing so. While the workspace is untrusted (OPTIMIZATION-PLAN V2, decision D-1) the extension
+ * runs in Restricted Mode: reads are served by the engine alone and everything that would run
+ * the `git` CLI is disabled.
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
@@ -55,51 +66,47 @@ export async function activate(context: vscode.ExtensionContext) {
 	logger.setEnabled(getConfig().enableLog);
 	logger.log('Starting Git Graph ...');
 
-	// Git Graph Studio defaults the narrow-window phone layout ON (its remote phone sessions are
-	// the layout's audience), VS Code keeps it off — and the studio's own Settings dialog reads
-	// the store, not this runtime default, so the very first activation under the studio seeds
-	// the default into the store once. Only an UNSET value is seeded: a value the user set —
-	// including an explicit off after resetting the row — is never touched again.
-	if (vscode.env.uriScheme === 'ggs') {
-		const inspected = vscode.workspace.getConfiguration('git-graph-rs').inspect<boolean>('mobileAdaptation');
-		if ((inspected?.globalValue ?? inspected?.workspaceValue ?? inspected?.workspaceFolderValue) === undefined) {
-			await vscode.workspace.getConfiguration('git-graph-rs').update('mobileAdaptation', true, vscode.ConfigurationTarget.Global)
-				.then(() => logger.log('mobileAdaptation: seeded the studio default (enabled) into the global settings'), (reason) => logger.log('mobileAdaptation: seeding the studio default failed: ' + String(reason)));
-		}
-	}
-
-	// No engine binary for this platform is not an error: everything runs over the `git` CLI
-	// backend instead, with the full feature set. Say so once, quietly — the Settings widget's
-	// backend section is where the per-capability split is shown.
-	if (!hasEngineForPlatform(context.extensionPath)) {
-		const msg = t('noEngineForPlatform', platformKey());
-		showInformationMessage(msg);
-		logger.log(msg);
-	}
-
-	const gitExecutableEmitter = new EventEmitter<LegacyGitExecutable>();
+	const gitExecutableEmitter = new EventEmitter<LegacyGitExecutable | null>();
 	const onDidChangeGitExecutable = gitExecutableEmitter.subscribe;
 
 	const extensionState = new ExtensionState(context, onDidChangeGitExecutable);
 
-	let gitExecutable: LegacyGitExecutable | null;
-	try {
-		gitExecutable = await findGit(extensionState);
-		gitExecutableEmitter.emit(gitExecutable);
-		logger.log('Using ' + gitExecutable.path + ' (version: ' + gitExecutable.version + ')');
-	} catch (_) {
-		gitExecutable = null;
-		if (hasEngineForPlatform(context.extensionPath)) {
-			// No Git executable, but the engine can serve the whole read path in-process: the
-			// extension is usable as-is, and write operations report that they need Git.
-			const msg = t('noGitRunsOnEngine');
-			showInformationMessage(msg);
-			logger.log(msg);
-		} else {
-			showErrorMessage(unableToFindGitMsg());
-			logger.logError(unableToFindGitMsg());
-		}
-	}
+	// Workspace Trust (V2): untrusted means Restricted Mode — engine-only reads, no Git runs.
+	const trust = createTrustGate();
+	let restrictedBannerShown = false;
+	const showRestrictedBannerOnce = () => {
+		if (restrictedBannerShown) return;
+		restrictedBannerShown = true;
+		const notice = t('restrictedModeNotice');
+		showInformationMessage(notice);
+		logger.log(notice);
+	};
+	if (!trust.isTrusted) showRestrictedBannerOnce();
+
+	// The deferred Git resolution (V1): `current()` is the persisted last-good record until the
+	// background validation answers, then its result (always NULL while untrusted); `ready()` is
+	// what every Git-CLI-dependent path awaits. Validation only starts once everything below is
+	// registered — no `git` spawn before that.
+	const gitResolution = createGitResolution({
+		cache: extensionState,
+		restricted: () => !trust.isTrusted,
+		find: () => findGit(extensionState),
+		onResolved: (executable) => {
+			gitExecutableEmitter.emit(executable);
+			if (executable === null) {
+				if (hasEngineForPlatform(context.extensionPath)) {
+					// No Git executable, but the engine can serve the whole read path in-process:
+					// the extension is usable as-is, and write operations report that they need
+					// Git. Said once per version, not on every activation.
+					showInformationMessageOncePerVersion(context, logger, 'noGitRunsOnEngine', t('noGitRunsOnEngine'));
+				} else {
+					showErrorMessage(unableToFindGitMsg());
+					logger.logError(unableToFindGitMsg());
+				}
+			}
+		},
+		log: (message) => logger.log(message)
+	});
 
 	const configurationEmitter = new EventEmitter<vscode.ConfigurationChangeEvent>();
 	const onDidChangeConfiguration = configurationEmitter.subscribe;
@@ -111,12 +118,18 @@ export async function activate(context: vscode.ExtensionContext) {
 	// names that agreement.
 	const localize: Localize = (key, ...params) => t(key as TextMessageKey, ...params);
 
-	// The Git executable the reader and the writer share; updated in place when it changes.
-	const gitCell: { executable: GitExecutable | null } = { executable: toProcessExecutable(gitExecutable) };
+	// The Git executable the reader and the writer share; updated in place when the background
+	// resolution (or a trust transition) changes it.
+	const gitCell: { executable: GitExecutable | null } = { executable: gitResolution.current() };
+	const applyGitExecutable = () => {
+		gitCell.executable = gitResolution.current();
+	};
 	// The one process adapter: askpass environment, cancellation, output limits and the error
-	// shape are decided once, for the writer and the view's runner alike.
+	// shape are decided once, for the writer and the view's runner alike. Every run awaits the
+	// Git resolution first, so a spawn issued while the executable is still being validated
+	// waits for it instead of failing with "no Git".
 	const askpass = new AskpassManager();
-	const gitProcess = new GitProcess(() => gitCell.executable, undefined, () => ({ ...askpass.getEnv() }));
+	const gitProcess = new GitProcess(() => gitCell.executable, undefined, () => ({ ...askpass.getEnv() }), () => gitResolution.ready());
 	// The manager's credential servers are created lazily by the first spawn that carries the
 	// askpass environment (the engine's CLI fallback, a writer run); without this they outlive
 	// deactivate and hold the process open.
@@ -124,7 +137,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	// The read backend: the engine with the CLI fallback while a Git executable exists, the
 	// engine alone without one (the whole read path is engine-served), the CLI alone without
 	// the engine. Rebuilt when the Git executable changes, exactly as the legacy DataSource did.
-	const readerCell: { backend: GitBackend } = { backend: buildBackend(gitExecutable, logger) };
+	// In Restricted Mode it is built engine-only, whatever Git was found (V2).
+	const readerCell: { backend: GitBackend } = { backend: buildBackend(gitResolution.current(), logger, !trust.isTrusted) };
 	// A forwarder over the cell, so the facade's read face follows the rebuilt backend without
 	// the view (which holds the facade) having to rebind anything.
 	const reader = forwardBackend(() => readerCell.backend);
@@ -177,7 +191,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// over the same runner the view's pipeline uses.
 	const commandGerrit = gerritDataSourceOver(gitRunner);
 
-	const commandManager = new CommandManager(context, avatarManager, repo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, onDidChangeConfiguration, logger);
+	const commandManager = new CommandManager(context, avatarManager, repo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, gitResolution, onDidChangeConfiguration, logger);
 
 	// Prewarming (task 4.9): 2 s after activation, open engine handles and prefetch the first
 	// page of recently-opened repositories, one at a time. The reader rides the same
@@ -193,21 +207,17 @@ export async function activate(context: vscode.ExtensionContext) {
 		enabled: takeSnapshot(vscode.workspace).prewarm,
 		log: (message) => logger.log(message)
 	});
-	prewarm.start();
-	context.subscriptions.push(prewarm);
-	context.subscriptions.push(askpass);
 
-	// The read backend rebuilds when the Git executable changes (the writer and the runner follow
-	// the executable through the cell).
-	context.subscriptions.push(onDidChangeGitExecutable((executable) => {
-		gitCell.executable = toProcessExecutable(executable);
-		readerCell.backend = buildBackend(executable, logger);
-	}));
+	/* ---------- Registration first, resolution after (V1) ---------- */
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.window.registerWebviewPanelSerializer('git-graph-rs', {
 			deserializeWebviewPanel: async (panel: vscode.WebviewPanel) => {
+				// The restored panel's first render decides on the Git situation: wait for the
+				// background resolution so it cannot render the "unable to load" page for a Git
+				// that is merely not validated yet.
+				await gitResolution.ready();
 				GitGraphView.restore(panel, context.extensionPath, repo, gitRunner, legacyViews, extensionState, avatarManager, repoManager, logger);
 			}
 		}),
@@ -243,6 +253,44 @@ export async function activate(context: vscode.ExtensionContext) {
 		gitExecutableEmitter,
 		logger
 	);
+
+	// The read backend rebuilds when the Git executable changes (the writer and the runner follow
+	// the executable through the cell), and on every trust transition (V2: entering Restricted
+	// Mode swaps to an engine-only backend, leaving it re-arms the CLI fallback).
+	context.subscriptions.push(
+		onDidChangeGitExecutable(() => {
+			applyGitExecutable();
+			readerCell.backend = buildBackend(gitResolution.current(), logger, !trust.isTrusted);
+		}),
+		trust.onChange(() => {
+			if (trust.isTrusted) {
+				logger.log('Workspace trust granted: Git operations re-enabled');
+				gitResolution.start(); // a no-op when validation already ran
+			} else {
+				logger.log('Workspace trust revoked: serving engine reads only (Restricted Mode)');
+				showRestrictedBannerOnce();
+			}
+			applyGitExecutable();
+			readerCell.backend = buildBackend(gitResolution.current(), logger, !trust.isTrusted);
+		})
+	);
+
+	prewarm.start();
+	context.subscriptions.push(prewarm);
+	context.subscriptions.push(askpass);
+
+	// No engine binary for this platform is not an error: everything runs over the `git` CLI
+	// backend instead, with the full feature set. Say so once per extension version (V1) — the
+	// Settings widget's backend section is where the per-capability split is shown afterwards.
+	if (!hasEngineForPlatform(context.extensionPath)) {
+		showInformationMessageOncePerVersion(context, logger, 'noEngineForPlatform', t('noEngineForPlatform', platformKey()));
+	}
+
+	// Everything is registered: start the background Git validation now (V1). Until it answers,
+	// `current()` is the persisted last-good record (or NULL), engine reads are already served,
+	// and Git-CLI-dependent paths await `ready()`.
+	gitResolution.start();
+
 	logger.log('Started Git Graph - Ready to use!');
 
 	extensionState.expireOldCodeReviews();
@@ -256,21 +304,50 @@ export function deactivate() { }
 
 /* ---------- Composition helpers ---------- */
 
-/** The process adapter's executable record for a located Git (the legacy `findGit` shape is the same). */
-function toProcessExecutable(executable: LegacyGitExecutable | null): GitExecutable | null {
-	return executable;
-}
-
-/** Build the read backend for a Git situation (the legacy `DataSource.rebuildBackend`). */
-function buildBackend(gitExecutable: LegacyGitExecutable | null, logger: Logger): GitBackend {
+/**
+ * Build the read backend for a Git situation (the legacy `DataSource.rebuildBackend`). In
+ * Restricted Mode (`engineOnly`, V2) the CLI is never reached: the engine serves every read
+ * in-process, and without an engine binary every call fails rather than spawning `git` in an
+ * untrusted folder.
+ */
+function buildBackend(gitExecutable: LegacyGitExecutable | null, logger: Logger, engineOnly: boolean): GitBackend {
 	const backend = createBackend({
 		gitPath: gitExecutable !== null ? gitExecutable.path : null,
+		engineOnly,
 		onFallback: (method, error) => {
 			logger.log('The Rust engine could not answer ' + method + ' (' + error.message + '); falling back to the git CLI.');
 		}
 	});
 	logger.log('Using the ' + backend.name + ' backend.');
 	return backend;
+}
+
+/**
+ * The extension's own version, keying the once-per-version information flags: read from the
+ * installed manifest once per activation (the `ExtensionContext.extension` accessor is newer
+ * than the 1.38 API floor, so the package file is read instead — a single read, not per request).
+ */
+function extensionVersionOf(context: vscode.ExtensionContext): string {
+	try {
+		const manifest = JSON.parse(fs.readFileSync(path.join(context.extensionPath, 'package.json'), 'utf8')) as { version?: unknown };
+		return typeof manifest.version === 'string' ? manifest.version : 'unknown';
+	} catch (_) {
+		return 'unknown';
+	}
+}
+
+/**
+ * Show an informational message once per extension version (OPTIMIZATION-PLAN V1): the flag is
+ * keyed by the version in globalState, so an update shows the message again while a plain reload
+ * does not. The "no engine for this platform" and "running without Git" notices both go through
+ * here — their information lives on in the Settings widget's backend section afterwards.
+ */
+function showInformationMessageOncePerVersion(context: vscode.ExtensionContext, logger: Logger, key: string, message: string): void {
+	const flagKey = 'infoMessageShown:' + key + ':' + extensionVersionOf(context);
+	if (context.globalState.get<boolean>(flagKey) === true) return;
+	showInformationMessage(message);
+	logger.log(message);
+	void context.globalState.update(flagKey, true).then(undefined, () => undefined);
 }
 
 /**

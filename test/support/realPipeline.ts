@@ -284,7 +284,10 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	// commands, e.g. filterByFile, view, amendLastCommit) run the same code the editor's menus
 	// run, and the host bridge's openView keeps switching repositories as before.
 	const commandGerrit = gerritDataSourceOver(gitRunner);
-	const commandManager = new CommandManager(context as any, avatarManager, viewRepo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, { path: 'git', version: '2.50.0' }, gitExecutableEmitter.subscribe, configurationEmitter.subscribe, logger as any);
+	// The deferred Git resolution (OPTIMIZATION-PLAN V1): a settled port standing in for the
+	// composition root's — current() is always the known executable, never restricted.
+	const commandGitResolution = { current: () => ({ path: 'git', version: '2.50.0' }), restricted: () => false, ready: () => Promise.resolve({ path: 'git', version: '2.50.0' }) };
+	const commandManager = new CommandManager(context as any, avatarManager, viewRepo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, commandGitResolution, configurationEmitter.subscribe, logger as any);
 
 	GitGraphView.createOrShow(rootDir, viewRepo, gitRunner, legacyViews, extensionState, avatarManager, repoManager, new Logger(), null);
 	if (graphPanel.webview.html.length <= 0) throw new Error('the webview html was generated');

@@ -267,6 +267,9 @@ describe('activate()', () => {
 
 		await activate(context as never);
 		const channel = vscodeState.outputChannels[0] as any;
+		// OPTIMIZATION-PLAN V1: Git now resolves in the background after registration — wait for
+		// the resolution to land before asserting on its log and state writes.
+		await waitFor(() => channel.lines.some((line: string) => /Using .* \(version: \d/.test(line)));
 		assert.ok(channel.lines.some((line: string) => line.includes('Starting Git Graph')));
 		assert.ok(channel.lines.some((line: string) => /Using .* \(version: \d/.test(line)));
 		assert.ok(channel.lines.some((line: string) => line.includes('Started Git Graph - Ready to use!')));
@@ -306,7 +309,6 @@ describe('activate()', () => {
 		assert.equal(vscodeState.registeredCommands.size, 0);
 		assert.equal(channel.disposed, true);
 	}, 120000);
-
 	it('reports a missing Git executable and still activates', async () => {
 		const context = {
 			subscriptions: [] as Array<{ dispose(): void }>,
@@ -324,6 +326,13 @@ describe('activate()', () => {
 		process.env.PATH = tmp;
 		try {
 			await activate(context as never);
+			// OPTIMIZATION-PLAN V1: the resolution runs in the background now — hold the patched
+			// environment (linux, PATH without git) until it has answered, so the failing spawns
+			// happen under the same conditions the awaited activation used to guarantee.
+			await waitFor(() => {
+				const messages = [...vscodeState.callsTo('showErrorMessage'), ...vscodeState.callsTo('showInformationMessage')].map((c) => c.args[0]);
+				return messages.includes(t('unableToFindGit' as never)) || messages.includes(t('noGitRunsOnEngine' as never));
+			});
 		} finally {
 			Object.defineProperty(process, 'platform', savedPlatform!);
 			process.env.PATH = savedPath;
@@ -334,5 +343,3 @@ describe('activate()', () => {
 		for (const subscription of context.subscriptions) subscription.dispose();
 	}, 120000);
 });
-
-void waitFor;

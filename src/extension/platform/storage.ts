@@ -104,6 +104,7 @@ const GLOBAL_VIEW_STATE = 'globalViewState';
 const IGNORED_REPOS = 'ignoredRepos';
 const LAST_ACTIVE_REPO = 'lastActiveRepo';
 const LAST_KNOWN_GIT_PATH = 'lastKnownGitPath';
+const LAST_KNOWN_GIT = 'lastKnownGit';
 const REPO_STATES = 'repoStates';
 const VIEW_SNAPSHOT = 'viewSnapshot';
 const WORKSPACE_VIEW_STATE = 'workspaceViewState';
@@ -112,6 +113,17 @@ const WORKSPACE_VIEW_STATE = 'workspaceViewState';
 export interface WrittenGlobalAuthor {
 	name: string;
 	email: string;
+}
+
+/**
+ * The last good Git executable, persisted for the next activation: the path and version are used
+ * immediately (before the background `git --version` revalidation answers), and the binary's
+ * modification time is what lets that revalidation skip the spawn when the file is unchanged.
+ */
+export interface LastKnownGitRecord {
+	readonly path: string;
+	readonly version: string;
+	readonly mtimeMs: number | null;
 }
 
 export const DEFAULT_REPO_STATE: GitRepoState = {
@@ -373,6 +385,34 @@ export class ExtensionState extends Disposable {
 	 */
 	private setLastKnownGitPath(path: string) {
 		this.updateGlobalState(LAST_KNOWN_GIT_PATH, path);
+	}
+
+
+	/* Last Known Git Executable */
+
+	/**
+	 * Get the last good Git executable record (path, version and the binary's modification time),
+	 * used optimistically at the next activation while the background revalidation runs.
+	 * @returns The record, or NULL when none was persisted (or the persisted shape is unreadable).
+	 */
+	public getLastKnownGit(): LastKnownGitRecord | null {
+		const record = this.getGlobalState<unknown>(LAST_KNOWN_GIT, null);
+		if (record === null || typeof record !== 'object') return null;
+		const candidate = record as { path?: unknown, version?: unknown, mtimeMs?: unknown };
+		if (typeof candidate.path !== 'string' || typeof candidate.version !== 'string') return null;
+		return {
+			path: candidate.path,
+			version: candidate.version,
+			mtimeMs: typeof candidate.mtimeMs === 'number' ? candidate.mtimeMs : null
+		};
+	}
+
+	/**
+	 * Persist the last good Git executable record for the next activation.
+	 * @param record The record to persist.
+	 */
+	public setLastKnownGit(record: LastKnownGitRecord) {
+		this.updateGlobalState(LAST_KNOWN_GIT, record);
 	}
 
 

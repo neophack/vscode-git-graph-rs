@@ -3,13 +3,15 @@ import { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
+import type { GitResolution } from '../git/executable/gitResolution';
 import { ExtensionState } from '../platform/storage';
-import { isZhCn } from '../../i18n';
+import { isZhCn, t } from '../../i18n';
 import { Logger } from '../platform/logger';
 import { RepoManager } from '../repos/repoManager';
 import { Disposable } from '../../utils/disposable';
 import { GgEvent } from '../../utils/event';
 import { GitExecutable } from '../../utils/findGit';
+import { showInformationMessage } from '../../utils/actions';
 import { VsCodeVersionRequirement, doesVersionMeetRequirement } from '../../utils/git';
 import type { CommandHost } from './context';
 import type { CommandId } from './registry';
@@ -23,12 +25,57 @@ import { amendLastCommit, resetCurrentBranchToRemote } from './sourceControl';
 import { fetch, filterByFile, view } from './view';
 
 /**
+ * Commands whose handler consults Git, or opens a view whose first render decides on the Git
+ * situation: they await the background Git resolution first (OPTIMIZATION-PLAN V1), so a command
+ * invoked while the `git --version` validation is still in flight waits for it instead of acting
+ * on a "no Git" that only means "not validated yet". Once the resolution has answered, the await
+ * is a settled promise and costs nothing.
+ */
+const GIT_AWAITING_COMMANDS: ReadonlySet<string> = new Set([
+	'git-graph-rs.view',
+	'git-graph-rs.filterByFile',
+	'git-graph-rs.version',
+	'git-graph-rs.fetch',
+	'git-graph-rs.searchCommits',
+	'git-graph-rs.addGitRepository',
+	'git-graph-rs.removeGitRepository',
+	'git-graph-rs.amendLastCommit',
+	'git-graph-rs.amendLastCommit.zhCn',
+	'git-graph-rs.resetCurrentBranchToRemote',
+	'git-graph-rs.resetCurrentBranchToRemote.zhCn',
+	'git-graph-rs.gerritPushRef',
+	'git-graph-rs.gerritPushRef.zhCn',
+	'git-graph-rs.gerritFetchCommitMsgHook',
+	'git-graph-rs.gerritFetchCommitMsgHook.zhCn'
+]);
+
+/**
+ * Commands that change the repository or run the `git` CLI at all: refused while the workspace is
+ * untrusted (OPTIMIZATION-PLAN V2) — in Restricted Mode the extension is read-only, served by the
+ * Rust engine alone. The view-opening commands stay available (engine reads are safe).
+ */
+const RESTRICTED_COMMANDS: ReadonlySet<string> = new Set([
+	'git-graph-rs.fetch',
+	'git-graph-rs.searchCommits',
+	'git-graph-rs.addGitRepository',
+	'git-graph-rs.removeGitRepository',
+	'git-graph-rs.amendLastCommit',
+	'git-graph-rs.amendLastCommit.zhCn',
+	'git-graph-rs.resetCurrentBranchToRemote',
+	'git-graph-rs.resetCurrentBranchToRemote.zhCn',
+	'git-graph-rs.gerritPushRef',
+	'git-graph-rs.gerritPushRef.zhCn',
+	'git-graph-rs.gerritFetchCommitMsgHook',
+	'git-graph-rs.gerritFetchCommitMsgHook.zhCn'
+]);
+
+/**
  * Manages the registration and execution of Git Graph Commands.
  *
  * The handlers live in the per-group modules of `src/extension/commands/` (task 4.6); this
- * class owns the registration order, the shared invocation wrapper (logging and promise
- * forwarding), the extension contexts, and disposal — and IS the {@link CommandHost} the
- * handlers run with.
+ * class owns the registration order, the shared invocation wrapper (logging, the Restricted
+ * Mode refusal, the Git-resolution await, and promise forwarding), the extension contexts, and
+ * disposal — and IS the {@link CommandHost} the handlers run with.
  */
 export class CommandManager extends Disposable implements CommandHost {
 	public readonly context: vscode.ExtensionContext;
@@ -40,7 +87,16 @@ export class CommandManager extends Disposable implements CommandHost {
 	public readonly extensionState: ExtensionState;
 	public readonly logger: Logger;
 	public readonly repoManager: RepoManager;
-	public gitExecutable: GitExecutable | null;
+	private readonly gitResolution: GitResolution;
+
+	/**
+	 * The Git executable the commands run on: the deferred resolution's current value (the
+	 * persisted last-good record until the background validation answers, then its result), and
+	 * NULL while the workspace is untrusted — Git must not run there.
+	 */
+	public get gitExecutable(): GitExecutable | null {
+		return this.gitResolution.current();
+	}
 
 	/**
 	 * Creates the Git Graph Command Manager.
@@ -49,16 +105,16 @@ export class CommandManager extends Disposable implements CommandHost {
 	 * @param repo The GitRepository facade the commands read and write through.
 	 * @param gitRunner The view's raw git runner (editor-script flows the ops do not model).
 	 * @param gerrit The Gerrit integration over the same runner.
-	 * @param gitRunner The view's raw git runner (editor-script flows the ops do not model).
 	 * @param legacyViews The auxiliary views the panel hands off to.
 	 * @param extensionState The Git Graph ExtensionState instance.
 	 * @param repoManager The Git Graph RepoManager instance.
-	 * @param gitExecutable The Git executable available to Git Graph at startup.
-	 * @param onDidChangeGitExecutable The Event emitting the Git executable for Git Graph to use.
+	 * @param gitResolution The deferred Git resolution (OPTIMIZATION-PLAN V1): `current()` is the
+	 * executable the handlers see, `ready()` is what Git-dependent commands await, and
+	 * `restricted()` refuses the Git-running commands in Restricted Mode.
 	 * @param onDidChangeConfiguration The Event emitting Visual Studio Code Configuration Change Events.
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, repo: ProductionGitRepository, gitRunner: GitRunnerPort, gerrit: GerritDataSource, legacyViews: LegacyViewPort, extensionState: ExtensionState, repoManager: RepoManager, gitExecutable: GitExecutable | null, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, repo: ProductionGitRepository, gitRunner: GitRunnerPort, gerrit: GerritDataSource, legacyViews: LegacyViewPort, extensionState: ExtensionState, repoManager: RepoManager, gitResolution: GitResolution, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
 		super();
 		this.context = context;
 		this.avatarManager = avatarManager;
@@ -69,7 +125,7 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.extensionState = extensionState;
 		this.logger = logger;
 		this.repoManager = repoManager;
-		this.gitExecutable = gitExecutable;
+		this.gitResolution = gitResolution;
 
 		// Register Extension Commands (in registry order — see registry.ts)
 		this.registerCommand('git-graph-rs.view', (arg) => view(this, arg));
@@ -100,12 +156,6 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.registerCommand('git-graph-rs.gerritPushRef.zhCn', (arg) => gerritPushRef(this, arg));
 		this.registerCommand('git-graph-rs.gerritFetchCommitMsgHook.zhCn', (arg) => gerritFetchCommitMsgHook(this, arg));
 
-		this.registerDisposable(
-			onDidChangeGitExecutable((gitExecutable) => {
-				this.gitExecutable = gitExecutable;
-			})
-		);
-
 		// Register Extension Contexts
 		try {
 			this.registerContext('git-graph-rs:codiconsSupported', doesVersionMeetRequirement(vscode.version, VsCodeVersionRequirement.Codicons));
@@ -127,7 +177,16 @@ export class CommandManager extends Disposable implements CommandHost {
 	 */
 	private registerCommand(command: CommandId, callback: (...args: unknown[]) => unknown) {
 		this.registerDisposable(
-			vscode.commands.registerCommand(command, (...args: unknown[]) => {
+			vscode.commands.registerCommand(command, async (...args: unknown[]) => {
+				// Restricted Mode (V2): the Git-running commands are refused outright — the engine
+				// keeps serving the reads, but nothing may spawn `git` in an untrusted folder.
+				if (RESTRICTED_COMMANDS.has(command) && this.gitResolution.restricted()) {
+					this.logger.log('Command refused in Restricted Mode: ' + command);
+					void showInformationMessage(t('restrictedModeNotice'));
+					return undefined;
+				}
+				// Git-dependent commands await the background resolution (V1) before running.
+				if (GIT_AWAITING_COMMANDS.has(command)) await this.gitResolution.ready();
 				this.logger.log('Command Invoked: ' + command);
 				try {
 					const result = callback(...args);

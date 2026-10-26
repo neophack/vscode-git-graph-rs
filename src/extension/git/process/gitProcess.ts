@@ -76,7 +76,13 @@ export class GitProcess {
 		private readonly executable: () => GitExecutable | null,
 		/** The spawn implementation (injected so unit tests need no real child process). */
 		private readonly spawnFn: GitSpawnFn = cp.spawn as unknown as GitSpawnFn,
-		private readonly askpass: AskpassEnvProvider = () => ({})
+		private readonly askpass: AskpassEnvProvider = () => ({}),
+		/**
+		 * Awaited before every {@link run}: the background Git resolution of OPTIMIZATION-PLAN V1,
+		 * so a write or CLI read issued while the `git --version` validation is still in flight
+		 * waits for it instead of failing with "no Git" (undefined keeps runs immediate).
+		 */
+		private readonly awaitReady?: () => Promise<unknown>
 	) {}
 
 	/** The Git being run, or `null` when none was found. */
@@ -104,10 +110,14 @@ export class GitProcess {
 	 * when no Git executable is available (`noGit`), the spawn itself failed (`noGit`/`io`),
 	 * the run was cancelled (`cancelled`), or the output exceeded `maxBuffer` (`tooLarge`).
 	 */
-	run(args: ReadonlyArray<string>, options: RunOptions): Promise<RunResult> {
+	async run(args: ReadonlyArray<string>, options: RunOptions): Promise<RunResult> {
+		// Git-CLI-dependent paths await the background resolution first (OPTIMIZATION-PLAN V1):
+		// a run issued while the executable is still being validated waits for it here rather
+		// than reporting "no Git" for the few dozen milliseconds the validation takes.
+		if (this.awaitReady !== undefined) await this.awaitReady();
 		const git = this.executable();
 		if (git === null) {
-			return Promise.reject(new GitError('noGit', 'No Git executable was found'));
+			throw new GitError('noGit', 'No Git executable was found');
 		}
 		const signal = options.signal;
 		if (signal !== undefined && signal.aborted) {

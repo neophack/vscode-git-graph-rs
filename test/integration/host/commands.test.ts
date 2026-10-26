@@ -122,6 +122,15 @@ function createDoubles() {
 function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable: unknown = { path: 'git', version: '2.45.0' }) {
 	const onDidChangeGitExecutable = new EventEmitter();
 	const onDidChangeConfiguration = new EventEmitter();
+	// The deferred Git resolution (OPTIMIZATION-PLAN V1): current() follows the executable the
+	// emitter announces, exactly as the manager's own field did before it derived from this port.
+	let current = gitExecutable;
+	onDidChangeGitExecutable.subscribe((value: unknown) => { current = value; });
+	const gitResolution = {
+		current: () => current,
+		restricted: () => false,
+		ready: () => Promise.resolve(current)
+	};
 	const logger = { lines: [] as Array<{ level: string, message: string }>, log(message: string) { this.lines.push({ level: 'log', message }); }, logCmd(command: string, args?: ReadonlyArray<string>) { this.lines.push({ level: 'cmd', message: command + ' ' + (args ?? []).join(' ') }); }, logError(message: string) { this.lines.push({ level: 'error', message }); }, dispose() { /* silent */ } };
 	const context = { extensionPath: root, subscriptions: [] as Array<{ dispose(): void }> };
 	// The view ports the panel consumes (task 3.6/4.4): structural fakes, since these tests
@@ -138,7 +147,7 @@ function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable:
 	// The Gerrit double rides the old DataSource-shaped fake (installHook and the git-runner
 	// surface the gerrit commands call) - task 3.6 moved it off the DataSource parameter.
 	const gerrit = doubles.dataSource;
-	const manager = new CommandManager(context as never, doubles.avatarManager, viewRepo as never, gitRunner as never, gerrit as never, legacyViews as never, doubles.extensionState as never, doubles.repoManager as never, gitExecutable as never, onDidChangeGitExecutable.subscribe as never, onDidChangeConfiguration.subscribe as never, logger as never);
+	const manager = new CommandManager(context as never, doubles.avatarManager, viewRepo as never, gitRunner as never, gerrit as never, legacyViews as never, doubles.extensionState as never, doubles.repoManager as never, gitResolution as never, onDidChangeConfiguration.subscribe as never, logger as never);
 	return { manager, logger, onDidChangeGitExecutable, onDidChangeConfiguration };
 }
 
@@ -204,6 +213,9 @@ describe('CommandManager registration', () => {
 
 		doubles.repoManager.getRepos = () => { throw new Error('sync boom'); };
 		vscode().runCommand('git-graph-rs.fetch');
+		// The wrapper awaits the Git resolution before dispatching (OPTIMIZATION-PLAN V1), so the
+		// handler's synchronous throw is logged one microtask later — still logged, never leaked.
+		await flush();
 		assert.ok(logger.lines.some((l: any) => l.level === 'error' && l.message.includes('Command "git-graph-rs.fetch" failed: Error: sync boom')));
 	});
 });
@@ -481,7 +493,7 @@ describe('git-graph-rs.version', () => {
 
 		manager.dispose();
 		({ manager } = createManager(doubles));
-		const broken = new CommandManager({ extensionPath: '/nope' } as never, doubles.avatarManager, { read: {}, write: { run: async () => null } } as never, { gitOutput: async () => '' } as never, doubles.dataSource as never, { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } } as never, doubles.extensionState as never, doubles.repoManager as never, null as never, (() => ({ dispose() { /* nothing */ } })) as never, (() => ({ dispose() { /* nothing */ } })) as never, { log() { /* silent */ }, logError() { /* silent */ } } as never);
+		const broken = new CommandManager({ extensionPath: '/nope' } as never, doubles.avatarManager, { read: {}, write: { run: async () => null } } as never, { gitOutput: async () => '' } as never, doubles.dataSource as never, { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } } as never, doubles.extensionState as never, doubles.repoManager as never, { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) } as never, (() => ({ dispose() { /* nothing */ } })) as never, { log() { /* silent */ }, logError() { /* silent */ } } as never);
 		vscode().runCommand('git-graph-rs.version');
 		await flush();
 		assert.equal(lastError(), t('versionInfoError' as never));

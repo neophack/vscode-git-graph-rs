@@ -166,6 +166,17 @@ describe('takeSnapshot defaults', () => {
 		expect(takeSnapshot(new FakeWorkspace({ 'prewarm': true })).prewarm).toBe(true);
 	});
 
+	it('defaults mobileAdaptation per host: ON under Git Graph Studio while unset, OFF under VS Code (OPTIMIZATION-PLAN V1)', () => {
+		// The studio default lives in the reader itself now (no settings write at activation), so
+		// the manifest-default parity above stays the VS Code answer and only the studio host flips.
+		vscodeMock.env.uriScheme = 'ggs';
+		expect(takeSnapshot(new FakeWorkspace()).mobileAdaptation, 'the studio host defaults the phone layout on').toBe(true);
+		expect(takeSnapshot(new FakeWorkspace({ 'mobileAdaptation': false })).mobileAdaptation, 'an explicit OFF still wins on the studio host').toBe(false);
+		vscodeMock.env.uriScheme = 'vscode';
+		expect(takeSnapshot(new FakeWorkspace()).mobileAdaptation, 'VS Code keeps the manifest default (off)').toBe(false);
+		expect(takeSnapshot(new FakeWorkspace({ 'mobileAdaptation': true })).mobileAdaptation, 'an explicit ON still wins under VS Code').toBe(true);
+	});
+
 	it('lets explicit values through (a sample across sections)', () => {
 		const snapshot = takeSnapshot(new FakeWorkspace({
 			'enableLog': true,

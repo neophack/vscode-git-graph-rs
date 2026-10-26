@@ -38,11 +38,12 @@ import {
  *
  * The snapshot mirrors `package.json#contributes.configuration` exactly - one field per
  * contributed key, in manifest order, typed from the manifest's declared types and defaulted to
- * the manifest's declared defaults - and nothing else. Host-aware policies built on top of the
- * raw values (for example the per-host `mobileAdaptation` default of the legacy reader below)
- * and cooked enums (`FileViewType.List`, `GitResetMode.Soft`, ...) belong to the consumers of
- * the snapshot, not to the platform layer. config.test.ts derives the key list from
- * package.json itself, so a newly contributed setting without a snapshot field fails the suite.
+ * the manifest's declared defaults - and nothing else, with one declared exception: the unset
+ * `mobileAdaptation` default is host-aware (see {@link mobileAdaptationDefault} below, shared
+ * with the legacy reader). Host-aware policies built on top of the raw values and cooked enums
+ * (`FileViewType.List`, `GitResetMode.Soft`, ...) belong to the consumers of the snapshot, not
+ * to the platform layer. config.test.ts derives the key list from package.json itself, so a
+ * newly contributed setting without a snapshot field fails the suite.
  *
  * Deprecated keys migrate through {@link CONFIG_MIGRATIONS} (REFACTOR-PLAN 3.7.2, "User data"):
  * contributed keys are added, never removed, and a deprecated key keeps being read and mapped
@@ -313,6 +314,18 @@ export function readWithMigrations<T>(config: WorkspaceConfigurationLike, key: s
 // --------------------------------------------------------------------------------------
 
 /**
+ * The unset `mobileAdaptation` default is host-aware: Git Graph Studio (uriScheme 'ggs') turns
+ * the narrow-window phone layout on — its remote phone sessions are the layout's audience —
+ * while VS Code keeps the manifest default (off). Expressing the studio default in the readers
+ * themselves (both the snapshot below and the legacy getter) replaced the settings write the
+ * activation used to seed (OPTIMIZATION-PLAN V1): no user settings are touched at activation,
+ * and an explicitly set value still wins on every host.
+ */
+function mobileAdaptationDefault(): boolean {
+	return vscode.env.uriScheme === 'ggs';
+}
+
+/**
  * Take a snapshot of every contributed `git-graph-rs.*` setting from the injected workspace.
  * Unset (and not migrated) settings answer with their package.json default.
  * @param workspace A workspace-like object (`vscode.workspace` satisfies this structurally).
@@ -376,7 +389,7 @@ export function takeSnapshot(workspace: WorkspaceLike): ConfigSnapshot {
 		interfaceLanguage: readWithMigrations(config, 'interfaceLanguage', 'auto'),
 		markdown: readWithMigrations(config, 'markdown', true),
 		maxDepthOfRepoSearch: readWithMigrations(config, 'maxDepthOfRepoSearch', 0),
-		mobileAdaptation: readWithMigrations(config, 'mobileAdaptation', false),
+		mobileAdaptation: readWithMigrations(config, 'mobileAdaptation', mobileAdaptationDefault()),
 		openNewTabEditorGroup: readWithMigrations(config, 'openNewTabEditorGroup', 'Active'),
 		openToTheRepoOfTheActiveTextEditorDocument: readWithMigrations(config, 'openToTheRepoOfTheActiveTextEditorDocument', false),
 		prewarm: readWithMigrations(config, 'prewarm', true),
@@ -843,8 +856,8 @@ class Config {
 	 * The unset value defaults per host: Git Graph Studio (uriScheme 'ggs') turns the narrow-window
 	 * phone layout on — its remote phone sessions are the layout's whole audience — while VS Code
 	 * keeps the marketplace default (off). An explicitly set value always wins on every host. The
-	 * activation seeds the studio default into the settings store once (extension.ts), so this
-	 * host-aware fallback only covers the window before that write lands.
+	 * default lives in {@link mobileAdaptationDefault}, shared with the snapshot reader, so no
+	 * settings write is needed to make the two readers agree.
 	 */
 	get mobileAdaptation() {
 		// An explicitly set value wins on every host; the unset one defaults per host — Git Graph
@@ -859,8 +872,7 @@ class Config {
 			explicit = this.config.get<boolean>('mobileAdaptation');
 		}
 		if (explicit !== undefined) return !!explicit;
-		if (vscode.env.uriScheme === 'ggs') return true;
-		return !!this.config.get('mobileAdaptation', false);
+		return mobileAdaptationDefault();
 	}
 
 	/**

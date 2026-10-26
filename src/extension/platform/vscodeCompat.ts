@@ -44,3 +44,21 @@ export function tabGroups(): TabGroupsLike | null {
 	const candidate = (vscode.window as { readonly tabGroups?: unknown }).tabGroups;
 	return isTabGroupsLike(candidate) ? candidate : null;
 }
+
+/** The slice of `vscode.workspace`'s Workspace Trust surface the extension reads (VS Code 1.56+). */
+export interface WorkspaceTrustLike {
+	readonly isTrusted: boolean;
+	/** Fires whenever the workspace's trust level changes. */
+	onDidChangeWorkspaceTrust(listener: () => void, thisArg?: unknown): { dispose(): void };
+}
+
+/**
+ * The Workspace Trust API (VS Code 1.56+ only); NULL on older editors and test stubs — the
+ * caller then treats the workspace as trusted, which is those editors' own behaviour.
+ */
+export function workspaceTrust(): WorkspaceTrustLike | null {
+	const workspace = vscode.workspace as { readonly isTrusted?: unknown, onDidChangeWorkspaceTrust?: unknown } | undefined;
+	if (workspace === null || typeof workspace !== 'object') return null;
+	if (typeof workspace.isTrusted !== 'boolean' || typeof workspace.onDidChangeWorkspaceTrust !== 'function') return null;
+	return workspace as WorkspaceTrustLike;
+}

@@ -6,11 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * hand the real object through when it is present. The fake module object is swapped per test
  * through a hoisted mutable (vi.mock factories are hoisted above every const declaration).
  */
-const vscodeMock = vi.hoisted(() => ({ window: {} as Record<string, unknown> }));
+const vscodeMock = vi.hoisted(() => ({ window: {} as Record<string, unknown>, workspace: {} as Record<string, unknown> }));
 
 vi.mock('vscode', () => vscodeMock);
 
-import { tabGroups } from './vscodeCompat';
+import { tabGroups, workspaceTrust } from './vscodeCompat';
 
 const FULL_TAB_GROUPS = {
 	all: [
@@ -22,6 +22,7 @@ const FULL_TAB_GROUPS = {
 
 beforeEach(() => {
 	vscodeMock.window = {};
+	vscodeMock.workspace = {};
 });
 
 describe('tabGroups compat probe', () => {
@@ -56,5 +57,37 @@ describe('tabGroups compat probe', () => {
 		const groups = tabGroups();
 		expect(groups).toBe(readOnly);
 		expect(groups !== null && groups.close).toBeUndefined();
+	});
+});
+
+describe('workspaceTrust compat probe', () => {
+	it('returns NULL when the Workspace Trust API is absent (VS Code < 1.56, or a stub without it)', () => {
+		expect(vscodeMock.workspace.isTrusted).toBeUndefined();
+		expect(workspaceTrust()).toBeNull();
+	});
+
+	it('returns NULL for a malformed trust surface (isTrusted not a boolean, event not a function)', () => {
+		vscodeMock.workspace = { isTrusted: 'yes' };
+		expect(workspaceTrust()).toBeNull();
+		vscodeMock.workspace = { isTrusted: true };
+		expect(workspaceTrust()).toBeNull();
+		vscodeMock.workspace = { isTrusted: false, onDidChangeWorkspaceTrust: 'event' };
+		expect(workspaceTrust()).toBeNull();
+		vscodeMock.workspace = null as unknown as Record<string, unknown>;
+		expect(workspaceTrust()).toBeNull();
+	});
+
+	it('hands the real Workspace Trust API through when present, trusted or untrusted', () => {
+		const onDidChangeWorkspaceTrust = (listener: () => void) => { listener(); return { dispose() { /* nothing */ } }; };
+		const trusted = { isTrusted: true, onDidChangeWorkspaceTrust };
+		vscodeMock.workspace = trusted;
+		expect(workspaceTrust()).toBe(trusted);
+		expect(workspaceTrust()?.isTrusted).toBe(true);
+
+		const untrusted = { isTrusted: false, onDidChangeWorkspaceTrust };
+		vscodeMock.workspace = untrusted;
+		const trust = workspaceTrust();
+		expect(trust).toBe(untrusted);
+		expect(trust?.isTrusted).toBe(false);
 	});
 });

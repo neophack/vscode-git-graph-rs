@@ -28,8 +28,43 @@ export interface BackendOptions {
 	 * fallback then uses whatever `git` is on the PATH.
 	 */
 	readonly gitPath?: string | null;
+	/**
+	 * Restricted Mode (Workspace Trust, OPTIMIZATION-PLAN V2): serve reads from the in-process
+	 * engine alone — no `git` child process may run in an untrusted workspace, so the CLI
+	 * fallback is not built. Without an engine binary there is nothing left to serve reads with,
+	 * and every call fails rather than silently reaching for the CLI.
+	 */
+	readonly engineOnly?: boolean;
 	/** Called whenever a call falls back, so the extension can log it. */
 	readonly onFallback?: (method: string, error: GitBackendError) => void;
+}
+
+/**
+ * A backend with nothing behind it: construction always succeeds, and every read fails with the
+ * same `GitBackendError` a missing engine and a missing Git produce together. What Restricted
+ * Mode runs on when the platform has no engine binary (the CLI is disabled there by policy).
+ */
+function createUnavailableBackend(): GitBackend {
+	// The members that must keep their own meaning: the diagnostics name, the release calls
+	// (nothing was ever opened, so they are no-ops), and the identity/thenable probes treating
+	// the backend as an object rather than a repository read.
+	const reserved = new Set(['name', 'closeRepository', 'closeAllRepositories', 'constructor', 'then', 'catch', 'finally', 'toJSON', 'valueOf', 'toString']);
+	const base = {
+		name: 'unavailable',
+		closeRepository(_path: string): void { /* nothing was ever opened */ },
+		closeAllRepositories(): void { /* nothing was ever opened */ }
+	};
+	return new Proxy(base, {
+		get(target, property, receiver) {
+			if (typeof property === 'string' && !reserved.has(property)) {
+				return () => Promise.reject(new GitBackendError(
+					'Unsupported',
+					'No backend is available: the Rust engine binary is missing and the git CLI is disabled for this untrusted workspace'
+				));
+			}
+			return Reflect.get(target, property, receiver);
+		}
+	}) as GitBackend;
 }
 
 /**
@@ -47,6 +82,7 @@ export function createBackend(options: BackendOptions = {}): GitBackend {
 	// whatever `git` is on the PATH stands in.
 	const hasGit = options.gitPath !== null;
 
+	if (options.engineOnly === true) return isAddonAvailable() ? new NativeBackend() : createUnavailableBackend();
 	if (options.prefer === 'git-cli') return new CliBackend(options.gitPath ?? 'git');
 	if (!isAddonAvailable()) return new CliBackend(options.gitPath ?? 'git');
 	if (!hasGit) return new NativeBackend();
@@ -62,6 +98,7 @@ export function createBackend(options: BackendOptions = {}): GitBackend {
 
 /** Which backend `createBackend` would pick, without building it. */
 export function describeBackend(options: BackendOptions = {}): string {
+	if (options.engineOnly === true) return isAddonAvailable() ? 'rust (engine only; restricted workspace)' : 'unavailable (no engine; restricted workspace)';
 	if (options.prefer === 'git-cli') return 'git-cli';
 	if (!isAddonAvailable()) return 'git-cli';
 	return options.gitPath === null ? 'rust (engine only; no git CLI found)' : 'rust';
