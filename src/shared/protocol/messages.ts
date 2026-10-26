@@ -67,6 +67,8 @@ import type { RequestDeleteUserDetails, RequestEditUserDetails, RequestOpenExten
 import type { RequestApplyStash, RequestBranchFromStash, RequestDropStash, RequestPopStash, RequestPushStash, ResponseApplyStash, ResponseBranchFromStash, ResponseDropStash, ResponsePopStash, ResponsePushStash } from './stash';
 import type { RequestAddTag, RequestDeleteTag, RequestPushTag, RequestTagDetails, ResponseAddTag, ResponseDeleteTag, ResponsePushTag, ResponseTagDetails } from './tags';
 import type { RequestWorktreeList, RequestWorktreeAdd, RequestWorktreeRemove, RequestWorktreePrune, ResponseWorktreeList, ResponseWorktreeAdd, ResponseWorktreeRemove, ResponseWorktreePrune } from './worktrees';
+import type { RequestWebviewTraces } from './perf';
+export type { RequestWebviewTraces };
 
 export type RequestMessage =
 	RequestAbortOperation
@@ -156,7 +158,8 @@ export type RequestMessage =
 	| RequestWorktreeList
 	| RequestWorktreeAdd
 	| RequestWorktreeRemove
-	| RequestWorktreePrune;
+	| RequestWorktreePrune
+	| RequestWebviewTraces;
 
 export type ResponseMessage =
 	ResponseAbortOperation

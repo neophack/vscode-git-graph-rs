@@ -404,8 +404,13 @@ export const MUTATING_COMMANDS: { readonly [K in RequestCommand]: boolean } = {
 type Eq<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type AssertTrue<T extends true> = T;
 
-/** The RequestMap covers every RequestMessage command, exactly, in both directions. */
-export type AssertRequestCoverage = AssertTrue<Eq<RequestCommand, RequestMessage['command']>>;
+/**
+ * The RequestMap covers every RequestMessage command, exactly, in both directions.
+ * P1 exception: `webviewTraces` (OPTIMIZATION-PLAN §7 P1) rides the RequestMessage union but is
+ * deliberately not a graph-view request - the panel consumes it before the handler table, so it
+ * has no GraphViewRequests entry. Drop the Exclude when the protocol move absorbs the message.
+ */
+export type AssertRequestCoverage = AssertTrue<Eq<RequestCommand, Exclude<RequestMessage['command'], 'webviewTraces'>>>;
 
 /** Every entry's `req` is exactly the request interface messages.ts declares for that command. */
 export type AssertRequestParity = AssertTrue<

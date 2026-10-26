@@ -126,8 +126,8 @@ Every number below was produced by the command next to it on this repository.
 
 | Number | Value | Command / source |
 |---|---|---|
-| Engine first page (200 commits) | 12.6 ms (median of 5) | `node scripts/bench.mjs <repo> --commits 200 --runs 5` — measured on the v1.0 code and recorded in REFACTOR-PLAN §0.7; re-measuring on the current tree is P2's first job |
-| git CLI, same page | 205.3 ms (median of 5) | as above (the same `bench.mjs` run compares both backends) |
+| Engine first page (200 commits) | 12.6 ms (median of 5) | measured on the v1.0 code and recorded in REFACTOR-PLAN §0.7; the `scripts/bench.mjs` runner that produced it is deleted — the current-tree equivalent is the P2 host gate (`node test/perf/p2-host.mjs`, scenario `open-hard`), and re-measuring on the current tree is P2's first job |
+| git CLI, same page | 205.3 ms (median of 5) | same historical run as above; the P2 host gate compares both backends (its `engine` and `cli` modes) |
 | Webview entry chunk | `media/out.min.js` 199823 B (195.1 KB), budget 200 KB | `npm run build:dist -- --production` then `node test/perf/p5-size.mjs` (item `webview-entry-js`); §3.8.2's slimming target for what the entry itself carries |
 | First-paint critical JS (closure) | 352021 B (343.8 KB) = the entry + the 9 chunks it imports statically, budget 360 KB ([ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md)) | same build, same run (item `first-paint-js-total`); the string table, the inline icons and the data-URI assets are first paint by necessity — the ADR carries the decomposition |
 | First-paint critical CSS | 45419 B (44.4 KB) = `media/out.min.css`, budget 60 KB | same build, same run (item `webview-entry-css`); the widget/dialog/details styles ride on-demand chunks (46.1 KB, item `webview-ondemand-js:onDemand`) |
@@ -145,8 +145,8 @@ always the comparison page's, never the graph view's first paint.
 
 | Item | Blocker | Unblocks via |
 |---|---|---|
-| Every T0–T5 / operation timing (P50/P95, S/M/L) | the T0–T5 markers and the P1–P5 harness do not exist yet | `test/perf/` + `native/core/benches/` (task 0.5 / §6.7) |
-| `bench.mjs` engine-vs-CLI on the current tree | needs a built engine (`npm run build:native`, cargo) and the `out/` tree | `npm run build && node scripts/bench.mjs <repo> --commits 200 --runs 5` |
+| Every T0–T5 / operation timing (P50/P95, S/M/L) | the P1 markers exist since the instrumentation wave (`src/shared/perf/trace.ts`); the P4 nightly harness that reads them inside real VS Code does not | `test/perf/` + `native/core/benches/` (task 0.5 / §6.7); until then `git-graph-rs.enableLog` + `node scripts/analyze-log.mjs <logfile>` aggregates the recorded traces into P50/P95 |
+| Engine-vs-CLI first page on the current tree | needs a built engine (`npm run build:native`, cargo) and the `out/` tree | `npm run build && node test/perf/p2-host.mjs` (the P2 host gate, both backends) |
 | Serialization cost of "load all" (decides §3.8.4) | same engine dependency; part of the P2 scenarios | P2 (`test/perf/`) |
 | Activation synchronous main-thread time | needs the P4 markers inside real VS Code | P4 (`@vscode/test-electron`) |
 

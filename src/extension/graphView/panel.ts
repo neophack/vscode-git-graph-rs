@@ -15,7 +15,8 @@ import { TabIconColourTheme } from '../../shared/model/webview';
 import type { GitRepoSet } from '../../shared/model/repoState';
 import type { GitGraphViewSnapshot, LoadGitGraphViewTo } from '../../shared/model/webview';
 import type { RequestLoadView, ResponseLoadCommits } from '../../shared/protocol/loading';
-import type { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
+import type { RequestMessage, RequestWebviewTraces, ResponseMessage } from '../../shared/protocol/messages';
+import { mark, MARK, mergeWebviewMarks, span } from '../../shared/perf/trace';
 import type { RequestCommand, WriteEffect } from '../../shared/protocol/graphView';
 import { WRITE_EFFECTS } from '../../shared/protocol/graphView';
 import { showErrorMessage } from '../platform/actions';
@@ -38,6 +39,13 @@ import { BackgroundChangePoller } from './poller';
 function localizeWriteKey(key: string, ...params: Array<string | number>): string {
 	return t(key as TextMessageKey, ...params);
 }
+
+/**
+ * The dispatched requests the P1 op spans measure (OPTIMIZATION-PLAN §7 P1, the "if cheap" row):
+ * load-more (`loadCommits`), expand-details (`commitDetails`), and the refs/HEAD repo-info op
+ * (`loadRepoInfo`). Every other dispatched request starts no span.
+ */
+const OP_TRACE_COMMANDS: ReadonlySet<string> = new Set(['loadCommits', 'commitDetails', 'loadRepoInfo']);
 
 /**
  * The Git Graph view panel (REFACTOR-PLAN task 4.4): the lifecycle, serialization restore,
@@ -209,7 +217,9 @@ export class GitGraphView extends Disposable {
 				light: this.getResourcesUri('git-graph-rs-webview-icon-light.svg'),
 				dark: this.getResourcesUri('git-graph-rs-webview-icon-dark.svg')
 			};
-
+		// T1 (P1): the panel exists - the boot trace the view command began at T0 continues here
+		// (a restored or orphan-replaced panel has no T0 and opens a session trace instead).
+		mark(MARK.panelCreated);
 		this.loaderReads = createLoaderReads(repo);
 		this.loader = createCommitLoader(repo, git, logger, this.loaderReads);
 		this.ports = createPanelPorts({
@@ -411,6 +421,14 @@ export class GitGraphView extends Disposable {
 			deliverAutomationShimResult((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
 			return;
 		}
+		// The P1 trace report (OPTIMIZATION-PLAN §7 P1): the webview's collected marks arrive
+		// once, after T5 - append them to the open trace and record it. Deliberately not a
+		// handler-table request: no handler exists (or may exist) for it.
+		if (typeof msg === 'object' && msg !== null
+			&& (msg as { command?: unknown }).command === 'webviewTraces') {
+			mergeWebviewMarks((msg as RequestWebviewTraces).marks);
+			return;
+		}
 		void this.respondToMessage(msg);
 	}
 
@@ -426,10 +444,14 @@ export class GitGraphView extends Disposable {
 	private async respondToMessage(msg: unknown): Promise<void> {
 		const command = typeof msg === 'object' && msg !== null ? (msg as { command?: unknown }).command : undefined;
 		const mutates = typeof command === 'string' && isMutatingCommand(command);
+		// The P1 op spans: load-more, expand-details, and the refs/HEAD repo-info op, timed as
+		// one dispatch each (the span ends when the handler's promise settles).
+		const opSpan = typeof command === 'string' && OP_TRACE_COMMANDS.has(command) ? 'op:' + command : null;
 		this.repoFileWatcher.mute();
 		this.dispatchDepth++;
 		try {
-			const result = await dispatchRequest(msg, this.buildContext());
+			const context = this.buildContext();
+			const result = await (opSpan !== null ? span(opSpan, () => dispatchRequest(msg, context)) : dispatchRequest(msg, context));
 			if (result === 'unknown') {
 				// No handler exists for the command: say so in exactly one log line and surface an
 				// error, instead of silently dropping the message (task 4.2). The protocol has no
@@ -600,6 +622,8 @@ export class GitGraphView extends Disposable {
 		// The pushed response doubles as the boot's repository switch: the last-active record,
 		// the repo file watcher and the poll baseline follow the pushed repository.
 		this.viewPort.repoSwitched(response.repo);
+		// T3 (P1): the boot's data is ready and is about to be posted to the page.
+		mark(MARK.hostDataReady);
 		this.sendMessage(response);
 		pending.ticket.followUps((commitsResponse: ResponseLoadCommits) => this.sendMessage(commitsResponse));
 	}

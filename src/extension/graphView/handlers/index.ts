@@ -148,6 +148,8 @@ export type DispatchResult =
 export async function dispatchRequest(msg: unknown, ctx: HandlerContext): Promise<DispatchResult> {
 	const command = typeof msg === 'object' && msg !== null ? (msg as { command?: unknown }).command : undefined;
 	if (typeof command !== 'string' || !Object.prototype.hasOwnProperty.call(TABLE, command)) return 'unknown';
-	await TABLE[command as RequestCommand].handle(msg as RequestMessage, ctx);
+	// The `webviewTraces` P1 message rides the RequestMessage union but has no handler here (the
+	// panel consumes it before dispatch), so the table's request union excludes it.
+	await TABLE[command as RequestCommand].handle(msg as Exclude<RequestMessage, { command: 'webviewTraces' }>, ctx);
 	return 'handled';
 }

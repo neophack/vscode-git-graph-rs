@@ -5,8 +5,10 @@ import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { GitResolution } from '../git/executable/gitResolution';
 import { ExtensionState } from '../platform/storage';
+import { getConfig } from '../platform/config';
 import { isZhCn, t } from '../platform/i18n';
 import { Logger } from '../platform/logger';
+import { begin, formatTrace, isEnabled, mark, MARK, onTraceRecorded, setEnabled } from '../../shared/perf/trace';
 import { RepoManager } from '../repos/repoManager';
 import { Disposable } from '../../shared/util/disposable';
 import { GgEvent } from '../../shared/util/event';
@@ -127,6 +129,16 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.repoManager = repoManager;
 		this.gitResolution = gitResolution;
 
+		// P1 tracing (OPTIMIZATION-PLAN §7 P1): gated by the same setting as the session log, and
+		// every recorded trace is written to that log in the one-line shape
+		// scripts/analyze-log.mjs aggregates into P50/P95. The ring buffer itself is read through
+		// shared/perf/trace's `traces()` (the later Diagnostics command, V5).
+		// NOTE (P1 integration): when the extension entry lands its ACTIVATION mark (see
+		// MARK.activation), it should also call setEnabled(getConfig().enableLog) BEFORE it, so
+		// the activation mark is recorded; the wiring here stays (it re-asserts the same value).
+		setEnabled(getConfig().enableLog);
+		onTraceRecorded((trace) => this.logger.log('Trace ' + formatTrace(trace)));
+
 		// Register Extension Commands (in registry order — see registry.ts)
 		this.registerCommand('git-graph-rs.view', (arg) => view(this, arg));
 		this.registerCommand('git-graph-rs.filterByFile', (arg) => filterByFile(this, arg));
@@ -166,6 +178,8 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.registerDisposable(
 			onDidChangeConfiguration((event) => {
 				if (event.affectsConfiguration('git-graph-rs.interfaceLanguage')) this.updateInterfaceLanguageContext();
+				// P1: the trace layer follows the log gate live.
+				if (event.affectsConfiguration('git-graph-rs.enableLog')) setEnabled(getConfig().enableLog);
 			})
 		);
 	}
@@ -178,6 +192,14 @@ export class CommandManager extends Disposable implements CommandHost {
 	private registerCommand(command: CommandId, callback: (...args: unknown[]) => unknown) {
 		this.registerDisposable(
 			vscode.commands.registerCommand(command, async (...args: unknown[]) => {
+				// T0 (P1): the view-opening commands begin the boot trace the panel's T1/T3 marks
+				// join; the webview completes it with its T2/T4/T5 batch (the `webviewTraces`
+				// message). Other commands start no trace - they are not part of the measured
+				// open path.
+				if (isEnabled() && (command === 'git-graph-rs.view' || command === 'git-graph-rs.filterByFile')) {
+					begin('boot');
+					mark(MARK.commandDispatch);
+				}
 				// Restricted Mode (V2): the Git-running commands are refused outright — the engine
 				// keeps serving the reads, but nothing may spawn `git` in an untrusted folder.
 				if (RESTRICTED_COMMANDS.has(command) && this.gitResolution.restricted()) {

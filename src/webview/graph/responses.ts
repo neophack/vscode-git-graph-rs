@@ -15,6 +15,7 @@ import { formatStr, markup, strings } from '../common/i18n/index';
 import { SVG_ICONS } from '../common/icons';
 import * as GG from '../common/protocol';
 import { isExtensionErrorInfo, parseExtensionErrorInfo, reduceErrorInfos } from '../common/util';
+import { isEnabled, mark, MARK, setEnabled } from '../../shared/perf/trace';
 import { getMergeActionOnName, getRebaseActionOnName } from './actions/dialogActions';
 import { showTagDetails } from './actions/tagDetails';
 import { GraphContext } from './context';
@@ -279,7 +280,12 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 			}
 		},
 		refresh: () => ctx.loader.refresh(false),
-		configChanged: (msg) => ctx.loader.applyConfig(msg.config),
+		configChanged: (msg) => {
+			// P1: the trace layer follows the same live setting (the host applies the identical
+			// rule in the CommandManager's configuration listener).
+			setEnabled(msg.config.enableLog);
+			ctx.loader.applyConfig(msg.config);
+		},
 		renameBranch: complete(strings.errRenameBranch),
 		resetFileToRevision: complete(strings.errResetFileToRevision),
 		resetToCommit: complete(strings.errResetToCommit),
@@ -317,6 +323,8 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		// dropped silently: dispatching it used to throw `handlers[msg.command] is not a function`
 		// and surface an error dialog that occluded the view for the rest of the session.
 		if (typeof msg !== 'object' || msg === null || !Object.prototype.hasOwnProperty.call(handlers, msg.command)) return;
+		// T4 (P1): the boot's data push arrived - the trace report goes out after T5 (main.ts).
+		if (isEnabled() && msg.command === 'loadView') mark(MARK.webviewDataReceived);
 		try {
 			(<(message: GG.ResponseMessage) => void>handlers[msg.command])(msg);
 		} catch (error) {

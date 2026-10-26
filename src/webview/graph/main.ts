@@ -27,12 +27,13 @@ import { ColumnLayout } from './render/columns';
 import { CommitTable } from './render/commitTable';
 import { GraphView } from './render/graphSvg';
 import { LayoutMode } from './render/layoutMode';
-import { RenderScheduler } from './render/scheduler';
+import { RenderScheduler, scheduleFrame } from './render/scheduler';
 import { Viewport } from './render/viewport';
 import { createResponseRouter } from './responses';
 import { decodePersistedWebViewState, Persistence } from './state/persistence';
 import { Store } from './state/store';
 import { WebViewState } from './state/types';
+import { clearMarks, collectMarks, hasMark, isEnabled, mark, MARK, setEnabled } from '../../shared/perf/trace';
 import { loadMarkdown } from './text/markdown';
 import { TextFormatter } from './text/textFormatter';
 import { ConflictBanner } from './widgets/conflictBanner';
@@ -47,6 +48,14 @@ declare const workspaceState: GG.GitGraphViewWorkspaceState;
 
 const CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH = 'branchLabelsAlignedToGraph';
 const CLASS_TAG_LABELS_RIGHT_ALIGNED = 'tagLabelsRightAligned';
+
+// P1 timing (OPTIMIZATION-PLAN §7 P1): the webview half of the trace layer, gated by the same
+// `enableLog` setting the host reads (embedded into the page's initialState). T2 fires at the
+// first statement of the bundle; T4 is marked by the response router, and T5 - plus the single
+// `webviewTraces` report to the host - happens once the first rows have painted (see
+// observeFirstPaint).
+setEnabled(initialState.config.enableLog);
+mark(MARK.webviewStart);
 
 // VS Code allows acquireVsCodeApi() to be called only once per webview: the bridge acquires it as
 // soon as the bundle runs, sharing it with the automation shim (see HostBridge)
@@ -110,6 +119,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	// of the store renders once, not once per change
 	ctx.renderScheduler = new RenderScheduler(() => ctx.table.render());
 	store.onRenderChange(() => ctx.renderScheduler.request());
+	observeFirstPaint(store);
 	ctx.loader = new RepoLoader(getContext);
 	ctx.commitBodies = new CommitBodies(getContext);
 	ctx.details = new CommitDetails(getContext);
@@ -174,6 +184,30 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 }
 
 let loaded = false;
+
+/**
+ * The P1 T5 marker (OPTIMIZATION-PLAN §7 P1): once the boot's data push (T4) has been routed,
+ * the first render request it triggered schedules two animation frames - the first is the frame
+ * the render scheduler's pass runs in (the rows enter the DOM), the second only fires once a
+ * compositor frame has passed over the first rows - and then reports the webview's collected
+ * marks to the host in ONE `webviewTraces` message (the host appends them to its open trace and
+ * records it). Renders requested before T4 (e.g. the boot's own wiring) are not the first rows
+ * and are ignored.
+ */
+function observeFirstPaint(store: Store): void {
+	if (!isEnabled()) return;
+	const stop = store.onRenderChange(() => {
+		if (!hasMark(MARK.webviewDataReceived)) return;
+		stop();
+		scheduleFrame(() => {
+			scheduleFrame(() => {
+				mark(MARK.rafAfterFirstRows);
+				bridge.send({ command: 'webviewTraces', marks: collectMarks() });
+				clearMarks();
+			});
+		});
+	});
+}
 
 window.addEventListener('load', () => {
 	if (loaded) return;
