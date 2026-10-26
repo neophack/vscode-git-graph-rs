@@ -42,6 +42,8 @@ body.touchMode{
 	--m-ren:var(--vscode-gitDecoration-renamedResourceForeground, #58a6ff);
 	--m-sheet:var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526));
 	--m-target:44px;
+	/* The toolbar capsules' height (the dropdowns and the tablet's Remote chip) */
+	--m-capsule:40px;
 	--m-bar:52px;
 	--m-radius:12px;
 	--m-mono:var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);

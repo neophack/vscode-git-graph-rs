@@ -37,4 +37,5 @@
 @import "./tablet/base.css";
 @import "./tablet/toolbar.css";
 @import "./tablet/commitList.css";
+@import "./tablet/compactRows.css";
 @import "./tablet/dropdown.css";

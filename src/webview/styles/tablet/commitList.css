@@ -19,6 +19,8 @@ body.tabletMode #commitTable th{
 	font-weight:600;
 	letter-spacing:0.04em;
 	line-height:30px;
+	/* the base header centres its label, while the cells below it are left-aligned */
+	text-align:left;
 	text-transform:uppercase;
 }
 body.tabletMode .commit > td, body.tabletMode #tableColHeaders > th{
@@ -52,7 +54,13 @@ body.tabletMode #commitTable tr.commit span.description{
 	align-items:center;
 	height:var(--git-graph-rowHeight);
 }
+/* The subject takes the room the refs leave and never collapses below a readable stub: the base
+   rule only ellipsizes it, while its ref labels (flex-shrink:0) could squeeze it to nothing in a
+   narrow description column (the side pane open). The refs give way first: they shrink and
+   ellipsize instead. */
 body.tabletMode #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:96px;
 	font-size:14px;
 	font-weight:500;
 	letter-spacing:-0.005em;
@@ -113,5 +121,32 @@ body.tabletMode .gitRef.active{
 	box-shadow:inset 0 0 0 1px var(--git-graph-color);
 }
 body.tabletMode #commitTable tr.commit span.description .gitRef{
+	display:inline-flex;
+	align-items:center;
 	align-self:center;
+	flex-shrink:1;
+	/* a floor, so a long subject beside several refs ellipsizes the names instead of cutting a
+	   chip down to its icon */
+	min-width:76px;
+	max-width:45%;
+	overflow:hidden;
+	white-space:nowrap;
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefName{
+	min-width:0;
+	max-width:100%;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef > svg{
+	flex:none;
+}
+/* The avatar sits on the author text's line, not at the top of the 40px cell */
+body.tabletMode #commitTable .commit .avatar > img{
+	margin-top:0;
+	vertical-align:middle;
+}
+body.tabletMode #commitTable tr.commit span.description .openChangesBtn{
+	flex-shrink:0;
 }

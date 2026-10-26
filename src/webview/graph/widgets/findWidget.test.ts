@@ -58,7 +58,7 @@ function makeHarness(commits: GG.GitCommit[]) {
 			updateVirtualWindow: noop,
 			scrollToCommit: noop
 		},
-		layout: { isMobileLayout: () => false, getColumnVisibility: () => ({ date: true, author: true, commit: true }) },
+		layout: { isTwoLineRows: () => false, getColumnVisibility: () => ({ date: true, author: true, commit: true }) },
 		details: { isOpen: () => true, load: noop },
 		table: { findCommitElem: () => null }
 	} as unknown as GraphContext;

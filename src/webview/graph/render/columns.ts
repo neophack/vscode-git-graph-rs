@@ -62,7 +62,7 @@ export class ColumnLayout {
 		}
 
 		// The mobile layout has no column header text to fit, so a single-lane graph keeps its own width
-		const minWidth = ctx.layout.isMobileLayout() ? 32 : 64;
+		const minWidth = ctx.layout.isTwoLineRows() ? 32 : 64;
 		if (colWidth < Math.max(graphWidth, minWidth)) {
 			graphColElem.style.padding = '6px ' + Math.floor((Math.max(graphWidth, minWidth) - (colWidth - COLUMN_LEFT_RIGHT_PADDING)) / 2) + 'px';
 		} else {

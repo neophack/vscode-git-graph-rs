@@ -134,7 +134,8 @@ body.mobileMode #commitTable .gitRef{
 	display:inline-flex;
 	align-items:center;
 	flex:0 1 auto;
-	min-width:0;
+	/* a floor, so a crowded meta line ellipsizes the name instead of squeezing the chip to its icon */
+	min-width:48px;
 	max-width:100%;
 	height:18px;
 	margin:0;

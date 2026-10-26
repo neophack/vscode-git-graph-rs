@@ -54,10 +54,28 @@ export class CommitDetails {
 
 		this.ensureStyles();
 		this.close(false);
+		commitElem = this.reserveSidePane(commitElem);
 		this.saveExpandedCommitLoading(parseInt(commitElem.dataset.id!), commit.hash, commitElem, null, null);
 		commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
 		this.render(false);
 		this.requestCommitDetails(commit.hash, false);
+	}
+
+	/**
+	 * The tablet's side pane narrows the list to two-line rows: reserve the pane and render those
+	 * rows BEFORE the view opens (nothing is expanded yet, so the render cannot reopen anything).
+	 * Rows are rebuilt, so the clicked row's element is looked up again; the scroll position keeps
+	 * the same row under the finger across the row height change.
+	 */
+	private reserveSidePane(commitElem: HTMLElement) {
+		const ctx = this.ctx(), layout = ctx.layout;
+		if (!layout.isCdvSidePane() || layout.isTwoLineRows()) return commitElem;
+		const view = ctx.dom.view, before = layout.getRowHeight(), scrollTop = view.scrollTop;
+		layout.openSidePane();
+		ctx.table.render();
+		const after = layout.getRowHeight();
+		if (before > 0 && after !== before) view.scrollTop = Math.round(scrollTop * after / before);
+		return ctx.table.findCommitElem(parseInt(commitElem.dataset.id!)) || commitElem;
 	}
 
 	/** Close the open Commit Details View (or Commit Comparison). */
@@ -76,6 +94,8 @@ export class CommitDetails {
 			// The tablet layout's list-detail split: the list takes the pane's width back
 			ctx.layout.closeSidePane();
 			ctx.columns.applyGraphColumnAutoLayout();
+			// The single-line rows come back with the full width (deferred: close() may run inside a render)
+			ctx.renderScheduler.request();
 		}
 		if (expandedCommit.commitElem !== null) {
 			expandedCommit.commitElem.classList.remove(CLASS_COMMIT_DETAILS_OPEN);

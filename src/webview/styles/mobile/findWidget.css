@@ -33,7 +33,8 @@ body.mobileMode #findInput{
 	flex:1 1 auto;
 	min-width:0;
 	height:36px;
-	padding:0 12px;
+	/* room on the right for the Aa / .* toggles that sit over the field */
+	padding:0 72px 0 12px;
 	border:none;
 	border-radius:10px;
 	background-color:var(--m-fill);
@@ -44,6 +45,20 @@ body.mobileMode .findWidget button{
 	height:var(--m-target);
 	border-radius:50%;
 }
+/* the match toggles are small chips inside the field, not the round 40px buttons */
+body.mobileMode .findWidget .findModifier{
+	width:32px;
+	height:32px;
+	border-radius:8px;
+	line-height:32px;
+}
+body.mobileMode #findCaseSensitive{
+	margin-left:-70px;
+}
+body.mobileMode #findRegex{
+	margin-left:2px;
+	margin-right:4px;
+}
 body.mobileMode .findWidget button:active{
 	background-color:var(--m-pressed);
 }
@@ -53,4 +68,10 @@ body.mobileMode #findPosition{
 	font-size:12px;
 	color:var(--m-fg-2);
 	font-variant-numeric:tabular-nums;
+}
+/* A very narrow phone: the "open the commit details" shortcut gives its room to the field */
+@media screen and (max-width: 360px){
+	body.mobileMode #findOpenCdv{
+		display:none;
+	}
 }

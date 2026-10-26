@@ -39,12 +39,16 @@ body.mobileMode #repoControl, body.mobileMode #branchControl{
 	min-width:0;
 	margin:0;
 }
+/* The branch is the filter that matters most: it keeps a readable floor, and the repository
+   capsule (usually the longer name) gives way first */
 body.mobileMode #repoControl{
 	flex:0 1 auto;
-	max-width:38%;
+	max-width:34%;
+	min-width:72px;
 }
 body.mobileMode #branchControl{
 	flex:1 1 0;
+	min-width:96px;
 }
 body.mobileMode #controls.singleRepo #repoControl, body.mobileMode #authorControl, body.mobileMode #showRemoteBranchesControl,
 body.mobileMode #repoControlLabel, body.mobileMode #branchControlLabel{
@@ -59,12 +63,12 @@ body.mobileMode #controls .dropdownCurrentValue{
 	position:relative;
 	width:100% !important;
 	max-width:none !important; /* over the narrow window caps (12vw / 16vw) in main.css */
-	height:36px;
-	line-height:36px;
+	height:var(--m-capsule);
+	line-height:var(--m-capsule);
 	box-sizing:border-box;
 	padding:0 30px 0 34px;
 	border:none;
-	border-radius:18px;
+	border-radius:calc(var(--m-capsule) / 2);
 	background-color:var(--m-fill);
 	color:var(--m-fg);
 	font-size:15px;
@@ -80,9 +84,10 @@ body.touchMode #controls .dropdownCurrentValue::before{
 	content:"";
 	position:absolute;
 	left:13px;
-	top:11px;
+	top:50%;
 	width:14px;
 	height:14px;
+	margin-top:-7px;
 	background-color:var(--m-fg-2);
 	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
 	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -92,10 +97,11 @@ body.touchMode #repoDropdown .dropdownCurrentValue::before{
 	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M4 9H3V8h1v1zm0-3H3v1h1V6zm0-2H3v1h1V4zm0-2H3v1h1V2zm8-1v12c0 .55-.45 1-1 1H6v2l-1.5-1.5L3 16v-2H1c-.55 0-1-.45-1-1V1c0-.55.45-1 1-1h10c.55 0 1 .45 1 1zm-1 10H1v2h2v-1h3v1h5v-2zm0-10H2v9h9V1z'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 body.touchMode #controls .dropdownCurrentValue::after, body.touchMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
-	top:12px;
+	top:50%;
 	right:11px;
 	width:12px;
 	height:12px;
+	margin-top:-6px;
 	border:none;
 	background-color:var(--m-fg-2);
 	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -103,11 +109,40 @@ body.touchMode #controls .dropdownCurrentValue::after, body.touchMode #controls 
 	transition:transform 160ms var(--gg-ease, ease-out);
 }
 body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
-	border-radius:18px;
+	border-radius:calc(var(--m-capsule) / 2);
 	background-color:var(--m-pressed);
 }
 body.touchMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
 	transform:rotate(180deg);
+}
+/* A wider phone: the branch takes about a third of the bar, whatever the repository's name */
+@media screen and (min-width: 361px){
+	body.mobileMode #branchControl{
+		min-width:max(96px, 32%);
+	}
+}
+/* A very narrow phone: the leading icons go and the buttons tighten, so both capsules keep a
+   readable stretch of text beside the Find / Refresh / ⋯ buttons */
+@media screen and (max-width: 360px){
+	body.mobileMode #controls{
+		gap:4px;
+		padding-left:8px;
+		padding-left:max(8px, env(safe-area-inset-left));
+	}
+	body.mobileMode #repoControl{
+		min-width:56px;
+	}
+	body.mobileMode #branchControl{
+		min-width:72px;
+	}
+	body.mobileMode #controls .dropdownCurrentValue{
+		padding-left:12px;
+		padding-right:26px;
+		font-size:14px;
+	}
+	body.mobileMode #controls .dropdownCurrentValue::before{
+		display:none;
+	}
 }
 
 body.mobileMode #controlBtns{
@@ -135,8 +170,9 @@ body.mobileMode #controlBtns > #filterBtn.active{
 	display:flex;
 	align-items:center;
 	justify-content:center;
-	width:var(--m-target);
-	height:var(--m-target);
+	/* the capsules' height, so the buttons and the filters read as one row */
+	width:var(--m-capsule);
+	height:var(--m-capsule);
 	margin:0;
 	border-radius:50%;
 	color:var(--m-fg);

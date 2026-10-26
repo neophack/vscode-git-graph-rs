@@ -17,10 +17,12 @@ import { FindWidgetState } from '../state/types';
 import { FindWidgetSurface } from './surfaces';
 import findWidgetCss from '../../styles/findWidget.css';
 import mobileFindWidgetCss from '../../styles/mobile/findWidget.css';
+import tabletFindWidgetCss from '../../styles/tablet/findWidget.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
 injectOnDemandStyles(findWidgetCss);
 injectOnDemandStyles(mobileFindWidgetCss);
+injectOnDemandStyles(tabletFindWidgetCss);
 
 const CLASS_FIND_CURRENT_COMMIT = 'findCurrentCommit';
 const CLASS_FIND_MATCH = 'findMatch';
@@ -312,7 +314,7 @@ export class FindWidget implements FindWidgetSurface {
 		const candidates = !workspaceState.findIsRegex && this.searchComplete && this.previousCandidates !== null && this.text.startsWith(this.previousQuery)
 			? this.previousCandidates
 			: null;
-		const colVisibility = ctx.layout.isMobileLayout() ? { date: false, author: true, commit: true } : ctx.layout.getColumnVisibility();
+		const colVisibility = ctx.layout.isTwoLineRows() ? { date: false, author: true, commit: true } : ctx.layout.getColumnVisibility();
 		// A static snapshot: the live collection of rows would be re-derived on each access,
 		// turning the scan below into an O(n^2) pass over the full commit list.
 		const commitElems = Array.from(document.getElementsByClassName('commit')) as HTMLElement[];

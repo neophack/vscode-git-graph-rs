@@ -40,6 +40,8 @@ export class LayoutMode {
 	private rendered: LayoutKind = 'wide';
 	/** The width the open side pane takes from the view (0 while it is closed). */
 	private sidePaneWidth = 0;
+	/** Whether the last render used the two-line rows (see isTwoLineRows). */
+	private renderedTwoLine = false;
 
 	constructor(private readonly store: Store, private readonly viewElem: HTMLElement) { }
 
@@ -76,6 +78,15 @@ export class LayoutMode {
 		return this.rendered === 'tablet';
 	}
 
+	/**
+	 * Are the commit rows the two-line rows (subject + date, then refs, author and hash): always on
+	 * a phone, and on a tablet while the side pane is open - the pane leaves the description column
+	 * too little room for the single-line row's Date, Author and Commit columns.
+	 */
+	public isTwoLineRows() {
+		return this.rendered === 'phone' || (this.rendered === 'tablet' && this.sidePaneWidth > 0);
+	}
+
 	/** Is one of the touch layouts (phone or tablet) currently rendered. */
 	public isTouchLayout() {
 		return this.rendered !== 'wide';
@@ -90,6 +101,7 @@ export class LayoutMode {
 			case 'phone':
 				return MOBILE_ROW_HEIGHT;
 			case 'tablet':
+				if (this.sidePaneWidth > 0) return MOBILE_ROW_HEIGHT;
 				return Math.max(TABLET_ROW_HEIGHT, this.store.config.graph.rowHeight);
 			default:
 				return this.store.config.graph.rowHeight;
@@ -109,13 +121,16 @@ export class LayoutMode {
 		alterClass(document.body, CLASS_MOBILE_MODE, kind === 'phone');
 		alterClass(document.body, CLASS_TABLET_MODE, kind === 'tablet');
 		alterClass(document.body, CLASS_TOUCH_MODE, kind !== 'wide');
+		const twoLine = this.isTwoLineRows();
+		const rowsChanged = twoLine !== this.renderedTwoLine;
+		this.renderedTwoLine = twoLine;
 		document.body.style.setProperty('--git-graph-rowHeight', this.getRowHeight() + 'px');
 		if (kind === 'tablet') {
 			const paneWidth = Math.round(Math.min(SIDE_PANE_MAX_WIDTH, Math.max(SIDE_PANE_MIN_WIDTH, this.getWindowWidth() * SIDE_PANE_SHARE)));
 			document.body.style.setProperty('--gg-pane-width', paneWidth + 'px');
 			if (this.sidePaneWidth > 0) this.sidePaneWidth = paneWidth;
 		}
-		if (changed) this.resetGraphRowGrid();
+		if (changed || rowsChanged) this.resetGraphRowGrid();
 	}
 
 	/** Set the graph grid's row pitch to the current layout's row height (until a render measures it). */
@@ -127,8 +142,8 @@ export class LayoutMode {
 
 	/** Which of the optional columns (Date, Author, Commit) are visible. */
 	public getColumnVisibility(): ColumnVisibility {
-		if (this.isNarrowWindow()) {
-			// Phone layout: the Date, Author and Commit columns are hidden so the graph and the
+		if (this.isNarrowWindow() || this.isTwoLineRows()) {
+			// Two-line rows (phone layout, or the tablet with its side pane open): the Date, Author and Commit columns are hidden so the graph and the
 			// commit messages fit a phone-width view; the wide and tablet layouts are unchanged
 			return { date: false, author: false, commit: false };
 		}

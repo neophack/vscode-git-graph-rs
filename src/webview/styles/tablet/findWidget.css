@@ -1,0 +1,107 @@
+/* ---------- Find bar: a floating card over the list ----------
+ * The wide layout's bar is a 34px strip with 20px buttons in the top-right corner. On a tablet it
+ * is a rounded card at touch size, clear of the Commit Details side pane (--gg-pane-width, set by
+ * layoutMode.ts) while that is open: a capsule field with its Aa / .* toggles inside, then the
+ * match position and 36px round buttons. Flat: a hairline and one soft shadow. Loaded on demand
+ * with the find widget (graph/widgets/findWidget.ts). */
+
+body.tabletMode .findWidget{
+	top:-64px;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	right:16px;
+	right:max(16px, env(safe-area-inset-right));
+	max-width:calc(100vw - 32px);
+	height:auto;
+	min-height:48px;
+	box-sizing:border-box;
+	flex-wrap:nowrap;
+	padding:6px 8px 6px 10px;
+	border:none;
+	border-radius:0 0 14px 14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 8px 28px rgba(0,0,0,0.22), 0 0 0 0.5px var(--m-sep);
+	color:var(--m-fg);
+	fill:var(--m-fg);
+	fill-opacity:0.85;
+	font-size:13px;
+}
+body.tabletMode.sidePaneOpen .findWidget{
+	right:calc(var(--gg-pane-width, 380px) + 16px);
+	max-width:calc(100vw - var(--gg-pane-width, 380px) - 32px);
+}
+body.tabletMode.vscode-high-contrast .findWidget{
+	box-shadow:none;
+	outline:1px solid var(--m-sep);
+}
+body.tabletMode .findWidget.active{
+	top:0;
+}
+body.tabletMode #findInput{
+	flex:1 1 220px;
+	min-width:96px;
+	width:auto;
+	height:36px;
+	box-sizing:border-box;
+	/* room on the right for the two toggles that sit over the field */
+	padding:0 56px 0 14px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	line-height:36px;
+}
+body.tabletMode #findInput:focus{
+	outline:none;
+	box-shadow:0 0 0 1px var(--vscode-focusBorder);
+}
+body.tabletMode #findInput::placeholder{
+	color:var(--m-fg-2);
+}
+body.tabletMode .findModifier{
+	width:24px;
+	height:24px;
+	border-radius:6px;
+	line-height:24px;
+}
+body.tabletMode #findCaseSensitive{
+	margin-left:-54px;
+}
+body.tabletMode #findRegex{
+	margin-left:2px;
+	/* 6px of the field's right inset stay free beside the toggles */
+	margin-right:6px;
+}
+body.tabletMode .findWidget button{
+	color:inherit;
+}
+body.tabletMode #findPosition{
+	flex:none;
+	min-width:0;
+	margin-left:10px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+body.tabletMode #findPrev, body.tabletMode #findNext, body.tabletMode #findOpenCdv, body.tabletMode #findClose{
+	flex:none;
+	width:36px;
+	height:36px;
+	margin:0 0 0 2px;
+	border-radius:50%;
+}
+/* the 20px glyph boxes of the wide bar, centred in the 36px buttons */
+body.tabletMode #findPrev svg, body.tabletMode #findNext svg, body.tabletMode #findOpenCdv svg{
+	left:50%;
+	top:50%;
+	margin:-7px 0 0 -7px;
+}
+body.tabletMode #findClose svg{
+	left:50%;
+	top:50%;
+	margin:-8px 0 0 -8px;
+}
+body.tabletMode #findPrev:active, body.tabletMode #findNext:active, body.tabletMode #findOpenCdv:active, body.tabletMode #findClose:active{
+	background-color:var(--m-pressed);
+}
+body.tabletMode #findPrev:hover, body.tabletMode #findNext:hover, body.tabletMode #findOpenCdv:hover, body.tabletMode #findClose:hover{
+	background-color:transparent;
+}

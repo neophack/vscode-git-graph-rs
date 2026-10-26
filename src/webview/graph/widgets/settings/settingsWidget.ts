@@ -21,11 +21,13 @@ import { showIssueLinkingDialog, showPullRequestIntegrationDialog1 } from './int
 import { checkbox, dateFormatSettingValue, numberRow, renderBackendSection, selectRow } from './settingsHtml';
 import settingsCss from '../../../styles/settingsWidget.css';
 import panelsCss from '../../../styles/mobile/panels.css';
+import tabletPanelsCss from '../../../styles/tablet/panels.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheets ride the chunk as text (the
 // mobile panel rules are shared with the other on-demand overlays, and deduplicate on injection)
 injectOnDemandStyles(settingsCss);
 injectOnDemandStyles(panelsCss);
+injectOnDemandStyles(tabletPanelsCss);
 
 export class SettingsWidget implements SettingsWidgetSurface {
 	private currentRepo: string | null = null;

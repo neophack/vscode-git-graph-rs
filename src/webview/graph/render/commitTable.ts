@@ -348,7 +348,7 @@ export class CommitTable {
 			commits: store.commits,
 			commitHead: store.commitHead,
 			gitBranchHead: store.gitBranchHead,
-			narrow: ctx.layout.isMobileLayout(),
+			narrow: ctx.layout.isTwoLineRows(),
 			colVisibility: ctx.layout.getColumnVisibility(),
 			currentHash: currentHash,
 			vertexColours: ctx.graph.getVertexColours(),
