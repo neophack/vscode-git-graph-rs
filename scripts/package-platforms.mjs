@@ -49,6 +49,9 @@ const VSCE_TARGET = {
 	'win32-arm64-msvc': 'win32-arm64',
 	'linux-x64-gnu': 'linux-x64',
 	'linux-arm64-gnu': 'linux-arm64',
+	'linux-x64-musl': 'alpine-x64',
+	'linux-arm64-musl': 'alpine-arm64',
+	'linux-armhf': 'linux-armhf',
 	'darwin-x64': 'darwin-x64',
 	'darwin-arm64': 'darwin-arm64'
 };

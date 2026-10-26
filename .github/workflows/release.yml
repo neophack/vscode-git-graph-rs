@@ -12,8 +12,9 @@ name: Release
 # "Publishing a release" for the full story.
 #
 # By default only the four common engines are built and packaged (Windows x64, Linux x64/arm64,
-# macOS arm64); the two niche ones — Windows ARM64 and macOS x64 — are left out, and editors on
-# them fall back to the extension's `git` CLI backend. Check `full` to build and package all six.
+# macOS arm64); the five niche ones — Windows ARM64, macOS x64, and the Linux musl (Alpine)
+# x64/arm64 and armhf engines — are left out, and editors on them fall back to the extension's
+# `git` CLI backend. Check `full` to build and package all nine.
 #
 # Trigger it from the Actions tab ("Release" → "Run workflow") or with:
 #
@@ -36,7 +37,7 @@ on:
         default: false
         type: boolean
       full:
-        description: 'Ship all six engines, including Windows ARM64 and macOS x64'
+        description: 'Ship all nine engines, including Windows ARM64, macOS x64 and the musl/armhf Linux targets'
         required: false
         default: false
         type: boolean
@@ -48,7 +49,7 @@ permissions:
 jobs:
   # Everything "Build and test" does: engine tests, the platform builds, integration tests, and
   # the packaged `git-graph-rs` artifact. A release is only made when all of it passes. `full`
-  # passed through means all six engines; the default run builds the four common ones.
+  # passed through means all nine engines; the default run builds the four common ones.
   build-and-test:
     uses: ./.github/workflows/native-build.yml
     with:
@@ -104,12 +105,12 @@ jobs:
 
       # One smaller VSIX per platform that was built, each carrying only that platform's engine.
       # The loop follows `native/`, so a default run packages four of them and a `full` run all
-      # six. The extension loads `native/<platform>/git-graph.node` and treats every other
+      # nine. The extension loads `native/<platform>/git-graph.node` and treats every other
       # platform's binary as optional, so a single-engine package needs no code changes.
       #
       # Each is also tagged with `--target`, the identifier the Marketplace uses to hand each
       # user only the package built for their platform (https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions).
-      # Without it every install — Marketplace or manual — pulls all six engines, which is the
+      # Without it every install — Marketplace or manual — pulls all nine engines, which is the
       # `npm run package` universal VSIX's job, not these. `vsce package --target` requires
       # engines.vscode >= 1.61, so the script stamps `^1.61.0` into package.json for these runs
       # and restores the original file afterwards — accurate, since only 1.61+ editors are ever
