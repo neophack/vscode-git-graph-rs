@@ -320,11 +320,6 @@
 			"count": 1
 		}
 	},
-	"src/webview/graph/loading/repoLoader.ts": {
-		"max-lines": {
-			"count": 1
-		}
-	},
 	"src/webview/graph/render/commitTable.ts": {
 		"max-lines": {
 			"count": 1

@@ -1,9 +1,11 @@
 /**
  * The repo-load lifecycle as an explicit state machine (OPTIMIZATION-PLAN §6 F2): a PURE
- * reducer that replaces the implicit machine today encoded as flags on `RepoLoader`
- * (loading/repoLoader.ts). NOT WIRED IN YET — RepoLoader keeps driving the live view; this
- * module is the transition-tested core the loader migrates onto, per the plan's "Order of
- * risk" rule (§11: land the transition-table tests BEFORE touching the live RepoLoader).
+ * reducer over the lifecycle that the loader's implicit flags used to encode (loading/repoLoader.ts).
+ * WIRED IN via `loadController.ts`: every lifecycle event — the boot's awaited push, a repository
+ * switch, a refresh, a response, an error — is dispatched here, a response applies only in a
+ * state that expects it and keyed by its request id, and anything else is dropped and logged.
+ * This module stays the pure, transition-tested core; the side effects live in the loader's
+ * sibling modules.
  *
  * The machine decides WHICH phase the load is in and WHAT the caller should do next; it never
  * does IO itself. Every transition returns the next state, a list of effects (issue a request,
@@ -398,13 +400,18 @@ function reduceRefreshRequested(state: LoadState, event: RefreshRequestedEvent):
 
 	if (state.type === 'loaded') {
 		if (event.hard) {
+			// A hard refresh clears the view; `skipRepoInfo` skips the repo-info half (a selection
+			// or filter change re-queries just the commits — legacy controlBar's
+			// clearCommits + requestLoadRepoInfoAndCommits(true, true) shape).
 			return {
-				state: { type: 'loading', repo: state.repo, repoInfoId: event.requestId, commitsId: event.requestId, phase: 'repoInfo', firstLoad: false, followUpsPending: [] },
+				state: { type: 'loading', repo: state.repo, repoInfoId: event.requestId, commitsId: event.requestId, phase: event.skipRepoInfo ? 'commits' : 'repoInfo', firstLoad: false, followUpsPending: [] },
 				effects: [
 					{ kind: 'clearView' },
 					{ kind: 'showSkeleton' },
 					{ kind: 'spinRefreshButton', spinning: true },
-					{ kind: 'issueRepoInfoRequest', repo: state.repo, requestId: event.requestId }
+					event.skipRepoInfo
+						? { kind: 'issueCommitsRequest', repo: state.repo, requestId: event.requestId, hard: true }
+						: { kind: 'issueRepoInfoRequest', repo: state.repo, requestId: event.requestId }
 				],
 				dropped: null
 			};
