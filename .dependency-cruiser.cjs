@@ -75,15 +75,22 @@ module.exports = {
 			// forbidden. Anything not under src/webview/ or src/shared/ is a
 			// violation (Node builtins and 'vscode' resolve to bare names that
 			// do not start with src/, so they match).
+			//
+			// Documented exception (task 5.9): src/webview/graph/text/markdown.ts
+			// statically imports markdown-it so the bundler can emit it as the
+			// on-demand chunk the details view loads via dynamic import(). The
+			// rule's intent is "no Node/vscode in the browser", not "no npm" —
+			// the vendored browser library rides the chunk, never the entry.
 			name: 'webview-only-webview-shared',
-			comment: '§3.6: webview/** → webview/**, shared/**; node:*, vscode forbidden',
+			comment: '§3.6: webview/** → webview/**, shared/**; node:*, vscode forbidden (markdown-it on-demand chunk excepted)',
 			severity: 'error',
 			from: {
 				path: '^src/webview/',
 				pathNot: '\\.test\\.ts$'
 			},
 			to: {
-				path: '^(?!src/(webview|shared)/)'
+				path: '^(?!src/(webview|shared)/)',
+				pathNot: 'node_modules/markdown-it/'
 			}
 		},
 		{
