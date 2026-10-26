@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | M0 complete; wave 1 (§12) landed R1–R4, R8, V1, V2, V4, S2, F6, F7 and the F2 groundwork. D-1 and D-4 taken per the recommendations; D-2 still open (needs P3/P4 data) |
+| Status | M0 complete; wave 1 (§12) landed R1–R4, R8, V1, V2, V4, S2, F6, F7 and the F2 groundwork; wave 2 (§12) landed A1, A6, R5, R6, R7, P1, the F2 wiring, F5, V3's test gates, S5 and the `build:ts` removal. D-1 and D-4 taken per the recommendations; D-2 still open (needs P3/P4 data) |
 
 ---
 
@@ -766,3 +766,75 @@ Found, not fixed:
 Remaining for M1: A1 (flat-root drain), A2 (composition root), A3 (process adapter — the
 19-call-site argSafety finding from M0 still stands), A6, A7, V3, S5 remainder. Remaining for
 M2: R5, R6, R7, P1, P2. Remaining for M3: F1, F3, F4, F5, V3 webview side, and the F2 wiring.
+
+### Wave 2: M1 ∥ M2 ∥ M3 (branch `task/m0-gates`, 2026-10-27)
+
+Seven parallel agents over disjoint file domains; integrated and landed as seven workstream
+commits. Landed: **A1, A6, R5, R6, R7, P1, the F2 wiring, F5, V3's test gates (router fuzz +
+CSP pin), S5, and the `build:ts` removal (D)**. Every gate green: `npm run check`, the full
+test suite, and the size gate against the fat-LTO binary.
+
+Measured while doing it, correcting this plan:
+
+- **A6's headline example no longer existed**: `html.ts` already caches its per-render
+  `readFileSync`/`statSync` behind module-level lazy caches (fixed at `fe79dbf`, before this
+  plan was written). The remaining sites (operationState, the logger's file mirror, the
+  Gerrit hook install) are async now; `n/no-sync` is an error for `src/extension/**` with
+  12 sites fixed and the rest suppressed with per-file reasons.
+- **R6's `parallel` suspicion was exactly inverted**: gix's `parallel` feature is not about
+  extra worker threads — it is what makes the handle types `Send + Sync` (without it they
+  hold `Rc`), and the warm-handle `RepoManager` fails to compile without it. All eight gix
+  features are load-bearing; the audit lives as a comment on the dependency.
+- **Fat LTO shrinks the Windows `.node` by 5.1%** (5,985,792 → 5,683,200 B) and the size
+  baseline ratchets down with it. `opt-level = "z"` measured another −7.7% on top but is
+  not landed: unmeasured hot-loop cost, held for P2's benchmarks. `panic = "abort"` is
+  ruled out — `catch_unwind` is load-bearing.
+- **R7 found no panics**: 50,000 seeded iterations per target (protocol decoder, Gerrit meta
+  parser) plus fixed attack strings — clean. The nightly libFuzzer job is the ongoing gate.
+- **The F2 wiring shrank the load-path safety margin to zero**: first-paint critical JS is
+  at 360/360 KB (the machine now ships in the entry, +13 KB). The next webview feature that
+  adds entry-closure bytes trips ADR-0005's gate.
+- **F5's axe gate caught two real bugs** in the existing dialogs: unnamed text inputs
+  (the name lived in an adjacent table cell) and positive `tabindex` values. Fixed.
+- **A1 drained 79 files as pure moves**; `src/` now holds only `extension/`, `webview/`,
+  `shared/` and `tsconfig.json`. The webview's protocol seam (`common/protocol.ts`) re-exports
+  the new domain modules, which is why the F2/F5 agents' pre-drain code merged untouched.
+- **Wave 1's "found, not fixed" items are closed**: the `dropdown.test.ts` timer leak is
+  fixed, the baseline no longer names the removed vendor file (`npm run baseline` regenerated
+  it), and `docs/performance.md` no longer cites the deleted `scripts/bench.mjs`.
+- **Worktree-only ghost, documented for the next parallel wave**: through a junctioned
+  `node_modules`, `vscode` resolves outside the workspace and seven depcruise baseline
+  entries look stale. `.dependency-cruiser.cjs` now sets `preserveSymlinks: true`; the main
+  checkout confirms `no stale entries`.
+
+Deviations from the text above:
+
+- **A1**: `docs/depcruise-baseline.json` regenerated (8 entries drained, 14 transition-debt
+  entries added — they are A3's seams, e.g. `platform/*` imports now living inside the git
+  layer's stricter scope). `main.ts` joins the composition-root vscode exception until A2.
+- **F2**: fully wired, but three documented tightenings ship with it — a refresh during the
+  boot push is dropped instead of racing it, a pushed `loadView` after a switch is dropped
+  instead of adopted, and a soft-refresh error keeps rows on screen. `loadMachine.ts` stays
+  at 533 lines (the transition table is its bulk). The E2E smoke did not run during the wave
+  (a sibling's transient node_modules repair broke esbuild mid-run); the automationRunner
+  reseed coverage ran in its place, and the smoke re-run is on the next wave's checklist.
+- **F5**: scoped to semantics + keyboard + the axe gate; the theme-colour mapping and
+  `dropdown.ts` focus-return are deferred (overlay panels are toggled panels, not dialogs).
+- **P1**: the activation mark was wired by integration after A1 landed (`main.ts`). Host and
+  webview clocks are not synchronised — durations are within-origin only, by design. T0 opens
+  a trace only for the two view-opening commands; other entry points (restore, orphan
+  replacement) auto-open a `session` trace.
+- **R5**: `requestBytes` (the raw-Buffer channel that replaced base64) currently has **zero
+  host callers**; deleting it is a separate, deliberate decision. `Cargo.lock` format bumped
+  to v4 by cargo 1.97 (readable by the 1.88 MSRV toolchain).
+- **V3**: the CSP test pins `script-src` (no `unsafe-inline`/`unsafe-eval` in production,
+  automation's only delta being `unsafe-eval`); `style-src 'unsafe-inline'` is kept — the
+  page's inline theme block needs it, so the plan's literal "no unsafe-*" is unachievable
+  there. The pre-dispatch repo-path allowlist does not exist (it is panel.ts's job); the
+  fuzz test documents the gap and pins the strongest true guarantee instead: a forged write
+  to an unknown repo is refused with zero git spawns.
+
+Found, not fixed:
+
+- `requestBytes`'s zero host callers (above), the overlay panels' dialog semantics, the
+  control-bar dropdowns' focus return, and the E2E smoke re-run — all queued for wave 3.

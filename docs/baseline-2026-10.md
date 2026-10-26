@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Generated | 2026-10-26 |
-| HEAD | `ad7567f84` on branch `task/w2-engine` |
+| HEAD | `f0f456d8e` on branch `task/m0-gates` |
 | Machine | Windows dev machine (process starts are slower than CI's Linux runner; REFACTOR-PLAN §3.8.1 records the two reference environments separately) |
 | Node | v24.14.0 |
 | Reproduce | `npm run baseline` — regenerates this file end to end and prints it to stdout |
@@ -22,8 +22,8 @@ deliberate decision. The header table above is hand-maintained prose inside
 
 | Suite | Files | Cases | Method |
 |---|---|---|---|
-| Vitest (`src/**` colocated units + `test/integration`) | 142 with listed cases (134 matched by the include patterns) | 1573 | `npx vitest list` — vitest prints one line per case as ``file > name``; the count is those lines (a plain grep would miss `test.each` expansion, which `list` resolves) |
-| Rust (`native/**`) | 19 files with tests | 172 | proxy count of `#[test]` attributes — the number of test functions in source, **not** a `cargo test` run (documented proxy; no `#[test_case]` or macro-generated cases exist today) |
+| Vitest (`src/**` colocated units + `test/integration`) | 149 with listed cases (138 matched by the include patterns) | 1617 | `npx vitest list` — vitest prints one line per case as ``file > name``; the count is those lines (a plain grep would miss `test.each` expansion, which `list` resolves) |
+| Rust (`native/**`) | 20 files with tests | 174 | proxy count of `#[test]` attributes — the number of test functions in source, **not** a `cargo test` run (documented proxy; no `#[test_case]` or macro-generated cases exist today) |
 
 Exact commands (the generator invokes the same tools through their node entry points):
 
@@ -38,7 +38,7 @@ Rust `#[test]` distribution:
 
 | Area | `#[test]` |
 |---|---|
-| native/core/tests | 141 |
+| native/core/tests | 143 |
 | native/core/src | 29 |
 | native/node/src | 2 |
 
@@ -56,18 +56,18 @@ VSIX ships no native binaries).
 
 | Artifact | Size |
 |---|---|
-| dist/extension.js | 447413 B (436.9 KiB) |
+| dist/extension.js | 449891 B (439.3 KiB) |
 | dist/askpass/askpassMain.js | 1380 B (1.3 KiB) |
 | dist/askpass/askpass.sh | 656 B (0.6 KiB) |
 | dist/askpass/askpass-empty.sh | 17 B (0 KiB) |
-| media/out.min.js | 201799 B (197.1 KiB) |
-| media/out.min.css | 64991 B (63.5 KiB) |
+| media/out.min.js | 220638 B (215.5 KiB) |
+| media/out.min.css | 65233 B (63.7 KiB) |
 | media/comparison.min.js | 75853 B (74.1 KiB) |
 | media/comparison.min.css | 15389 B (15 KiB) |
 | media/binaryCompare.min.js | 60031 B (58.6 KiB) |
 | media/binaryCompare.min.css | 6952 B (6.8 KiB) |
 | media/vendor/highlight.min.js | 136226 B (133 KiB) |
-| git-graph-rs-1.1.0.vsix (universal VSIX) | 3011107 B (2940.5 KiB) |
+| git-graph-rs-1.1.0.vsix (universal VSIX) | 3017206 B (2946.5 KiB) |
 
 The generator deletes the VSIX after measuring it; `npm run package` recreates it at any time.
 
@@ -78,10 +78,10 @@ loaded by the comparison page, not the main view.
 
 | Quantity | Value | Budget (§3.8.1) |
 |---|---|---|
-| First-paint critical JS (minified, not gzipped) | 201799 B (197.1 KiB) | ≤ 200 KB |
-| First-paint critical CSS (minified, not gzipped) | 64991 B (63.5 KiB) | ≤ 60 KB |
+| First-paint critical JS (minified, not gzipped) | 220638 B (215.5 KiB) | ≤ 200 KB |
+| First-paint critical CSS (minified, not gzipped) | 65233 B (63.7 KiB) | ≤ 60 KB |
 
-First-paint JS is within its 200 KB budget;
+First-paint JS is over its 200 KB budget;
 first-paint CSS is over its 60 KB budget.
 The side over budget is what the first-paint splitting work (task 5.9), gated by P5, holds the line on.
 
@@ -97,24 +97,24 @@ platform (`npm run build:native:release`); CI's matrix covers the rest.
 
 | Quantity | Baseline | Growth budget (+2%) | Measured by |
 |---|---|---|---|
-| Universal VSIX (`git-graph-rs-1.1.0.vsix`) | 3011107 B (2940.5 KiB) | ≤ 3071330 B (2999.3 KiB) | `npm run package` |
+| Universal VSIX (`git-graph-rs-1.1.0.vsix`) | 3017206 B (2946.5 KiB) | ≤ 3077551 B (3005.4 KiB) | `npm run package` |
 | Addon, `win32-x64-msvc` (`native/win32-x64-msvc/git-graph.node`) | 5683200 B (5550 KiB) | ≤ 5796864 B (5661 KiB) | `npm run build:native:release` (CI matrix for the rest) |
 
 ## Bench first-paint
 
-A prebuilt engine binary exists (native/win32-x64-msvc/git-graph.node); `npm run bench` was not run by the generator — run `npm run build:ts && node scripts/bench.mjs <repo-path> --commits 200 --runs 5` and record the medians here.
+A prebuilt engine binary exists (native/win32-x64-msvc/git-graph.node); the first-paint gates were not run by the generator — run `npm run perf` (`test/perf/`) and record the medians here.
 
 ## Lint gates
 
 | Gate | Result | Command |
 |---|---|---|
-| dependency-cruiser | 0 new violations (399 modules, 1270 dependencies cruised); 8 known violations ignored (baseline file: 15 entries, 7 already stale — shrink-only regeneration pending) | `npm run lint:deps` |
+| dependency-cruiser | 0 new violations (424 modules, 1323 dependencies cruised); 21 known violations ignored (baseline file: 21 entries, null already stale — shrink-only regeneration pending) | `npm run lint:deps` |
 | ESLint (`src` + `scripts`) | null problems (null errors, null warnings), exit 0 | `npx eslint src scripts` |
 
 Both gates exit 0 as the generator runs them (the two tools invoked directly): the depcruise
 ratchet means any violation **not** in `docs/depcruise-baseline.json` fails `npm run lint:deps`,
 and ESLint reports warnings only. Note that `npm run lint:deps` itself also fails while the
-baseline file carries stale entries (7 at this HEAD) — its shrink-only
+baseline file carries stale entries (null at this HEAD) — its shrink-only
 regeneration is owed by whoever removed the last of those violations.
 
 ## Ten largest non-generated source files
@@ -130,16 +130,16 @@ Line counts are `wc -l` semantics. Command shape: `git ls-files '*.ts' '*.mjs' '
 
 | Lines | File |
 |---|---|
-| 1246 | src/types/messages.ts |
-| 1216 | src/extension/platform/config.ts |
-| 1111 | src/webview/graph/loading/repoLoader.ts |
+| 1189 | src/extension/platform/config.ts |
 | 988 | src/webview/graph/widgets/settings/settingsWidget.ts |
-| 955 | src/automation/server.ts |
+| 955 | src/extension/automation/server.ts |
+| 896 | src/extension/graphView/commitLoader.ts |
 | 895 | src/webview/graph/commitDetails/commitDetails.ts |
-| 894 | src/extension/graphView/commitLoader.ts |
-| 872 | src/extension/repos/repoManager.ts |
+| 873 | src/extension/repos/repoManager.ts |
 | 858 | native/core/tests/graph_and_diff.rs |
-| 845 | src/automation/suiteRunner.ts |
+| 845 | src/extension/automation/suiteRunner.ts |
+| 826 | native/core/tests/queries.rs |
+| 826 | src/extension/automation/fixture.ts |
 
 Goal G2 ratchets non-generated files down to ≤ 600 lines; `src/dataSource.ts` (the v1.0 god
 module still carrying the shipped view until Phase 4 deletes it) tops the table as expected.
@@ -150,16 +150,16 @@ Tracked files per top-level directory (`git ls-files | cut -d/ -f1 | sort | uniq
 
 | Directory | Tracked files |
 |---|---|
-| src/ | 412 |
-| test/ | 92 |
-| native/ | 58 |
+| src/ | 437 |
+| test/ | 97 |
+| native/ | 67 |
 | docs/ | 53 |
 | scripts/ | 29 |
 | resources/ | 21 |
 | licenses/ | 8 |
-| .github/ | 6 |
+| .github/ | 7 |
 | (repository root) | 26 |
-| **Total** | **705** |
+| **Total** | **745** |
 
 `legacy/` no longer exists in this tree (it has been drained by the refactor's phases);
 `dist/`, `media/`, `out/`, `native/<platform>/` and `*.vsix` are gitignored build outputs.
@@ -174,4 +174,4 @@ Tracked files per top-level directory (`git ls-files | cut -d/ -f1 | sort | uniq
 | Platform VSIX sizes | each needs its cross-compiled addon from CI's cargo matrix | `node scripts/package-platforms.mjs` (in CI: `.github/workflows/native-build.yml`) |
 | All §3.8.1 timing scenarios (T0–T5, P50/P95) | the marker infrastructure and P1–P5 harness do not exist yet | `test/perf/` (P2–P5) and `native/core/benches/` (P1) — status tracked in `docs/performance.md` |
 
-<!-- baseline-summary: {"vitestCases":1573,"vitestFiles":142,"vitestMatchedFiles":134,"rustTests":172,"extensionJs":447413,"firstPaintJs":201799,"firstPaintCss":64991,"vsix":3011107,"addonNodes":{"win32-x64-msvc":5683200},"depcruiseViolations":0,"eslintProblems":null,"largestFile":{"file":"src/types/messages.ts","lines":1246}} -->
+<!-- baseline-summary: {"vitestCases":1617,"vitestFiles":149,"vitestMatchedFiles":138,"rustTests":174,"extensionJs":449891,"firstPaintJs":220638,"firstPaintCss":65233,"vsix":3017206,"addonNodes":{"win32-x64-msvc":5683200},"depcruiseViolations":0,"eslintProblems":null,"largestFile":{"file":"src/extension/platform/config.ts","lines":1189}} -->

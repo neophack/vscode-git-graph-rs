@@ -175,34 +175,29 @@ their subtrees finish moving.
 
 ## 9. What is still transitional (the honest list)
 
-- The flat live files of §2.4 (`types/`, `utils/`, `config.ts`, …) are production code that
-  simply has not moved into `extension/` yet; nothing depends on their position but imports.
-- `test/perf` still loads `out/` compiled sources (hence the standalone `build:ts`).
 - The E2E full tier, the release-tier environment matrix and the C3–C6 container legs are CI
   machinery that runs only in GitHub Actions; their workflows mirror verified local commands
-  and expect first-run iteration.
+  and expect first-run iteration. The musl/armhf binaries ship, but `addonLoader.ts` cannot
+  select them yet (libc/armv7 detection) and the alpine/centos smoke is still open (R8b).
 - Gerrit/PR row badges still ride the first-paint entry (moving them needs an async badge
-  path); ADR-0005 records the recalibrated first-paint closure budget.
+  path); ADR-0005 records the recalibrated first-paint closure budget. The first-paint
+  critical-JS budget is at 360/360 KB since the load state machine ships in the entry.
 
 Open items of [OPTIMIZATION-PLAN.md](OPTIMIZATION-PLAN.md). Remove each line in the PR that
 lands it.
 
 - `GitGraphView.currentPanel` is still a static service locator, and the composition root wires
   9–12 positional collaborators by hand (A2).
-- Six production files outside `git/process/` (plus two automation files) import
+- Five production files outside `git/process/` (plus two automation files) import
   `child_process`, and `checkUnsafeGitArgs` is called from 19 sites in 6 files (A3).
 - Two configuration readers coexist: `takeSnapshot()` and the legacy `getConfig()` (A4).
-- 15 TypeScript and 2 Rust production files exceed 600 lines; `eslint-suppressions.json` and
-  `scripts/dev/check-file-size.mjs` list them (A5, R8).
-- Synchronous file IO on the host's event loop (`graphView/html.ts`, `git/operationState.ts`,
-  `platform/logger.ts`) (A6).
-- `activate()` awaits the `git --version` probe before it registers commands (V1).
-- No `capabilities.untrustedWorkspaces` declaration: the extension is disabled in Restricted
-  Mode by omission (V2, decision D-1).
-- The engine's repository handles are never evicted, and its caches are bounded by entry count
-  rather than bytes (R1, R2).
-- No timing markers exist, so no timing budget in REFACTOR-PLAN §3.8.1 has been measured (P1).
-- The webview store is ~30 public mutable fields, and `RepoLoader` encodes its load lifecycle in
-  flags (F1, F2). Accessibility semantics are minimal (F5).
+- 13 TypeScript production files exceed 600 lines (the Rust backlog is empty); the
+  `max-lines` suppressions and `scripts/dev/check-file-size.mjs` list them (A5).
+- 323 comments still reference plan task numbers or deleted code (A7).
+- The webview store is ~30 public mutable fields with no change sets (F1), DOM ownership and
+  listener teardown are undisciplined (F3), and layout reads bypass `render/measure.ts` (F4).
+- `retainContextWhenHidden` still defaults to `true`; the D-2 decision waits for P3/P4 data.
+- The timing markers exist but no budget is calibrated yet (P2), and the host bundle has not
+  been re-split on measured evidence (P3).
 - `noUncheckedIndexedAccess` is off: enabling it reports 332 host and 886 webview errors
   (decision D-6).
