@@ -37,3 +37,17 @@
 	padding:3px 12px;
 	border-radius:3px;
 }
+
+/* Phone layout: the banner's action button becomes a touch target (merged from
+ * styles/mobile/panels.css, OPTIMIZATION-PLAN §6 F6 - it rides the first-paint sheet now, so the
+ * rule is in place before any widget chunk loads) */
+body.mobileMode #conflictBanner .roundedBtn{
+	min-height:calc(var(--m-target) - 8px);
+	box-sizing:border-box;
+	padding:0 14px;
+	border:none;
+	border-radius:11px;
+	background-color:var(--m-fill);
+	font-size:14px;
+	font-weight:600;
+}

@@ -50,8 +50,13 @@ describe('the dictionaries', () => {
 	});
 
 	it('answer every key in both languages (a missing ZH entry would be a compile error, an empty one is not)', () => {
+		// dateRelativePluralSuffix is the one legitimately EMPTY entry: English pluralises the
+		// relative-time unit ("2 seconds ago") and Chinese does not, so the suffix is '' there.
+		const mayBeEmpty = new Set(['dateRelativePluralSuffix']);
 		for (const key of textKeys) {
-			expect(entryOf(STRINGS_ZH_CN, key).length, key + ' has no zh-cn message').toBeGreaterThan(0);
+			if (!mayBeEmpty.has(key)) {
+				expect(entryOf(STRINGS_ZH_CN, key).length, key + ' has no zh-cn message').toBeGreaterThan(0);
+			}
 			expect(entryOf(STRINGS_EN, key).length, key + ' has no en message').toBeGreaterThan(0);
 		}
 	});

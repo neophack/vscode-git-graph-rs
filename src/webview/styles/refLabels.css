@@ -22,7 +22,7 @@
 }
 .gitRef > svg{
 	background-color:var(--git-graph-color);
-	fill:var(--vscode-editor-background);
+	fill:var(--gg-background, var(--vscode-editor-background));
 	width:14px;
 	height:14px;
 	padding:2px;

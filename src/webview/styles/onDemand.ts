@@ -19,19 +19,16 @@ import contextMenuCss from './contextMenu.css';
 import dialogCss from './dialog.css';
 import fileTreeCss from './fileTree.css';
 import gerritReviewCss from './gerritReview.css';
-import mobileCommitDetailsCss from './mobile/commitDetails.css';
-import mobileContextMenuCss from './mobile/contextMenu.css';
-import mobileDialogCss from './mobile/dialog.css';
 import tabletCommitDetailsCss from './tablet/commitDetails.css';
 import tabletOverlaysCss from './tablet/overlays.css';
 
+/* Each sheet below carries its own phone-layout section (the former styles/mobile/ sheets were
+ * merged into their component files, OPTIMIZATION-PLAN §6 F6); the tablet sheets still load
+ * separately and are injected after the component sheets so their touch refinements win. */
 injectOnDemandStyles(dialogCss);
-injectOnDemandStyles(mobileDialogCss);
 injectOnDemandStyles(contextMenuCss);
-injectOnDemandStyles(mobileContextMenuCss);
 injectOnDemandStyles(tabletOverlaysCss);
 injectOnDemandStyles(commitDetailsCss);
-injectOnDemandStyles(mobileCommitDetailsCss);
 injectOnDemandStyles(tabletCommitDetailsCss);
 injectOnDemandStyles(fileTreeCss);
 injectOnDemandStyles(gerritReviewCss);

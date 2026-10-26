@@ -374,6 +374,16 @@ export const STRINGS_EN = {
 	mobileShowRemoteBranches: 'Show Remote Branches',
 	mobileYesterday: 'Yesterday',
 	mobileWeekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+	/* Date composition (common/dates.ts): the templates place the day ({0}), the month token ({1})
+	   and the year ({2}) per language, and dateMonthsShort carries each language's month token - a
+	   short name in English, the bare numeral in Chinese, where dates are written with numerals. */
+	dateMonthsShort: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+	dateFullDate: '{0} {1} {2}',
+	dateDayDate: '{1} {0}',
+	dateDayDateWithYear: '{1} {0}, {2}',
+	dateRelativeUnits: { second: 'second', minute: 'minute', hour: 'hour', day: 'day', week: 'week', month: 'month', year: 'year' },
+	dateRelativePluralSuffix: 's',
+	dateRelativeAgo: '{0} {1} ago',
 	mobileFilesChanged: '{0} files changed',
 	mobileFileChanged: '1 file changed',
 	mobileUncommittedTitle: 'Uncommitted Changes',
@@ -927,6 +937,7 @@ export const STRINGS_EN = {
 	/* Start-up notices */
 	noEngineForPlatform: 'Git Graph RS: no native engine is available for this system ({0}), so it runs over the git CLI instead (full functionality, original-extension read speed).',
 	noGitRunsOnEngine: 'Git Graph RS: no Git executable was found, so it runs on the Rust engine (viewing, comparing and searching all work; write operations need Git installed).',
+	restrictedModeNotice: 'Git Graph RS: this workspace is not trusted, so the extension is read-only: repository data is served by the Rust engine only, and Git commands are disabled until the workspace is trusted.',
 
 	/* Command palette / quick picks & notifications */
 	automationTestRunning: 'Running the automation test suite — the Git Graph view drives itself; the report opens when it finishes.',

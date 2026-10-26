@@ -18,11 +18,11 @@
 	transform:scale(1.3);
 }
 #commitGraph circle.current{
-	fill:var(--vscode-editor-background);
+	fill:var(--gg-background, var(--vscode-editor-background));
 	stroke-width:2;
 }
 #commitGraph circle:not(.current){
-	stroke:var(--vscode-editor-background);
+	stroke:var(--gg-background, var(--vscode-editor-background));
 	stroke-width:1;
 	stroke-opacity:0.75;
 }
@@ -33,7 +33,7 @@
 }
 #commitGraph path.shadow{
 	fill:none;
-	stroke:var(--vscode-editor-background);
+	stroke:var(--gg-background, var(--vscode-editor-background));
 	stroke-opacity:0.75;
 	stroke-width:4;
 }
@@ -61,11 +61,11 @@
 	position:relative;
 	left:23px;
 	top:0;
-	background-color:var(--vscode-menu-background);
+	background-color:var(--gg-menu-background, var(--vscode-menu-background));
 	border-width:2px;
 	border-style:solid;
 	border-radius:5px;
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	font-size:13px;
 	line-height:22px;
 	white-space:normal;

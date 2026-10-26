@@ -9,7 +9,7 @@
 	overflow-x:auto;
 	overflow-y:hidden;
 	padding:2px 0;
-	background-color: var(--vscode-editor-background);
+	background-color: var(--gg-background, var(--vscode-editor-background));
 	border-bottom:1px solid rgba(128,128,128,0.35);
 	line-height:24px;
 	text-align:center;

@@ -24,7 +24,7 @@ body #view{
 	left:0;
 	right:0;
 	bottom:0;
-	background-color:var(--vscode-editor-background);
+	background-color:var(--gg-background, var(--vscode-editor-background));
 	overflow-x:hidden;
 	overflow-y:auto;
 	/* The view manages its own scroll position across re-renders (anchoring the commit that sits
@@ -80,11 +80,11 @@ code{
    Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 .gg-helpTooltip:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .gg-helpTooltip:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .gg-helpTooltipPopup{
@@ -97,11 +97,45 @@ code{
 	padding:4px 7px;
 	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));
 	border-radius:3px;
-	background-color:var(--vscode-editorWidget-background, var(--vscode-menu-background));
-	color:var(--vscode-editorWidget-foreground, var(--vscode-menu-foreground));
+	background-color:var(--vscode-editorWidget-background, var(--gg-menu-background, var(--vscode-menu-background)));
+	color:var(--vscode-editorWidget-foreground, var(--gg-menu-foreground, var(--vscode-menu-foreground)));
 	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
 	font-size:12px;
 	line-height:16px;
 	white-space:pre-wrap;
 	pointer-events:none;
+}
+
+/* ===== Touch layouts: phone and tablet (merged from styles/mobile/, OPTIMIZATION-PLAN §6 F6) =====
+ * The git-graph-rs.mobileAdaptation Extension Setting ("Phone and tablet layouts") switches the
+ * view to a touch layout, decided per render by render/layoutMode.ts: <body> carries .mobileMode
+ * while the view is at most 600px wide, .tabletMode above that, and .touchMode with either. The
+ * tokens both layouts share sit in tokens.css (body.touchMode); the phone-only rules live in the
+ * component sheets under body.mobileMode (a clearly-marked section at the end of each), the
+ * tablet-only rules (styles/tablet/) under body.tabletMode, which load last and so refine the
+ * shared touch rules. With the setting off none of the classes is set and the wide layout is
+ * untouched - the few unscoped rules below only hide the touch-only elements there. */
+
+/* Mobile-only elements, hidden in the wide layout */
+#mobileMoreBtn, #fastScroller, #cdvFilesHeader, #cdvMobileTitle{
+	display:none;
+}
+
+body.touchMode{
+	-webkit-tap-highlight-color:transparent;
+	/* A long press opens the view's own action sheet (observeLongPress), not the iOS callout */
+	-webkit-touch-callout:none;
+	-webkit-font-smoothing:antialiased;
+	-webkit-text-size-adjust:100%;
+	text-size-adjust:100%;
+}
+body.touchMode input, body.touchMode textarea, body.touchMode select{
+	font-size:16px !important;
+}
+
+/* No pointer to hover with: the tooltips get out of the way (from the former mobile/panels.css) */
+body.mobileMode .gg-helpTooltipPopup{
+	max-width:calc(100vw - 24px);
+	font-size:14px;
+	line-height:20px;
 }

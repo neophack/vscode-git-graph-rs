@@ -54,11 +54,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 .cdvControlBtn:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .cdvControlBtn:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .cdvControlBtn.active{
@@ -100,7 +100,7 @@
 	height:20px;
 	left:2px;
 	top:2px;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	fill-opacity:0.6;
 }
 .cdvControlBtn:hover svg, .cdvControlBtn.active svg{
@@ -171,7 +171,7 @@
 	vertical-align:middle;
 	cursor:pointer;
 	background-color:rgba(128,128,128,0.15);
-	color:var(--vscode-textLink-foreground);
+	color:var(--gg-accent, var(--vscode-textLink-foreground));
 }
 /* Chromium 69 fallback: :focus-visible (Chrome 86) is an invalid pseudo-class there, which drops
    the whole rule below - this duplicate keeps the hover feedback on 69, a no-op on newer browsers */
@@ -306,7 +306,7 @@
 	margin-top:2px;
 	margin-right:8px;
 	vertical-align:middle;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	animation:loadingIconAnimation 2s linear infinite;
 }
 
@@ -345,4 +345,472 @@
 #cdv.docked .cdvHeightResize{
 	top:0;
 	border-top:2px solid rgba(128,128,128,0.2);
+}
+
+/* ===== Touch layouts: a full-screen sheet on the phone, the side pane's content on the tablet
+ * (merged from styles/mobile/commitDetails.css, OPTIMIZATION-PLAN §6 F6) =====
+ * isCdvDocked() is true in both touch layouts, so the view is a <div> on <body>. Its inline height
+ * and the #view bottom offset the docked layout sets are overridden. A 52px title bar (close,
+ * the commit, its actions) over one scrolling page: the summary card, the "Files" header with the
+ * file view controls, then the file list.
+ *
+ * Only the first rules below are the phone's (where the sheet sits: full screen); everything after
+ * them is the content both layouts share (body.touchMode). The tablet places the same content in
+ * its side pane (styles/tablet/commitDetails.css) and tightens its type for the denser screen. */
+
+body.mobileMode #view{
+	bottom:0 !important;
+}
+body.mobileMode #cdv.docked{
+	top:0;
+	left:0;
+	right:0;
+	bottom:0;
+	height:auto !important;
+	z-index:25;
+	display:flex;
+	flex-direction:column;
+	border-top:none;
+	background-color:var(--m-bg);
+	color:var(--m-fg);
+	font-size:15px;
+	line-height:22px;
+	padding-bottom:env(safe-area-inset-bottom);
+	animation:ggMobileSheetIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggMobileSheetIn{
+	from{ opacity:0.4; transform:translateY(32px); }
+	to{ opacity:1; transform:none; }
+}
+body.touchMode #cdv .cdvHeightResize, body.touchMode #cdvDivider{
+	display:none;
+}
+body.touchMode #cdvControls{
+	position:sticky;
+	top:0;
+	order:-1;
+	flex:none;
+	width:auto;
+	display:flex;
+	align-items:center;
+	gap:0;
+	min-height:var(--m-bar);
+	box-sizing:border-box;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:4px;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+	padding-top:4px;
+	padding-top:max(4px, env(safe-area-inset-top));
+	border-bottom:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	z-index:1;
+}
+body.touchMode #cdvMobileTitle{
+	display:block;
+	flex:1 1 auto;
+	min-width:0;
+	padding:0 6px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-family:var(--m-mono);
+	font-size:15px;
+	font-weight:600;
+}
+body.touchMode .cdvControlBtn{
+	position:relative;
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-target);
+	height:var(--m-target);
+	margin:0;
+	border-radius:50%;
+	background:none;
+}
+body.touchMode .cdvControlBtn svg{
+	position:static;
+	width:18px;
+	height:18px;
+}
+body.touchMode .cdvControlBtn:active{
+	background-color:var(--m-pressed);
+}
+body.touchMode #cdvContent{
+	position:relative;
+	left:auto;
+	right:auto;
+	flex:1 1 auto;
+	min-height:0;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+}
+body.touchMode #cdvSummary, body.touchMode #cdvFiles, body.touchMode #cdvLoading{
+	position:static;
+	width:auto !important;
+	left:auto !important;
+	border-right:none;
+	overflow:visible;
+}
+body.touchMode #cdvSummary{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:18px 16px 8px;
+	padding:18px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+	-webkit-user-select:text;
+	user-select:text;
+}
+body.touchMode #cdvLoading{
+	padding:48px 16px;
+	text-align:center;
+	color:var(--m-fg-2);
+}
+.cdvmTitle{
+	font-size:17px;
+	line-height:22px;
+	font-weight:700;
+	letter-spacing:-0.01em;
+	/* Chromium 69 fallback: break-word is the nearest safe value (anywhere needs Chrome 80) */
+	overflow-wrap:break-word;
+	overflow-wrap:anywhere;
+}
+.cdvmByline{
+	display:flex;
+	align-items:center;
+	gap:10px;
+	margin-top:14px;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	.cdvmByline > * + * { margin-left: 10px; }
+}
+.cdvmAvatar{
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:36px;
+	height:36px;
+	border-radius:50%;
+	overflow:hidden;
+	background-color:hsl(var(--cdvm-avatar-hue, 210), 52%, 46%);
+	color:#fff;
+	font-size:14px;
+	font-weight:700;
+	letter-spacing:0.02em;
+}
+.cdvmAvatar img{
+	width:100%;
+	height:100%;
+	object-fit:cover;
+}
+.cdvmByText{
+	display:flex;
+	flex-direction:column;
+	min-width:0;
+}
+.cdvmAuthor{
+	font-size:15px;
+	line-height:20px;
+	font-weight:600;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.cdvmDate{
+	font-size:13px;
+	line-height:18px;
+	color:var(--m-fg-2);
+}
+.cdvmMessage{
+	margin-top:16px;
+	font-size:15px;
+	line-height:22px;
+	/* Chromium 69 fallback: break-word is the nearest safe value (anywhere needs Chrome 80) */
+	overflow-wrap:break-word;
+	overflow-wrap:anywhere;
+}
+.cdvmMessage #cdvMessageBody{
+	display:block;
+}
+.cdvmFacts, .cdvmNote{
+	margin-top:18px;
+	padding:2px 14px;
+	border-radius:var(--m-radius, 12px);
+	background-color:var(--m-surface);
+	font-size:14px;
+	line-height:20px;
+}
+.cdvmNote{
+	margin-top:0;
+	padding:14px;
+}
+.cdvmFact{
+	display:flex;
+	align-items:baseline;
+	gap:12px;
+	min-height:24px;
+	padding:10px 0;
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	.cdvmFact > * + * { margin-left: 12px; }
+}
+.cdvmFact + .cdvmFact{
+	box-shadow:0 -0.5px 0 var(--m-sep);
+}
+.cdvmFactLabel{
+	flex:none;
+	width:84px;
+	color:var(--m-fg-2);
+}
+.cdvmFactValue{
+	flex:1 1 auto;
+	min-width:0;
+	display:flex;
+	flex-wrap:wrap;
+	align-items:baseline;
+	gap:2px 6px;
+	/* Chromium 69 fallback: break-word is the nearest safe value (anywhere needs Chrome 80) */
+	overflow-wrap:break-word;
+	overflow-wrap:anywhere;
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule); the value wraps, so the
+   gap's row component is a bottom margin too (2px below every child on 69 only) */
+@supports not (appearance: none) {
+	.cdvmFactValue > * + * { margin-left: 6px; }
+	.cdvmFactValue > * { margin-bottom: 2px; }
+}
+.cdvmMono{
+	display:block;
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	word-break:break-all;
+}
+.cdvmEmail{
+	display:block;
+	flex-basis:100%;
+	font-size:13px;
+	color:var(--m-accent);
+}
+.cdvmChip{
+	display:inline-block;
+	padding:0 8px;
+	border-radius:6px;
+	background-color:var(--m-fill);
+	font-family:var(--m-mono);
+	font-size:12.5px;
+	line-height:22px;
+}
+.cdvmChip.internalUrl, .cdvmChip.internalUrl:hover{
+	color:var(--m-accent);
+	text-decoration:none;
+}
+
+/* "N files changed  +A −D        [list|tree] [⊟][⊞]" */
+body.touchMode #cdvFilesHeader{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	margin-top:8px;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:6px 8px 2px 16px;
+	padding:6px max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	body.touchMode #cdvFilesHeader > * + * { margin-left: 8px; }
+}
+.cdvmFilesCount{
+	flex:0 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:13px;
+	font-weight:700;
+	letter-spacing:0.02em;
+	text-transform:uppercase;
+	color:var(--m-fg-2);
+}
+.cdvmFilesStat{
+	flex:none;
+	display:flex;
+	gap:6px;
+	font-family:var(--m-mono);
+	font-size:12px;
+	font-weight:600;
+}
+/* chrome69: margin fallback for flex gap (see the .cdvmByline rule) */
+@supports not (appearance: none) {
+	.cdvmFilesStat > * + * { margin-left: 6px; }
+}
+.cdvmAdd{ color:var(--m-add); }
+.cdvmDel{ color:var(--m-del); }
+.cdvmFileViewBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+/* List / tree: a segmented control */
+body.touchMode #cdvFileViewTypeList, body.touchMode #cdvFileViewTypeTree{
+	width:40px;
+	height:32px;
+	border-radius:0;
+	background-color:var(--m-fill);
+	opacity:1;
+}
+body.touchMode #cdvFileViewTypeList{
+	border-radius:9px 0 0 9px;
+}
+body.touchMode #cdvFileViewTypeTree{
+	border-radius:0 9px 9px 0;
+	margin-right:4px;
+}
+body.touchMode #cdvFileViewTypeList.active, body.touchMode #cdvFileViewTypeTree.active{
+	background-color:var(--m-accent-fill);
+}
+body.touchMode #cdvFileViewTypeList.active svg, body.touchMode #cdvFileViewTypeTree.active svg{
+	fill:var(--m-accent-on);
+}
+body.touchMode .cdvFolderBtn.hidden{
+	display:none;
+}
+
+/* File rows: [status] name .......... +4 −2 */
+body.touchMode #cdvFiles{
+	padding:0 0 24px;
+}
+body.touchMode #cdvFiles ul{
+	padding-left:0;
+}
+body.touchMode #cdvFiles .fileTreeFolderContents .fileTreeFolderContents{
+	padding-left:18px;
+}
+body.touchMode #cdvFiles .fileTreeFileRecord, body.touchMode #cdvFiles .fileTreeFolder, body.touchMode #cdvFiles .fileTreeRepo{
+	display:flex;
+	align-items:center;
+	min-height:var(--m-target);
+	box-sizing:border-box;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:0 16px;
+	padding:0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+	line-height:20px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.touchMode #cdvFiles .fileTreeFile{
+	display:flex;
+	align-items:center;
+	flex:1 1 auto;
+	min-width:0;
+	line-height:20px;
+}
+body.touchMode #cdvFiles .fileTreeFileRecord:active, body.touchMode #cdvFiles .fileTreeFolder:active{
+	background-color:var(--m-pressed);
+}
+body.touchMode #cdvFiles .fileTreeFileRecord.contextMenuActive{
+	background-color:var(--m-fill);
+}
+body.touchMode #cdvFiles .fileTreeFileIcon{
+	display:none;
+}
+body.touchMode #cdvFiles .gitFileName{
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-size:15px;
+	color:var(--m-fg);
+	text-decoration:none;
+}
+body.touchMode #cdvFiles .gitFileName.D{
+	text-decoration:line-through;
+	text-decoration-color:var(--m-del);
+}
+/* The change type as a tinted letter badge (A M D R U), drawn from the class the name carries */
+body.touchMode #cdvFiles .gitFileName::before{
+	display:inline-block;
+	width:20px;
+	height:20px;
+	margin-right:10px;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+	font-family:var(--m-mono);
+	font-size:11px;
+	font-weight:700;
+	line-height:20px;
+	text-align:center;
+	vertical-align:top;
+	text-decoration:none;
+}
+/* Chromium 69 fallback for the @supports block below (color-mix() needs Chrome 111): static tints
+   of the default palette at the same 18% alpha; the block refines them from the theme variables */
+body.touchMode #cdvFiles .gitFileName.A::before{ content:"A"; color:var(--m-add); background-color:rgba(63,185,80,0.18); }
+body.touchMode #cdvFiles .gitFileName.M::before{ content:"M"; color:var(--m-mod); background-color:rgba(210,153,34,0.18); }
+body.touchMode #cdvFiles .gitFileName.D::before{ content:"D"; color:var(--m-del); background-color:rgba(248,81,73,0.18); }
+body.touchMode #cdvFiles .gitFileName.R::before{ content:"R"; color:var(--m-ren); background-color:rgba(88,166,255,0.18); }
+body.touchMode #cdvFiles .gitFileName.U::before{ content:"U"; color:var(--m-add); background-color:rgba(63,185,80,0.18); }
+@supports (color:color-mix(in srgb, red, blue)){
+	body.touchMode #cdvFiles .gitFileName.A::before, body.touchMode #cdvFiles .gitFileName.U::before{ background-color:color-mix(in srgb, var(--m-add) 18%, transparent); }
+	body.touchMode #cdvFiles .gitFileName.M::before{ background-color:color-mix(in srgb, var(--m-mod) 18%, transparent); }
+	body.touchMode #cdvFiles .gitFileName.D::before{ background-color:color-mix(in srgb, var(--m-del) 18%, transparent); }
+	body.touchMode #cdvFiles .gitFileName.R::before{ background-color:color-mix(in srgb, var(--m-ren) 18%, transparent); }
+}
+body.touchMode #cdvFiles .fileTreeFile.pendingReview .gitFileName{
+	font-weight:600;
+}
+/* "(+4|-2)" reads as "+4 −2": the parentheses and the bar are text nodes, so the chip's own
+   font size is zeroed and its two counts restore theirs */
+body.touchMode #cdvFiles .fileTreeFileAddDel{
+	flex:none;
+	margin-left:auto;
+	padding-left:10px;
+	font-size:0;
+	font-family:var(--m-mono);
+	opacity:1;
+}
+body.touchMode #cdvFiles .fileTreeFileAdd, body.touchMode #cdvFiles .fileTreeFileDel{
+	font-size:12px;
+	font-weight:600;
+}
+body.touchMode #cdvFiles .fileTreeFileAdd{ color:var(--m-add); }
+body.touchMode #cdvFiles .fileTreeFileDel{ color:var(--m-del); margin-left:6px; }
+body.touchMode #cdvFiles .countsPending{
+	font-size:12px;
+	color:var(--m-fg-2);
+}
+body.touchMode #cdvFiles .fileTreeFileType{
+	display:none;
+}
+body.touchMode #cdvFiles #cdvLastFileViewed{
+	flex:none;
+	margin-left:8px;
+	opacity:0.6;
+}
+/* The per-file actions (copy path, view at revision, open) are hover-revealed icons in the wide
+   layout; on a phone the same actions are in the file's long-press sheet */
+body.touchMode .fileTreeFileAction{
+	display:none !important;
+}
+body.touchMode #cdvFiles .fileTreeFolder{
+	color:var(--m-fg-2);
+	font-size:14px;
+	font-weight:600;
+}
+body.touchMode #cdvFiles .fileTreeFolderIcon{
+	display:inline-flex;
+	margin-right:8px;
+	opacity:0.8;
+}
+
+/* Larger phones and small tablets in portrait: a touch more air (merged from styles/mobile/panels.css) */
+@media (min-width:428px){
+	body.mobileMode .cdvmTitle{
+		font-size:18px;
+		line-height:23px;
+	}
 }

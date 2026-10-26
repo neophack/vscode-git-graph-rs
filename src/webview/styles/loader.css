@@ -7,7 +7,7 @@
 #loadingHeader svg{
 	display:inline-block;
 	vertical-align:middle;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	margin-right:10px;
 	animation:loadingIconAnimation 2s linear infinite;
 }

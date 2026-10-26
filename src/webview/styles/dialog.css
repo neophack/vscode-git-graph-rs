@@ -1,8 +1,8 @@
 .dialog{
 	display:block;
 	position:fixed;
-	background-color:var(--vscode-menu-background);
-	color:var(--vscode-menu-foreground);
+	background-color:var(--gg-menu-background, var(--vscode-menu-background));
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	left:50%;
 	transform:translateX(-50%);
 	border:1px solid rgba(128,128,128,0.5);
@@ -42,8 +42,8 @@ body.vscode-high-contrast .dialog{
 	height:20px;
 	cursor:pointer;
 	border-radius:3px;
-	background-color:var(--vscode-menu-background);
-	color:var(--vscode-menu-foreground);
+	background-color:var(--gg-menu-background, var(--vscode-menu-background));
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	opacity:0.7;
 	z-index:10;
 }
@@ -116,10 +116,10 @@ body.vscode-high-contrast .dialog{
 	margin-right:7px;
 }
 .dialogContent .dialogFormCheckbox > label > input[type=checkbox]:checked ~ .customCheckbox:after{
-	border-color:var(--vscode-menu-foreground);
+	border-color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 }
 .dialogContent .dialogFormRadio > label > input[type=radio]:checked ~ .customRadio:after{
-	background-color:var(--vscode-menu-foreground);
+	background-color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 }
 
 .dialogContent > table.dialogForm input[type=text]{
@@ -130,16 +130,16 @@ body.vscode-high-contrast .dialog{
 	background-color:rgba(128,128,128,0.1);
 	border:1px solid rgba(128,128,128,0.5);
 	border-radius:4px;
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	font-family:var(--vscode-font-family);
 	font-size:13px;
 	line-height:17px;
 }
 .dialogContent > table.dialogForm input[type=text]:focus, .dialogContent .dialogFormCheckbox > label > input[type=checkbox]:focus ~ .customCheckbox, .dialogContent .dialogFormRadio > label > input[type=radio]:focus ~ .customRadio{
-	border-color:var(--vscode-focusBorder);
+	border-color:var(--gg-focus-border, var(--vscode-focusBorder));
 }
 .dialogContent > table.dialogForm input[type=text]::placeholder{
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	opacity:0.4;
 }
 /* The textarea (multi-line inputs, e.g. the commit message editor) has no UA default that follows
@@ -151,13 +151,13 @@ body.vscode-high-contrast .dialog{
 	background-color:rgba(128,128,128,0.1);
 	border:1px solid rgba(128,128,128,0.5);
 	border-radius:4px;
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	font-family:var(--vscode-font-family);
 	font-size:13px;
 	line-height:17px;
 }
 .dialogContent > table.dialogForm textarea:focus{
-	border-color:var(--vscode-focusBorder);
+	border-color:var(--gg-focus-border, var(--vscode-focusBorder));
 }
 
 .dialog .roundedBtn{
@@ -208,7 +208,7 @@ body.vscode-high-contrast .dialog{
 .dialog svg{
 	display:inline-block;
 	vertical-align:middle;
-	fill:var(--vscode-menu-foreground);
+	fill:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	opacity:0.75;
 }
 
@@ -295,7 +295,7 @@ body.vscode-high-contrast .dialog{
 	border:1px solid rgba(128,128,128,0.5);
 	border-radius:4px;
 	outline-style:none;
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	line-height:17px;
 	text-overflow:ellipsis;
 	white-space:nowrap;
@@ -313,17 +313,17 @@ body.vscode-high-contrast .dialog{
 	width:0;
 	height:0;
 	border:4px solid transparent;
-	border-color:var(--vscode-menu-foreground) transparent transparent transparent;
+	border-color:var(--gg-menu-foreground, var(--vscode-menu-foreground)) transparent transparent transparent;
 }
 
 .customSelectCurrent:focus, .customSelectContainer.open .customSelectCurrent{
-	border-color:var(--vscode-focusBorder);
+	border-color:var(--gg-focus-border, var(--vscode-focusBorder));
 }
 .customSelectContainer.open .customSelectCurrent{
 	border-radius:4px 4px 0 0;
 }
 .customSelectContainer.open .customSelectCurrent:after{
-	border-color:transparent transparent var(--vscode-menu-foreground) transparent;
+	border-color:transparent transparent var(--gg-menu-foreground, var(--vscode-menu-foreground)) transparent;
 	top:6px;
 }
 
@@ -331,9 +331,9 @@ body.vscode-high-contrast .dialog{
 	display:block;
 	position:absolute;
 	box-sizing:border-box;
-	background-color:var(--vscode-menu-background);
-	color:var(--vscode-menu-foreground);
-	border:1px solid var(--vscode-focusBorder);
+	background-color:var(--gg-menu-background, var(--vscode-menu-background));
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
+	border:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	border-radius:0 0 4px 4px;
 	z-index:42;
 	text-align:left;
@@ -361,7 +361,7 @@ body.vscode-high-contrast .dialog{
 }
 .customSelectOptions > .customSelectOption.focussed{
 	background-color:var(--vscode-menu-selectionBackground, rgba(128,128,128,0.05));
-	color:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
+	color:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
 }
 body.vscode-high-contrast .customSelectOptions > .customSelectOption.focussed{
 	outline:1px dotted var(--vscode-menu-selectionBorder, transparent);
@@ -384,10 +384,87 @@ body.vscode-high-contrast .customSelectOptions > .customSelectOption.focussed{
 	margin-top:-9px;
 }
 .customSelectOptions.multiple > .customSelectOption > .selectedIcon svg{
-	fill:var(--vscode-menu-foreground);
+	fill:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	opacity:0.7;
 }
 .customSelectOptions.multiple > .customSelectOption.focussed > .selectedIcon svg{
-	fill:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
+	fill:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
 	opacity:0.85;
+}
+
+/* ===== Phone layout: centred cards with full-width buttons (merged from styles/mobile/dialog.css,
+ * OPTIMIZATION-PLAN §6 F6) ===== */
+
+body.mobileMode .dialog{
+	width:calc(100vw - 32px);
+	max-width:420px;
+	box-sizing:border-box;
+	max-height:calc(100vh - 32px);
+	overflow-y:auto;
+	border:none;
+	border-radius:16px;
+	background-color:var(--m-sheet);
+	box-shadow:0 20px 60px rgba(0,0,0,0.4), 0 0 0 0.5px var(--m-sep);
+	font-size:15px;
+	line-height:21px;
+}
+body.mobileMode .dialogContent{
+	max-width:none;
+	padding:20px 16px 16px;
+}
+body.mobileMode .dialogContent > table.dialogForm{
+	display:table;
+	width:100%;
+}
+body.mobileMode .dialogContent > table.dialogForm td{
+	display:block;
+	text-align:left;
+	padding:4px 0;
+}
+body.mobileMode .dialogContent > table.dialogForm input[type=text], body.mobileMode .dialogContent > table.dialogForm textarea{
+	box-sizing:border-box;
+	width:100%;
+	min-height:var(--m-target);
+	padding:10px 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .dialog .roundedBtn{
+	display:block;
+	box-sizing:border-box;
+	width:100%;
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	margin:8px 0 0 0;
+	padding:0 16px;
+	border:none;
+	border-radius:12px;
+	background-color:var(--m-fill);
+	font-size:16px;
+	font-weight:600;
+}
+body.mobileMode .dialog .roundedBtn:first-of-type{
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+body.mobileMode #dialogCloseIcon{
+	top:4px;
+	right:4px;
+	width:var(--m-target);
+	height:var(--m-target);
+}
+body.mobileMode .dialog .dialogFormCheckbox > label, body.mobileMode .dialog .dialogFormRadio > label{
+	display:inline-flex;
+	align-items:center;
+	min-height:var(--m-target);
+}
+body.mobileMode .customSelectCurrent{
+	min-height:var(--m-target);
+	line-height:calc(var(--m-target) - 2px);
+	border-radius:10px;
+}
+body.mobileMode .customSelectOption{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
 }

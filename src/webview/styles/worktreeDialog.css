@@ -128,3 +128,74 @@
 	line-height:26px;
 	text-align:center;
 }
+
+/* ===== Phone layout: the full-screen Worktrees panel (merged from styles/mobile/panels.css,
+ * OPTIMIZATION-PLAN §6 F6) =====
+ * The four full-screen panels (Settings, Reflog, Statistics, Worktrees) share one geometry; each
+ * component sheet carries its own copy so every widget's on-demand chunk is self-contained and
+ * injecting one panel's styles never depends on another widget's chunk having loaded. */
+
+body.mobileMode #worktreeWidget{
+	top:-110vh;
+	left:0;
+	right:0;
+	width:auto;
+	max-width:none;
+	max-height:100vh;
+	height:100vh;
+	box-sizing:border-box;
+	border:none;
+	border-radius:0;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:16px;
+	padding-left:max(16px, env(safe-area-inset-left));
+	padding-right:max(16px, env(safe-area-inset-right));
+	padding-top:max(16px, env(safe-area-inset-top));
+	padding-bottom:max(16px, env(safe-area-inset-bottom));
+	background-color:var(--m-bg);
+	font-size:15px;
+	line-height:21px;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+	/* Hidden via visibility, not the animated top: a `top` transition on these fixed panels can
+	   freeze at its start value (observed opening them from the ⋯ sheet after a reload), leaving
+	   the panel stuck off-screen while it carries .active. A keyframed entrance cannot freeze. */
+	visibility:hidden;
+	transition:none;
+}
+body.mobileMode #worktreeWidget.active{
+	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobilePanelIn{
+	from{ opacity:0; transform:translateY(-14px); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode #worktreeClose{
+	width:36px;
+	height:36px;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	top:8px;
+	top:max(8px, env(safe-area-inset-top));
+	right:8px;
+	right:max(8px, env(safe-area-inset-right));
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	border-radius:50%;
+	background-color:var(--m-fill);
+}
+body.mobileMode #worktreeClose svg{
+	position:static;
+}
+body.mobileMode #worktreeWidget .roundedBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	border:none;
+	border-radius:12px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .worktreeTable tr{
+	height:var(--m-target);
+}

@@ -87,6 +87,7 @@ export default tseslint.config(
 	{
 		ignores: [
 			'src/shared/engine/**',
+			'src/webview/common/i18n/subset.generated.ts',
 			'src/**/*.d.ts',
 			'**/*.d.ts',
 			'.probe/**'

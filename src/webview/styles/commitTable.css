@@ -121,7 +121,7 @@
 	position: sticky;
 	top: inherit;
 	z-index: 11;
-	background-color: var(--vscode-editor-background);
+	background-color: var(--gg-background, var(--vscode-editor-background));
 }
 .resizeCol{
 	position:absolute;
@@ -147,4 +147,349 @@ table { border-collapse: collapse; }
 }
 #tableColHeaders>th:last-child, .commit>td:last-child {
     border-right: none;
+}
+
+/* ===== Phone layout: the commit list (merged from styles/mobile/commitList.css, OPTIMIZATION-PLAN
+ * §6 F6) =====
+ * 52px two-line rows. Line 1: subject ............ date   (the date compact: 16:32 / Yesterday / Mon / Oct 9)
+ * Line 2: [refs] author ...... hash
+ * The row height is uniform (MOBILE_ROW_HEIGHT of the render code), which windowed rendering
+ * requires; rows are separated by a hairline inset to the text, drawn as a shadow so it takes no
+ * height. The column header row is collapsed to nothing rather than hidden: its graph cell still
+ * sets the graph column's width. */
+
+body.mobileMode #tableColHeaders > th{
+	height:0;
+	padding-top:0 !important;
+	padding-bottom:0 !important;
+	border:none;
+	box-shadow:none;
+	font-size:0;
+	line-height:0;
+	visibility:hidden;
+}
+body.mobileMode .commit > td, body.mobileMode #tableColHeaders > th{
+	border-right:none;
+}
+body.mobileMode #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	padding:0;
+	line-height:normal;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable tr.commit td:nth-child(2){
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:0 14px 0 4px;
+	padding:0 max(14px, env(safe-area-inset-right)) 0 4px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #commitTable tr.commit:active td{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #commitTable tr.commit span.description{
+	align-items:baseline;
+	gap:8px;
+	height:20px;
+	line-height:20px;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap -
+   hidden items make no gap slot on modern and carry no margins here either) */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable tr.commit span.description > * + * { margin-left: 8px; }
+}
+body.mobileMode #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:0;
+	font-size:15px;
+	font-weight:500;
+	letter-spacing:-0.01em;
+	color:var(--m-fg);
+}
+body.mobileMode #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.mobileMode #commitTable tr.commit.mute span.description .text, body.mobileMode #commitTable tr.commit.mute .mobileMeta{
+	opacity:0.55;
+}
+body.mobileMode #commitTable tr.commit span.description .commitbody{
+	display:none;
+}
+body.mobileMode #commitTable .commitHeadDot{
+	align-self:center;
+	margin:0 -2px 0 0;
+}
+body.mobileMode #commitTable .pinnedBadge{
+	font-size:12px;
+}
+.mobileMetaDate{
+	flex:none;
+	font-size:12px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+.mobileMeta{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	height:18px;
+	margin-top:4px;
+	font-size:12.5px;
+	line-height:18px;
+	color:var(--m-fg-2);
+	overflow:hidden;
+	white-space:nowrap;
+}
+/* chrome69: margin fallback for flex gap (see the span.description rule); the hash's own
+   margin-left:auto is re-asserted after the generic rule so it keeps winning on 69 */
+@supports not (appearance: none) {
+	.mobileMeta > * + * { margin-left: 6px; }
+	.mobileMeta > .mobileMetaHash { margin-left: auto; }
+}
+.mobileRefs{
+	flex:0 1 auto;
+	min-width:0;
+	display:flex;
+	gap:4px;
+	overflow:hidden;
+}
+/* chrome69: margin fallback for flex gap (see the span.description rule); carries the #commitTable
+   id because the .gitRef margin reset (body.mobileMode #commitTable .gitRef) outranks a plain
+   class chain and would otherwise zero the fallback's margin-left */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable .mobileRefs > .gitRef + .gitRef { margin-left: 4px; }
+}
+.mobileMetaAuthor{
+	flex:0 1 auto;
+	min-width:24px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.mobileMetaHash{
+	flex:none;
+	margin-left:auto;
+	padding-left:4px;
+	font-family:var(--m-mono);
+	font-size:11.5px;
+	letter-spacing:0;
+	opacity:0.8;
+}
+/* A tap opens the commit details sheet, which offers the commit's changes */
+body.mobileMode #commitTable .openChangesBtn{
+	display:none !important;
+}
+
+/* Ref chips: flat, tinted with the commit's lane colour */
+body.mobileMode #commitTable .gitRef{
+	--m-ref:var(--git-graph-color, var(--m-accent));
+	display:inline-flex;
+	align-items:center;
+	flex:0 1 auto;
+	/* a floor, so a crowded meta line ellipsizes the name instead of squeezing the chip to its icon */
+	min-width:48px;
+	max-width:100%;
+	height:18px;
+	margin:0;
+	border:none;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:11px;
+	font-weight:600;
+	line-height:18px;
+	vertical-align:middle;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #commitTable .gitRef{
+		background-color:color-mix(in srgb, var(--m-ref) 20%, transparent);
+		color:color-mix(in srgb, var(--m-ref) 72%, var(--m-fg));
+	}
+	body.mobileMode #commitTable .gitRef.remote{
+		background-color:transparent;
+		box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--m-ref) 45%, transparent);
+	}
+}
+body.mobileMode #commitTable .gitRef.active{
+	background-color:var(--m-ref);
+	color:var(--m-bg);
+}
+body.mobileMode #commitTable .gitRef.tag, body.mobileMode #commitTable .gitRef.stash{
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+}
+body.mobileMode #commitTable .gitRef > svg{
+	flex:none;
+	width:10px;
+	height:10px;
+	padding:0 0 0 5px;
+	background:none;
+	fill:currentColor;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable .gitRefName{
+	min-width:0;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 3px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.mobileMode #commitTable .gitRef.active .gitRefName{
+	font-weight:700;
+}
+body.mobileMode #commitTable .gitRefHeadRemote{
+	flex:none;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 5px;
+	border-left:1px solid currentColor;
+	border-left-color:rgba(128,128,128,0.4);
+	font-style:normal;
+	font-weight:500;
+	opacity:0.8;
+}
+body.mobileMode #commitTable .gitRef .gitRefName:hover, body.mobileMode #commitTable .gitRef .gitRefHeadRemote:hover{
+	background-color:transparent;
+}
+
+/* The graph: slightly heavier lines and dots for a small, dense screen */
+body.mobileMode #commitGraph path.line{
+	stroke-width:2.25;
+}
+body.mobileMode #commitGraph circle:hover{
+	transform:none;
+}
+
+body.mobileMode #loadMoreCommitsBtn{
+	min-height:var(--m-target);
+	line-height:var(--m-target);
+	height:auto;
+	margin:12px 16px;
+	border:none;
+	border-radius:22px;
+	background-color:var(--m-fill);
+	color:var(--m-accent);
+	font-size:15px;
+	font-weight:600;
+}
+body.mobileMode #footer{
+	padding-bottom:env(safe-area-inset-bottom);
+}
+
+/* Larger phones and small tablets in portrait: a touch more air (merged from styles/mobile/panels.css) */
+@media (min-width:428px){
+	body.mobileMode #commitTable tr.commit span.description .text{
+		font-size:15.5px;
+	}
+}
+
+/* The smallest phones (320px): tighter rows (merged from styles/mobile/panels.css) */
+@media (max-width:359px){
+	body.mobileMode .mobileMetaHash{
+		display:none;
+	}
+	body.mobileMode #commitTable tr.commit td:nth-child(2){
+		padding-right:10px;
+	}
+}
+
+/* ===== Phone layout: the fast scroller (merged from styles/mobile/fastScroller.css) =====
+ * A thumb on the right edge while the list scrolls; dragging it scrubs through the whole history,
+ * with a bubble naming the day and position of the commit at the top of the screen.
+ *
+ * The fast scroller IS the mobile scroll indicator, so the view's native scrollbar hides while
+ * the mobile layout is rendered: on a phone both appeared side by side while scrolling - the
+ * overlay bar flush to the edge and this thumb a few pixels in - reading as two scrollbars for
+ * one list (the 2026-10-18 report, Git Graph 远程手机模式滚动出现两个滚动条; the wide layout,
+ * where the thumb never exists, keeps the native bar). A list too short for the thumb (under
+ * six screens) simply shows none, the phone norm for directly touched lists. */
+body.mobileMode #view{
+	scrollbar-width:none;
+	-ms-overflow-style:none;
+}
+body.mobileMode #view::-webkit-scrollbar{
+	display:none;
+}
+
+body.mobileMode #fastScroller{
+	display:block;
+	position:fixed;
+	top:0;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	right:2px;
+	right:max(2px, env(safe-area-inset-right));
+	width:0;
+	height:0;
+	z-index:14;
+	opacity:0;
+	pointer-events:none;
+	/* shown/hidden instantly: an opacity transition on this fixed element can freeze at either
+	   end (seen in a throttled/backgrounded renderer), leaving a stuck or invisible thumb */
+	transition:none;
+}
+body.mobileMode #fastScroller.visible, body.mobileMode #fastScroller.dragging{
+	opacity:1;
+}
+body.mobileMode #fastScroller.visible #fastScrollerThumb{
+	pointer-events:auto;
+}
+body.mobileMode #fastScrollerThumb{
+	position:absolute;
+	top:0;
+	right:0;
+	width:28px;
+	height:44px;
+	touch-action:none;
+	cursor:grab;
+}
+body.mobileMode #fastScrollerThumb::after{
+	content:"";
+	position:absolute;
+	top:4px;
+	right:4px;
+	width:6px;
+	height:36px;
+	border-radius:3px;
+	background-color:var(--m-fg-2);
+	opacity:0.7;
+	transition:none;
+}
+body.mobileMode #fastScroller.dragging #fastScrollerThumb::after{
+	width:10px;
+	right:3px;
+	border-radius:5px;
+	background-color:var(--m-accent-fill);
+	opacity:1;
+}
+body.mobileMode #fastScrollerBubble{
+	position:absolute;
+	top:0;
+	right:40px;
+	display:flex;
+	flex-direction:column;
+	align-items:flex-end;
+	padding:8px 14px;
+	border-radius:14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 8px 28px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
+	white-space:nowrap;
+	opacity:0;
+	transition:none;
+}
+body.mobileMode #fastScroller.dragging #fastScrollerBubble{
+	opacity:1;
+}
+.fastScrollerDate{
+	font-size:17px;
+	font-weight:700;
+	line-height:22px;
+	color:var(--m-fg);
+}
+.fastScrollerPos{
+	font-size:12px;
+	line-height:16px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
 }

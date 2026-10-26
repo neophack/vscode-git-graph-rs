@@ -29,12 +29,12 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline (and the reveal) on 69. */
 .fileTreeFileAction:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 	opacity:1;
 }
 .fileTreeFileAction:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 	opacity:1;
 }
@@ -46,7 +46,7 @@ svg.openFolderIcon, svg.closedFolderIcon, svg.fileIcon, .fileTreeFileAction svg,
 	position:absolute;
 	top:2.5px;
 	height:13px !important;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	fill-opacity:0.6;
 }
 .fileTreeFileAction.copyGitFile svg{

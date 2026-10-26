@@ -7,7 +7,7 @@
  */
 #headerRow{
 	position:relative;
-	background-color: var(--vscode-editor-background);
+	background-color: var(--gg-background, var(--vscode-editor-background));
 }
 #headerRow.sticky {
 	position:sticky;
@@ -23,7 +23,7 @@
 	top:0;
 	white-space:nowrap;
 	padding:4px 174px 4px 0;
-	background-color: var(--vscode-editor-background);
+	background-color: var(--gg-background, var(--vscode-editor-background));
 	border-bottom:1px solid rgba(128,128,128,0.5);
 	line-height:32px;
 	text-align:center;
@@ -77,11 +77,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 #currentBtn:focus, #findBtn:focus, #filterBtn:focus, #statisticsBtn:focus, #terminalBtn:focus, #settingsBtn:focus, #fetchBtn:focus, #refreshBtn:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:2px;
 }
 #currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #statisticsBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:2px;
 }
 #currentBtn{
@@ -114,9 +114,9 @@
 }
 #currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg, #refreshBtn svg{
 	position:absolute;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	opacity:0.8;
-	stroke:var(--vscode-editor-foreground);
+	stroke:var(--gg-foreground, var(--vscode-editor-foreground));
 	stroke-opacity:0.5;
 	stroke-width:0;
 }
@@ -138,7 +138,7 @@
 }
 #filterBtn.active svg{
 	opacity:1;
-	fill:var(--vscode-textLink-foreground, var(--vscode-editor-foreground));
+	fill:var(--vscode-textLink-foreground, var(--gg-foreground, var(--vscode-editor-foreground)));
 }
 #refreshBtn svg{
 	left:2px;
@@ -184,4 +184,303 @@
 }
 #controls label{
 	cursor:pointer;
+}
+
+/* ===== Phone layout: the app bar (merged from styles/mobile/appBar.css, OPTIMIZATION-PLAN §6 F6) =====
+ * One 52px row: [repo ▾] [branch ▾ ..........] (find) (refresh) (⋯)
+ * The other toolbar buttons and "Show Remote Branches" live in the ⋯ overflow sheet
+ * (showMobileOverflowMenu); an active path filter keeps its button in the bar as an indicator.
+ * The bar always sticks to the top: flat and solid, separated from the list by a hairline only.
+ * The capsules' leading icons and chevrons are shared with the tablet toolbar (body.touchMode). */
+
+body.mobileMode #headerRow{
+	position:sticky;
+	top:0;
+	z-index:12;
+	background-color:var(--m-bg);
+}
+body.mobileMode #controls{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	box-sizing:border-box;
+	min-height:var(--m-bar);
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:4px 4px 4px 12px;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+	padding-top:4px;
+	padding-top:max(4px, env(safe-area-inset-top));
+	border-bottom:0.5px solid var(--m-sep);
+	line-height:normal;
+	text-align:left;
+	white-space:nowrap;
+	font-weight:normal;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	body.mobileMode #controls > * + * { margin-left: 6px; }
+}
+body.mobileMode #repoControl, body.mobileMode #branchControl{
+	display:flex;
+	align-items:center;
+	min-width:0;
+	margin:0;
+}
+/* The branch is the filter that matters most: it keeps a readable floor, and the repository
+   capsule (usually the longer name) gives way first */
+body.mobileMode #repoControl{
+	flex:0 1 auto;
+	max-width:34%;
+	min-width:72px;
+}
+body.mobileMode #branchControl{
+	flex:1 1 0;
+	min-width:96px;
+}
+body.mobileMode #controls.singleRepo #repoControl, body.mobileMode #authorControl, body.mobileMode #showRemoteBranchesControl,
+body.mobileMode #repoControlLabel, body.mobileMode #branchControlLabel{
+	display:none;
+}
+body.mobileMode #repoDropdown, body.mobileMode #branchDropdown{
+	flex:1 1 auto;
+	min-width:0;
+	margin:0;
+}
+body.mobileMode #controls .dropdownCurrentValue{
+	position:relative;
+	width:100% !important;
+	max-width:none !important; /* over the narrow window caps (12vw / 16vw) in responsive.css */
+	height:var(--m-capsule);
+	line-height:var(--m-capsule);
+	box-sizing:border-box;
+	padding:0 30px 0 34px;
+	border:none;
+	border-radius:calc(var(--m-capsule) / 2);
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:15px;
+	font-weight:600;
+	letter-spacing:-0.01em;
+	transition:background-color 120ms var(--gg-ease, ease-out);
+}
+body.mobileMode #controls .dropdownCurrentValue:active{
+	background-color:var(--m-pressed);
+}
+/* Leading icon (branch / repository) and trailing chevron, both masks in the text colour */
+body.touchMode #controls .dropdownCurrentValue::before{
+	content:"";
+	position:absolute;
+	left:13px;
+	top:50%;
+	width:14px;
+	height:14px;
+	margin-top:-7px;
+	background-color:var(--m-fg-2);
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M10 5c0-1.11-.89-2-2-2a1.993 1.993 0 0 0-1 3.72v.3c-.02.52-.23.98-.63 1.38-.4.4-.86.61-1.38.63-.83.02-1.48.16-2 .45V4.72a1.993 1.993 0 0 0-1-3.72C.88 1 0 1.89 0 3a2 2 0 0 0 1 1.72v6.56c-.59.35-1 .99-1 1.72 0 1.11.89 2 2 2 1.11 0 2-.89 2-2 0-.53-.2-1-.53-1.36.09-.06.48-.41.59-.47.25-.11.56-.17.94-.17 1.05-.05 1.95-.45 2.75-1.25S8.95 7.77 9 6.73h-.02C9.59 6.37 10 5.73 10 5zM2 1.8c.66 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2C1.35 4.2.8 3.65.8 3c0-.65.55-1.2 1.2-1.2zm0 12.41c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2zm6-8c-.66 0-1.2-.55-1.2-1.2 0-.65.55-1.2 1.2-1.2.65 0 1.2.55 1.2 1.2 0 .65-.55 1.2-1.2 1.2z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+body.touchMode #repoDropdown .dropdownCurrentValue::before{
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M4 9H3V8h1v1zm0-3H3v1h1V6zm0-2H3v1h1V4zm0-2H3v1h1V2zm8-1v12c0 .55-.45 1-1 1H6v2l-1.5-1.5L3 16v-2H1c-.55 0-1-.45-1-1V1c0-.55.45-1 1-1h10c.55 0 1 .45 1 1zm-1 10H1v2h2v-1h3v1h5v-2zm0-10H2v9h9V1z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M4 9H3V8h1v1zm0-3H3v1h1V6zm0-2H3v1h1V4zm0-2H3v1h1V2zm8-1v12c0 .55-.45 1-1 1H6v2l-1.5-1.5L3 16v-2H1c-.55 0-1-.45-1-1V1c0-.55.45-1 1-1h10c.55 0 1 .45 1 1zm-1 10H1v2h2v-1h3v1h5v-2zm0-10H2v9h9V1z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+body.touchMode #controls .dropdownCurrentValue::after, body.touchMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	top:50%;
+	right:11px;
+	width:12px;
+	height:12px;
+	margin-top:-6px;
+	border:none;
+	background-color:var(--m-fg-2);
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+	transition:transform 160ms var(--gg-ease, ease-out);
+}
+body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
+	border-radius:calc(var(--m-capsule) / 2);
+	background-color:var(--m-pressed);
+}
+body.touchMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	transform:rotate(180deg);
+}
+/* A wider phone: the branch takes about a third of the bar, whatever the repository's name */
+@media screen and (min-width: 361px){
+	body.mobileMode #branchControl{
+		min-width:max(96px, 32%);
+	}
+}
+/* A very narrow phone: the leading icons go and the buttons tighten, so both capsules keep a
+   readable stretch of text beside the Find / Refresh / ⋯ buttons */
+@media screen and (max-width: 360px){
+	body.mobileMode #controls{
+		gap:4px;
+		padding-left:8px;
+		padding-left:max(8px, env(safe-area-inset-left));
+	}
+	body.mobileMode #repoControl{
+		min-width:56px;
+	}
+	body.mobileMode #branchControl{
+		min-width:72px;
+	}
+	body.mobileMode #controls .dropdownCurrentValue{
+		padding-left:12px;
+		padding-right:26px;
+		font-size:14px;
+	}
+	body.mobileMode #controls .dropdownCurrentValue::before{
+		display:none;
+	}
+}
+
+body.mobileMode #controlBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	margin-left:auto;
+}
+body.mobileMode #controlBtns > div{
+	display:none;
+}
+/* The wide layout turns the fetch button on with "#controls.fetchSupported #fetchBtn" (two ids),
+   which out-ranks the one-id hide rule above: without this counter-rule an absolutely positioned,
+   20px fetch icon drops into the app bar on top of Refresh / ⋯ whenever the repo has remotes.
+   On a phone the fetch action lives in the ⋯ overflow sheet instead. */
+body.mobileMode #controlBtns > #fetchBtn{
+	display:none;
+}
+body.mobileMode #controlBtns > #findBtn, body.mobileMode #controlBtns > #refreshBtn, body.mobileMode #controlBtns > #mobileMoreBtn,
+body.mobileMode #controlBtns > #filterBtn.active{
+	position:relative;
+	top:auto;
+	right:auto;
+	flex:none;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	/* the capsules' height, so the buttons and the filters read as one row */
+	width:var(--m-capsule);
+	height:var(--m-capsule);
+	margin:0;
+	border-radius:50%;
+	color:var(--m-fg);
+	cursor:pointer;
+}
+body.mobileMode #controlBtns > div:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.mobileMode #controlBtns svg{
+	position:static;
+	width:19px !important;
+	height:19px !important;
+	fill:var(--m-fg);
+	opacity:0.9;
+}
+body.mobileMode #controlBtns > #filterBtn.active svg{
+	fill:var(--m-accent);
+	opacity:1;
+}
+body.mobileMode #refreshBtn.refreshing svg{
+	width:15px !important;
+}
+body.mobileMode #mobileMoreBtn svg{
+	width:20px !important;
+	height:20px !important;
+}
+
+body.mobileMode #pinnedControls{
+	/* Chromium 69 fallback (min()/max() need Chrome 79): each axis pairs its
+	   literal with its max() refinement */
+	padding-left:12px;
+	padding-left:max(12px, env(safe-area-inset-left));
+	padding-right:12px;
+	padding-right:max(12px, env(safe-area-inset-right));
+	padding-top:8px;
+	padding-bottom:8px;
+}
+/* the chips are a touch target: taller rows, bigger text and a wider ✕ than the 11px desktop chips */
+body.mobileMode .pinnedChip{
+	margin:0 3px;
+	padding:4px 10px;
+	font-size:13px;
+	line-height:22px;
+	border-radius:14px;
+}
+body.mobileMode .pinnedChipRemove{
+	margin-left:6px;
+	padding:0 6px;
+	font-size:15px;
+}
+
+/* ===== Phone layout: the ⋯ overflow sheet's items (merged from styles/mobile/overflowSheet.css) =====
+ * The sheet itself is a context menu (contextMenu.css's mobile section draws the scrim and the
+ * bottom sheet); these rules style its leading icons and the switches. They stay in this
+ * first-paint sheet - not in contextMenu.css's on-demand chunk - because the ⋯ button that opens
+ * the sheet is part of the app bar. */
+
+body.touchMode .contextMenu .mobileMenuIcon{
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:22px;
+	margin-right:14px;
+}
+body.touchMode .contextMenu .mobileMenuIcon svg{
+	width:18px;
+	height:18px;
+	fill:currentColor;
+	opacity:0.85;
+}
+body.touchMode .contextMenu .mobileMenuLabel{
+	flex:1 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+body.touchMode .contextMenu .mobileMenuSwitch{
+	position:relative;
+	flex:none;
+	width:44px;
+	height:26px;
+	margin-left:12px;
+	border-radius:13px;
+	background-color:var(--m-fill);
+	transition:background-color 160ms var(--gg-ease, ease-out);
+}
+body.touchMode .contextMenu .mobileMenuSwitch::after{
+	content:"";
+	position:absolute;
+	left:2px;
+	top:2px;
+	width:22px;
+	height:22px;
+	border-radius:50%;
+	background-color:#fff;
+	box-shadow:0 1px 3px rgba(0,0,0,0.3);
+	transition:transform 160ms var(--gg-ease, ease-out);
+}
+body.touchMode .contextMenu .mobileMenuSwitch.on{
+	background-color:var(--m-add);
+}
+body.touchMode .contextMenu .mobileMenuSwitch.on::after{
+	transform:translateX(18px);
+}
+
+/* The smallest phones (320px): a tighter app bar (merged from styles/mobile/panels.css) */
+@media (max-width:359px){
+	body.mobileMode #controls{
+		gap:4px;
+		/* Chromium 69 fallback (min()/max() need Chrome 79) */
+		padding-left:8px;
+		padding-left:max(8px, env(safe-area-inset-left));
+	}
+	/* chrome69: margin fallback matching the tighter gap above (see the app bar section) */
+	@supports not (appearance: none){
+		body.mobileMode #controls > * + * { margin-left: 4px; }
+	}
+	body.mobileMode #controlBtns > div{
+		width:40px !important;
+	}
 }

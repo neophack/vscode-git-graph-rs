@@ -374,6 +374,15 @@ export const STRINGS_ZH_CN = {
 	mobileShowRemoteBranches: '显示远程分支',
 	mobileYesterday: '昨天',
 	mobileWeekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
+	/* Date composition (common/dates.ts): the templates place the day ({0}), the month token ({1})
+	   and the year ({2}) per language; Chinese dates are written with numeral months. */
+	dateMonthsShort: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+	dateFullDate: '{2}年{1}月{0}日',
+	dateDayDate: '{1}月{0}日',
+	dateDayDateWithYear: '{2}年{1}月{0}日',
+	dateRelativeUnits: { second: '秒', minute: '分钟', hour: '小时', day: '天', week: '周', month: '个月', year: '年' },
+	dateRelativePluralSuffix: '',
+	dateRelativeAgo: '{0} {1}前',
 	mobileFilesChanged: '{0} 个文件变更',
 	mobileFileChanged: '1 个文件变更',
 	mobileUncommittedTitle: '未提交的更改',
@@ -931,6 +940,7 @@ export const STRINGS_ZH_CN = {
 	/* 启动提示 */
 	noEngineForPlatform: 'Git Graph RS：当前系统（{0}）没有原生引擎，将通过 git 命令行运行（功能完整，读操作为原版速度）。',
 	noGitRunsOnEngine: 'Git Graph RS：未找到 Git，将通过 Rust 引擎运行（查看、比较、搜索等全部可用；写入类操作需要安装 Git）。',
+	restrictedModeNotice: 'Git Graph RS：此工作区不受信任，扩展将以只读模式运行：仓库数据仅由 Rust 引擎提供，在信任该工作区之前 Git 命令处于禁用状态。',
 
 	/* 命令面板 / 快速选择与通知 */
 	automationTestRunning: '正在运行自动化测试套件 —— Git Graph 视图将自行驱动所有操作，完成后自动打开报告。',

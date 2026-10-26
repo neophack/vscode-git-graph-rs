@@ -136,3 +136,122 @@
 	box-sizing:border-box;
 	border:1px solid transparent;
 }
+
+/* ===== Phone layout: the full-screen Statistics panel (merged from styles/mobile/panels.css,
+ * OPTIMIZATION-PLAN §6 F6) =====
+ * The four full-screen panels (Settings, Reflog, Statistics, Worktrees) share one geometry; each
+ * component sheet carries its own copy so every widget's on-demand chunk is self-contained and
+ * injecting one panel's styles never depends on another widget's chunk having loaded. */
+
+body.mobileMode #statisticsWidget{
+	top:-110vh;
+	left:0;
+	right:0;
+	width:auto;
+	max-width:none;
+	max-height:100vh;
+	height:100vh;
+	box-sizing:border-box;
+	border:none;
+	border-radius:0;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:16px;
+	padding-left:max(16px, env(safe-area-inset-left));
+	padding-right:max(16px, env(safe-area-inset-right));
+	padding-top:max(16px, env(safe-area-inset-top));
+	padding-bottom:max(16px, env(safe-area-inset-bottom));
+	background-color:var(--m-bg);
+	font-size:15px;
+	line-height:21px;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+	/* Hidden via visibility, not the animated top: a `top` transition on these fixed panels can
+	   freeze at its start value (observed opening them from the ⋯ sheet after a reload), leaving
+	   the panel stuck off-screen while it carries .active. A keyframed entrance cannot freeze. */
+	visibility:hidden;
+	transition:none;
+}
+body.mobileMode #statisticsWidget.active{
+	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobilePanelIn{
+	from{ opacity:0; transform:translateY(-14px); }
+	to{ opacity:1; transform:none; }
+}
+body.mobileMode #statisticsClose{
+	width:36px;
+	height:36px;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	top:8px;
+	top:max(8px, env(safe-area-inset-top));
+	right:8px;
+	right:max(8px, env(safe-area-inset-right));
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	border-radius:50%;
+	background-color:var(--m-fill);
+}
+body.mobileMode #statisticsClose svg{
+	position:static;
+}
+
+/* Statistics' grouped cards, shared by both touch layouts (the Settings copies and the section
+   card pattern live in settingsWidget.css) */
+body.touchMode #statisticsWidget h2{
+	/* clear of the round close button */
+	margin:4px 44px 12px;
+	font-size:17px;
+	line-height:28px;
+}
+body.touchMode #statisticsContent h3{
+	margin:16px 2px 8px;
+	font-size:12px;
+	letter-spacing:0.06em;
+	text-transform:uppercase;
+	color:var(--m-fg-2);
+	opacity:1;
+}
+body.touchMode .statisticsHeatmap{
+	padding:10px 8px;
+	border-radius:var(--m-radius);
+	background-color:var(--m-surface);
+}
+body.touchMode .statisticsHeatmapCell{
+	height:16px;
+}
+body.touchMode .statisticsAuthorsTable{
+	border-radius:var(--m-radius);
+	background-color:var(--m-surface);
+}
+body.touchMode .statisticsAuthorsTable td{
+	padding:8px 6px;
+	font-size:14px;
+}
+body.touchMode .statisticsAuthorsTable td:first-child{
+	padding-left:12px;
+}
+body.touchMode .statisticsAuthorsTable td:last-child{
+	padding-right:12px;
+}
+body.touchMode .statisticsAuthorName{
+	width:34%;
+	max-width:180px;
+}
+body.touchMode .statisticsAuthorBar{
+	height:12px;
+	border-radius:6px;
+	background-color:var(--m-accent-fill);
+}
+body.touchMode .statisticsAuthorCount{
+	width:52px;
+	font-variant-numeric:tabular-nums;
+	color:var(--m-fg-2);
+	opacity:1;
+}
+body.touchMode .statisticsLoading, body.touchMode .statisticsEmpty{
+	color:var(--m-fg-2);
+	opacity:1;
+}

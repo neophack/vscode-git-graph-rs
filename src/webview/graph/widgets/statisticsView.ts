@@ -13,12 +13,11 @@ import * as GG from '../../common/protocol';
 import { GraphContext } from '../context';
 import { StatisticsViewSurface } from './surfaces';
 import statisticsCss from '../../styles/statisticsView.css';
-import panelsCss from '../../styles/mobile/panels.css';
 import tabletPanelsCss from '../../styles/tablet/panels.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(statisticsCss);
-injectOnDemandStyles(panelsCss);
 injectOnDemandStyles(tabletPanelsCss);
 
 const STATISTICS_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

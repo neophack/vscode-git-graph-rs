@@ -20,12 +20,11 @@ import { GraphContext } from '../context';
 import { ContextMenuActions } from './contextMenu';
 import { ReflogViewSurface } from './surfaces';
 import reflogCss from '../../styles/reflogView.css';
-import panelsCss from '../../styles/mobile/panels.css';
 import tabletPanelsCss from '../../styles/tablet/panels.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(reflogCss);
-injectOnDemandStyles(panelsCss);
 injectOnDemandStyles(tabletPanelsCss);
 
 const REFLOG_PAGE_SIZE = 200;

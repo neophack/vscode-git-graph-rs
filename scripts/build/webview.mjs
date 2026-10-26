@@ -134,12 +134,27 @@ try {
 		logLevel: 'warning',
 		metafile: true
 	});
+	// The single-file pages bundle the generated string subset (see
+	// scripts/dev/gen-compare-subset.mjs) in place of the full shared dictionaries: esbuild
+	// cannot tree-shake object properties, so the real tables would embed every host-side
+	// message into pages that read ~140 entries.
+	const i18nSubsetPlugin = {
+		name: 'i18n-subset',
+		setup: (builder) => {
+			builder.onResolve({ filter: /shared[\/]i18n[\/](en|zh-cn)(\.ts)?$/ }, () => ({
+				path: path.join(root, 'src', 'webview', 'common', 'i18n', 'subset.generated.ts')
+			}));
+		}
+	};
 	for (const { entry, out } of classicEntries) {
-		esbuild.buildSync({
+		// build (async): plugins are unavailable in the synchronous API, and this pass needs
+		// the i18n-subset redirect above.
+		await esbuild.build({
 			entryPoints: [entry],
 			outfile: out,
 			bundle: true,
 			format: 'iife',
+			plugins: [i18nSubsetPlugin],
 			target: ['es2018', 'chrome69'],
 			minify: !DEBUG,
 			sourcemap: DEBUG ? false : 'linked',

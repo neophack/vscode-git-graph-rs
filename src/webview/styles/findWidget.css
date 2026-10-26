@@ -60,7 +60,7 @@
 	outline-offset:-1px !important;
 }
 #findInput:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 }
 #findInput::placeholder{
 	color:var(--vscode-input-placeholderForeground);
@@ -92,11 +92,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 .findWidget button:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .findWidget button:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .findModifier.active, #findOpenCdv.active{
@@ -162,4 +162,83 @@
 }
 body.vscode-high-contrast .findMatch{
 	outline-style:dotted;
+}
+
+/* ===== Phone layout: a search field over the app bar (merged from styles/mobile/findWidget.css,
+ * OPTIMIZATION-PLAN §6 F6) ===== */
+
+body.mobileMode .findWidget{
+	top:-72px;
+	left:0;
+	right:0;
+	max-width:none;
+	height:auto;
+	min-height:var(--m-bar);
+	box-sizing:border-box;
+	flex-wrap:nowrap;
+	gap:0;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:4px 4px 4px 10px;
+	padding:4px max(4px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+	padding-top:4px;
+	padding-top:max(4px, env(safe-area-inset-top));
+	border:none;
+	border-bottom:0.5px solid var(--m-sep);
+	border-radius:0;
+	background-color:var(--m-bg);
+	box-shadow:0 6px 20px rgba(0,0,0,0.18);
+	/* same freeze-proof show/hide as the full-screen panels (see the widgets' mobile sections) */
+	visibility:hidden;
+	transition:none;
+}
+body.mobileMode .findWidget.active{
+	top:0;
+	visibility:visible;
+	animation:ggMobilePanelIn 200ms var(--gg-ease, ease-out);
+}
+body.mobileMode #findInput{
+	flex:1 1 auto;
+	min-width:0;
+	height:36px;
+	/* room on the right for the Aa / .* toggles that sit over the field */
+	padding:0 72px 0 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+}
+body.mobileMode .findWidget button{
+	flex:none;
+	width:40px;
+	height:var(--m-target);
+	border-radius:50%;
+}
+/* the match toggles are small chips inside the field, not the round 40px buttons */
+body.mobileMode .findWidget .findModifier{
+	width:32px;
+	height:32px;
+	border-radius:8px;
+	line-height:32px;
+}
+body.mobileMode #findCaseSensitive{
+	margin-left:-70px;
+}
+body.mobileMode #findRegex{
+	margin-left:2px;
+	margin-right:4px;
+}
+body.mobileMode .findWidget button:active{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #findPosition{
+	flex:none;
+	padding:0 4px;
+	font-size:12px;
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+/* A very narrow phone: the "open the commit details" shortcut gives its room to the field */
+@media screen and (max-width: 360px){
+	body.mobileMode #findOpenCdv{
+		display:none;
+	}
 }

@@ -31,8 +31,8 @@ body.vscode-high-contrast{
 	--gg-approved:var(--vscode-testing-iconPassed, #2da44e);
 	--gg-rejected:var(--vscode-testing-iconFailed, #d1242f);
 	--gg-disapproval-weak:var(--vscode-editorWarning-foreground, #e08c38);
-	--gg-muted-foreground:var(--vscode-editor-foreground);
-	--gg-muted-border:var(--vscode-editor-foreground);
+	--gg-muted-foreground:var(--gg-foreground, var(--vscode-editor-foreground));
+	--gg-muted-border:var(--gg-foreground, var(--vscode-editor-foreground));
 	--gg-muted-detail:rgba(255, 255, 255, 0.16);
 	--gg-muted-detail-background:rgba(255, 255, 255, 0.12);
 }
@@ -47,7 +47,7 @@ body.vscode-high-contrast{
 	border-radius:3px;
 	font-size:9px;
 	font-weight:bold;
-	color:var(--vscode-editor-background);
+	color:var(--gg-background, var(--vscode-editor-background));
 }
 
 .gitRef.gerrit .gg-label.cr2{ background-color:var(--gg-approved); }

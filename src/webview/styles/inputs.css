@@ -31,11 +31,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 .roundedBtn:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 .roundedBtn:focus-visible{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:1px;
 }
 
@@ -48,7 +48,7 @@ a:hover, span.internalUrl:hover {
 	color:var(--vscode-textLink-activeForeground);
 }
 a:focus, span.internalUrl:focus{
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:-1px;
 	-webkit-user-select:none;
 	user-select:none;
@@ -97,7 +97,7 @@ label > input[type=checkbox]:checked ~ .customCheckbox:after{
 	top:2px;
 	width:3px;
 	height:7px;
-	border:solid var(--vscode-editor-foreground);
+	border:solid var(--gg-foreground, var(--vscode-editor-foreground));
 	border-width:0 2px 2px 0;
 	transform:rotate(45deg);
 }
@@ -119,7 +119,7 @@ label > input[type=radio]:checked ~ .customRadio:after{
 	top:4px;
 	width:5px;
 	height:5px;
-	background-color:var(--vscode-editor-foreground);
+	background-color:var(--gg-foreground, var(--vscode-editor-foreground));
 	border-radius:2.5px;
 }
 

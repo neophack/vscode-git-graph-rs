@@ -1,9 +1,9 @@
 .contextMenu{
 	display:block;
 	position:fixed;
-	background-color:var(--vscode-menu-background);
+	background-color:var(--gg-menu-background, var(--vscode-menu-background));
 	box-shadow:var(--gg-shadow-2, 0 3px 10px 2px var(--vscode-widget-shadow));
-	color:var(--vscode-menu-foreground);
+	color:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	list-style-type:none;
 	margin:0;
 	padding:4px 0;
@@ -35,8 +35,8 @@ body.vscode-high-contrast .contextMenu{
 }
 
 .contextMenu li.contextMenuItem:hover{
-	background-color:var(--vscode-menu-selectionBackground, var(--vscode-menu-background));
-	color:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground));
+	background-color:var(--gg-menu-selected-background, var(--vscode-menu-selectionBackground));
+	color:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
 }
 body.vscode-high-contrast .contextMenu li.contextMenuItem:hover{
 	outline:1px solid var(--vscode-menu-selectionBorder, transparent);
@@ -66,11 +66,100 @@ body.vscode-high-contrast .contextMenu li.contextMenuItem:hover{
 }
 
 .contextMenu.checked li.contextMenuItem .contextMenuItemCheck svg{
-	fill:var(--vscode-menu-foreground);
+	fill:var(--gg-menu-foreground, var(--vscode-menu-foreground));
 	opacity:0.6;
 }
 
 .contextMenu.checked li.contextMenuItem:hover .contextMenuItemCheck svg{
-	fill:var(--vscode-menu-selectionForeground);
+	fill:var(--gg-menu-selected-foreground, var(--vscode-menu-selectionForeground));
 	opacity:0.8;
+}
+
+/* ===== Phone layout: bottom action sheets (merged from styles/mobile/contextMenu.css,
+ * OPTIMIZATION-PLAN §6 F6) =====
+ * The menu element becomes a full-screen scrim; its items form a floating, rounded sheet at the
+ * bottom (inset 8px from the edges, like iOS). Tapping the scrim closes it (ContextMenu.show).
+ * ::before is the flexible spacer above the sheet. */
+
+body.mobileMode .contextMenu{
+	top:0 !important;
+	left:0 !important;
+	right:0;
+	bottom:0;
+	display:flex;
+	flex-direction:column;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:0 8px 8px;
+	padding:0 max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+	border:none;
+	border-radius:0;
+	background-color:rgba(0,0,0,0.42);
+	box-shadow:none;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	z-index:45;
+	font-size:16px;
+	animation:ggMobileScrimIn 180ms var(--gg-ease, ease-out);
+}
+@keyframes ggMobileScrimIn{
+	from{ background-color:rgba(0,0,0,0); }
+	to{ background-color:rgba(0,0,0,0.42); }
+}
+body.mobileMode .contextMenu::before{
+	content:"";
+	flex:1 0 12vh;
+}
+body.mobileMode .contextMenu li{
+	flex:none;
+	background-color:var(--m-sheet);
+	animation:ggMobileSheetUp 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggMobileSheetUp{
+	from{ transform:translateY(60px); opacity:0.6; }
+	to{ transform:none; opacity:1; }
+}
+body.mobileMode .contextMenu li:first-child{
+	border-radius:14px 14px 0 0;
+	padding-top:4px;
+}
+body.mobileMode .contextMenu li:last-child{
+	border-radius:0 0 14px 14px;
+	padding-bottom:4px;
+}
+body.mobileMode .contextMenu li:first-child:last-child{
+	border-radius:14px;
+}
+body.mobileMode .contextMenu li.contextMenuItem{
+	display:flex;
+	align-items:center;
+	min-height:50px;
+	box-sizing:border-box;
+	padding:12px 18px;
+	line-height:22px;
+	white-space:normal;
+	color:var(--m-fg);
+}
+body.mobileMode .contextMenu.checked li.contextMenuItem{
+	padding-left:46px;
+}
+body.mobileMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
+	left:18px;
+}
+body.mobileMode .contextMenu li.contextMenuItem:active{
+	background-color:var(--m-pressed);
+	color:var(--m-fg);
+}
+body.mobileMode .contextMenu li.contextMenuItem + li.contextMenuItem{
+	box-shadow:inset 0 0.5px 0 var(--m-sep);
+}
+/* One continuous solid sheet: the divider is a same-coloured strip with an inset hairline, NOT a
+   transparent gutter - see-through gaps between the groups read as a missing background */
+body.mobileMode .contextMenu li.contextMenuDivider{
+	height:9px;
+	margin:0;
+	padding:0;
+	border-top:none;
+	background-color:var(--m-sheet);
+	box-shadow:inset 0 0.5px 0 var(--m-sep);
+	opacity:1;
 }

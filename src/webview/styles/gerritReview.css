@@ -89,7 +89,7 @@
 }
 
 .gg-open-btn:hover {
-	border-color:var(--vscode-focusBorder);
+	border-color:var(--gg-focus-border, var(--vscode-focusBorder));
 	background-color:var(--vscode-menu-selectionBackground);
 	color:var(--vscode-menu-selectionForeground);
 	text-decoration:none;
@@ -138,7 +138,7 @@
 	font-size:12px;
 	font-weight:bold;
 	font-variant-numeric:tabular-nums;
-	color:var(--vscode-menu-background);
+	color:var(--gg-menu-background, var(--vscode-menu-background));
 }
 
 .gg-score-value.cr2, .gg-score-value.v1{ background-color:var(--gg-approved); }

@@ -1,10 +1,11 @@
 /* Date formatting. Every formatter takes the configured date format explicitly (the configuration
-   can change while the view is open); the interface language comes from the active string table. */
+   can change while the view is open); the interface language comes from the active string table.
+   All locale-dependent pieces - the month tokens, the placement of day / month / year, and the
+   relative-time words - live in the shared dictionary (dateMonthsShort, date*Date,
+   dateRelative*), so this module holds no literals of its own. */
 
-import { getInterfaceLanguage, strings } from './i18n/index';
+import { formatStr, getInterfaceLanguage, strings } from './i18n/index';
 import * as GG from './protocol';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Pad a number with a leading zero to at least two digits. */
 export function pad2(i: number) {
@@ -18,12 +19,10 @@ export function pad2(i: number) {
  * @returns The full date and time (`title`), and the date in the configured format (`formatted`).
  */
 export function formatShortDate(unixTimestamp: number, format: GG.DateFormat) {
-	const date = new Date(unixTimestamp * 1000), zh = getInterfaceLanguage() === 'zh-cn';
+	const date = new Date(unixTimestamp * 1000);
 	const dateStr = format.iso
 		? date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate())
-		: zh
-			? date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日'
-			: date.getDate() + ' ' + MONTHS[date.getMonth()] + ' ' + date.getFullYear();
+		: formatStr(strings.dateFullDate, String(date.getDate()), strings.dateMonthsShort[date.getMonth()], String(date.getFullYear()));
 	const hourMinsStr = pad2(date.getHours()) + ':' + pad2(date.getMinutes());
 	let formatted;
 
@@ -58,12 +57,10 @@ export function formatShortDate(unixTimestamp: number, format: GG.DateFormat) {
 			diff /= 31557600;
 		}
 		diff = Math.round(diff);
-		if (zh) {
-			const units: { [unit: string]: string } = { second: '秒', minute: '分钟', hour: '小时', day: '天', week: '周', month: '个月', year: '年' };
-			formatted = diff + ' ' + units[unit] + '前';
-		} else {
-			formatted = diff + ' ' + unit + (diff !== 1 ? 's' : '') + ' ago';
-		}
+		const units: { [unit: string]: string } = strings.dateRelativeUnits;
+		// English pluralises the unit ("2 seconds ago"); the Chinese suffix is empty.
+		const unitWord = units[unit] + (diff !== 1 ? strings.dateRelativePluralSuffix : '');
+		formatted = formatStr(strings.dateRelativeAgo, String(diff), unitWord);
 	}
 	return {
 		title: dateStr + ' ' + hourMinsStr + ':' + pad2(date.getSeconds()),
@@ -84,7 +81,7 @@ export function formatLongDate(unixTimestamp: number, format: GG.DateFormat) {
 		const timezone = timezoneOffset === 0 ? 'Z' : ' ' + (timezoneOffset < 0 ? '+' : '-') + pad2(Math.floor(absoluteTimezoneOffset / 60)) + pad2(absoluteTimezoneOffset % 60);
 		return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds()) + timezone;
 	} else if (getInterfaceLanguage() === 'zh-cn') {
-		return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日 ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
+		return formatStr(strings.dateFullDate, String(date.getDate()), strings.dateMonthsShort[date.getMonth()], String(date.getFullYear())) + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
 	} else {
 		return date.toString();
 	}
@@ -97,8 +94,10 @@ export function formatLongDate(unixTimestamp: number, format: GG.DateFormat) {
 export function formatDayDate(unixTimestamp: number, withYear: boolean, format: GG.DateFormat) {
 	const date = new Date(unixTimestamp * 1000), year = date.getFullYear(), month = date.getMonth() + 1, day = date.getDate();
 	if (format.iso) return (withYear ? year + '-' : '') + pad2(month) + '-' + pad2(day);
-	if (getInterfaceLanguage() === 'zh-cn') return (withYear ? year + '年' : '') + month + '月' + day + '日';
-	return MONTHS[month - 1] + ' ' + day + (withYear ? ', ' + year : '');
+	const monthToken = strings.dateMonthsShort[month - 1];
+	return withYear
+		? formatStr(strings.dateDayDateWithYear, String(day), monthToken, String(year))
+		: formatStr(strings.dateDayDate, String(day), monthToken);
 }
 
 /**

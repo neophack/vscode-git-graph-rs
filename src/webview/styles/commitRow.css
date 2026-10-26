@@ -36,7 +36,7 @@
 #commitTable tr.commit span.description .openChangesBtn svg {
 	width:16px;
 	height:16px;
-	fill:var(--vscode-editor-foreground);
+	fill:var(--gg-foreground, var(--vscode-editor-foreground));
 	fill-opacity:0.8;
 	transition:fill-opacity var(--gg-dur-fast) var(--gg-ease);
 }
@@ -61,11 +61,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 #commitTable tr.commit span.description .openChangesBtn:focus {
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:-1px;
 }
 #commitTable tr.commit span.description .openChangesBtn:focus-visible {
-	outline:1px solid var(--vscode-focusBorder);
+	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
 	outline-offset:-1px;
 }
 /* When tag labels are shown on the right, they follow the button in the markup - keep them flush
