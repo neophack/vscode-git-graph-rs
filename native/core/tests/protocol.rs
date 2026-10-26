@@ -10,6 +10,7 @@ use common::TestRepo;
 
 use git_graph_core::protocol;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::Mutex;
 
 /// Both workflow tests drive the process-global handle registry (`open` / `close` / `closeAll`
@@ -20,7 +21,8 @@ static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 /// The raw envelope of one request, asserting it always parses.
 fn envelope(repo_path: &str, method: &str, params: Value) -> Value {
-    let request = json!({ "method": method, "params": params });
+    let mut request = json!({ "method": method });
+    request["params"] = params;
     serde_json::from_str(&protocol::request(repo_path, &request.to_string()))
         .expect("the protocol always answers parseable JSON")
 }
@@ -136,6 +138,42 @@ fn repeated_opens_of_one_repository_share_one_handle() {
     );
 
     protocol::close_all();
+}
+
+#[test]
+fn subdirectory_requests_share_the_roots_handle() {
+    let _registry = REGISTRY_LOCK.lock().unwrap();
+    require_git!();
+    let mut repo = TestRepo::new();
+    let _ = repo.commit_file("docs/a.txt", "one\n", "first commit");
+    let root = repo.path().to_str().unwrap();
+    let nested = repo.path().join("docs");
+    let nested = nested.to_str().unwrap();
+
+    // Opening through a subdirectory discovers the same repository; the handle is keyed by the
+    // git directory, not by the path the request named, so both spellings share one handle and
+    // one object cache instead of opening a second one for the same repository.
+    assert_eq!(ask(root, "open", json!({})), json!(root));
+    assert_eq!(ask(nested, "open", json!({})), json!(root));
+    assert_eq!(ask(root, "openCount", json!({})), json!(1));
+
+    // The stats pair answers the cache behind that count: one row, keyed by the git directory,
+    // with the idle age and the traversal-cache bytes the diagnostics command lists.
+    let stats = ask(root, "engineStats", json!({}));
+    assert_eq!(stats["openCount"], json!(1));
+    let handles = stats["handles"].as_array().unwrap();
+    assert_eq!(handles.len(), 1);
+    let git_dir = handles[0]["gitDir"].as_str().unwrap();
+    assert!(
+        Path::new(git_dir).ends_with(".git"),
+        "the handle is keyed by the git directory, got {git_dir}"
+    );
+    assert!(handles[0]["idleMs"].is_u64());
+    assert!(handles[0]["cacheBytes"].is_u64());
+
+    // Closing through the subdirectory drops that one shared handle.
+    assert_eq!(ask(nested, "close", json!({})), Value::Null);
+    assert_eq!(ask(root, "openCount", json!({})), json!(0));
 }
 
 #[test]
@@ -369,6 +407,7 @@ fn every_method_decodes_its_documented_shape() {
     let minimal: Vec<(&str, Value)> = vec![
         ("engineVersion", json!({})),
         ("openCount", json!({})),
+        ("engineStats", json!({})),
         ("closeAll", json!({})),
         ("repoRoot", json!({})),
         ("open", json!({})),

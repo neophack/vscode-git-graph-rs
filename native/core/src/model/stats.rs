@@ -1,4 +1,5 @@
-//! The statistics and search model: authors, per-author counts, activity cells, search hits.
+//! The statistics and search model: authors, per-author counts, activity cells, search hits,
+//! and the engine's own open-repository diagnostics.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -42,4 +43,29 @@ pub struct GitHistoryMatch {
     pub date: i64,
     /// The commit subject.
     pub message: String,
+}
+
+/// The engine's open-repository diagnostics, as the "Show Diagnostics" command lists them: the
+/// repository handle cache behind every request. Handles are keyed by git directory, so one
+/// repository appears once however the host addresses it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitEngineStats {
+    /// How many repository handles are open (the `openCount` method's answer).
+    pub open_count: usize,
+    /// One row per open handle, unordered.
+    pub handles: Vec<GitRepoHandleStats>,
+}
+
+/// One open repository handle of [`GitEngineStats`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRepoHandleStats {
+    /// The canonical `.git` directory that keys this handle.
+    pub git_dir: String,
+    /// Milliseconds since this handle last served a request.
+    pub idle_ms: u64,
+    /// Approximate bytes of incremental traversal cache held for this repository (the gix
+    /// object caches are per thread-local view and report no size of their own).
+    pub cache_bytes: usize,
 }

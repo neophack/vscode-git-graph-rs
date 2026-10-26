@@ -12,8 +12,9 @@
 //!
 //! Lifecycle rides the same table: `open` answers the repository root (creating the warm handle
 //! on the way), `close` drops one handle, `closeAll` drops every one, `openCount` counts them,
-//! `engineVersion` names the engine, `repoRoot` answers without keeping a handle. Every other
-//! method shares the warm handle for its repository path and never writes.
+//! `engineStats` details them (git directory, idle time, cache bytes), `engineVersion` names the
+//! engine, `repoRoot` answers without keeping a handle. Every other method shares the warm
+//! handle for its repository path and never writes.
 
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -29,8 +30,8 @@ use crate::error::{Error, Result};
 use crate::model::{
     AnnotateParams, AnnotateResult, CommitFile, ConfigSnapshot, GerritChangeState, GitActivityCell,
     GitAuthor, GitAuthorStat, GitCommitData, GitCommitDetails, GitCommitStash, GitCommitSummary,
-    GitFileChange, GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo, GitStash,
-    GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot, ScmChange,
+    GitEngineStats, GitFileChange, GitHistoryMatch, GitLineCounts, GitRefData, GitRepoInfo,
+    GitStash, GitTagDetails, GitViewData, LogOptions, RefOptions, RefSnapshot, ScmChange,
 };
 use crate::read::status;
 use crate::repository::{Repo, RepoManager};
@@ -140,6 +141,9 @@ protocol! {
     "engineVersion" => EngineVersion(NoParams) -> String = |_ctx, _| Ok(crate::VERSION.to_string());
     /// How many repository handles are open.
     "openCount" => OpenCount(NoParams) -> usize = |_ctx, _| Ok(RepoManager::global().open_count());
+    /// The open-repository diagnostics behind `openCount`: one row per handle, with the git
+    /// directory that keys it, how long it has been idle, and its incremental-cache bytes.
+    "engineStats" => EngineStats(NoParams) -> GitEngineStats = |_ctx, _| Ok(RepoManager::global().stats());
     /// Drop every repository handle.
     "closeAll" => CloseAll(NoParams) -> () = |_ctx, _| {
         RepoManager::global().close_all();
@@ -347,7 +351,7 @@ pub fn decode_request(request_json: &str) -> Result<Request> {
 /// when the path does not exist there. The binary channel: the Node binding hands the bytes to
 /// JavaScript as a `Buffer`, never through a text encoding.
 pub fn file_bytes(repo_path: &str, revision: &str, path: &str) -> Result<Option<Vec<u8>>> {
-    file_bytes_answer(repo_path, revision, path, Cancel::none())
+    file_bytes_answer(repo_path, revision, path, &Cancel::none())
 }
 
 /// [`file_bytes`], named by a request id the host can cancel through. A single blob read has no
@@ -360,14 +364,14 @@ pub fn file_bytes_with_id(
     request_id: u32,
 ) -> Result<Option<Vec<u8>>> {
     let guard = Registry::global().register(request_id);
-    file_bytes_answer(repo_path, revision, path, guard.token())
+    file_bytes_answer(repo_path, revision, path, &guard.token())
 }
 
 fn file_bytes_answer(
     repo_path: &str,
     revision: &str,
     path: &str,
-    cancel: Cancel,
+    cancel: &Cancel,
 ) -> Result<Option<Vec<u8>>> {
     if cancel.is_cancelled() {
         return Err(Error::cancelled());
@@ -468,7 +472,7 @@ impl TypeVisitor for Visitor<'_> {
         if named {
             let docs = <T as TS>::docs().unwrap_or_default();
             self.declarations.output.insert(
-                <T as TS>::name(self.config).to_string(),
+                <T as TS>::name(self.config),
                 format!("{docs}export {}", <T as TS>::decl(self.config)),
             );
         }

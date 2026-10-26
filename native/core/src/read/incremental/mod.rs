@@ -46,7 +46,7 @@
 
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use gix::ObjectId;
@@ -56,10 +56,12 @@ use crate::model::{CommitOrdering, CommitRecord, LogOptions};
 use crate::read::log::{self, WalkOptions};
 use crate::repository::{Repo, Shallow};
 
-/// How many traversals are kept, process-wide. A session opens a handful of repositories with a
-/// handful of option sets each; the cap only stops unbounded growth (each entry is at most one
-/// window of records), and exceeding it simply drops the cache rather than evicting cleverly.
-const MAX_ENTRIES: usize = 64;
+/// The memory budget of the traversal cache, process-wide: entries are evicted
+/// least-recently-used until their approximate total fits under it. A host-configurable budget
+/// (an `open` parameter) is deliberately deferred; the constant covers the sessions the plan
+/// sizes the engine for (a handful of repositories with a handful of option sets each, every
+/// entry at most one window of records).
+pub const DEFAULT_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 
 /// The walk-affecting fields of a load request: two loads share a cache entry only when a full
 /// traversal from the same options would visit the same commits. Fields that only shape the
@@ -109,35 +111,94 @@ pub fn eligible(options: &LogOptions) -> bool {
 /// One cached traversal: what the next load needs to answer without re-walking history.
 #[derive(Debug, Clone)]
 pub(crate) struct CachedWalk {
-    /// The tips the cached walk started from, hex. The next load must still reach every one of
-    /// them — that is the rewrite detector.
-    tips: HashSet<String>,
-    /// Every commit of the cached window, hex — the boundary the next walk stops at.
-    visited: HashSet<String>,
+    /// The tips the cached walk started from. The next load must still reach every one of them —
+    /// that is the rewrite detector.
+    tips: HashSet<ObjectId>,
+    /// Every commit of the cached window — the boundary the next walk stops at. Ids, not hex
+    /// strings: a third of the bytes per entry and no allocation per commit looked up.
+    visited: HashSet<ObjectId>,
     /// The window's records in walk (commit-time) order: the exact list a full traversal of the
     /// same repository state would feed the page ordering.
     window: Vec<CommitRecord>,
     /// The newest committer date in the window — the bar the new commits must clear strictly.
     newest_date: i64,
+    /// The approximate heap bytes this entry costs — the eviction budget's unit. Computed once
+    /// at construction, so a record's memory is charged to the cache exactly once.
+    size_bytes: usize,
 }
 
 impl CachedWalk {
     fn new(tips: &[ObjectId], window: Vec<CommitRecord>) -> CachedWalk {
+        let visited: HashSet<ObjectId> = window
+            .iter()
+            .filter_map(|record| ObjectId::from_hex(record.hash.as_bytes()).ok())
+            .collect();
+        let tips: HashSet<ObjectId> = tips.iter().copied().collect();
+        let size_bytes = approximate_bytes(&window, &tips, &visited);
         CachedWalk {
-            tips: tips.iter().map(|id| id.to_string()).collect(),
-            visited: window.iter().map(|record| record.hash.clone()).collect(),
+            tips,
+            visited,
             newest_date: window.iter().map(|record| record.date).max().unwrap_or(0),
             window,
+            size_bytes,
         }
     }
 }
 
-/// The traversals of every open repository, process-wide — the same shape as
-/// the repository handle cache: a cache keyed by repository, guarded (not invalidated) by
-/// the walks themselves, bounded by a fixed entry count.
+/// The approximate heap bytes of one cached traversal: the window's records plus the id sets.
+/// Exact accounting would need the allocator's size classes; this counts each string's bytes
+/// with a fixed allowance for its header, and each set entry as an id plus a bucket — erring
+/// high, the right side to err for a memory budget.
+fn approximate_bytes(
+    window: &[CommitRecord],
+    tips: &HashSet<ObjectId>,
+    visited: &HashSet<ObjectId>,
+) -> usize {
+    let records: usize = window
+        .iter()
+        .map(|record| {
+            std::mem::size_of::<CommitRecord>()
+                + 4 * std::mem::size_of::<String>()
+                + record.hash.len()
+                + record.author.len()
+                + record.email.len()
+                + record.message.len()
+                + record
+                    .parents
+                    .iter()
+                    .map(|parent| std::mem::size_of::<String>() + parent.len())
+                    .sum::<usize>()
+        })
+        .sum();
+    let ids = (tips.len() + visited.len())
+        * (std::mem::size_of::<ObjectId>() + std::mem::size_of::<usize>());
+    records + ids + std::mem::size_of::<Vec<CommitRecord>>()
+}
+
+/// One cached traversal and when it last answered a load — the eviction ordering.
+struct Slot {
+    walk: Arc<CachedWalk>,
+    last_used: u64,
+}
+
+/// The store's mutable state: the entries and the approximate bytes they total to.
 #[derive(Default)]
+struct StoreState {
+    slots: HashMap<(PathBuf, CacheKey), Slot>,
+    total_bytes: usize,
+}
+
+/// The traversals of every open repository, process-wide — the same shape as the repository
+/// handle cache: a cache keyed by repository, guarded (not invalidated) by the walks themselves,
+/// bounded by an approximate-byte budget with least-recently-used eviction.
 pub struct Store {
-    entries: Mutex<HashMap<(PathBuf, CacheKey), Arc<CachedWalk>>>,
+    state: Mutex<StoreState>,
+    /// The byte budget entries are evicted down to; [`DEFAULT_BUDGET_BYTES`] in production, and
+    /// smaller in tests so eviction can be exercised without allocating 64 MiB of records.
+    budget_bytes: usize,
+    /// The LRU clock: bumped on every `get`, so `last_used` orders entries without holding a
+    /// wall-clock time per access.
+    clock: AtomicU64,
     /// How many traversals the cache answered (`try_walk` returned a window) and how many fell
     /// back to a full walk — telemetry for hosts, tests and benchmarks to see that refreshing
     /// actually went the incremental way.
@@ -149,12 +210,31 @@ impl Store {
     /// The process-wide store.
     pub fn global() -> &'static Store {
         static GLOBAL: OnceLock<Store> = OnceLock::new();
-        GLOBAL.get_or_init(Store::default)
+        GLOBAL.get_or_init(|| Store::with_budget(DEFAULT_BUDGET_BYTES))
     }
 
-    /// The cached traversal for (`root`, `key`), if one exists.
+    /// A store with a custom byte budget (tests shrink it to prove eviction).
+    pub fn with_budget(budget_bytes: usize) -> Store {
+        Store {
+            state: Mutex::new(StoreState::default()),
+            budget_bytes,
+            clock: AtomicU64::new(0),
+            hits: AtomicUsize::new(0),
+            fallbacks: AtomicUsize::new(0),
+        }
+    }
+
+    /// The cached traversal for (`root`, `key`), if one exists — and the one most recently
+    /// used, which is what the budget evicts last.
     fn get(&self, root: &Path, key: &CacheKey) -> Option<Arc<CachedWalk>> {
-        self.lock().get(&(root.to_path_buf(), key.clone())).cloned()
+        let mut state = self.lock();
+        state
+            .slots
+            .get_mut(&(root.to_path_buf(), key.clone()))
+            .map(|slot| {
+                slot.last_used = self.tick();
+                Arc::clone(&slot.walk)
+            })
     }
 
     /// `(incremental answers, full traversals)` so far, process-wide — how often the cache
@@ -166,19 +246,67 @@ impl Store {
         )
     }
 
-    /// Keep the traversal of (`root`, `key`) as the one the next load continues from.
+    /// The approximate bytes cached for one repository's traversals — the per-handle figure of
+    /// the engine's stats answer.
+    pub fn bytes_for(&self, root: &Path) -> usize {
+        self.lock()
+            .slots
+            .iter()
+            .filter(|((entry_root, _), _)| entry_root.as_path() == root)
+            .map(|(_, slot)| slot.walk.size_bytes)
+            .sum()
+    }
+
+    /// Keep the traversal of (`root`, `key`) as the one the next load continues from, evicting
+    /// least-recently-used entries until the total fits the budget. The entry just inserted is
+    /// never the eviction victim while anything older exists — and an entry larger than the
+    /// whole budget is kept rather than dropped: a lone oversized window costs less than
+    /// re-walking its repository on every refresh.
     pub(crate) fn put(&self, root: &Path, key: &CacheKey, walk: CachedWalk) {
-        let mut entries = self.lock();
-        if entries.len() >= MAX_ENTRIES {
-            entries.clear();
+        let mut state = self.lock();
+        let bytes = walk.size_bytes;
+        let slot = Slot {
+            walk: Arc::new(walk),
+            last_used: self.tick(),
+        };
+        if let Some(old) = state.slots.insert((root.to_path_buf(), key.clone()), slot) {
+            state.total_bytes -= old.walk.size_bytes;
         }
-        entries.insert((root.to_path_buf(), key.clone()), Arc::new(walk));
+        state.total_bytes += bytes;
+        while state.total_bytes > self.budget_bytes && state.slots.len() > 1 {
+            // The budget is the bound that matters, not the entry count; with the few hundred
+            // entries 64 MiB buys, a linear scan for the least recently used is cheaper than
+            // the ordered structure a larger cache would need.
+            let victim = state
+                .slots
+                .iter()
+                .min_by_key(|(_, slot)| slot.last_used)
+                .map(|(entry_key, _)| entry_key.clone());
+            match victim {
+                Some(victim) => {
+                    if let Some(evicted) = state.slots.remove(&victim) {
+                        state.total_bytes -= evicted.walk.size_bytes;
+                    }
+                }
+                None => break,
+            }
+        }
     }
 
     /// Drop every cached traversal of one repository — when a host knows the repository changed
     /// underneath it, or between comparisons in tests.
     pub fn invalidate(&self, root: &Path) {
-        self.lock().retain(|(entry_root, _), _| entry_root != root);
+        let mut state = self.lock();
+        let dropped: usize = state
+            .slots
+            .iter()
+            .filter(|((entry_root, _), _)| entry_root.as_path() == root)
+            .map(|(_, slot)| slot.walk.size_bytes)
+            .sum();
+        state
+            .slots
+            .retain(|(entry_root, _), _| entry_root.as_path() != root);
+        state.total_bytes = state.total_bytes.saturating_sub(dropped);
     }
 
     /// Drop every cached traversal of every repository.
@@ -186,13 +314,32 @@ impl Store {
         self.lock().clear();
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<(PathBuf, CacheKey), Arc<CachedWalk>>> {
+    /// The next LRU tick.
+    fn tick(&self) -> u64 {
+        self.clock.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, StoreState> {
         // A poisoned lock means a panic while inserting a cache entry; the cache is an
         // optimisation whose every entry re-validates itself, so recovering beats failing every
         // later load.
-        self.entries
+        self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl Default for Store {
+    fn default() -> Store {
+        Store::with_budget(DEFAULT_BUDGET_BYTES)
+    }
+}
+
+impl StoreState {
+    /// Drop every entry, zeroing the byte total with them.
+    fn clear(&mut self) {
+        self.slots.clear();
+        self.total_bytes = 0;
     }
 }
 
@@ -256,7 +403,7 @@ fn boundary_walk(
     }
 
     let mut new_records: Vec<CommitRecord> = Vec::new();
-    let mut covered: HashSet<String> = HashSet::new();
+    let mut covered: HashSet<ObjectId> = HashSet::new();
     let mut iterated = 0usize;
     while let Some((_, id)) = queue.pop() {
         iterated += 1;
@@ -268,11 +415,10 @@ fn boundary_walk(
         // The cancellation checkpoint, at the same cadence the full walk's loop checks.
         options.cancel.check(iterated)?;
 
-        let hex = id.to_string();
-        if cached.visited.contains(&hex) {
+        if cached.visited.contains(&id) {
             // The boundary: mark coverage and read nothing further below this commit.
-            if cached.tips.contains(&hex) {
-                covered.insert(hex);
+            if cached.tips.contains(&id) {
+                covered.insert(id);
             }
             continue;
         }
@@ -343,97 +489,4 @@ pub(crate) fn remember(root: &Path, key: &CacheKey, tips: &[ObjectId], window: V
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn log_options(ordering: CommitOrdering) -> LogOptions {
-        LogOptions {
-            max_commits: 50,
-            show_tags: true,
-            show_remote_branches: true,
-            commit_ordering: ordering,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn the_key_covers_every_walk_affecting_option() {
-        let base = log_options(CommitOrdering::Date);
-        let key = CacheKey::of(&base);
-        assert_eq!(key, CacheKey::of(&log_options(CommitOrdering::Date)));
-        assert_ne!(key, CacheKey::of(&log_options(CommitOrdering::Topo)));
-
-        let mut other = base.clone();
-        other.max_commits += 1;
-        assert_ne!(key, CacheKey::of(&other));
-
-        // The fields that only shape the answer around the walk do not partake: a load that
-        // differs only in them shares the traversal, so it shares the cache.
-        let mut annotated = base.clone();
-        annotated.remotes.push("origin".into());
-        annotated.defer_uncommitted_changes = true;
-        annotated.show_untracked_files = false;
-        annotated.show_uncommitted_changes = false;
-        assert_eq!(key, CacheKey::of(&annotated));
-
-        // The ref-scan fields do partake: they change which commits the walk starts from.
-        let mut hidden = base.clone();
-        hidden.hide_remotes.push("secret".into());
-        assert_ne!(key, CacheKey::of(&hidden));
-    }
-
-    #[test]
-    fn only_plain_walks_are_eligible() {
-        assert!(eligible(&log_options(CommitOrdering::Topo)));
-
-        let mut filtered = log_options(CommitOrdering::Topo);
-        filtered.authors = Some(vec!["Test User".into()]);
-        assert!(!eligible(&filtered));
-
-        let mut by_path = log_options(CommitOrdering::Topo);
-        by_path.filter_paths = vec!["src".into()];
-        assert!(!eligible(&by_path));
-
-        let mut pinned = log_options(CommitOrdering::Topo);
-        pinned.gerrit_refs = Some(vec!["refs/changes/01/1".into()]);
-        assert!(!eligible(&pinned));
-
-        let mut first_parent = log_options(CommitOrdering::Topo);
-        first_parent.only_follow_first_parent = true;
-        assert!(!eligible(&first_parent));
-
-        let mut reflogs = log_options(CommitOrdering::Topo);
-        reflogs.include_commits_mentioned_by_reflogs = true;
-        assert!(!eligible(&reflogs));
-    }
-
-    #[test]
-    fn the_store_keeps_the_latest_traversal_per_key_and_invalidates_by_root() {
-        let store = Store::default();
-        let root = Path::new("/repo");
-        let key = CacheKey::of(&log_options(CommitOrdering::Date));
-        let tips = [ObjectId::from_hex(b"0000000000000000000000000000000000000001").unwrap()];
-        let record = |date: i64| CommitRecord {
-            hash: format!("{date:040}"),
-            parents: Vec::new(),
-            author: String::new(),
-            email: String::new(),
-            date,
-            author_date: date,
-            message: String::new(),
-        };
-        store.put(root, &key, CachedWalk::new(&tips, vec![record(1)]));
-        store.put(
-            root,
-            &key,
-            CachedWalk::new(&tips, vec![record(2), record(1)]),
-        );
-        assert_eq!(store.get(root, &key).unwrap().window.len(), 2);
-        assert!(store
-            .get(root, &CacheKey::of(&log_options(CommitOrdering::Topo)))
-            .is_none());
-
-        store.invalidate(root);
-        assert!(store.get(root, &key).is_none());
-    }
-}
+mod tests;

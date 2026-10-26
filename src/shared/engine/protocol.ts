@@ -44,7 +44,7 @@ export type EngineError = { kind: ErrorKind, message: string, };
 export type ErrorKind = "notARepository" | "notFound" | "invalidArgument" | "git" | "io" | "cancelled" | "unsupported" | "internal";
 export type FileParams = { revision: string, path: string, };
 /**
- * One review event parsed out of a NoteDb meta commit, in the shape the webview renders.
+ * One review event parsed out of a `NoteDb` meta commit, in the shape the webview renders.
  */
 export type GerritChangeEvent = { type: string, patchset: number, 
 /**
@@ -160,6 +160,20 @@ date: number,
  */
 message: string, };
 export type GitCommitTag = { name: string, annotated: boolean, };
+/**
+ * The engine's open-repository diagnostics, as the "Show Diagnostics" command lists them: the
+ * repository handle cache behind every request. Handles are keyed by git directory, so one
+ * repository appears once however the host addresses it.
+ */
+export type GitEngineStats = { 
+/**
+ * How many repository handles are open (the `openCount` method's answer).
+ */
+openCount: number, 
+/**
+ * One row per open handle, unordered.
+ */
+handles: Array<GitRepoHandleStats>, };
 export type GitFileChange = { oldFilePath: string, newFilePath: string, type: GitFileStatus, 
 /**
  * `None` for binary files, where git reports a dash instead of a line count — and while the
@@ -186,6 +200,23 @@ export type GitRefData = {
  * The commit HEAD resolves to, or `None` when the repository has no commits.
  */
 head: string | null, heads: Array<GitRef>, tags: Array<GitTagRef>, remotes: Array<GitRef>, };
+/**
+ * One open repository handle of [`GitEngineStats`].
+ */
+export type GitRepoHandleStats = { 
+/**
+ * The canonical `.git` directory that keys this handle.
+ */
+gitDir: string, 
+/**
+ * Milliseconds since this handle last served a request.
+ */
+idleMs: number, 
+/**
+ * Approximate bytes of incremental traversal cache held for this repository (the gix
+ * object caches are per thread-local view and report no size of their own).
+ */
+cacheBytes: number, };
 export type GitRepoInfo = { branches: Array<string>, 
 /**
  * The checked-out branch's short name, or `None` when HEAD is detached.
@@ -316,6 +347,7 @@ export type UntrackedParams = { includeUntracked: boolean, };
 export interface EngineMethods {
 	engineVersion: { params: NoParams; result: string };
 	openCount: { params: NoParams; result: number };
+	engineStats: { params: NoParams; result: GitEngineStats };
 	closeAll: { params: NoParams; result: null };
 	repoRoot: { params: NoParams; result: string };
 	open: { params: NoParams; result: string };

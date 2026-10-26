@@ -30,4 +30,6 @@ pub use refs::{
     RefReadOptions, RefSnapshot,
 };
 pub use repo::{GitRepoInfo, GitStash, GitViewData};
-pub use stats::{GitActivityCell, GitAuthor, GitAuthorStat, GitHistoryMatch};
+pub use stats::{
+    GitActivityCell, GitAuthor, GitAuthorStat, GitEngineStats, GitHistoryMatch, GitRepoHandleStats,
+};

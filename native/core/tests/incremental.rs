@@ -549,7 +549,7 @@ fn the_protocol_answers_refs_and_annotate() {
 
     // `refs` answers the same ref scan `loadRepoInfo` and `loadCommits` build on: the raw ref
     // data, plus the branch list, the checked-out branch and the tag names.
-    let answer = ask(root, "refs", serde_json::json!({}));
+    let answer = ask(root, "refs", &serde_json::json!({}));
     assert_eq!(answer["branchHead"], serde_json::json!("main"));
     assert_eq!(answer["branches"], serde_json::json!(["main"]));
     assert_eq!(answer["tagNames"], serde_json::json!(["v1"]));
@@ -559,7 +559,7 @@ fn the_protocol_answers_refs_and_annotate() {
     let answer = ask(
         root,
         "annotate",
-        serde_json::json!({ "commits": [&second, &first], "refs": {}, "showTags": true }),
+        &serde_json::json!({ "commits": [&second, &first], "refs": {}, "showTags": true }),
     );
     assert_eq!(answer["head"], serde_json::json!(&second));
     assert_eq!(answer["commits"][0]["hash"], serde_json::json!(&second));
@@ -625,8 +625,10 @@ fn a_commit_graph_file_leaves_the_answers_unchanged() {
 /* ---------- Helpers ---------- */
 
 /// The `ok` value of a protocol request that must succeed.
-fn ask(repo_path: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
-    let request = serde_json::json!({ "method": method, "params": params }).to_string();
+fn ask(repo_path: &str, method: &str, params: &serde_json::Value) -> serde_json::Value {
+    let mut request = serde_json::json!({ "method": method });
+    request["params"] = params.clone();
+    let request = request.to_string();
     let answer: serde_json::Value =
         serde_json::from_str(&git_graph_core::protocol::request(repo_path, &request)).unwrap();
     answer
