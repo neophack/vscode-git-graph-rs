@@ -14,9 +14,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, it, vi } from 'vitest';
 import { bootRealView, createRepo, sleep, type BootedPipeline } from '../../support/realPipeline';
-import { CATALOG } from '../../../src/automation/catalog';
-import { AutomationServer } from '../../../src/automation/server';
-import { HostBridge } from '../../../src/automation/hostBridge';
+import { CATALOG } from '../../../src/extension/automation/catalog';
+import { AutomationServer } from '../../../src/extension/automation/server';
+import { HostBridge } from '../../../src/extension/automation/hostBridge';
 
 vi.setConfig({ testTimeout: 180000, hookTimeout: 180000 });
 

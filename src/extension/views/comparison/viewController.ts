@@ -6,14 +6,14 @@ import type { GitBackend } from '../../git/read/gitReader';
 import { checkUnsafeGitArgs, isSafeRefName, isValidCommitHash, Localize } from '../../git/write/argSafety';
 import type { GitStreamSpawner } from '../binaryCompare/hexDiff';
 import { HexDiffSession } from '../binaryCompare/hexDiff';
-import { isZhCn, t } from '../../../i18n';
+import { isZhCn, t } from '../../platform/i18n';
 import type { TextMessageKey } from '../../../shared/i18n';
 import { ComparisonInitResponse, ComparisonRequest, ComparisonResponse } from '../../../shared/protocol/comparison';
-import { GitFileChange } from '../../../types';
-import { UNCOMMITTED, abbrevCommit } from '../../../utils/git';
-import { getNonce } from '../../../utils/format';
-import { viewDiff } from '../../../utils/actions';
-import { Disposable, toDisposable } from '../../../utils/disposable';
+import { GitFileChange } from '../../../shared/model/git';
+import { UNCOMMITTED, abbrevCommit } from '../../platform/git';
+import { getNonce } from '../../platform/format';
+import { viewDiff } from '../../platform/actions';
+import { Disposable, toDisposable } from '../../../shared/util/disposable';
 
 /**
  * A webview tab that displays the changes between two commits in a GitHub-style layout: a header

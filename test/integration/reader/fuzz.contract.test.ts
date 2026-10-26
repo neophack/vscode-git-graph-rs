@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, it, vi } from 'vitest';
 import { CliBackend, NativeBackend } from '../../../src/extension/git/read/backendIndex';
 import { isAddonAvailable } from '../../../src/extension/git/read/addonLoader';
 import type { LogOptions } from '../../../src/extension/git/read/types';
-import { CommitOrdering } from '../../../src/types/webview';
+import { CommitOrdering } from '../../../src/shared/model/webview';
 
 vi.setConfig({ testTimeout: 300000, hookTimeout: 300000 });
 

@@ -1,6 +1,7 @@
 import { commandFailure } from '../git/write/gitWriter';
 import type { GitProcess, RunResult } from '../git/process/gitProcess';
-import type { GerritChangeState, ErrorInfo } from '../../types';
+import type { GerritChangeState } from '../../shared/model/gerrit';
+import type { ErrorInfo } from '../../shared/protocol/messages';
 
 /**
  * The raw Git runner of the graph view: the spawn seam behind the few actions the read backend
@@ -117,7 +118,7 @@ export interface LegacyViewPort {
 	openBinaryCompare(extensionPath: string, repo: string, fromHash: string, toHash: string, file: {
 		readonly oldFilePath: string;
 		readonly newFilePath: string;
-		readonly type: import('../../types').GitFileStatus;
+		readonly type: import('../../shared/model/git').GitFileStatus;
 		readonly additions: number | null;
 		readonly deletions: number | null;
 	}): void;

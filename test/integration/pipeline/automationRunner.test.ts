@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, it, vi } from 'vitest';
 import { bootRealView, type BootedPipeline } from '../../support/realPipeline';
-import { generate, seedRepo } from '../../../src/automation/fixture';
+import { generate, seedRepo } from '../../../src/extension/automation/fixture';
 
 vi.setConfig({ testTimeout: 300000, hookTimeout: 300000 });
 

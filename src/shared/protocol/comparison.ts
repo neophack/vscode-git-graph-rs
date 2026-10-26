@@ -11,7 +11,7 @@
  * unions include the whole of `binaryCompare.ts`'s protocol.
  */
 
-import type { GitFileChange, GitLineCounts } from '../../types';
+import type { GitFileChange, GitLineCounts } from '../model/git';
 import type { BinaryCompareRequest, BinaryCompareResponse } from './binaryCompare';
 
 /** The boot signal of the extracted frontend: the page's script has loaded and is listening. */

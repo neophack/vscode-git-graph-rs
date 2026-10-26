@@ -3,7 +3,7 @@
  * "Git Action Methods - Commits" (`src/dataSource.ts`), plus the archive action.
  */
 
-import { GitResetMode } from '../../../../types/git';
+import { GitResetMode } from '../../../../shared/model/git';
 import { WriteOp, single } from './op';
 
 export interface CheckoutCommitParams {

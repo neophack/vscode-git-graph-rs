@@ -1,9 +1,9 @@
 [
   {
     "type": "dependency",
-    "from": "src/extension/git/operationState.ts",
-    "to": "src/types/git.ts",
-    "unresolvedTo": "../../types/git",
+    "from": "src/extension/git/executable/findGit.ts",
+    "to": "src/extension/platform/config.ts",
+    "unresolvedTo": "../../platform/config",
     "dependencyTypes": [
       "local",
       "import"
@@ -15,9 +15,9 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/branches.ts",
-    "to": "src/types/git.ts",
-    "unresolvedTo": "../../../../types/git",
+    "from": "src/extension/git/executable/findGit.ts",
+    "to": "src/extension/platform/i18n.ts",
+    "unresolvedTo": "../../platform/i18n",
     "dependencyTypes": [
       "local",
       "import"
@@ -29,9 +29,23 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/branches.ts",
-    "to": "src/types/webview.ts",
-    "unresolvedTo": "../../../../types/webview",
+    "from": "src/extension/git/process/askpass/askpassManager.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/process/askpass/askpassManager.ts",
+    "to": "src/extension/platform/format.ts",
+    "unresolvedTo": "../../../platform/format",
     "dependencyTypes": [
       "local",
       "import"
@@ -43,9 +57,23 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/commits.ts",
-    "to": "src/types/git.ts",
-    "unresolvedTo": "../../../../types/git",
+    "from": "src/extension/git/process/childProcess.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "git-layer-isolation"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/process/childProcess.ts",
+    "to": "src/extension/platform/config.ts",
+    "unresolvedTo": "../../platform/config",
     "dependencyTypes": [
       "local",
       "import"
@@ -57,9 +85,9 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/mergeRebase.ts",
-    "to": "src/types/messages.ts",
-    "unresolvedTo": "../../../../types/messages",
+    "from": "src/extension/git/process/childProcess.ts",
+    "to": "src/extension/platform/i18n.ts",
+    "unresolvedTo": "../../platform/i18n",
     "dependencyTypes": [
       "local",
       "import"
@@ -71,9 +99,9 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/mergeRebase.ts",
-    "to": "src/types/webview.ts",
-    "unresolvedTo": "../../../../types/webview",
+    "from": "src/extension/git/process/childProcess.ts",
+    "to": "src/extension/platform/terminal.ts",
+    "unresolvedTo": "../../platform/terminal",
     "dependencyTypes": [
       "local",
       "import"
@@ -85,16 +113,86 @@
   },
   {
     "type": "dependency",
-    "from": "src/extension/git/write/ops/tags.ts",
-    "to": "src/types/webview.ts",
-    "unresolvedTo": "../../../../types/webview",
+    "from": "src/extension/automation/e2eGate.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
     "dependencyTypes": [
-      "local",
+      "npm-dev",
       "import"
     ],
     "rule": {
       "severity": "error",
-      "name": "git-layer-isolation"
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/automation/hostBridge.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/automation/reportView.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/automation/suiteRunner.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/process/askpass/askpassManager.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/extension/git/process/childProcess.ts",
+    "to": "node_modules/@types/vscode/index.d.ts",
+    "unresolvedTo": "vscode",
+    "dependencyTypes": [
+      "npm-dev",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "vscode-only-via-platform"
     }
   },
   {
@@ -193,20 +291,6 @@
     "rule": {
       "severity": "error",
       "name": "vscode-only-via-platform"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/webview/common/protocol.ts",
-    "to": "src/types/index.ts",
-    "unresolvedTo": "../../types/index",
-    "dependencyTypes": [
-      "local",
-      "export"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "webview-only-webview-shared"
     }
   }
 ]

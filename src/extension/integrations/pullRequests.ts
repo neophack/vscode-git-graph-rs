@@ -1,7 +1,7 @@
 import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
-import { PullRequestInfo, PullRequestState } from '../../types';
+import { PullRequestInfo, PullRequestState } from '../../shared/model/pullRequest';
 
 /** The timeout of pull request API requests, in milliseconds. */
 const REQUEST_TIMEOUT_MS = 10000;

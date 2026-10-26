@@ -1,4 +1,4 @@
-import type { PullRequestInfo } from '../../types';
+import type { PullRequestInfo } from '../../shared/model/pullRequest';
 import {
 	buildPullRequestHeadRefspecs, findStalePullRequestRefs, parseGitRemoteVerbose, parseRemoteUrl, selectRemote
 } from '../integrations/pullRequests';

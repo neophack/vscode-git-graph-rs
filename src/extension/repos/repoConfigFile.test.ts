@@ -23,7 +23,9 @@ const vscodeMock = vi.hoisted(() => ({
 vi.mock('vscode', () => vscodeMock);
 
 import { DEFAULT_REPO_STATE } from '../platform/storage';
-import { BooleanOverride, FileViewType, GitRepoState, PinnedCommit, PullRequestProvider, RepoCommitOrdering } from '../../types';
+import { BooleanOverride, FileViewType, RepoCommitOrdering } from '../../shared/model/webview';
+import { GitRepoState, PinnedCommit } from '../../shared/model/repoState';
+import { PullRequestProvider } from '../../shared/model/pullRequest';
 import {
 	ExternalRepoConfig,
 	REPO_CONFIG_VERSION,

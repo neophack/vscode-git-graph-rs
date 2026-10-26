@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { t } from '../../i18n';
-import { showErrorMessage } from '../../utils/actions';
-import type { AutomationAction } from '../../automation/catalog';
-import type { AutomationModules } from '../../automation/modules';
+import { t } from '../platform/i18n';
+import { showErrorMessage } from '../platform/actions';
+import type { AutomationAction } from '../automation/catalog';
+import type { AutomationModules } from '../automation/modules';
 import type { CommandHost } from './context';
 
 /* The automation-testing capability is a compile-time build variant (task 6.2): the dist build
@@ -15,7 +15,7 @@ import type { CommandHost } from './context';
 let automation: AutomationModules | null = null;
 try {
 	// eslint-disable-next-line @typescript-eslint/no-require-imports
-	const { loadAutomationModules } = require('../../automation/modules') as typeof import('../../automation/modules');
+	const { loadAutomationModules } = require('../automation/modules') as typeof import('../automation/modules');
 	automation = loadAutomationModules();
 } catch { /* the automation modules are absent from this build: not an error */ }
 

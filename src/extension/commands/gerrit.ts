@@ -1,11 +1,11 @@
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { extractChangeId, generateChangeId } from '../integrations/gerrit/gerritProtocol';
 import { getConfig } from '../platform/config';
-import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../../utils/actions';
-import { UiPort } from '../../extension/platform/uiPort';
-import { isSafeRefName } from '../../utils/git';
-import { unableToFindGitMsg } from '../../utils/findGit';
-import { ErrorInfo } from '../../types';
+import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../platform/actions';
+import { UiPort } from '../platform/uiPort';
+import { isSafeRefName } from '../platform/git';
+import { unableToFindGitMsg } from '../git/executable/findGit';
+import { ErrorInfo } from '../../shared/protocol/messages';
 import { resolveRepoFromCommandArg, type CommandHost } from './context';
 
 /**

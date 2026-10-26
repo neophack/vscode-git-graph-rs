@@ -303,10 +303,10 @@ describe('the coverage-matrix extractor', () => {
 		write('src/webview/graph/widgets/dialog.test.ts', FIXTURE_DIALOG_WIDGET_TEST);
 		write('src/webview/graph/actions/contextMenuActions.ts', FIXTURE_CONTEXT_MENU_ACTIONS);
 		write('src/webview/graph/actions/dialogActions.ts', FIXTURE_DIALOG_ACTIONS);
-		write('src/automation/catalog/controlBar.ts', FIXTURE_CATALOG);
-		write('src/automation/catalog/helpers.ts', FIXTURE_CATALOG_HELPERS);
+		write('src/extension/automation/catalog/controlBar.ts', FIXTURE_CATALOG);
+		write('src/extension/automation/catalog/helpers.ts', FIXTURE_CATALOG_HELPERS);
 
-		catalogFiles = [{ path: 'src/automation/catalog/controlBar.ts', text: FIXTURE_CATALOG }];
+		catalogFiles = [{ path: 'src/extension/automation/catalog/controlBar.ts', text: FIXTURE_CATALOG }];
 		({ dimensions, facts } = extractFromRepo(root) as any);
 	});
 

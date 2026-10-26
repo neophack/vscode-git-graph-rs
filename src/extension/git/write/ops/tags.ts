@@ -3,7 +3,7 @@
  * (`src/dataSource.ts`).
  */
 
-import { TagType } from '../../../../types/webview';
+import { TagType } from '../../../../shared/model/webview';
 import { ArgCheck, WriteOp, WriteStep } from './op';
 
 export interface AddTagParams {

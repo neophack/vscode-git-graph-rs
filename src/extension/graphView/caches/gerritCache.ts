@@ -1,4 +1,4 @@
-import type { GerritChangeState } from '../../../types';
+import type { GerritChangeState } from '../../../shared/model/gerrit';
 
 /**
  * The cached (unfiltered) Gerrit data of a repository: the states and their patchsets as

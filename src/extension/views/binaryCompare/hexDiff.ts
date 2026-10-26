@@ -1,7 +1,7 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitFileChange, GitFileStatus } from '../../../types';
+import { GitFileChange, GitFileStatus } from '../../../shared/model/git';
 import { BlockSource, CHUNK_SIZE, destroyStream, EMPTY_BUFFER, GitStreamSpawner, SideSource, SideSpec } from './hexDiffSources';
 
 /**

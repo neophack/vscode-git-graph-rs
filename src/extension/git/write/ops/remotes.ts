@@ -3,7 +3,7 @@
  * "Git Action Methods - Remotes" and "Git Action Methods - Remote Sync" (`src/dataSource.ts`).
  */
 
-import { GitPushBranchMode } from '../../../../types/git';
+import { GitPushBranchMode } from '../../../../shared/model/git';
 import { ArgCheck, WriteOp, WriteStep, single } from './op';
 import { pushBranchArgv } from './branches';
 

@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { evalPromises } from '../../utils/childProcess';
-import { getPathFromUri, pathWithTrailingSlash, realpath } from '../../utils/paths';
+import { evalPromises } from '../git/process/childProcess';
+import { getPathFromUri, pathWithTrailingSlash, realpath } from '../platform/paths';
 
 /**
  * The repository discovery seam of the repository manager (REFACTOR-PLAN §3.3 / Appendix A):

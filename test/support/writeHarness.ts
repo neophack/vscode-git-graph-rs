@@ -4,7 +4,7 @@ import { GitWriter } from '../../src/extension/git/write/gitWriter';
 import { createBackend } from '../../src/extension/git/read/backendIndex';
 import { createGitRunner } from '../../src/extension/graphView/gitRunner';
 import type { GitRunnerPort } from '../../src/extension/graphView/gitRunner';
-import { SquashMessageFormat } from '../../src/types/webview';
+import { SquashMessageFormat } from '../../src/shared/model/webview';
 import type { WriteFlowContext } from '../../src/extension/graphView/writeFlows';
 
 /**

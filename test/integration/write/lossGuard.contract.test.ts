@@ -9,7 +9,7 @@ import { isWarning, warningMessage, writeHarness } from '../../support/writeHarn
 import {
 	checkoutBranch, checkoutCommit, createBranch, pushBranch, resetToCommit
 } from '../../../src/extension/graphView/writeFlows';
-import { GitPushBranchMode, GitResetMode } from '../../../src/types/git';
+import { GitPushBranchMode, GitResetMode } from '../../../src/shared/model/git';
 
 /**
  * The data-loss guards over REAL repositories (the port of `tests/checkoutProtection.test.mjs`

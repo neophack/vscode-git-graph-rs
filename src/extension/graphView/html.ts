@@ -4,13 +4,11 @@ import type { Uri } from 'vscode';
 import { describeCapabilities } from '../git/read/backendIndex';
 import { hasEngineForPlatform } from '../git/read/addonLoader';
 import { getConfig } from '../platform/config';
-import { t } from '../../i18n';
-import type {
-	GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewInitialState, GitGraphViewSnapshot,
-	GitGraphViewWorkspaceState, GitRepoSet, LoadGitGraphViewTo
-} from '../../types';
-import { unableToFindGitMsg } from '../../utils/findGit';
-import { encodeJsonForInlineScript, getNonce } from '../../utils/format';
+import { t } from '../platform/i18n';
+import type { GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewInitialState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, LoadGitGraphViewTo } from '../../shared/model/webview';
+import type { GitRepoSet } from '../../shared/model/repoState';
+import { unableToFindGitMsg } from '../git/executable/findGit';
+import { encodeJsonForInlineScript, getNonce } from '../platform/format';
 
 /**
  * The webview HTML shell of the Git Graph main view (REFACTOR-PLAN task 4.4), extracted from

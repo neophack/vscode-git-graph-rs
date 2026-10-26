@@ -6,8 +6,9 @@ import { refreshAfterWrite } from './impactRefresh';
 import type { ImpactRefreshDeps } from './impactRefresh';
 import { WRITE_EFFECTS } from '../../shared/protocol/graphView';
 import type { WriteEffect } from '../../shared/protocol/graphView';
-import { CommitOrdering } from '../../types';
-import type { RequestLoadCommits, ResponseLoadCommits, ResponseMessage } from '../../types';
+import { CommitOrdering } from '../../shared/model/webview';
+import type { RequestLoadCommits, ResponseLoadCommits } from '../../shared/protocol/loading';
+import type { ResponseMessage } from '../../shared/protocol/messages';
 
 /**
  * Impact refresh tests (REFACTOR-PLAN task 4.8, §3.8.3): the minimal refresh per effect class

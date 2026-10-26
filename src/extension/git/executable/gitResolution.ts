@@ -16,7 +16,7 @@
  */
 
 import * as fs from 'fs';
-import type { GitExecutable } from '../../../utils/findGit';
+import type { GitExecutable } from './findGit';
 
 /**
  * The globalState slice the resolution persists its cache through. Structural, so tests inject a

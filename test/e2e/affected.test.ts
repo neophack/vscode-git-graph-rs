@@ -25,7 +25,7 @@ describe('affected-tier directory mapping', () => {
 	});
 
 	it('maps cross-cutting areas to the full tier', () => {
-		expect('full' in targetForPath('src/automation/catalog/menusBranch.ts')).toBe(true);
+		expect('full' in targetForPath('src/extension/automation/catalog/menusBranch.ts')).toBe(true);
 		expect('full' in targetForPath('native/core/src/lib.rs')).toBe(true);
 		expect('full' in targetForPath('src/webview/graph/widgets/dialog.ts')).toBe(true);
 		expect('full' in targetForPath('src/extension/platform/vscodeCompat.ts')).toBe(true);

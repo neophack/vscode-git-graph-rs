@@ -8,7 +8,7 @@
  * failure is swallowed and which aborts — is unit-testable without a repository.
  */
 
-import type { LossWarning } from '../../../types/messages';
+import type { LossWarning } from '../../../shared/protocol/messages';
 import type { Localize } from './argSafety';
 
 /** Runs a Git read and resolves its stdout (empty on no output), rejecting when it fails. */

@@ -52,7 +52,7 @@ export function git(args: readonly string[], cwd: string, timeoutMs = 60000): Pr
 	});
 }
 
-/** The machine probe (src/automation/e2eGate.ts): view state, host log tail, editor version. */
+/** The machine probe (src/extension/automation/e2eGate.ts): view state, host log tail, editor version. */
 export async function probe(): Promise<ProbeWire> {
 	const answer = await vscode.commands.executeCommand(AUTOMATION_COMMAND, { e2eProbe: true }) as ProbeWire | undefined;
 	if (answer === undefined || answer.automation !== true) {

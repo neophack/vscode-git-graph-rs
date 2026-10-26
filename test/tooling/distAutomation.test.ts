@@ -1,7 +1,7 @@
 /**
  * Build regression test for the automation build variant (REFACTOR-PLAN task 6.2): the
  * `--automation` mode of scripts/build/build.mjs emits dist/automation/extension.js with
- * __AUTOMATION__ defined truthy, so the gate in src/automation/modules.ts keeps its requires
+ * __AUTOMATION__ defined truthy, so the gate in src/extension/automation/modules.ts keeps its requires
  * and the automation modules (catalog, server, suite runner, report view) are BUNDLED IN —
  * while the default dist/extension.js (built with the flag false) carries none of them.
  *

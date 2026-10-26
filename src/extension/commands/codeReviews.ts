@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import { GitGraphView } from '../graphView/panel';
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { CodeReviewData, CodeReviews } from '../platform/storage';
-import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
-import { UiPort } from '../../extension/platform/uiPort';
-import { abbrevCommit } from '../../utils/git';
-import { abbrevText, getRelativeTimeDiff } from '../../utils/format';
-import { getRepoName } from '../../utils/paths';
+import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
+import { UiPort } from '../platform/uiPort';
+import { abbrevCommit } from '../platform/git';
+import { abbrevText, getRelativeTimeDiff } from '../platform/format';
+import { getRepoName } from '../platform/paths';
 import type { CommandHost } from './context';
 
 /**

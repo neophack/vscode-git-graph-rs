@@ -1,6 +1,6 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { GitConfigLocation } from '../../../types';
-import type { ErrorInfo } from '../../../types';
+import { GitConfigLocation } from '../../../shared/model/git';
+import type { ErrorInfo } from '../../../shared/protocol/messages';
 import type { Handler } from './context';
 
 /** Settings and persisted-state handlers. */

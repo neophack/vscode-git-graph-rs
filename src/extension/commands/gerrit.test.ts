@@ -48,10 +48,10 @@ const vscodeMock = vi.hoisted(() => {
 
 vi.mock('vscode', () => vscodeMock);
 
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { gerritPushRef } from './gerrit';
 import type { CommandHost } from './context';
-import type { UiPort } from '../../extension/platform/uiPort';
+import type { UiPort } from '../platform/uiPort';
 
 const repoArg = { rootUri: { scheme: 'file', fsPath: '/repo' } };
 

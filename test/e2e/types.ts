@@ -3,7 +3,7 @@
  * mirrors of what crosses `executeCommand` into the bundled automation subsystem, and the
  * scenario/report records the entry produces.
  *
- * The wire mirrors are deliberate STRUCTURAL copies of src/automation and
+ * The wire mirrors are deliberate STRUCTURAL copies of src/extension/automation and
  * src/extension/commands/automation types, not imports: the entry runs in the same extension
  * host but its own module registry, and a type-only import would still couple this tsconfig to
  * the src tree's. The mirrors live here and are validated against the real shapes by the local
@@ -68,7 +68,7 @@ export const E2E_AFFECTED_ENV = 'E2E_AFFECTED';
 
 /* ---------------- Wire mirrors of the in-host automation surface ---------------- */
 
-/** Mirror of the suite runner's ActionRunRecord (src/automation/suiteRunner.ts). */
+/** Mirror of the suite runner's ActionRunRecord (src/extension/automation/suiteRunner.ts). */
 export interface SuiteRunRecordWire {
 	readonly id: string;
 	readonly title: string;
@@ -96,7 +96,7 @@ export interface SuiteReportWire {
 	readonly totals: { readonly actions: number; readonly passed: number; readonly failed: number; readonly skipped: number };
 }
 
-/** Mirror of src/automation/e2eGate.ts's E2eProbe. */
+/** Mirror of src/extension/automation/e2eGate.ts's E2eProbe. */
 export interface ProbeWire {
 	readonly automation: true;
 	readonly editorVersion: string;

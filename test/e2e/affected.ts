@@ -20,12 +20,12 @@ export type AffectedTarget = { readonly tags: readonly string[] } | { readonly f
 /** Directory prefixes (POSIX-style, trailing slash = directory) → the domains they serve. */
 const DIR_MAPPING: readonly { readonly dir: string; readonly target: AffectedTarget }[] = [
 	// The automation subsystem and the shared protocol shape every scenario; the engine likewise.
-	{ dir: 'src/automation/', target: { full: true } },
+	{ dir: 'src/extension/automation/', target: { full: true } },
 	{ dir: 'src/shared/', target: { full: true } },
 	{ dir: 'native/', target: { full: true } },
 	{ dir: 'src/webview/', target: { full: true } },
 	{ dir: 'src/extension/platform/', target: { full: true } },
-	{ dir: 'src/askpass/', target: { tags: ['menu-branch', 'menu-remote-branch', 'menu-tag'] } },
+	{ dir: 'src/extension/git/process/askpass/', target: { tags: ['menu-branch', 'menu-remote-branch', 'menu-tag'] } },
 	{ dir: 'src/extension/commands/', target: { tags: ['menu-vscode', 'host'] } },
 	{ dir: 'src/extension/git/write/', target: { tags: ['menu-commit', 'menu-branch', 'menu-tag', 'menu-stash', 'menu-uncommitted', 'menu-remote-branch', 'settings'] } },
 	{ dir: 'src/extension/git/', target: { full: true } },
@@ -38,12 +38,13 @@ const DIR_MAPPING: readonly { readonly dir: string; readonly target: AffectedTar
 	{ dir: 'src/gitGraphView.ts', target: { full: true } },
 	{ dir: 'src/dataSource.ts', target: { full: true } },
 	{ dir: 'src/commands.ts', target: { full: true } },
-	{ dir: 'src/i18n.ts', target: { full: true } },
 	{ dir: 'src/config.ts', target: { full: true } },
 	{ dir: 'src/extensionState.ts', target: { full: true } },
 	{ dir: 'src/repoManager.ts', target: { tags: ['control-bar', 'settings'] } },
 	{ dir: 'src/repoFileWatcher.ts', target: { tags: ['external'] } },
-	{ dir: 'src/utils/', target: { full: true } },
+	// The former src/utils drained into the layered tree (A1); the only landing spot not already
+	// covered by a broader row above is the commands layer's repo-dropdown helper.
+	{ dir: 'src/extension/commands/repo.ts', target: { full: true } },
 	// The manifest contributes commands, menus and settings runtime behavior keys off.
 	{ dir: 'package.json', target: { full: true } },
 	{ dir: 'package.nls', target: { full: true } },

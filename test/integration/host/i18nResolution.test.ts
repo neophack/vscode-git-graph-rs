@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
 import { vscodeState, env } from '../../support/vscodeAlias';
-import { isZhCn, t } from '../../../src/i18n';
+import { isZhCn, t } from '../../../src/extension/platform/i18n';
 
 describe('language selection', () => {
 	const tryLanguage = (setting: string, displayLanguage: string) => {

@@ -3,8 +3,8 @@
  * (`src/dataSource.ts`). Pure: the argv for each option branch matches the legacy method exactly.
  */
 
-import { GitPushBranchMode } from '../../../../types/git';
-import { SquashMessageFormat } from '../../../../types/webview';
+import { GitPushBranchMode } from '../../../../shared/model/git';
+import { SquashMessageFormat } from '../../../../shared/model/webview';
 import { WriteOp, WriteStep, single } from './op';
 
 export interface CheckoutBranchParams {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { LastKnownGitRecord } from '../../platform/storage';
 import { createGitResolution, type GitExecutableCache } from './gitResolution';
-import type { GitExecutable } from '../../../utils/findGit';
+import type { GitExecutable } from './findGit';
 
 /**
  * The deferred Git resolution (OPTIMIZATION-PLAN V1) is tested with an injected `find` (no real

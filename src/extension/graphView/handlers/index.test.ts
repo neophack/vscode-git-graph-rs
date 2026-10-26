@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { MUTATING_COMMANDS, REQUEST_COMMANDS } from '../../../shared/protocol/graphView';
-import { GitConfigLocation, GitPushBranchMode, GitResetMode, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType } from '../../../types';
-import type { ResponseMessage } from '../../../types';
+import { GitConfigLocation, GitPushBranchMode, GitResetMode } from '../../../shared/model/git';
+import { MergeActionOn, RebaseActionOn } from '../../../shared/protocol/operations';
+import { SquashMessageFormat, TagType } from '../../../shared/model/webview';
+import type { ResponseMessage } from '../../../shared/protocol/messages';
 import type {
 	AvatarPort, CommitLoaderPort, ConfigSnapshot, GerritWritesPort, GlobalSettingsPort, HandlerContext, PullRequestsPort,
 	ReposPort, StoragePort, UiPort, UserConfigPort, ViewPort

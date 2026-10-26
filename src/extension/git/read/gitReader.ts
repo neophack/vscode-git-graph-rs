@@ -8,7 +8,7 @@
  */
 
 import { cancel, loadAddon, request } from './addonLoader';
-import { GerritChangeState } from '../../../types';
+import { GerritChangeState } from '../../../shared/model/gerrit';
 import type { AbortLike } from '../process/gitProcess';
 import { isValidCommitHash } from '../write/argSafety';
 import {

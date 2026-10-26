@@ -7,10 +7,10 @@ import { checkUnsafeGitArgs, isSafeRefName, Localize } from '../git/write/argSaf
 import { detachedCommitsLossWarning, hardResetLossWarning } from '../git/write/lossGuard';
 import * as ops from '../git/write/ops/index';
 import type { GitConfigKey } from '../git/write/ops/config';
-import {
-	ErrorInfo, LossWarning, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType, GitResetMode,
-	GitPushBranchMode, GitConfigLocation, GitOperationType
-} from '../../types';
+import { ErrorInfo, LossWarning } from '../../shared/protocol/messages';
+import { MergeActionOn, RebaseActionOn } from '../../shared/protocol/operations';
+import { SquashMessageFormat, TagType } from '../../shared/model/webview';
+import { GitResetMode, GitPushBranchMode, GitConfigLocation, GitOperationType } from '../../shared/model/git';
 import type { GitRunnerPort } from './gitRunner';
 import { getRemotesContainingCommit } from './repoReads';
 

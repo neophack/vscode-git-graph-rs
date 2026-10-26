@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { GitOperationType } from '../../types/git';
+import { GitOperationType } from '../../shared/model/git';
 import { GitProcess, GitSpawnFn, SpawnedGit } from './process/gitProcess';
 import { GitWriter } from './write/gitWriter';
 import { GitReaderLike, GitRepository } from './gitRepository';

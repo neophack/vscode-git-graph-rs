@@ -2,15 +2,15 @@ import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { ExtensionState } from '../platform/storage';
 import { getConfig } from '../platform/config';
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
-import { unableToFindGitMsg } from '../../utils/findGit';
-import { detectTerminalShellKind, openGitTerminal, quoteForShell } from '../../utils/childProcess';
+import { unableToFindGitMsg } from '../git/executable/findGit';
+import { detectTerminalShellKind, openGitTerminal, quoteForShell } from '../git/process/childProcess';
 import {
 	copyFilePathToClipboard, copyToClipboard, createPullRequest, openExtensionSettings,
 	openExternalUrl, resolveDiffFromHash, showErrorMessage, uiPort, viewDiff, viewFileAtRevision, viewScm
-} from '../../utils/actions';
-import { doesFileExist } from '../../utils/paths';
+} from '../platform/actions';
+import { doesFileExist } from '../platform/paths';
 import type { RepoManager } from '../repos/repoManager';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { GitConfigKey, setConfigValue, unsetConfigValue } from '../git/write/ops/config';
@@ -24,8 +24,11 @@ import { CommitLoader } from './commitLoader';
 import { hostScheduler } from './scheduler';
 import type { HostScheduler } from './scheduler';
 import { GerritDataSource } from '../integrations/gerrit/gerrit';
-import type { GerritChangeState, ErrorInfo, GitStash, PullRequestInfo } from '../../types';
-import { GitFileStatus } from '../../types';
+import type { GerritChangeState } from '../../shared/model/gerrit';
+import type { ErrorInfo } from '../../shared/protocol/messages';
+import type { GitStash } from '../../shared/model/git';
+import type { PullRequestInfo } from '../../shared/model/pullRequest';
+import { GitFileStatus } from '../../shared/model/git';
 import type { LegacyViewPort } from './gitRunner';
 import type { GitRunnerPort } from './gitRunner';
 import { saveGlobalSetting } from './globalSettings';

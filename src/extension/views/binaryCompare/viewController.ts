@@ -2,12 +2,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createHexSession, isImageChange, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import type { GitStreamSpawner } from './hexDiff';
-import { isZhCn, t } from '../../../i18n';
+import { isZhCn, t } from '../../platform/i18n';
 import { BinaryCompareInitResponse, BinaryCompareRequest, BinaryCompareResponse } from '../../../shared/protocol/binaryCompare';
-import { GitFileChange } from '../../../types';
-import { UNCOMMITTED, abbrevCommit } from '../../../utils/git';
-import { getNonce } from '../../../utils/format';
-import { Disposable, toDisposable } from '../../../utils/disposable';
+import { GitFileChange } from '../../../shared/model/git';
+import { UNCOMMITTED, abbrevCommit } from '../../platform/git';
+import { getNonce } from '../../platform/format';
+import { Disposable, toDisposable } from '../../../shared/util/disposable';
 
 /**
  * A standalone tab showing the full binary comparison of one file between two revisions: the hex

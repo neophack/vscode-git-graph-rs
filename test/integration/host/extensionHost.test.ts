@@ -21,11 +21,11 @@ import { vscodeState } from '../../support/vscodeAlias';
 import { vscodeMockOf } from '../../support/fakeVscode';
 import { StatusBarItem } from '../../../src/extension/statusBar';
 import { DiffDocProvider, encodeDiffDocUri, decodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
-import { AskpassManager } from '../../../src/askpass/askpassManager';
-import { EventEmitter } from '../../../src/utils/event';
-import { GitFileStatus } from '../../../src/types/git';
-import { t } from '../../../src/i18n';
-import { activate, deactivate } from '../../../src/extension';
+import { AskpassManager } from '../../../src/extension/git/process/askpass/askpassManager';
+import { EventEmitter } from '../../../src/shared/util/event';
+import { GitFileStatus } from '../../../src/shared/model/git';
+import { t } from '../../../src/extension/platform/i18n';
+import { activate, deactivate } from '../../../src/extension/main';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 

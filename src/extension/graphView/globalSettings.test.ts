@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CommitAuthor } from '../../types';
+import type { CommitAuthor } from '../../shared/model/webview';
 
 /**
  * The pure decision functions of the global-settings module (task 4.4's extraction from

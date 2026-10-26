@@ -1,8 +1,8 @@
 import { GitGraphView } from '../graphView/panel';
-import { t } from '../../i18n';
-import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
-import { UiPort } from '../../extension/platform/uiPort';
-import { unableToFindGitMsg } from '../../utils/findGit';
+import { t } from '../platform/i18n';
+import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
+import { UiPort } from '../platform/uiPort';
+import { unableToFindGitMsg } from '../git/executable/findGit';
 import type { CommandHost } from './context';
 
 /**

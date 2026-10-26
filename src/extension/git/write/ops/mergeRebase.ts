@@ -4,9 +4,9 @@
  * commands of an in-progress operation.
  */
 
-import { MergeActionOn, RebaseActionOn } from '../../../../types/messages';
-import { GitOperationType } from '../../../../types/git';
-import { SquashMessageFormat } from '../../../../types/webview';
+import { MergeActionOn, RebaseActionOn } from '../../../../shared/protocol/operations';
+import { GitOperationType } from '../../../../shared/model/git';
+import { SquashMessageFormat } from '../../../../shared/model/webview';
 import { ArgCheck, WriteOp, single } from './op';
 
 export interface MergeParams {

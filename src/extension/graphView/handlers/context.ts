@@ -3,11 +3,12 @@ import type { Localize } from '../../git/write/argSafety';
 import type { GitRunnerPort } from '../gitRunner';
 import type { RepoConfigData } from '../repoReads';
 import type { GraphViewRequests, RequestCommand } from '../../../shared/protocol/graphView';
-import type {
-	CodeReview, ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewGlobalState, GitGraphViewSnapshot,
-	GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, LossWarning, PullRequestConfig,
-	PullRequestInfo, RequestLoadCommits, RequestLoadView, RequestMessage, ResponseLoadCommits, ResponseLoadView, ResponseMessage, SquashMessageFormat
-} from '../../../types';
+import type { CodeReview, GitRepoSet, GitRepoState } from '../../../shared/model/repoState';
+import type { ErrorInfo, LossWarning, RequestMessage, ResponseMessage } from '../../../shared/protocol/messages';
+import type { GitConfigLocation, GitFileStatus } from '../../../shared/model/git';
+import type { GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, SquashMessageFormat } from '../../../shared/model/webview';
+import type { PullRequestConfig, PullRequestInfo } from '../../../shared/model/pullRequest';
+import type { RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView } from '../../../shared/protocol/loading';
 
 /**
  * The handler side of the graph view protocol (REFACTOR-PLAN 3.3 + task 4.2): one Handler per

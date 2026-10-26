@@ -74,7 +74,7 @@ describe('the unified dist pipeline (build.mjs)', () => {
 
 	maybeIt('the default host bundle carries no automation module code', () => {
 		// The compile-time switch's core guarantee (task 6.2): with __AUTOMATION__ false the gate in
-		// src/automation/modules.ts is dead-code-eliminated, so no catalog, server or suite-runner
+		// src/extension/automation/modules.ts is dead-code-eliminated, so no catalog, server or suite-runner
 		// content enters dist/extension.js. Catalog action ids and the runner's strings exist only
 		// in the automation modules, so their absence here is the proof. (The automation variant of
 		// this bundle, dist/automation/extension.js, is covered by distAutomation.test.ts.)

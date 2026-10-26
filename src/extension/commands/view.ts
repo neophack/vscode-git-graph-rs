@@ -1,12 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { GitGraphView } from '../graphView/panel';
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { getConfig } from '../platform/config';
-import { showErrorMessage, uiPort } from '../../utils/actions';
-import { UiPort } from '../../extension/platform/uiPort';
-import { getRepoName, getPathFromStr, getPathFromUri, resolveToSymbolicPath } from '../../utils/paths';
-import { getSortedRepositoryPaths } from '../../utils/repo';
+import { showErrorMessage, uiPort } from '../platform/actions';
+import { UiPort } from '../platform/uiPort';
+import { getRepoName, getPathFromStr, getPathFromUri, resolveToSymbolicPath } from '../platform/paths';
+import { getSortedRepositoryPaths } from './repo';
 import { isRepoCommandArg, type CommandHost } from './context';
 
 /**

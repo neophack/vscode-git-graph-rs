@@ -1,43 +1,32 @@
-import type {
-	RequestAbortOperation, RequestAddRemote, RequestAddTag, RequestApplyStash, RequestBranchFromStash,
-	RequestCheckoutBranch, RequestCheckoutCommit, RequestCherrypickCommit, RequestCleanUntrackedFiles,
-	RequestCommitBodies, RequestCommitDetails, RequestCommitFileCounts, RequestCompareCommits, RequestCommitFixup,
-	RequestCommitSquash, RequestContinueOperation, RequestCopyFilePath, RequestCopyToClipboard, RequestCountCommitsBefore,
-	RequestCreateArchive, RequestCreateBranch, RequestCreatePullRequest, RequestDeleteBranch, RequestDeleteRemote,
-	RequestDeleteRemoteBranch, RequestDeleteTag, RequestDeleteUserDetails, RequestDropCommit, RequestDropStash,
-	RequestEditCommitMessage, RequestEditRemote, RequestEditUserDetails, RequestEndCodeReview, RequestExportRepoConfig,
-	RequestFetch, RequestFetchAvatar, RequestFetchIntoLocalBranch, RequestFetchPullRequest, RequestGerritSetFetchRefs,
-	RequestLoadCommits, RequestLoadConfig, RequestLoadRepoInfo, RequestLoadRepos, RequestLoadView,
-	RequestMerge, RequestOpenCompareTab,
-	RequestOpenExtensionSettings, RequestOpenExternalDirDiff, RequestOpenExternalUrl, RequestOpenFile, RequestOpenLogFile,
-	RequestOpenTerminal, RequestPopStash, RequestPredictConflicts, RequestPruneRemote, RequestPullBranch, RequestPushBranch,
-	RequestPushStash, RequestPushTag, RequestRebase, RequestReady, RequestReflog, RequestRenameBranch, RequestRepoStatistics,
-	RequestRescanForRepos, RequestResetFileToRevision, RequestResetToCommit, RequestRevertCommit, RequestSetGlobalSetting,
-	RequestSetGlobalViewState, RequestSetInterfaceLanguage, RequestSetRepoState, RequestSetViewSnapshot,
-	RequestSetWorkspaceViewState, RequestShowErrorDialog, RequestStartCodeReview, RequestTagDetails, RequestUndoLastCommit,
-	RequestUpdateCodeReview, RequestViewDiff, RequestViewDiffBinary, RequestViewDiffWithWorkingFile,
-	RequestViewFileAtRevision, RequestViewScm, RequestWorktreeAdd, RequestWorktreeList, RequestWorktreePrune, RequestWorktreeRemove
-} from '../../types';
-import type { RequestMessage, ResponseMessage } from '../../types';
-import type {
-	ResponseAbortOperation, ResponseAddRemote, ResponseAddTag, ResponseApplyStash, ResponseBranchFromStash,
-	ResponseCheckoutBranch, ResponseCheckoutCommit, ResponseCherrypickCommit, ResponseCleanUntrackedFiles,
-	ResponseCommitBodies, ResponseCommitDetails, ResponseCommitFileCounts, ResponseCompareCommits, ResponseCommitFixup,
-	ResponseCommitSquash, ResponseContinueOperation, ResponseCopyFilePath, ResponseCopyToClipboard,
-	ResponseCountCommitsBefore, ResponseCreateArchive, ResponseCreateBranch, ResponseCreatePullRequest, ResponseDeleteBranch,
-	ResponseDeleteRemote, ResponseDeleteRemoteBranch, ResponseDeleteTag, ResponseDeleteUserDetails, ResponseDropCommit,
-	ResponseDropStash, ResponseEditCommitMessage, ResponseEditRemote, ResponseEditUserDetails, ResponseExportRepoConfig,
-	ResponseFetch, ResponseFetchAvatar, ResponseFetchIntoLocalBranch, ResponseGerritSetFetchRefs, ResponseLoadCommits,
-	ResponseLoadConfig, ResponseLoadRepoInfo, ResponseLoadRepos, ResponseLoadView, ResponseMerge, ResponseOpenExtensionSettings,
-	ResponseOpenExternalDirDiff, ResponseOpenExternalUrl, ResponseOpenFile, ResponseOpenLogFile, ResponseOpenTerminal,
-	ResponsePopStash, ResponsePredictConflicts, ResponsePruneRemote, ResponsePullBranch, ResponsePullRequestStatus,
-	ResponsePushBranch, ResponsePushStash, ResponsePushTag, ResponseRebase, ResponseReflog, ResponseRenameBranch,
-	ResponseRepoStatistics, ResponseResetFileToRevision, ResponseResetToCommit, ResponseRevertCommit,
-	ResponseSetGlobalSetting, ResponseSetGlobalViewState, ResponseSetInterfaceLanguage, ResponseSetWorkspaceViewState,
-	ResponseStartCodeReview, ResponseTagDetails, ResponseUndoLastCommit, ResponseUpdateCodeReview, ResponseViewDiff,
-	ResponseViewDiffWithWorkingFile, ResponseViewFileAtRevision, ResponseViewScm, ResponseWorktreeAdd, ResponseWorktreeList,
-	ResponseWorktreePrune, ResponseWorktreeRemove
-} from '../../types';
+import type { RequestAbortOperation, RequestCleanUntrackedFiles, RequestContinueOperation, RequestCreatePullRequest, RequestMerge, RequestPredictConflicts, RequestRebase } from './operations';
+import type { RequestAddRemote, RequestDeleteRemote, RequestEditRemote, RequestFetch, RequestPruneRemote, RequestPullBranch, RequestPushBranch } from './remotes';
+import type { RequestAddTag, RequestDeleteTag, RequestPushTag, RequestTagDetails } from './tags';
+import type { RequestApplyStash, RequestBranchFromStash, RequestDropStash, RequestPopStash, RequestPushStash } from './stash';
+import type { RequestCheckoutBranch, RequestCreateBranch, RequestDeleteBranch, RequestDeleteRemoteBranch, RequestFetchIntoLocalBranch, RequestRenameBranch } from './branches';
+import type { RequestCheckoutCommit, RequestCherrypickCommit, RequestCommitFixup, RequestCommitSquash, RequestDropCommit, RequestEditCommitMessage, RequestResetFileToRevision, RequestResetToCommit, RequestRevertCommit, RequestUndoLastCommit } from './commits';
+import type { RequestCommitBodies, RequestCountCommitsBefore, RequestFetchAvatar, RequestLoadCommits, RequestLoadConfig, RequestLoadRepoInfo, RequestLoadView, RequestReady, RequestReflog, RequestRepoStatistics } from './loading';
+import type { RequestCommitDetails, RequestCommitFileCounts, RequestCompareCommits } from './commitDetails';
+import type { RequestCopyFilePath, RequestCopyToClipboard, RequestCreateArchive, RequestOpenCompareTab, RequestOpenExternalDirDiff, RequestOpenFile, RequestViewDiff, RequestViewDiffBinary, RequestViewDiffWithWorkingFile, RequestViewFileAtRevision } from './files';
+import type { RequestDeleteUserDetails, RequestEditUserDetails, RequestOpenExtensionSettings, RequestOpenLogFile, RequestSetGlobalSetting, RequestSetGlobalViewState, RequestSetInterfaceLanguage, RequestSetRepoState, RequestSetViewSnapshot, RequestSetWorkspaceViewState } from './settings';
+import type { RequestEndCodeReview, RequestStartCodeReview, RequestUpdateCodeReview } from './codeReview';
+import type { RequestExportRepoConfig, RequestLoadRepos, RequestOpenExternalUrl, RequestOpenTerminal, RequestRescanForRepos, RequestShowErrorDialog, RequestViewScm } from './misc';
+import type { RequestFetchPullRequest, RequestGerritSetFetchRefs } from './gerrit';
+import type { RequestWorktreeAdd, RequestWorktreeList, RequestWorktreePrune, RequestWorktreeRemove } from './worktrees';
+import type { RequestMessage, ResponseMessage } from './messages';
+import type { ResponseAbortOperation, ResponseCleanUntrackedFiles, ResponseContinueOperation, ResponseCreatePullRequest, ResponseMerge, ResponsePredictConflicts, ResponseRebase } from './operations';
+import type { ResponseAddRemote, ResponseDeleteRemote, ResponseEditRemote, ResponseFetch, ResponsePruneRemote, ResponsePullBranch, ResponsePushBranch } from './remotes';
+import type { ResponseAddTag, ResponseDeleteTag, ResponsePushTag, ResponseTagDetails } from './tags';
+import type { ResponseApplyStash, ResponseBranchFromStash, ResponseDropStash, ResponsePopStash, ResponsePushStash } from './stash';
+import type { ResponseCheckoutBranch, ResponseCreateBranch, ResponseDeleteBranch, ResponseDeleteRemoteBranch, ResponseFetchIntoLocalBranch, ResponseRenameBranch } from './branches';
+import type { ResponseCheckoutCommit, ResponseCherrypickCommit, ResponseCommitFixup, ResponseCommitSquash, ResponseDropCommit, ResponseEditCommitMessage, ResponseResetFileToRevision, ResponseResetToCommit, ResponseRevertCommit, ResponseUndoLastCommit } from './commits';
+import type { ResponseCommitBodies, ResponseCountCommitsBefore, ResponseFetchAvatar, ResponseLoadCommits, ResponseLoadConfig, ResponseLoadRepoInfo, ResponseLoadView, ResponseReflog, ResponseRepoStatistics } from './loading';
+import type { ResponseCommitDetails, ResponseCommitFileCounts, ResponseCompareCommits } from './commitDetails';
+import type { ResponseCopyFilePath, ResponseCopyToClipboard, ResponseCreateArchive, ResponseOpenExternalDirDiff, ResponseOpenFile, ResponseViewDiff, ResponseViewDiffWithWorkingFile, ResponseViewFileAtRevision } from './files';
+import type { ResponseDeleteUserDetails, ResponseEditUserDetails, ResponseOpenExtensionSettings, ResponseOpenLogFile, ResponseSetGlobalSetting, ResponseSetGlobalViewState, ResponseSetInterfaceLanguage, ResponseSetWorkspaceViewState } from './settings';
+import type { ResponseExportRepoConfig, ResponseLoadRepos, ResponseOpenExternalUrl, ResponseOpenTerminal, ResponseViewScm } from './misc';
+import type { ResponseGerritSetFetchRefs, ResponsePullRequestStatus } from './gerrit';
+import type { ResponseStartCodeReview, ResponseUpdateCodeReview } from './codeReview';
+import type { ResponseWorktreeAdd, ResponseWorktreeList, ResponseWorktreePrune, ResponseWorktreeRemove } from './worktrees';
 
 /**
  * The host↔webview protocol of the Git Graph main view, in the RequestMap form of

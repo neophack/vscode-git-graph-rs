@@ -8,7 +8,7 @@ import { RepoBuilder } from '../../support/repoBuilder';
 import { writeHarness } from '../../support/writeHarness';
 import { abortOperation, continueOperation, createFixupCommit, createSquashCommit } from '../../../src/extension/graphView/writeFlows';
 import { GitConfigKey, setConfigValue, unsetConfigValue } from '../../../src/extension/git/write/ops/config';
-import { GitConfigLocation, GitOperationType } from '../../../src/types/git';
+import { GitConfigLocation, GitOperationType } from '../../../src/shared/model/git';
 import { resolveGlobalAuthorAfterSave } from '../../../src/extension/graphView/globalSettings';
 
 /**

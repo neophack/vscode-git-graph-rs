@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigurationChangeEvent } from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { GitRunnerPort } from '../graphView/gitRunner';
-import type { GgEvent } from '../../utils/event';
+import type { GgEvent } from '../../shared/util/event';
 import type { ExtensionState } from '../platform/storage';
 import type { Logger } from '../platform/logger';
 import { MAX_RECENT_REPOS, RepoManager, bumpRecentRepos, recentReposList } from './repoManager';

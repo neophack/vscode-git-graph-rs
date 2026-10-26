@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { t } from '../../i18n';
-import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
-import { QuickPickItemLike, UiPort } from '../../extension/platform/uiPort';
-import { getPathFromUri, getRepoName, isPathInWorkspace } from '../../utils/paths';
-import { getSortedRepositoryPaths } from '../../utils/repo';
-import { unableToFindGitMsg } from '../../utils/findGit';
+import { t } from '../platform/i18n';
+import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
+import { QuickPickItemLike, UiPort } from '../platform/uiPort';
+import { getPathFromUri, getRepoName, isPathInWorkspace } from '../platform/paths';
+import { getSortedRepositoryPaths } from './repo';
+import { unableToFindGitMsg } from '../git/executable/findGit';
 import { getConfig } from '../platform/config';
 import type { CommandHost } from './context';
 

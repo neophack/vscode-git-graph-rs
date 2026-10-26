@@ -1,12 +1,14 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Avatar, AvatarCache } from '../integrations/avatars/avatarManager';
-import { t } from '../../i18n';
-import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from '../../types';
-import { GitExecutable } from '../../utils/findGit';
-import { getPathFromStr } from '../../utils/paths';
-import { Disposable } from '../../utils/disposable';
-import { GgEvent } from '../../utils/event';
+import { t } from './i18n';
+import { BooleanOverride, FileViewType, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, RepoCommitOrdering } from '../../shared/model/webview';
+import { CodeReview, GitRepoSet, GitRepoState } from '../../shared/model/repoState';
+import { ErrorInfo } from '../../shared/protocol/messages';
+import { GitExecutable } from '../git/executable/findGit';
+import { getPathFromStr } from './paths';
+import { Disposable } from '../../shared/util/disposable';
+import { GgEvent } from '../../shared/util/event';
 import { getConfig } from './config';
 import { isStateRecord, readVersionedState, encodeVersionedState } from './storageVersioned';
 

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { GerritChangeEvent, GerritChangeState, GerritChangeStatus, GerritPatchsetsMode } from '../../../types';
+import { GerritChangeEvent, GerritChangeState, GerritChangeStatus, GerritPatchsetsMode } from '../../../shared/model/gerrit';
 
 /**
  * The pure Gerrit data model: change-ref parsing, NoteDb meta parsing, status filtering and the

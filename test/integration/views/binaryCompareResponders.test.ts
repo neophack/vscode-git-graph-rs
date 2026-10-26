@@ -24,8 +24,8 @@ import path from 'node:path';
 import { describe, it, vi } from 'vitest';
 import { vscodeState } from '../../support/vscodeAlias';
 import { createHexSession, flatSections, respondCopyToClipboard, respondHexInfo, respondHexRows, wireHexSession } from '../../../src/extension/views/binaryCompare/binaryCompare';
-import { t } from '../../../src/i18n';
-import { UNCOMMITTED } from '../../../src/utils/git';
+import { t } from '../../../src/extension/platform/i18n';
+import { UNCOMMITTED } from '../../../src/extension/platform/git';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 

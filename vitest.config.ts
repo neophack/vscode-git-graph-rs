@@ -42,7 +42,9 @@ export default defineConfig({
 				'src/extension/**': { statements: 82, branches: 83, functions: 84, lines: 82 },
 				'src/webview/**': { statements: 35, branches: 70, functions: 57, lines: 35 },
 				'src/shared/**': { statements: 99, branches: 99, functions: 99, lines: 99 },
-				'src/automation/**': { statements: 92, branches: 75, functions: 93, lines: 92 }
+				// The automation subsystem (A1 moved it under the extension layer); listed after
+				// the broader 'src/extension/**' so the specific glob keeps governing its files.
+				'src/extension/automation/**': { statements: 92, branches: 75, functions: 93, lines: 92 }
 			}
 		}
 	}

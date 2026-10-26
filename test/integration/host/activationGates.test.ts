@@ -22,9 +22,9 @@ import path from 'node:path';
 import { afterAll, describe, it, vi } from 'vitest';
 import { vscodeState } from '../../support/vscodeAlias';
 import { vscodeMockOf } from '../../support/fakeVscode';
-import { activate } from '../../../src/extension';
+import { activate } from '../../../src/extension/main';
 import { STRINGS_EN } from '../../../src/shared/i18n';
-import type { GitExecutable } from '../../../src/utils/findGit';
+import type { GitExecutable } from '../../../src/extension/git/executable/findGit';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
@@ -33,8 +33,8 @@ const findStub = vi.hoisted(() => ({
 	calls: 0,
 	impl: (): Promise<GitExecutable> => new Promise(() => { /* never resolves */ })
 }));
-vi.mock('../../../src/utils/findGit', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('../../../src/utils/findGit')>();
+vi.mock('../../../src/extension/git/executable/findGit', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../../../src/extension/git/executable/findGit')>();
 	return {
 		...actual,
 		findGit: () => {

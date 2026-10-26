@@ -38,10 +38,10 @@ vi.mock('../../../src/extension/graphView/panel', () => ({
 }));
 
 import { CommandManager } from '../../../src/extension/commands';
-import { t } from '../../../src/i18n';
+import { t } from '../../../src/extension/platform/i18n';
 import { encodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
-import { EventEmitter } from '../../../src/utils/event';
-import { GitFileStatus } from '../../../src/types/git';
+import { EventEmitter } from '../../../src/shared/util/event';
+import { GitFileStatus } from '../../../src/shared/model/git';
 import type { VscodeStubState } from '../../support/fakeVscode';
 
 const vscode = () => vs.stateHolder.state as unknown as {

@@ -3,10 +3,8 @@ import type { GitBackend } from '../git/read/gitReader';
 import type { GitCommitDetails, GitRepoInfo, GitSignature } from '../git/read/types';
 import { GitSignatureStatus, UNCOMMITTED } from '../git/read/types';
 import type { GitRunnerPort } from './gitRunner';
-import type {
-	ErrorInfo, GitCommitDetails as CommitDetailsView, GitCommitStash, GitFileChange as FileChangeView, GitStash,
-	GitTagDetails as TagDetailsView, GitLineCounts, GitRepoConfig, GitRepoConfigBranches
-} from '../../types';
+import type { ErrorInfo } from '../../shared/protocol/messages';
+import type { GitCommitDetails as CommitDetailsView, GitCommitStash, GitFileChange as FileChangeView, GitStash, GitTagDetails as TagDetailsView, GitLineCounts, GitRepoConfig, GitRepoConfigBranches } from '../../shared/model/git';
 import { GitConfigKey } from '../git/write/ops/config';
 
 /** The response shape of the commitDetails handler (the legacy `GitCommitDetailsData`). */

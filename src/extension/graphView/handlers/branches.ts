@@ -1,5 +1,5 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import type { ErrorInfo } from '../../../types';
+import type { ErrorInfo } from '../../../shared/protocol/messages';
 import { sendLossWarning } from './context';
 import type { Handler } from './context';
 import * as flows from '../writeFlows';

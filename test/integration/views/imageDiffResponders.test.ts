@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, vi } from 'vitest';
 import { imageMimeOf, isImageChange, respondImageData } from '../../../src/extension/views/binaryCompare/binaryCompare';
-import { t } from '../../../src/i18n';
+import { t } from '../../../src/extension/platform/i18n';
 import { HexDiffSession } from '../../../src/extension/views/binaryCompare/hexDiff';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });

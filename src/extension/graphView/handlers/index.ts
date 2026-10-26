@@ -1,5 +1,5 @@
 import type { RequestCommand } from '../../../shared/protocol/graphView';
-import type { RequestMessage } from '../../../types';
+import type { RequestMessage } from '../../../shared/protocol/messages';
 import type { Handler, HandlerContext } from './context';
 
 import * as branches from './branches';

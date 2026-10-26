@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PullRequestInfo } from '../../types';
+import type { PullRequestInfo } from '../../shared/model/pullRequest';
 import { fetchPullRequestHeadRefs, fetchPullRequests } from './pullRequestFetch';
 import type { PullRequestFetchDeps } from './pullRequestFetch';
 

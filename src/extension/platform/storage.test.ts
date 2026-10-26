@@ -24,7 +24,7 @@ vi.mock('vscode', () => vscodeMock);
 import type { ExtensionContext } from 'vscode';
 import { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, DEFAULT_REPO_STATE, ExtensionState, MementoLike, Storage } from './storage';
 import { STORAGE_STATE_VERSION, decodeVersionedState, encodeVersionedState } from './storageVersioned';
-import { BooleanOverride, GitGraphViewSnapshot } from '../../types';
+import { BooleanOverride, GitGraphViewSnapshot } from '../../shared/model/webview';
 
 /** A memento fake recording every update and answering from a plain map. */
 class FakeMemento implements MementoLike {

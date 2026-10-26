@@ -1,6 +1,6 @@
 /**
  * CLI wrapper for the fixture generator. The generator itself lives in
- * src/automation/fixture.ts and runs from the compiled out/automation/fixture.js — the same
+ * src/extension/automation/fixture.ts and runs from the compiled out/extension/automation/fixture.js — the same
  * module the in-process automation suite uses — so there is exactly one implementation. Running
  * this script therefore requires `npm run compile` to have produced out/ first.
  *
@@ -13,13 +13,13 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const compiled = path.join(rootDir, 'out', 'automation', 'fixture.js');
+const compiled = path.join(rootDir, 'out', 'extension', 'automation', 'fixture.js');
 
 let implPromise = null;
 async function impl() {
 	if (implPromise === null) {
 		if (!fs.existsSync(compiled)) {
-			throw new Error(compiled + ' is missing. Run `npm run compile` first — the generator lives in src/automation/fixture.ts and runs from out/.');
+			throw new Error(compiled + ' is missing. Run `npm run compile` first — the generator lives in src/extension/automation/fixture.ts and runs from out/.');
 		}
 		implPromise = import(pathToFileURL(compiled).href);
 	}
@@ -49,7 +49,7 @@ Builds a deterministic fixture repository: <dir>/fixture-remote.git (bare remote
 <dir>/fixture (working clone with a .gg-fixture marker). If <dir>/fixture already exists
 and --force is not given, the existing path is printed and nothing is rebuilt.
 
-Requires npm run compile first: the generator is the compiled out/automation/fixture.js.`;
+Requires npm run compile first: the generator is the compiled out/extension/automation/fixture.js.`;
 
 function failUsage(message) {
 	console.error('error: ' + message);

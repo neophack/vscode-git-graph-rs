@@ -1,5 +1,6 @@
 import type { GitCommitData } from '../git/read/types';
-import type { GerritChangeState, GerritStatusFilter, RequestLoadCommits } from '../../types';
+import type { GerritChangeState, GerritStatusFilter } from '../../shared/model/gerrit';
+import type { RequestLoadCommits } from '../../shared/protocol/loading';
 import type { CommitLoaderConfig, CommitLoaderLogger, GerritDataPort } from './commitLoader';
 import {
 	buildFetchRefspecs, changeShard, filterChangeStates, GERRIT_FETCH_WINDOW_FACTOR, limitChangeStates, limitChanges, nextGerritSampleWindow, parseChangeRef, selectDisplayedChangeStates

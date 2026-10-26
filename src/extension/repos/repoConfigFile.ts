@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { t } from '../../i18n';
-import { BooleanOverride, FileViewType, GitRepoState, PinnedCommit, PullRequestConfig, PullRequestConfigBase, PullRequestProvider, RepoCommitOrdering } from '../../types';
-import { getPathFromStr } from '../../utils/paths';
+import { t } from '../platform/i18n';
+import { BooleanOverride, FileViewType, RepoCommitOrdering } from '../../shared/model/webview';
+import { GitRepoState, PinnedCommit } from '../../shared/model/repoState';
+import { PullRequestConfig, PullRequestConfigBase, PullRequestProvider } from '../../shared/model/pullRequest';
+import { getPathFromStr } from '../platform/paths';
 
 /**
  * The External Repository Configuration File seam of the repository manager (REFACTOR-PLAN

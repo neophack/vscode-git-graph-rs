@@ -7,8 +7,8 @@ import { getConfig } from '../../platform/config';
 import type { GitBackend } from '../../git/read/gitReader';
 import { ExtensionState } from '../../platform/storage';
 import { Logger } from '../../platform/logger';
-import { Disposable, toDisposable } from '../../../utils/disposable';
-import { EventEmitter } from '../../../utils/event';
+import { Disposable, toDisposable } from '../../../shared/util/disposable';
+import { EventEmitter } from '../../../shared/util/event';
 import { AvatarRequestItem, AvatarRequestQueue } from './avatarQueue';
 
 /**

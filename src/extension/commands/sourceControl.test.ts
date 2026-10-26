@@ -44,11 +44,11 @@ const vscodeMock = vi.hoisted(() => {
 
 vi.mock('vscode', () => vscodeMock);
 
-import { ErrorInfo } from '../../types';
-import { t } from '../../i18n';
+import { ErrorInfo } from '../../shared/protocol/messages';
+import { t } from '../platform/i18n';
 import { amendLastCommit, resetCurrentBranchToRemote } from './sourceControl';
 import type { CommandHost } from './context';
-import type { UiPort } from '../../extension/platform/uiPort';
+import type { UiPort } from '../platform/uiPort';
 
 /** A fake native-UI port recording every dialog; a queued function answer is called with the
  * recorded args, an Error rejects, an exhausted queue answers undefined (a dismissed dialog). */

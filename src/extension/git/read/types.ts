@@ -62,9 +62,9 @@ export type { AnnotateResult as GitAnnotation, GitCommitRefs, RefSnapshot as Git
  * once in `src/types/git.ts` beside the rest of the extension's data contract, imported here for
  * the backend's own bags and re-exported so the backend's vocabulary stays one table.
  */
-import type { GitReflogEntry } from '../../../types/git';
+import type { GitReflogEntry } from '../../../shared/model/git';
 
-export type { GitConflictPrediction, GitReflogEntry, GitWorktree } from '../../../types/git';
+export type { GitConflictPrediction, GitReflogEntry, GitWorktree } from '../../../shared/model/git';
 
 /* ---------- Wire literals the extension names ---------- */
 

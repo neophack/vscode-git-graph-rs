@@ -23,19 +23,27 @@
  * deliberate regeneration with `--baseline-mode full`.
  *
  * Baseline at Phase 1.6: 17 violations, all "new tree still imports legacy
- * type modules" transition debt — 16x git-layer-isolation (src/extension/git/**
- * importing src/types/{git,messages,webview}.ts and src/backend/types.ts) and
- * 1x webview-only-webview-shared (src/webview/common/protocol.ts importing
- * src/types/index.ts). They drain as task 1.1's shared/ type migration lands.
+ * type modules" transition debt. The flat root drained at A1
+ * (OPTIMIZATION-PLAN §3 A1): the type-import entries drained to 0 (the git
+ * layer and the webview now import src/shared/model + src/shared/protocol,
+ * fully inside the rules) and the flat-root exemption pocket is gone —
+ * vscode-only-via-platform covers all of src/extension/** (main.ts, the
+ * composition root, joins views/ and commands/ as a granted exception). The
+ * move itself carried files INTO stricter scopes with their old imports, so
+ * the regeneration recorded 14 new transition-debt entries (findGit,
+ * childProcess, askpassManager reaching platform/i18n/config/format/vscode
+ * from the git layer; the four automation modules' direct vscode imports) —
+ * the seams OPTIMIZATION-PLAN A3 (one process adapter) and the automation
+ * cleanup drain next.
  *
  * Ratchet-down order (earliest first):
  *   1. End of Phase 1 (types migration, task 1.1): the git-layer and webview
  *      type-import violations drain to 0 — regenerate with shrink-only and the
- *      shared-only / webview-only / git-layer rules are fully live.
- *   2. End of Phase 3 (host git layer): any remaining git-layer-isolation
- *      entries are gone; git/** violating becomes a hard error on review.
- *   3. End of Phase 4 (host split): src/extension/graphView/panel.ts exists and
- *      handlers-not-to-panel + vscode-only-via-platform become fully live.
+ *      shared-only / webview-only / git-layer rules are fully live. (Done at A1.)
+ *   2. A3 (one process adapter): findGit/childProcess/askpassManager fold into
+ *      the process seam and their git-layer-isolation entries drain.
+ *   3. The automation cleanup: the four vscode-importing automation modules
+ *      route through the platform layer and their vscode-only entries drain.
  *   4. Ongoing: no-circular and not-to-test are live from day one (empty
  *      baseline) — new cycles or test imports fail immediately.
  *
@@ -129,10 +137,13 @@ module.exports = {
 		{
 			// §3.6 row 5: extension/platform/** is the only vscode entry point.
 			// Exceptions the plan grants: views/, commands/, and
-			// graphView/panel.ts may use vscode UI types directly.
+			// graphView/panel.ts may use vscode UI types directly — and since A1
+			// drained the flat root, the composition root (extension/main.ts)
+			// joins them (activate() receives the ExtensionContext; A2 rebuilds
+			// it as the single wiring point).
 			// ('vscode' resolves to the ambient @types/vscode package.)
 			name: 'vscode-only-via-platform',
-			comment: '§3.6: extension/platform/** is the only vscode entry (views/, commands/, graphView/panel.ts excepted)',
+			comment: '§3.6: extension/platform/** is the only vscode entry (views/, commands/, main.ts, graphView/panel.ts excepted)',
 			severity: 'error',
 			from: {
 				path: '^src/extension/',
@@ -140,6 +151,7 @@ module.exports = {
 					'^src/extension/platform/',
 					'^src/extension/views/',
 					'^src/extension/commands/',
+					'^src/extension/main\\.ts$',
 					'^src/extension/graphView/panel\\.ts$'
 				]
 			},
@@ -175,6 +187,11 @@ module.exports = {
 		doNotFollow: {
 			path: 'node_modules'
 		},
+		// Resolve symlinked modules at their stated path, not their realpath. Worktree checkouts
+		// (git worktree add) reach the shared node_modules through a junction; without this the
+		// resolved 'vscode' path escapes the checkout ('../../<repo>/node_modules/@types/vscode')
+		// and the ratchet baseline's rules stop matching, silently voiding the vscode gate.
+		preserveSymlinks: true,
 		// The ratchet (see header): baselined violations are softened, new ones
 		// fail the check.
 		knownViolations: knownViolations,

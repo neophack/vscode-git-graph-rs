@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GerritChangeState } from '../../../types';
+import type { GerritChangeState } from '../../../shared/model/gerrit';
 import type { GerritCacheEntry } from './gerritCache';
 import { GerritCacheStore } from './gerritCache';
 

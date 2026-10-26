@@ -1,35 +1,8 @@
 import * as vscode from 'vscode';
-import {
-	CommitAuthor,
-	CommitDetailsViewConfig,
-	CommitDetailsViewLocation,
-	CommitOrdering,
-	ContextMenuActionsVisibility,
-	CustomBranchGlobPattern,
-	CustomEmojiShortcodeMapping,
-	CustomPullRequestProvider,
-	DateFormat,
-	DateFormatType,
-	DateType,
-	DefaultColumnVisibility,
-	DialogDefaults,
-	FileViewType,
-	GerritConfig,
-	GitResetMode,
-	GraphConfig,
-	GraphStyle,
-	GraphUncommittedChangesStyle,
-	KeybindingConfig,
-	MuteCommitsConfig,
-	OnRepoLoadConfig,
-	PullRequestsConfig,
-	RefLabelAlignment,
-	ReferenceLabelsConfig,
-	RepoDropdownOrder,
-	SquashMessageFormat,
-	TabIconColourTheme,
-	TagType
-} from '../../types';
+import { CommitAuthor, CommitDetailsViewConfig, CommitDetailsViewLocation, CommitOrdering, ContextMenuActionsVisibility, CustomBranchGlobPattern, CustomEmojiShortcodeMapping, CustomPullRequestProvider, DateFormat, DateFormatType, DateType, DefaultColumnVisibility, DialogDefaults, FileViewType, GraphConfig, GraphStyle, GraphUncommittedChangesStyle, KeybindingConfig, MuteCommitsConfig, OnRepoLoadConfig, RefLabelAlignment, ReferenceLabelsConfig, RepoDropdownOrder, SquashMessageFormat, TabIconColourTheme, TagType } from '../../shared/model/webview';
+import { GerritConfig } from '../../shared/model/gerrit';
+import { GitResetMode } from '../../shared/model/git';
+import { PullRequestsConfig } from '../../shared/model/pullRequest';
 
 /**
  * Platform config adapter (REFACTOR-PLAN 3.3 + task 4.5): the ONE configuration module,

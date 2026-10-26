@@ -2,10 +2,11 @@ import * as vscode from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { GitConfigKey } from '../git/write/ops/config';
 import { setConfigValue, unsetConfigValue } from '../git/write/ops/config';
-import { GitConfigLocation } from '../../types';
-import type { CommitAuthor, ErrorInfo } from '../../types';
+import { GitConfigLocation } from '../../shared/model/git';
+import type { CommitAuthor } from '../../shared/model/webview';
+import type { ErrorInfo } from '../../shared/protocol/messages';
 import { getConfig } from '../platform/config';
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
 
 /**

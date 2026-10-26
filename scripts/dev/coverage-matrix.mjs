@@ -1,7 +1,7 @@
 /**
  * Coverage-matrix extractor (REFACTOR-PLAN §6.8.4, task 0.6): pulls the 8 dimensions of the
  * coverage matrix DIRECTLY from the repository sources — never hand-written — and cross-checks
- * each dimension against the automation catalog (src/automation/catalog/**).
+ * each dimension against the automation catalog (src/extension/automation/catalog/**).
  *
  * Counting only: the script always exits 0 and never gates anything. It prints a summary to
  * stdout and optionally writes the matrix as JSON (`--json <out>`) and/or a markdown report
@@ -23,7 +23,7 @@
  *      stable selector attribute the automation catalog drives, e.g. `#dialogAction`), plus the
  *      context-menu item definitions (the `title: strings.*` entries of actions/contextMenuActions.ts)
  *      and the dialog action functions of actions/dialogActions.ts.
- *   7. automation-catalog — the action entries under src/automation/catalog/**: id, group, tags,
+ *   7. automation-catalog — the action entries under src/extension/automation/catalog/**: id, group, tags,
  *      drive modes (`ui` / `request` / `command` via `vscodeCommand`), whether a `verify` block
  *      exists. An entry counts as "covered" when it is machine-drivable (has at least one mode).
  *   8. ui-languages — the string-table keys of src/shared/i18n (en + zh-cn) and the
@@ -571,12 +571,12 @@ export function extractFromRepo(root) {
 	const extensionFiles = listFiles(root, path.join('src', 'extension'), ['.ts'], ['.test.']);
 	const webviewFiles = listFiles(root, path.join('src', 'webview', 'graph'), ['.ts'], ['.test.']);
 
-	const catalogDir = path.join(root, 'src', 'automation', 'catalog');
+	const catalogDir = path.join(root, 'src', 'extension', 'automation', 'catalog');
 	const catalogFiles = fs.existsSync(catalogDir)
 		? fs.readdirSync(catalogDir)
 			.filter((entry) => entry.endsWith('.ts') && !CATALOG_NON_ENTRY_FILES.has(entry))
 			.sort()
-			.map((entry) => ({ path: 'src/automation/catalog/' + entry, text: readFile(path.join(catalogDir, entry)) }))
+			.map((entry) => ({ path: 'src/extension/automation/catalog/' + entry, text: readFile(path.join(catalogDir, entry)) }))
 		: [];
 	const helpersText = fs.existsSync(path.join(catalogDir, 'helpers.ts'))
 		? readFile(path.join(catalogDir, 'helpers.ts'))

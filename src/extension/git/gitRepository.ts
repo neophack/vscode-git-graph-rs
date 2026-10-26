@@ -14,7 +14,7 @@
 
 import type { GitBackend } from './read/gitReader';
 
-import { GitOperationState } from '../../types/git';
+import { GitOperationState } from '../../shared/model/git';
 import { detectOperationState, fsOperationStateEnv, RepoTextRunner } from './operationState';
 import { GitWriter } from './write/gitWriter';
 

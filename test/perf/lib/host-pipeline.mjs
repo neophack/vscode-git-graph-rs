@@ -23,7 +23,7 @@ export function loadPipeline() {
 		GitRepository: loadOut('extension/git/gitRepository.js').GitRepository,
 		CommitLoader: loadOut('extension/graphView/commitLoader.js').CommitLoader,
 		UncommittedCountStabiliser: loadOut('extension/graphView/uncommittedStabiliser.js').UncommittedCountStabiliser,
-		fixture: loadOut('automation/fixture.js')
+		fixture: loadOut('extension/automation/fixture.js'
 	};
 }
 

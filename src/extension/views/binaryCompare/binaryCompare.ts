@@ -1,9 +1,9 @@
 import { GitStreamSpawner, HEX_BYTES_PER_ROW, HEX_ROW_HEIGHT, HexDiffSession, HexSection } from './hexDiff';
-import { t } from '../../../i18n';
+import { t } from '../../platform/i18n';
 import { BinaryCompareResponse } from '../../../shared/protocol/binaryCompare';
-import { GitFileChange } from '../../../types';
-import { UNCOMMITTED } from '../../../utils/git';
-import { copyToClipboard } from '../../../utils/actions';
+import { GitFileChange } from '../../../shared/model/git';
+import { UNCOMMITTED } from '../../platform/git';
+import { copyToClipboard } from '../../platform/actions';
 
 /**
  * Everything the two binary comparison surfaces share: the Commit Comparison View's embedded

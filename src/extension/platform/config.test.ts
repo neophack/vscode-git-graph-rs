@@ -21,7 +21,8 @@ const vscodeMock = vi.hoisted(() => ({
 
 vi.mock('vscode', () => vscodeMock);
 
-import { CommitOrdering, DateFormatType, DateType, GitResetMode, TagType } from '../../types';
+import { CommitOrdering, DateFormatType, DateType, TagType } from '../../shared/model/webview';
+import { GitResetMode } from '../../shared/model/git';
 import {
 	CONFIG_MIGRATIONS,
 	CONFIG_SECTION,

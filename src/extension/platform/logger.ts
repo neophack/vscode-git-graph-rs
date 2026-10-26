@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Disposable } from '../../utils/disposable';
+import { Disposable } from '../../shared/util/disposable';
 
 /**
  * Platform logger adapter (REFACTOR-PLAN 3.3): the ONE Logger of the extension host, unifying

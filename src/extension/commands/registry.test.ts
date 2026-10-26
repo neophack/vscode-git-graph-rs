@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CATALOG } from '../../automation/catalog';
-import type { AutomationAction } from '../../automation/catalog';
+import { CATALOG } from '../automation/catalog';
+import type { AutomationAction } from '../automation/catalog';
 import { COMMANDS, COMMAND_IDS } from './registry';
 import type { CommandSpec } from './registry';
 

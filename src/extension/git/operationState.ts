@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { GitOperationState, GitOperationType } from '../../types/git';
+import { GitOperationState, GitOperationType } from '../../shared/model/git';
 
 /** Runs a Git read in a repository, resolving its stdout; rejecting when it fails. */
 export type RepoTextRunner = (argv: ReadonlyArray<string>, repo: string) => Promise<string>;

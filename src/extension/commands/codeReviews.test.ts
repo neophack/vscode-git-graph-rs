@@ -52,11 +52,11 @@ vi.mock('../graphView/panel', () => ({
 	}
 }));
 
-import { t } from '../../i18n';
-import { ErrorInfo } from '../../types';
+import { t } from '../platform/i18n';
+import { ErrorInfo } from '../../shared/protocol/messages';
 import { endSpecificWorkspaceCodeReview, resumeWorkspaceCodeReview } from './codeReviews';
 import type { CommandHost } from './context';
-import type { QuickPickItemLike, UiPort } from '../../extension/platform/uiPort';
+import type { QuickPickItemLike, UiPort } from '../platform/uiPort';
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

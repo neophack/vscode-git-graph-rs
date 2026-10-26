@@ -3,8 +3,9 @@ import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { ExtensionState } from '../platform/storage';
 import type { Logger } from '../platform/logger';
 import type { GitCommitData, GitRepoInfo } from '../git/read/types';
-import type { GitGraphViewSnapshot, RequestMessage, ResponseMessage } from '../../types';
-import { setLiveGraphView } from '../../automation/graphViewPort';
+import type { GitGraphViewSnapshot } from '../../shared/model/webview';
+import type { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
+import { setLiveGraphView } from '../automation/graphViewPort';
 
 /**
  * Panel tests with a fake 'vscode' module (REFACTOR-PLAN task 4.4's acceptance: panel

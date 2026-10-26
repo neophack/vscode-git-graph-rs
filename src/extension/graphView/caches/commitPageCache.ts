@@ -1,5 +1,5 @@
 import type { GitCommitData } from '../../git/read/types';
-import type { RequestLoadCommits } from '../../../types';
+import type { RequestLoadCommits } from '../../../shared/protocol/loading';
 
 /**
  * The commit-page cache of the graph view's staged loading pipeline (REFACTOR-PLAN task 4.3),

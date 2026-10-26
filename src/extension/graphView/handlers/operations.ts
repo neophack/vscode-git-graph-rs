@@ -1,6 +1,6 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { GitPushBranchMode } from '../../../types';
-import type { ErrorInfo } from '../../../types';
+import { GitPushBranchMode } from '../../../shared/model/git';
+import type { ErrorInfo } from '../../../shared/protocol/messages';
 import type { Handler } from './context';
 import * as flows from '../writeFlows';
 

@@ -1,8 +1,8 @@
-import { t } from '../../i18n';
-import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
-import { UiPort } from '../../extension/platform/uiPort';
-import { getRepoName } from '../../utils/paths';
-import { unableToFindGitMsg } from '../../utils/findGit';
+import { t } from '../platform/i18n';
+import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
+import { UiPort } from '../platform/uiPort';
+import { getRepoName } from '../platform/paths';
+import { unableToFindGitMsg } from '../git/executable/findGit';
 import { amendLastCommit as amendLastCommitOp, resetCurrentBranchToRemote as resetCurrentBranchToRemoteOp } from '../git/write/ops/commits';
 import { resolveRepoFromCommandArg, type CommandHost } from './context';
 

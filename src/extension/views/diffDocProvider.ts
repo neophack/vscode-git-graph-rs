@@ -1,11 +1,11 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { GitBackend } from '../git/read/gitReader';
-import { t } from '../../i18n';
-import { GitFileStatus } from '../../types';
-import { UNCOMMITTED } from '../../utils/git';
-import { getPathFromStr } from '../../utils/paths';
-import { Disposable, toDisposable } from '../../utils/disposable';
+import { t } from '../platform/i18n';
+import { GitFileStatus } from '../../shared/model/git';
+import { UNCOMMITTED } from '../platform/git';
+import { getPathFromStr } from '../platform/paths';
+import { Disposable, toDisposable } from '../../shared/util/disposable';
 
 export const enum DiffSide {
 	Old,

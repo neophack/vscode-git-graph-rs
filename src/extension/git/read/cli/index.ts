@@ -44,7 +44,7 @@ import {
 	LogOptions,
 	RefReadOptions
 } from '../types';
-import { GerritChangeState } from '../../../../types';
+import { GerritChangeState } from '../../../../shared/model/gerrit';
 import type { AbortLike, GitSpawnFn } from '../../process/gitProcess';
 
 import { getConfig, getConfigList, getGlobalUserDetails, getRemoteUrl } from './config';

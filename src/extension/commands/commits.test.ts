@@ -52,10 +52,10 @@ vi.mock('../graphView/panel', () => ({
 	}
 }));
 
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { searchCommits } from './commits';
 import type { CommandHost } from './context';
-import type { UiPort } from '../../extension/platform/uiPort';
+import type { UiPort } from '../platform/uiPort';
 
 /** A fake native-UI port recording every dialog; a queued function answer is called with the
  * recorded args (so a pick can echo the offered items), an Error rejects, else undefined. */

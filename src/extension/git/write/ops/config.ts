@@ -3,7 +3,7 @@
  * "Git Action Methods - Config" (`src/dataSource.ts`).
  */
 
-import { GitConfigLocation } from '../../../../types/git';
+import { GitConfigLocation } from '../../../../shared/model/git';
 import { WriteOp, single } from './op';
 
 /**

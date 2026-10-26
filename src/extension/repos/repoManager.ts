@@ -3,20 +3,21 @@ import * as vscode from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { GitRunnerPort } from '../graphView/gitRunner';
 import { addRemoteTagsRefspec } from '../git/write/ops/config';
-import { t } from '../../i18n';
-import { ErrorInfo, GitRepoSet, GitRepoState } from '../../types';
+import { t } from '../platform/i18n';
+import { ErrorInfo } from '../../shared/protocol/messages';
+import { GitRepoSet, GitRepoState } from '../../shared/model/repoState';
 import {
 	getPathFromStr,
 	getPathFromUri,
 	getRepoName,
 	pathWithTrailingSlash,
 	realpath,
-} from '../../utils/paths';
-import { showErrorMessage, showInformationMessage } from '../../utils/actions';
-import { BufferedQueue } from '../../utils/bufferedQueue';
-import { evalPromises } from '../../utils/childProcess';
-import { Disposable, toDisposable } from '../../utils/disposable';
-import { EventEmitter, GgEvent } from '../../utils/event';
+} from '../platform/paths';
+import { showErrorMessage, showInformationMessage } from '../platform/actions';
+import { BufferedQueue } from '../../shared/util/bufferedQueue';
+import { evalPromises } from '../git/process/childProcess';
+import { Disposable, toDisposable } from '../../shared/util/disposable';
+import { EventEmitter, GgEvent } from '../../shared/util/event';
 import { getConfig } from '../platform/config';
 import { DEFAULT_REPO_STATE, ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';

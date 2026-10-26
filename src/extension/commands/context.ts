@@ -6,11 +6,11 @@ import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';
 import { RepoManager } from '../repos/repoManager';
-import { t } from '../../i18n';
+import { t } from '../platform/i18n';
 import { getConfig } from '../platform/config';
-import { GitExecutable } from '../../utils/findGit';
-import { getSortedRepositoryPaths } from '../../utils/repo';
-import { getPathFromUri, getRepoName } from '../../utils/paths';
+import { GitExecutable } from '../git/executable/findGit';
+import { getSortedRepositoryPaths } from './repo';
+import { getPathFromUri, getRepoName } from '../platform/paths';
 
 /**
  * The collaborators a command handler runs with (task 4.6): the same services the

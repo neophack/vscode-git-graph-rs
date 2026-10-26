@@ -1,4 +1,4 @@
-import type { GerritChangeState, GerritPatchsetsMode } from '../../types';
+import type { GerritChangeState, GerritPatchsetsMode } from '../../shared/model/gerrit';
 
 /**
  * The pure Gerrit ref/state selection math the staged loading pipeline needs (task 4.3), ported

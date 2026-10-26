@@ -6,9 +6,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GitConfigLocation, GitOperationType, GitPushBranchMode, GitResetMode } from '../../../../types/git';
-import { MergeActionOn, RebaseActionOn } from '../../../../types/messages';
-import { SquashMessageFormat, TagType } from '../../../../types/webview';
+import { GitConfigLocation, GitOperationType, GitPushBranchMode, GitResetMode } from '../../../../shared/model/git';
+import { MergeActionOn, RebaseActionOn } from '../../../../shared/protocol/operations';
+import { SquashMessageFormat, TagType } from '../../../../shared/model/webview';
 import {
 	addRemote, addRemoteTagsRefspec, addTag, addWorktree,
 	abortOperation, amendCommitMessage, amendLastCommit, applyStash, archive,

@@ -6,7 +6,7 @@
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 
-import { GitOperationType } from '../../types/git';
+import { GitOperationType } from '../../shared/model/git';
 import { conflictedFilesArgv, detectOperationState, gitDirArgv, OperationStateEnv, readRebaseProgress, resolveGitDir } from './operationState';
 
 const NONE = { type: null, conflictedFiles: [], progress: null };

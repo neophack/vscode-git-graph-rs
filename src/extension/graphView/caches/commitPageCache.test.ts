@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GitCommitData } from '../../git/read/types';
-import { CommitOrdering } from '../../../types';
-import type { RequestLoadCommits } from '../../../types';
+import { CommitOrdering } from '../../../shared/model/webview';
+import type { RequestLoadCommits } from '../../../shared/protocol/loading';
 import { CommitPageCache, commitPageCacheKey } from './commitPageCache';
 
 /** The commit-page cache and its key, ported from GitGraphView (task 4.3): the bound, the

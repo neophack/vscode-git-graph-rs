@@ -4,7 +4,7 @@ import { UNCOMMITTED } from '../../git/read/types';
 import {
 	readCommitComparison, readCommitDetails, readFileCounts, readRepoInfo, readStashDetails, readUncommittedDetails
 } from '../repoReads';
-import type { GitCommitDetails as CommitDetailsView } from '../../../types';
+import type { GitCommitDetails as CommitDetailsView } from '../../../shared/model/git';
 import type { Handler } from './context';
 
 /** Handlers answering the view's data reads (branch graph pages, config, counts, details). */

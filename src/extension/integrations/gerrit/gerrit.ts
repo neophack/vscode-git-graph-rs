@@ -3,8 +3,9 @@ import * as http from 'http';
 import * as https from 'https';
 import * as path from 'path';
 import { resolve as resolveUrl } from 'url';
-import { ErrorInfo, GerritChangeState } from '../../../types';
-import { evalPromises } from '../../../utils/childProcess';
+import { ErrorInfo } from '../../../shared/protocol/messages';
+import { GerritChangeState } from '../../../shared/model/gerrit';
+import { evalPromises } from '../../git/process/childProcess';
 import { buildKeepPatterns, changeShard, chunkFetchRefspecs, gerritRemoteServer, MetaCommitRecord, parseLsRemoteChanges, parseMetaHistory } from './gerritProtocol';
 
 /**

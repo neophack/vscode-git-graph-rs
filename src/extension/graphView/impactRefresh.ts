@@ -1,7 +1,10 @@
 import type { WriteEffect } from '../../shared/protocol/graphView';
 import type { AnnotateReadOptions, GitCommitData, RefReadOptions } from '../git/read/types';
 import type { CommitDataPort } from './commitLoader';
-import type { GerritChangeState, GitStash, RequestLoadCommits, ResponseLoadCommits, ResponseLoadRepoInfo, ResponseMessage } from '../../types';
+import type { GerritChangeState } from '../../shared/model/gerrit';
+import type { GitStash } from '../../shared/model/git';
+import type { RequestLoadCommits, ResponseLoadCommits, ResponseLoadRepoInfo } from '../../shared/protocol/loading';
+import type { ResponseMessage } from '../../shared/protocol/messages';
 
 /**
  * The loader surface the impact refresh needs (task 4.8): what the {@link CommitLoader} exposes

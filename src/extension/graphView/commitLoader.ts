@@ -2,9 +2,11 @@ import type { AbortLike } from '../git/process/gitProcess';
 import type { AnnotateReadOptions, GitAnnotation, GitCommitData, GitRefSnapshot, RefReadOptions } from '../git/read/types';
 import { JobAbandonedError } from './scheduler';
 import type { HostScheduler } from './scheduler';
-import type {
-	CommitOrdering, ErrorInfo, GerritChangeState, GitCommit, GitOperationState, GitStash, RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView
-} from '../../types';
+import type { CommitOrdering } from '../../shared/model/webview';
+import type { ErrorInfo } from '../../shared/protocol/messages';
+import type { GerritChangeState } from '../../shared/model/gerrit';
+import type { GitCommit, GitOperationState, GitStash } from '../../shared/model/git';
+import type { RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView } from '../../shared/protocol/loading';
 import { CommitPageCache, commitPageCacheKey } from './caches/commitPageCache';
 import type { GerritCacheEntry } from './caches/gerritCache';
 import { GerritCacheStore } from './caches/gerritCache';

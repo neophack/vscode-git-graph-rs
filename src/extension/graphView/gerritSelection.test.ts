@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GerritChangeState } from '../../types';
+import type { GerritChangeState } from '../../shared/model/gerrit';
 import {
 	buildFetchRefspecs, changeShard, filterChangeStates, limitChangeStates, limitChanges,
 	nextGerritSampleWindow, parseChangeRef, selectDisplayedChangeStates

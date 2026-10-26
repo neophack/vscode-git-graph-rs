@@ -3,8 +3,9 @@ import type { GitCommitData, GitCommit as BackendGitCommit } from '../git/read/t
 import type { CommitDataPort, CommitLoadQuery, CommitLoaderConfig, GerritDataPort, RepoInfoHalf, UncommittedReading, UncommittedStabiliser } from './commitLoader';
 import { CommitLoader } from './commitLoader';
 import { remoteRefsFollowUpChanged } from './followUpChange';
-import { CommitOrdering } from '../../types';
-import type { GerritChangeState, RequestLoadCommits, ResponseLoadCommits } from '../../types';
+import { CommitOrdering } from '../../shared/model/webview';
+import type { GerritChangeState } from '../../shared/model/gerrit';
+import type { RequestLoadCommits, ResponseLoadCommits } from '../../shared/protocol/loading';
 
 /**
  * CommitLoader tests (REFACTOR-PLAN task 4.3): the staged follow-up orders (plain / Gerrit /

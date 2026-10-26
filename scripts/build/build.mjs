@@ -1,6 +1,6 @@
 /**
  * The unified dist build (REFACTOR-PLAN §4.1, task 1.3): one esbuild pipeline that bundles the
- * extension host (src/extension.ts) into a single dist/extension.js on the VS Code 1.38 floor
+ * extension host (src/extension/main.ts) into a single dist/extension.js on the VS Code 1.38 floor
  * (Node 10.11), bundles the askpass helper git's credential prompts run, copies the askpass
  * launchers, and chains the webview pipeline (scripts/build/webview.mjs) that emits
  * media/out.min.{js,css}.
@@ -32,14 +32,14 @@
  *    the root is one level up, so the three default parameters are rewritten to a single '..'.
  *    `__dirname` itself survives bundling unchanged under format cjs - it stays a real Node
  *    global there, evaluating to dist/ at runtime.
- * 3. src/askpass/askpassManager.ts expects askpass.sh, askpass-empty.sh and askpassMain.js
+ * 3. src/extension/git/process/askpass/askpassManager.ts expects askpass.sh, askpass-empty.sh and askpassMain.js
  *    beside itself (out/askpass/). In the bundle `__dirname` is dist/ while the files live in
  *    dist/askpass/, so each of its five `__dirname` uses is rewritten to
  *    `path.join(__dirname, 'askpass')`.
  *
  * The automation subsystem is a compile-time build variant (REFACTOR-PLAN task 6.2): the
  * `__AUTOMATION__` define decides it. In the default build the flag is false and the gate in
- * src/automation/modules.ts is dead-code-eliminated, so no automation module (catalog, server,
+ * src/extension/automation/modules.ts is dead-code-eliminated, so no automation module (catalog, server,
  * suite runner) enters the bundle at all; with `--automation` the flag is true, the gate's
  * requires survive and the modules are bundled (nothing about them stays external). The out/
  * (tsc) tree defines nothing — there the gate loads the modules exactly when the packaging
@@ -110,7 +110,7 @@ const hostAdapter = {
 			const bundledRoot = automationBuild ? "path.join(__dirname, '..', '..')" : "path.join(__dirname, '..')";
 			return { contents: rewrite(source, expected, bundledRoot), loader: 'ts' };
 		});
-		builder.onLoad({ filter: /[\\/]src[\\/]askpass[\\/]askpassManager\.ts$/ }, (args) => {
+		builder.onLoad({ filter: /[\\/]src[\\/]extension[\\/]git[\\/]process[\\/]askpass[\\/]askpassManager\.ts$/ }, (args) => {
 			const source = fs.readFileSync(args.path, 'utf8');
 			const count = source.split('__dirname').length - 1;
 			if (count !== 5) {
@@ -123,7 +123,7 @@ const hostAdapter = {
 
 const hostEntry = {
 	...common,
-	entryPoints: { extension: 'src/extension.ts' },
+		entryPoints: { extension: 'src/extension/main.ts' },
 	outdir: automationBuild ? path.relative(root, hostOut) : 'dist',
 	platform: 'node',
 	format: 'cjs',
@@ -141,7 +141,7 @@ const hostEntry = {
 
 const askpassEntry = {
 	...common,
-	entryPoints: { askpassMain: 'src/askpass/askpassMain.ts' },
+		entryPoints: { askpassMain: 'src/extension/git/process/askpass/askpassMain.ts' },
 	outdir: automationBuild ? path.relative(root, path.join(hostOut, 'askpass')) : 'dist/askpass',
 	platform: 'node',
 	format: 'cjs',
@@ -186,7 +186,7 @@ function cleanOutputs() {
  * spawns them through sh, while Windows ignores it.
  */
 function copyAskpassScripts() {
-	const source = path.join(root, 'src', 'askpass');
+	const source = path.join(root, 'src', 'extension', 'git', 'process', 'askpass');
 	const target = path.join(hostOut, 'askpass');
 	fs.mkdirSync(target, { recursive: true });
 	for (const name of fs.readdirSync(source).filter((name) => name.endsWith('.sh')).sort()) {

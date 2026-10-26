@@ -10,7 +10,7 @@
 import { GitBackend, NativeBackend } from './gitReader';
 import { isAddonAvailable, loadAddon, platformKey } from './addonLoader';
 import { CliBackend } from './cli';
-import { BackendCapability, BackendReport } from '../../../types';
+import { BackendCapability, BackendReport } from '../../../shared/model/webview';
 import { GitBackendError } from './types';
 import { createFallbackReader } from './fallbackReader';
 

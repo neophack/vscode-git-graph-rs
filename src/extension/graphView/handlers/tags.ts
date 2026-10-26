@@ -1,5 +1,6 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import type { ErrorInfo, GitTagDetails as TagDetailsView } from '../../../types';
+import type { ErrorInfo } from '../../../shared/protocol/messages';
+import type { GitTagDetails as TagDetailsView } from '../../../shared/model/git';
 import type { Handler } from './context';
 import * as flows from '../writeFlows';
 import { readTagDetails } from '../repoReads';

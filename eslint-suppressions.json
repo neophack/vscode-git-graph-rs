@@ -1,348 +1,343 @@
 {
-  "scripts/dev/install.mjs": {
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "scripts/dev/loadHost.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "scripts/dev/theme-audit/pages-compare.mjs": {
-    "no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/askpass/askpassMain.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/automation/catalog/menusCommit.ts": {
-    "indent": {
-      "count": 11
-    }
-  },
-  "src/automation/catalog/menusVscode.ts": {
-    "indent": {
-      "count": 48
-    }
-  },
-  "src/automation/catalogConsistency.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 9
-    }
-  },
-  "src/automation/fixture.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/automation/hostBridge.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 9
-    }
-  },
-  "src/automation/reportView.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    }
-  },
-  "src/automation/server.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/automation/suiteRunner.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 6
-    }
-  },
-  "src/extension/commands/automation.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    }
-  },
-  "src/extension/commands/codeReviews.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 7
-    }
-  },
-  "src/extension/commands/commits.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 3
-    }
-  },
-  "src/extension/commands/context.ts": {
-    "no-restricted-syntax": {
-      "count": 1
-    }
-  },
-  "src/extension/commands/gerrit.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 11
-    }
-  },
-  "src/extension/commands/misc.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 5
-    }
-  },
-  "src/extension/commands/repositories.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 8
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension/commands/sourceControl.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 7
-    }
-  },
-  "src/extension/commands/view.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 3
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension/git/read/cli/files.ts": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/extension/git/read/gitReader.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/extension/graphView/commitLoader.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/extension/graphView/globalSettings.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "src/extension/graphView/handlers/loading.test.ts": {
-    "@typescript-eslint/no-this-alias": {
-      "count": 1
-    }
-  },
-  "src/extension/graphView/panel.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/extension/graphView/panelContext.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 3
-    },
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
-    }
-  },
-  "src/extension/integrations/avatars/avatarManager.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-floating-promises": {
-      "count": 8
-    },
-    "@typescript-eslint/no-misused-promises": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 9
-    }
-  },
-  "src/extension/integrations/avatars/avatarQueue.ts": {
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension/integrations/gerrit/gerritProtocol.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/extension/integrations/pullRequests.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/extension/integrations/pullRequests.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "indent": {
-      "count": 5
-    }
-  },
-  "src/extension/platform/config.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 12
-    }
-  },
-  "src/extension/platform/storage.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 9
-    }
-  },
-  "src/extension/repos/repoConfigFile.ts": {
-    "@typescript-eslint/no-namespace": {
-      "count": 1
-    }
-  },
-  "src/extension/repos/repoDiscovery.ts": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 5
-    }
-  },
-  "src/extension/repos/repoManager.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 7
-    },
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 13
-    }
-  },
-  "src/extension/views/binaryCompare/hexDiffSources.ts": {
-    "@typescript-eslint/no-unused-expressions": {
-      "count": 3
-    }
-  },
-  "src/extension/views/binaryCompare/viewController.ts": {
-    "indent": {
-      "count": 1
-    }
-  },
-  "src/types/messages.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/utils/actions.ts": {
-    "prefer-const": {
-      "count": 5
-    }
-  },
-  "src/utils/bufferedQueue.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    }
-  },
-  "src/utils/childProcess.ts": {
-    "prefer-const": {
-      "count": 4
-    }
-  },
-  "src/utils/findGit.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 2
-    }
-  },
-  "src/utils/paths.ts": {
-    "prefer-const": {
-      "count": 9
-    }
-  },
-  "src/webview/binaryCompare/hexView.ts": {
-    "@typescript-eslint/no-this-alias": {
-      "count": 1
-    }
-  },
-  "src/webview/binaryCompare/imageView.test.ts": {
-    "@typescript-eslint/no-this-alias": {
-      "count": 1
-    }
-  },
-  "src/webview/comparison/model.ts": {
-    "indent": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/actions/contextMenuActions.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/commitDetails/commitDetails.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/loading/repoLoader.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/render/commitTable.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/text/textFormatter.ts": {
-    "prefer-const": {
-      "count": 3
-    }
-  },
-  "src/webview/graph/widgets/settings/settingsWidget.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  }
+	"scripts/dev/install.mjs": {
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"scripts/dev/loadHost.mjs": {
+		"no-unused-vars": {
+			"count": 1
+		}
+	},
+	"scripts/dev/theme-audit/pages-compare.mjs": {
+		"no-unused-vars": {
+			"count": 1
+		}
+	},
+	"src/extension/git/process/askpass/askpassMain.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension/automation/catalog/menusCommit.ts": {
+		"indent": {
+			"count": 11
+		}
+	},
+	"src/extension/automation/catalog/menusVscode.ts": {
+		"indent": {
+			"count": 48
+		}
+	},
+	"src/extension/automation/catalogConsistency.test.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 9
+		}
+	},
+	"src/extension/automation/fixture.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/extension/automation/hostBridge.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 9
+		}
+	},
+	"src/extension/automation/reportView.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		}
+	},
+	"src/extension/automation/server.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 6
+		},
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/extension/automation/suiteRunner.ts": {
+		"max-lines": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension/main.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 6
+		}
+	},
+	"src/extension/commands/automation.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		}
+	},
+	"src/extension/commands/codeReviews.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 7
+		}
+	},
+	"src/extension/commands/commits.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 3
+		}
+	},
+	"src/extension/commands/context.ts": {
+		"no-restricted-syntax": {
+			"count": 1
+		}
+	},
+	"src/extension/commands/gerrit.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 11
+		}
+	},
+	"src/extension/commands/misc.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 5
+		}
+	},
+	"src/extension/commands/repositories.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 8
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension/commands/sourceControl.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 7
+		}
+	},
+	"src/extension/commands/view.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 3
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension/git/read/cli/files.ts": {
+		"@typescript-eslint/no-misused-promises": {
+			"count": 1
+		}
+	},
+	"src/extension/git/read/gitReader.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/extension/graphView/commitLoader.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/extension/graphView/globalSettings.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 8
+		},
+		"no-restricted-syntax": {
+			"count": 2
+		}
+	},
+	"src/extension/graphView/handlers/loading.test.ts": {
+		"@typescript-eslint/no-this-alias": {
+			"count": 1
+		}
+	},
+	"src/extension/graphView/panel.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 2
+		},
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/extension/graphView/panelContext.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 3
+		},
+		"@typescript-eslint/no-misused-promises": {
+			"count": 2
+		}
+	},
+	"src/extension/integrations/avatars/avatarManager.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 2
+		},
+		"@typescript-eslint/no-floating-promises": {
+			"count": 8
+		},
+		"@typescript-eslint/no-misused-promises": {
+			"count": 2
+		},
+		"prefer-const": {
+			"count": 9
+		}
+	},
+	"src/extension/integrations/avatars/avatarQueue.ts": {
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension/integrations/gerrit/gerritProtocol.test.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 2
+		}
+	},
+	"src/extension/integrations/pullRequests.test.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 2
+		}
+	},
+	"src/extension/integrations/pullRequests.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 7
+		},
+		"indent": {
+			"count": 5
+		}
+	},
+	"src/extension/platform/config.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 7
+		},
+		"max-lines": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 12
+		}
+	},
+	"src/extension/platform/storage.ts": {
+		"max-lines": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 9
+		}
+	},
+	"src/extension/repos/repoConfigFile.ts": {
+		"@typescript-eslint/no-namespace": {
+			"count": 1
+		}
+	},
+	"src/extension/repos/repoDiscovery.ts": {
+		"@typescript-eslint/no-misused-promises": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 5
+		}
+	},
+	"src/extension/repos/repoManager.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 7
+		},
+		"@typescript-eslint/no-misused-promises": {
+			"count": 1
+		},
+		"max-lines": {
+			"count": 1
+		},
+		"no-restricted-syntax": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 13
+		}
+	},
+	"src/extension/views/binaryCompare/hexDiffSources.ts": {
+		"@typescript-eslint/no-unused-expressions": {
+			"count": 3
+		}
+	},
+	"src/extension/views/binaryCompare/viewController.ts": {
+		"indent": {
+			"count": 1
+		}
+	},
+	"src/extension/platform/actions.ts": {
+		"prefer-const": {
+			"count": 5
+		}
+	},
+	"src/shared/util/bufferedQueue.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		}
+	},
+	"src/extension/git/process/childProcess.ts": {
+		"prefer-const": {
+			"count": 4
+		}
+	},
+	"src/extension/git/executable/findGit.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 1
+		},
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 2
+		}
+	},
+	"src/extension/platform/paths.ts": {
+		"prefer-const": {
+			"count": 9
+		}
+	},
+	"src/webview/binaryCompare/hexView.ts": {
+		"@typescript-eslint/no-this-alias": {
+			"count": 1
+		}
+	},
+	"src/webview/binaryCompare/imageView.test.ts": {
+		"@typescript-eslint/no-this-alias": {
+			"count": 1
+		}
+	},
+	"src/webview/comparison/model.ts": {
+		"indent": {
+			"count": 1
+		}
+	},
+	"src/webview/graph/actions/contextMenuActions.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/webview/graph/commitDetails/commitDetails.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/webview/graph/loading/repoLoader.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/webview/graph/render/commitTable.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/webview/graph/text/textFormatter.ts": {
+		"prefer-const": {
+			"count": 3
+		}
+	},
+	"src/webview/graph/widgets/settings/settingsWidget.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	}
 }
