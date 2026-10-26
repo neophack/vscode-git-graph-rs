@@ -80,9 +80,8 @@ jobs:
           npm install --no-save playwright
           npx playwright install --with-deps chromium
 
-      - name: Build the PR tree (out/, release addon, production dist, vendor libs)
+      - name: Build the PR tree (release addon, production dist, vendor libs)
         run: |
-          npm run build:ts
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js
@@ -93,7 +92,6 @@ jobs:
         run: |
           npm ci
           npm install --no-save playwright
-          npm run build:ts
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js

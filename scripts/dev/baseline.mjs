@@ -451,19 +451,18 @@ ${p5Rows.join('\n')}
 
 
 	const benchNote = addons.length > 0
-		? `A prebuilt engine binary exists (${addons.map((addon) => `native/${addon.platform}/git-graph.node`).join(', ')}); \`npm run bench\` was not run by the generator — run \`npm run build:ts && node scripts/bench.mjs <repo-path> --commits 200 --runs 5\` and record the medians here.`
-		: `\`bench.mjs\` first-paint numbers: **not measured here** — no prebuilt engine binary exists in this
-worktree (\`native/<platform>/*.node\` is gitignored and building one needs cargo), and \`bench.mjs\`
-also requires the \`out/\` tree it imports. Reproduce with:
+		? `A prebuilt engine binary exists (${addons.map((addon) => `native/${addon.platform}/git-graph.node`).join(', ')}); the first-paint gates were not run by the generator — run \`npm run perf\` (\`test/perf/\`) and record the medians here.`
+		: `First-paint numbers: **not measured here** — no prebuilt engine binary exists in this
+worktree (\`native/<platform>/*.node\` is gitignored and building one needs cargo). Reproduce with:
 
 \`\`\`bash
-npm run build            # cargo addon + production dist + the out/ tree bench imports
-node scripts/bench.mjs <repo-path> --commits 200 --runs 5
+npm run build            # cargo addon + production dist
+npm run perf             # the P2/P3 first-paint gates under test/perf/
 \`\`\`
 
 The one first-paint measurement recorded in the repository today (v1.0 code, this repository's
 first page of 200 commits, median of 5): engine **12.6 ms** vs git CLI **205.3 ms** — measured
-with \`bench.mjs\` and recorded in \`docs/REFACTOR-PLAN.md\` §0.7. Re-measuring it on the current
+with the v1.0 bench and recorded in \`docs/REFACTOR-PLAN.md\` §0.7. Re-measuring it on the current
 tree is part of the P2 harness (\`test/perf/\`).`;
 
 	parts.push(`## Bench first-paint

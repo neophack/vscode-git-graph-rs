@@ -25,14 +25,14 @@ import * as cp from 'child_process';
 import { describe, expect, it } from 'vitest';
 
 import { REQUEST_COMMANDS } from '../../../src/shared/protocol/graphView';
-import type { ResponseMessage } from '../../../src/types';
+import type { ResponseMessage } from '../../../src/shared/protocol/messages';
 import { GitProcess } from '../../../src/extension/git/process/gitProcess';
 import { GitWriter } from '../../../src/extension/git/write/gitWriter';
 import type { HandlerContext } from '../../../src/extension/graphView/handlers/context';
 import type { ProductionGitRepository } from '../../../src/extension/git/gitRepository';
 import type { GitRunnerPort } from '../../../src/extension/graphView/gitRunner';
 import { dispatchRequest, isMutatingCommand } from '../../../src/extension/graphView/handlers/index';
-import { SquashMessageFormat, TagType } from '../../../src/types';
+import { SquashMessageFormat, TagType } from '../../../src/shared/model/webview';
 
 /** Deterministic 32-bit LCG, so a fuzz failure reproduces from the seed in the test name. */
 function lcg(seed: number): () => number {

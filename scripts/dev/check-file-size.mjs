@@ -68,7 +68,7 @@ for (const file of Object.keys(KNOWN)) {
 const GROWTH_ALLOWANCE = 1.02;
 const SIZE_BASELINES = {
 	'git-graph-rs-*.vsix': 3043328,
-	'native/win32-x64-msvc/git-graph.node': 5948416
+	'native/win32-x64-msvc/git-graph.node': 5683200
 };
 
 /**

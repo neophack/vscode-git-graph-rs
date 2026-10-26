@@ -51,8 +51,8 @@
  *
  * After the webview build, the ES2018 compatibility gate (scripts/build/compat.mjs) scans the
  * emitted artifacts and fails the build on a violation; the es-check CLI (task 1.8) then
- * re-proves the same floor with an independent parser. Type checking stays with the tsc
- * pipelines (`build:ts`, the webview build's own check): esbuild only strips types.
+ * re-proves the same floor with an independent parser. Type checking stays with
+ * `npm run typecheck` (the tsc projects): esbuild only strips types.
  */
 
 import { spawnSync } from 'node:child_process';

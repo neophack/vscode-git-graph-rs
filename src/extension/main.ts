@@ -27,6 +27,7 @@ import type { GitStreamSpawner } from './views/binaryCompare/hexDiff';
 import { t } from './platform/i18n';
 import { TextMessageKey } from '../shared/i18n';
 import { Logger } from './platform/logger';
+import { mark, MARK, setEnabled } from '../shared/perf/trace';
 import { RepoManager } from './repos/repoManager';
 import { createPrewarmController } from './repos/prewarm';
 import type { PrewarmReader } from './repos/prewarm';
@@ -64,6 +65,8 @@ import { EventEmitter } from '../shared/util/event';
 export async function activate(context: vscode.ExtensionContext) {
 	const logger = new Logger(path.join(context.globalStoragePath, 'git-graph-rs.log'));
 	logger.setEnabled(getConfig().enableLog);
+	setEnabled(getConfig().enableLog);
+	mark(MARK.activation);
 	logger.log('Starting Git Graph ...');
 
 	const gitExecutableEmitter = new EventEmitter<LegacyGitExecutable | null>();
