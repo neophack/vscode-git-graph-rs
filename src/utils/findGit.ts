@@ -6,8 +6,8 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from '../config';
-import type { ExtensionState } from '../extensionState';
+import { getConfig } from '../extension/platform/config';
+import type { ExtensionState } from '../extension/platform/storage';
 import { t } from '../i18n';
 import { resolveSpawnOutput } from './childProcess';
 

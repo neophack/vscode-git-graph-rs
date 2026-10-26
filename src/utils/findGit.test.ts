@@ -29,7 +29,7 @@ const vscodeMock = vi.hoisted(() => {
 
 vi.mock('vscode', () => vscodeMock);
 
-import { ExtensionState } from '../extensionState';
+import { ExtensionState } from '../extension/platform/storage';
 import { findGit, getGitExecutable, getGitExecutableFromPaths } from './findGit';
 
 const noSuchGit = path.join(os.tmpdir(), 'gg-no-such-git-' + process.pid);

@@ -5,7 +5,7 @@ import { QuickPickItemLike, UiPort } from '../../extension/platform/uiPort';
 import { getPathFromUri, getRepoName, isPathInWorkspace } from '../../utils/paths';
 import { getSortedRepositoryPaths } from '../../utils/repo';
 import { unableToFindGitMsg } from '../../utils/findGit';
-import { getConfig } from '../../config';
+import { getConfig } from '../platform/config';
 import type { CommandHost } from './context';
 
 /**

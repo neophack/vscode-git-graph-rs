@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { GitGraphView } from '../graphView/panel';
 import { t } from '../../i18n';
-import { getConfig } from '../../config';
+import { getConfig } from '../platform/config';
 import { showErrorMessage, uiPort } from '../../utils/actions';
 import { UiPort } from '../../extension/platform/uiPort';
 import { getRepoName, getPathFromStr, getPathFromUri, resolveToSymbolicPath } from '../../utils/paths';

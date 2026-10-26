@@ -8,7 +8,7 @@
  * drives the Git Graph View webview), and is read at call time so a configuration change applies
  * to every message shown afterwards.
  */
-import { getConfig } from './config';
+import { getConfig } from './extension/platform/config';
 import { STRINGS_EN, STRINGS_ZH_CN, TextMessageKey } from './shared/i18n';
 import { substitutePlaceholders } from './shared/i18n';
 

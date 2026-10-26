@@ -3,9 +3,9 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConfig } from '../config';
+import { getConfig } from '../extension/platform/config';
 import { archive as archiveOp, WriteOp } from '../extension/git/write/ops/index';
-import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
+import { DiffSide, encodeDiffDocUri } from '../extension/views/diffDocProvider';
 import { Clipboard } from '../extension/platform/clipboard';
 import { Notifications, MessageChoice } from '../extension/platform/notifications';
 import {

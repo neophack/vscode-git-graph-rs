@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { Avatar, AvatarCache } from '../../avatarManager';
+import { Avatar, AvatarCache } from '../integrations/avatars/avatarManager';
 import { t } from '../../i18n';
 import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from '../../types';
 import { GitExecutable } from '../../utils/findGit';

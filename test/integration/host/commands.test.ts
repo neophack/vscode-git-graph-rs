@@ -37,9 +37,9 @@ vi.mock('../../../src/extension/graphView/panel', () => ({
 	GitGraphView: { createOrShow: (...args: unknown[]) => { vs.viewCalls.push(args); } }
 }));
 
-import { CommandManager } from '../../../src/commands';
+import { CommandManager } from '../../../src/extension/commands';
 import { t } from '../../../src/i18n';
-import { encodeDiffDocUri } from '../../../src/diffDocProvider';
+import { encodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
 import { EventEmitter } from '../../../src/utils/event';
 import type { VscodeStubState } from '../../support/fakeVscode';
 

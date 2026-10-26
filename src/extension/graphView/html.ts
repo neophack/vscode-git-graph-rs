@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { Uri } from 'vscode';
 import { describeCapabilities } from '../git/read/backendIndex';
 import { hasEngineForPlatform } from '../git/read/addonLoader';
-import { getConfig } from '../../config';
+import { getConfig } from '../platform/config';
 import { t } from '../../i18n';
 import type {
 	GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewInitialState, GitGraphViewSnapshot,

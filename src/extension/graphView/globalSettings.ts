@@ -4,9 +4,9 @@ import { GitConfigKey } from '../git/write/ops/config';
 import { setConfigValue, unsetConfigValue } from '../git/write/ops/config';
 import { GitConfigLocation } from '../../types';
 import type { CommitAuthor, ErrorInfo } from '../../types';
-import { getConfig } from '../../config';
+import { getConfig } from '../platform/config';
 import { t } from '../../i18n';
-import type { Logger } from '../../logger';
+import type { Logger } from '../platform/logger';
 
 /**
  * The global (User) settings the graph view's Settings Widget may write (REFACTOR-PLAN task 4.4),

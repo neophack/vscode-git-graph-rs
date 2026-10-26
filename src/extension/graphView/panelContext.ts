@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import type { AvatarManager } from '../../avatarManager';
-import type { ExtensionState } from '../../extensionState';
-import { getConfig } from '../../config';
+import type { AvatarManager } from '../integrations/avatars/avatarManager';
+import type { ExtensionState } from '../platform/storage';
+import { getConfig } from '../platform/config';
 import { t } from '../../i18n';
-import type { Logger } from '../../logger';
+import type { Logger } from '../platform/logger';
 import { unableToFindGitMsg } from '../../utils/findGit';
 import { detectTerminalShellKind, openGitTerminal, quoteForShell } from '../../utils/childProcess';
 import {

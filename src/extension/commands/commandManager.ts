@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { AvatarManager } from '../../avatarManager';
+import { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
-import { ExtensionState } from '../../extensionState';
+import { ExtensionState } from '../platform/storage';
 import { isZhCn } from '../../i18n';
-import { Logger } from '../../logger';
+import { Logger } from '../platform/logger';
 import { RepoManager } from '../repos/repoManager';
 import { Disposable } from '../../utils/disposable';
 import { GgEvent } from '../../utils/event';

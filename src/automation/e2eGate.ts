@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { Logger } from '../logger';
+import { Logger } from '../extension/platform/logger';
 import { HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
 

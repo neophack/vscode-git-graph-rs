@@ -95,7 +95,7 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 import type { WriteOp } from '../extension/git/write/ops/index';
-import { decodeDiffDocUri } from '../diffDocProvider';
+import { decodeDiffDocUri } from '../extension/views/diffDocProvider';
 import { t } from '../i18n';
 import { GitFileStatus, PullRequestProvider } from '../types';
 import { archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, openExtensionSettings, openExternalUrl, openFile, resolveDiffFromHash, showErrorMessage, showInformationMessage, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './actions';

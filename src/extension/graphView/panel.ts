@@ -1,12 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { AvatarManager } from '../../avatarManager';
+import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import { deliverAutomationHostMessage, deliverAutomationShimResult, setLiveGraphView } from '../../automation/graphViewPort';
-import { getConfig } from '../../config';
-import type { ExtensionState } from '../../extensionState';
+import { getConfig } from '../platform/config';
+import type { ExtensionState } from '../platform/storage';
 import { t } from '../../i18n';
 import { TextMessageKey } from '../../shared/i18n';
-import type { Logger } from '../../logger';
+import type { Logger } from '../platform/logger';
 import { PullRequestDataSource } from '../integrations/pullRequests';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { RepoChangeEvent, RepoManager } from '../repos/repoManager';

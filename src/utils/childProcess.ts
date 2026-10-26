@@ -4,7 +4,7 @@
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConfig } from '../config';
+import { getConfig } from '../extension/platform/config';
 import { Terminals } from '../extension/platform/terminal';
 import { t } from '../i18n';
 

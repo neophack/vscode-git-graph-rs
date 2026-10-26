@@ -1,5 +1,5 @@
 import { performance } from 'perf_hooks';
-import { Logger } from '../logger';
+import { Logger } from '../extension/platform/logger';
 import { RequestMessage, ResponseMessage } from '../types';
 import { AutomationAction, AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
 import { HostBridge, ShimResult } from './hostBridge';

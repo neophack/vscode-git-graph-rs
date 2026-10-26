@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, it, vi } from 'vitest';
 import { vscodeState } from '../../support/vscodeAlias';
 import { vscodeMockOf } from '../../support/fakeVscode';
-import { getConfig } from '../../../src/config';
+import { getConfig } from '../../../src/extension/platform/config';
 import { activate } from '../../../src/extension';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });

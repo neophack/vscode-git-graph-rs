@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import { AvatarManager } from '../../avatarManager';
+import { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { GerritDataSource } from '../integrations/gerrit/gerrit';
 import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
 import type { ProductionGitRepository } from '../git/gitRepository';
-import { ExtensionState } from '../../extensionState';
-import { Logger } from '../../logger';
+import { ExtensionState } from '../platform/storage';
+import { Logger } from '../platform/logger';
 import { RepoManager } from '../repos/repoManager';
 import { t } from '../../i18n';
-import { getConfig } from '../../config';
+import { getConfig } from '../platform/config';
 import { GitExecutable } from '../../utils/findGit';
 import { getSortedRepositoryPaths } from '../../utils/repo';
 import { getPathFromUri, getRepoName } from '../../utils/paths';

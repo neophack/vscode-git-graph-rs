@@ -1,7 +1,7 @@
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { t } from '../../i18n';
-import { DiffDocProvider, decodeDiffDocUri } from '../../diffDocProvider';
+import { DiffDocProvider, decodeDiffDocUri } from '../views/diffDocProvider';
 import { copyToClipboard, openFile as openFileInEditor, showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
 import { UiPort } from '../../extension/platform/uiPort';
 import { getExtensionVersion } from '../../utils/format';

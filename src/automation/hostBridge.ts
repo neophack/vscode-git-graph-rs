@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CommandStep } from './catalog';
-import { DiffSide, encodeDiffDocUri } from '../diffDocProvider';
+import { DiffSide, encodeDiffDocUri } from '../extension/views/diffDocProvider';
 import { GraphViewState, graphViewPort } from './graphViewPort';
 import { GitFileStatus } from '../types/git';
 import { RequestMessage, ResponseMessage } from '../types';

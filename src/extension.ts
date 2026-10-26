@@ -2,11 +2,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { hasEngineForPlatform, isAddonAvailable, platformKey } from './extension/git/read/addonLoader';
 import { AskpassManager } from './askpass/askpassManager';
-import { AvatarManager } from './avatarManager';
-import { CommandManager } from './commands';
-import { getConfig } from './config';
-import { DiffDocProvider } from './diffDocProvider';
-import { ExtensionState } from './extensionState';
+import { AvatarManager } from './extension/integrations/avatars/avatarManager';
+import { CommandManager } from './extension/commands';
+import { getConfig } from './extension/platform/config';
+import { DiffDocProvider } from './extension/views/diffDocProvider';
+import { ExtensionState } from './extension/platform/storage';
 import { GitGraphView } from './extension/graphView/panel';
 import { createGitRunner } from './extension/graphView/gitRunner';
 import type { LegacyViewPort } from './extension/graphView/gitRunner';
@@ -24,13 +24,13 @@ import { BinaryCompareView } from './extension/views/binaryCompare/viewControlle
 import type { GitStreamSpawner } from './extension/views/binaryCompare/hexDiff';
 import { t } from './i18n';
 import { TextMessageKey } from './shared/i18n';
-import { Logger } from './logger';
+import { Logger } from './extension/platform/logger';
 import { RepoManager } from './extension/repos/repoManager';
 import { createPrewarmController } from './extension/repos/prewarm';
 import type { PrewarmReader } from './extension/repos/prewarm';
 import { hostScheduler } from './extension/graphView/scheduler';
 import { takeSnapshot } from './extension/platform/config';
-import { StatusBarItem } from './statusBarItem';
+import { StatusBarItem } from './extension/statusBar';
 import {
 	GitExecutable as LegacyGitExecutable,
 	findGit,

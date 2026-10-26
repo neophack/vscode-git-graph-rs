@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { GitGraphView } from '../graphView/panel';
 import { t } from '../../i18n';
-import { CodeReviewData, CodeReviews } from '../../extensionState';
+import { CodeReviewData, CodeReviews } from '../platform/storage';
 import { showErrorMessage, showInformationMessage, uiPort } from '../../utils/actions';
 import { UiPort } from '../../extension/platform/uiPort';
 import { abbrevCommit } from '../../utils/git';

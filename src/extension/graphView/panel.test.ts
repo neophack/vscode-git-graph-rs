@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AvatarManager } from '../../avatarManager';
-import type { ExtensionState } from '../../extensionState';
-import type { Logger } from '../../logger';
+import type { AvatarManager } from '../integrations/avatars/avatarManager';
+import type { ExtensionState } from '../platform/storage';
+import type { Logger } from '../platform/logger';
 import type { GitCommitData, GitRepoInfo } from '../git/read/types';
 import type { GitGraphViewSnapshot, RequestMessage, ResponseMessage } from '../../types';
 import { setLiveGraphView } from '../../automation/graphViewPort';

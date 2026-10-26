@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Logger } from '../logger';
+import { Logger } from '../extension/platform/logger';
 import { AutomationAction, AutomationMode, CATALOG } from './catalog';
 import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, git, seedEmptyRepo, seedRepo } from './fixture';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
