@@ -20,12 +20,20 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const MAX_LINES = 600;
 const KNOWN = {};
 
-const listed = spawnSync('git', ['ls-files', '--', 'native/*.rs'], { cwd: root, encoding: 'utf8' });
-if (listed.status !== 0) {
-	process.stderr.write(listed.stderr);
-	process.exit(1);
+// Tracked AND untracked-but-not-ignored files: a brand-new file is exactly when the gate
+// must speak (an uncommitted 700-line file slipped through while only ls-files fed the list).
+const gitLists = [
+	spawnSync('git', ['ls-files', '--', 'native/*.rs'], { cwd: root, encoding: 'utf8' }),
+	spawnSync('git', ['ls-files', '--others', '--exclude-standard', '--', 'native/*.rs'], { cwd: root, encoding: 'utf8' })
+];
+for (const listed of gitLists) {
+	if (listed.status !== 0) {
+		process.stderr.write(listed.stderr);
+		process.exit(1);
+	}
 }
-const files = listed.stdout.split('\n').filter((file) => file !== '' && !file.startsWith('native/core/tests/'));
+const files = [...new Set(gitLists.flatMap((listed) => listed.stdout.split('\n')))]
+	.filter((file) => file !== '' && !file.startsWith('native/core/tests/'));
 
 const problems = [];
 for (const file of files) {
