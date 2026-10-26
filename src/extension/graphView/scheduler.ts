@@ -110,7 +110,13 @@ export class HostScheduler {
 		this.interactiveInFlight++;
 		this.yieldBackground();
 		job.state = 'running';
-		return task(job.controller.signal);
+		try {
+			return task(job.controller.signal);
+		} catch (error) {
+			// A task that throws synchronously must still flow through the job's settle bookkeeping
+			// below (the increment above would otherwise leak and park the background lane forever).
+			return Promise.reject(error);
+		}
 	}
 
 	/** Queue a background job; it runs once the scheduler pumps it (never while interactive work is in flight). */
@@ -153,9 +159,18 @@ export class HostScheduler {
 
 	/** Record a job's completion and free its slot (the pump resumes the background queue). */
 	private settle(job: ScheduledJob): void {
-		if (job.state === 'settled') return;
-		job.state = 'settled';
-		if (this.active.get(job.kind) === job) this.active.delete(job.kind);
+		// The bookkeeping runs even for an ABANDONED job: abandon() marks the state settled and
+		// rejects the caller-facing promise, and this settle (wired to that promise) then arrives
+		// with the state already settled. Returning early there — the former shape — leaked the
+		// slot bookkeeping of every superseded interactive job (interactiveInFlight crept upward,
+		// and the background lane, the change poll included, parked forever after the first leak:
+		// watcher-missed repository changes stopped appearing in the view). The state guard only
+		// keeps the map/slot transitions idempotent; the counters are balanced by job identity.
+		const firstSettle = job.state !== 'settled';
+		if (firstSettle) {
+			job.state = 'settled';
+			if (this.active.get(job.kind) === job) this.active.delete(job.kind);
+		}
 		if (this.runningBackground === job) {
 			this.runningBackground = null;
 			this.pump();

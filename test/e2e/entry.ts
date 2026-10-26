@@ -31,7 +31,12 @@ const BOOTSTRAP_ACTION = 'control-bar/refresh';
 export async function run(): Promise<void> {
 	const options = readOptions();
 	const resultsDir = requiredEnv(E2E_RESULTS_DIR_ENV);
-	const workspace = requiredEnv(E2E_WORKSPACE_ENV);
+	// Normalize the workspace path (fs.realpathSync.native resolves the 8.3 short names Windows
+	// hands out when TMP is long — e.g. C:\Users\PENGHO~1\...). The extension host's repo registry
+	// holds the long form, and every path comparison in this entry and the suite runner is textual:
+	// comparing the short form against the long one never matches (the first run on such a machine
+	// timed out at exactly that, "waiting for the view to load", for two minutes).
+	const workspace = fs.realpathSync.native(requiredEnv(E2E_WORKSPACE_ENV));
 	fs.mkdirSync(resultsDir, { recursive: true });
 	const startedAt = new Date().toISOString();
 	const startedMs = Date.now();
@@ -54,6 +59,10 @@ export async function run(): Promise<void> {
 	if (legacyBatch.length > 0) {
 		const gitBefore = await safeGitState(workspace);
 		const report = await runLegacyBatch(legacyBatch, workspace, options);
+		// The raw suite report (both phases' per-action records incl. the write-suite reseed/cleanup
+		// pseudo-entries, which no scenario record carries): the first artifact to read when the
+		// scenario mapping reports "the catalog never ran".
+		fs.writeFileSync(path.join(resultsDir, 'suite-report.json'), JSON.stringify(report, null, '\t') + '\n');
 		const indexed = runsById(report);
 		const synthetic = legacyBatch.find((scenario) => scenario.id.startsWith('legacy-suite/'));
 		for (const scenario of legacyBatch) {

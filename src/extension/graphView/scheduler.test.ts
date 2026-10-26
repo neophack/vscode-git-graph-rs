@@ -152,4 +152,19 @@ describe('HostScheduler same-kind supersession', () => {
 		// ~1.5x a single request (the constant slack absorbs timer coalescing under load)
 		expect(duration).toBeLessThan(singleDuration * 1.5 + 100);
 	});
+
+	it('a superseded interactive job does not leak its slot: background work still runs afterwards', async () => {
+		// The regression this pins: settle() used to early-return for abandoned jobs, so every
+		// superseded interactive job left interactiveInFlight permanently raised — and the
+		// background lane (the change poll's signature read above all) never ran again.
+		const scheduler = new HostScheduler();
+		// Two same-kind interactive jobs: the first is superseded while running.
+		const first = scheduler.run('refresh:/repo', 'interactive', cancellableTask(30));
+		await delay(2);
+		const second = scheduler.run('refresh:/repo', 'interactive', () => Promise.resolve('second'));
+		await expect(first).rejects.toBeInstanceOf(JobAbandonedError);
+		await expect(second).resolves.toBe('second');
+		// The background lane must still run: the poll's shape, one background read afterwards.
+		await expect(scheduler.run('poll:/repo', 'background', () => Promise.resolve('signature'))).resolves.toBe('signature');
+	});
 });

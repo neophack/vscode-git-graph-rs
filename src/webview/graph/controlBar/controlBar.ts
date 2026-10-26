@@ -168,17 +168,21 @@ export class ControlBar {
 		this.refreshBtnElem.setAttribute('role', 'button');
 		makeKeyboardActivatable(this.refreshBtnElem);
 		this.refreshBtnElem.addEventListener('click', () => {
-			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
-				// The hard refresh below clears the table (the scroll height collapses with it, and
-				// the browser clamps scrollTop to 0): remember where the user was reading, so the
-				// reloaded same-query list renders back around it instead of resetting to the top
-				ctx.viewport.capturePendingViewportAnchor();
-				// An explicit refresh must also re-query the pull request states: the requested
-				// repositories are a one-shot cache, so without dropping the entry a request merged
-				// since the view loaded keeps its badge showing "open" until the webview is reloaded.
-				ctx.loader.forgetPullRequestsRequest(store.currentRepo);
-				ctx.loader.refresh(true, true);
-			}
+			// No in-progress guard: a click while a (background or snapshot) refresh cycle is in
+			// flight must JOIN that cycle — requestLoadRepoInfoAndCommits re-requests the data and
+			// the hard flag escalates it — never be swallowed. The old "ignore the click while the
+			// button spins" guard silently dropped the click when a watcher/poll-driven refresh was
+			// mid-flight, and the clicker (a user, or an automation step waiting for the
+			// loadRepoInfo response that never comes) waited forever.
+			// The hard refresh below clears the table (the scroll height collapses with it, and
+			// the browser clamps scrollTop to 0): remember where the user was reading, so the
+			// reloaded same-query list renders back around it instead of resetting to the top
+			ctx.viewport.capturePendingViewportAnchor();
+			// An explicit refresh must also re-query the pull request states: the requested
+			// repositories are a one-shot cache, so without dropping the entry a request merged
+			// since the view loaded keeps its badge showing "open" until the webview is reloaded.
+			ctx.loader.forgetPullRequestsRequest(store.currentRepo);
+			ctx.loader.refresh(true, true);
 		});
 		this.renderRefreshButton();
 	}
