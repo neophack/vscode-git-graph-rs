@@ -7,7 +7,8 @@
 
 use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum ErrorKind {
@@ -30,9 +31,10 @@ pub enum ErrorKind {
     Internal,
 }
 
-#[derive(Debug, Clone, thiserror::Error, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[derive(Debug, Clone, thiserror::Error, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[error("{message}")]
-#[ts(rename = "EngineError")]
+#[cfg_attr(feature = "ts", ts(rename = "EngineError"))]
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,

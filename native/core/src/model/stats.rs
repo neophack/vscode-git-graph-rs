@@ -2,10 +2,12 @@
 //! and the engine's own open-repository diagnostics.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
 /// A distinct commit author, as the settings widget's author dropdown lists them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthor {
     pub name: String,
@@ -14,7 +16,8 @@ pub struct GitAuthor {
 
 /// Commit count for one author across all refs (branches, tags, remote-tracking, the stash),
 /// merge commits excluded - what the Statistics view's author table lists.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitAuthorStat {
     pub name: String,
@@ -25,7 +28,8 @@ pub struct GitAuthorStat {
 /// One non-zero cell of the Statistics view's commit-activity heatmap, binned by each commit's
 /// AUTHOR-LOCAL weekday/hour (not the viewer's timezone - see `stats::activity_heatmap`). Sparse:
 /// a cell with no commits is omitted rather than sent as an explicit zero.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitActivityCell {
     /// 0 = Sunday, matching JavaScript's `Date.getUTCDay()`.
@@ -35,7 +39,8 @@ pub struct GitActivityCell {
 }
 
 /// One hit of a commit-message search, as the Find dialogue lists them.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitHistoryMatch {
     pub hash: String,
@@ -48,7 +53,8 @@ pub struct GitHistoryMatch {
 /// The engine's open-repository diagnostics, as the "Show Diagnostics" command lists them: the
 /// repository handle cache behind every request. Handles are keyed by git directory, so one
 /// repository appears once however the host addresses it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitEngineStats {
     /// How many repository handles are open (the `openCount` method's answer).
@@ -58,7 +64,8 @@ pub struct GitEngineStats {
 }
 
 /// One open repository handle of [`GitEngineStats`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoHandleStats {
     /// The canonical `.git` directory that keys this handle.

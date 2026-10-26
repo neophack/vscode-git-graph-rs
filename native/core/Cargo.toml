@@ -11,7 +11,21 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The TypeScript type generation (`protocol::typescript`, the `#[derive(TS)]`s it walks) is the
+# only use of `ts-rs`, and nothing in the shipped addon generates types: the feature exists so
+# the release build never compiles `ts-rs` at all. The `protocol` test turns it on through the
+# self dev-dependency below, which is what `npm run check:generated` regenerates the checked-in
+# `src/shared/engine/protocol.ts` from.
+ts = ["dep:ts-rs"]
+
 [dependencies]
+# The feature set is audited against what the engine calls (optimization plan R6): every entry
+# below is load-bearing. In particular `parallel` is not about extra worker threads — it is what
+# makes gix's handle types `Send + Sync` (without it they hold `Rc`, not `Arc`), which the warm
+# handles in `repository::RepoManager` share across the AsyncTask threads; removing it fails to
+# compile. `dirwalk` + `status` + `index` back the working-tree status, `revision` the commit
+# walks, `blob-diff` the file diffs, `mailmap` the author statistics, `sha1` the object hash.
 gix = { version = "0.90", default-features = false, features = [
     "revision",
     "blob-diff",
@@ -29,13 +43,15 @@ thiserror.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-# The single dispatch surface's raw-byte read (`fileBytes`) answers base64, so binary content
-# crosses the JSON boundary without an encoding step on either side.
-base64 = "0.22"
-ts-rs = { version = "12", features = ["serde-json-impl"] }
+ts-rs = { version = "12", features = ["serde-json-impl"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+# A dev-dependency on this crate itself, with the feature the tests need: the `protocol` test
+# regenerates `src/shared/engine/protocol.ts`, which takes the `ts` feature's `ts-rs` derives.
+# Dev-dependencies never reach a (non-test) release build, so the addon still ships without
+# `ts-rs` compiled in.
+git-graph-core = { path = ".", features = ["ts"] }
 # Microbenchmarks of the read path (refactor plan, task 2.11). Only the bench harness itself:
 # no plotters, no rayon, so `cargo test` — which compiles the benches — stays light.
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }

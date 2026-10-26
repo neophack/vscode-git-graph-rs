@@ -1,12 +1,14 @@
 //! The commit model: the graph page's rows, their ref annotations, and the options a load takes.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
 /// The synthetic hash the view uses for the "Uncommitted Changes" row.
 pub const UNCOMMITTED: &str = "*";
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommit {
     pub hash: String,
@@ -23,14 +25,16 @@ pub struct GitCommit {
     pub stash: Option<GitCommitStash>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitTag {
     pub name: String,
     pub annotated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitRemote {
     pub name: String,
@@ -38,7 +42,8 @@ pub struct GitCommitRemote {
     pub remote: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitStash {
     pub selector: String,
@@ -58,7 +63,8 @@ pub struct CommitRecord {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitData {
     pub commits: Vec<GitCommit>,
@@ -74,7 +80,8 @@ pub struct GitCommitData {
 }
 
 /// The fields the Commit Comparison View describes a commit with.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitSummary {
     pub hash: String,
@@ -86,7 +93,8 @@ pub struct GitCommitSummary {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum CommitOrdering {
     #[default]
@@ -96,7 +104,8 @@ pub enum CommitOrdering {
 }
 
 /// Everything `loadCommits` needs, in the shape the TypeScript side sends it.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase", default)]
 pub struct LogOptions {
     /// The branch heads to show, or `None` to show all refs.

@@ -1,9 +1,11 @@
 //! The configuration model: the settings the graph reads, and the repository's remotes.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigSnapshot {
     pub remotes: Vec<RemoteConfig>,
@@ -14,7 +16,8 @@ pub struct ConfigSnapshot {
     pub diff_gui_tool: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConfig {
     pub name: String,

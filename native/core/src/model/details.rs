@@ -1,11 +1,13 @@
 //! The commit-details model: the full detail row, signatures, and annotated tag details.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
 use crate::model::files::GitFileChange;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 pub enum GitSignatureStatus {
     #[serde(rename = "G")]
     GoodAndValid,
@@ -23,7 +25,8 @@ pub enum GitSignatureStatus {
     Bad,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitSignature {
     pub key: String,
@@ -31,7 +34,8 @@ pub struct GitSignature {
     pub status: GitSignatureStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitDetails {
     pub hash: String,
@@ -52,7 +56,8 @@ pub struct GitCommitDetails {
 ///
 /// A lightweight tag has no tagger and no message of its own: the tagger fields are empty and the
 /// message is the tagged commit's, which is what `for-each-ref %(contents)` reports for one.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitTagDetails {
     /// The tag object for an annotated tag, the commit for a lightweight one.

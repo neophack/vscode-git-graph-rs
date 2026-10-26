@@ -1,10 +1,12 @@
 //! The Gerrit model: the review state of a change, as the badges and the review dialog consume it.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
 /// One review event parsed out of a `NoteDb` meta commit, in the shape the webview renders.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GerritChangeEvent {
     #[serde(rename = "type")]
@@ -24,7 +26,8 @@ pub struct GerritChangeEvent {
 }
 
 /// One label vote of a review event (e.g. `Code-Review +2`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GerritVote {
     pub name: String,
@@ -32,7 +35,8 @@ pub struct GerritVote {
 }
 
 /// The review state of one Gerrit change, as the badges and the review dialog consume it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GerritChangeState {
     pub change: u64,

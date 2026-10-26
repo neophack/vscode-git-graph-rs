@@ -41,9 +41,16 @@ inefficient_to_string = "warn"
 large_types_passed_by_value = "warn"
 doc_markdown = "warn"
 
+# The release profile is part of the R6 size budget (optimization plan §5). Measured on the
+# Windows dev machine (the win32-x64-msvc `.node`, 2026-10, with the R5 dependency surface):
+# thin LTO 5,982,720 B; fat LTO 5,683,200 B (-5.0%, landed); opt-level "z" + fat LTO
+# 5,221,888 B (-12.7% total) — not landed, because "z" trades runtime speed the engine's hot
+# loops need, and the plan holds opt-level changes for P1's measurements. `panic = "unwind"`
+# is load-bearing, not tunable: `protocol`'s `catch_unwind` is what keeps an engine panic from
+# taking down the host, and "abort" removes it.
 [profile.release]
 opt-level = "s"
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = "symbols"
 panic = "unwind"

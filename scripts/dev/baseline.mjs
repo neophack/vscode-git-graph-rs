@@ -221,17 +221,27 @@ function measureSizes() {
 	return { artifacts, vsixPath, vsixBytes, firstPaintJs, firstPaintCss };
 }
 
-/* ------------------------------------------------------------------ bench */
-
-/** A prebuilt engine binary anywhere under native/ or dist/ (gitignored, so worktree-local). */
-function findPrebuiltAddon() {
-	const candidates = [];
-	for (const directory of ['native', 'dist']) {
-		const full = path.join(root, directory);
-		if (fs.existsSync(full)) candidates.push(...walk(full, (file) => file.endsWith('.node')));
+/**
+ * The shipped binaries' sizes (P5 rows, optimization plan R6/V4): one `.node` per platform
+ * directory the worktree carries a build for, measured from disk. Only the host platform
+ * normally exists in a worktree (`npm run build:native:release` builds it); the rest come
+ * from CI's matrix, whose `cargo bloat` report and this document's 2% rule hold the budget.
+ */
+function measureAddonSizes() {
+	const nativeDir = path.join(root, 'native');
+	if (!fs.existsSync(nativeDir)) return [];
+	const rows = [];
+	for (const entry of fs.readdirSync(nativeDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+		if (!entry.isDirectory()) continue;
+		const addon = path.join(nativeDir, entry.name, 'git-graph.node');
+		if (fs.existsSync(addon)) rows.push({ platform: entry.name, bytes: fs.statSync(addon).size });
 	}
-	return candidates.map(toPosix);
+	return rows;
 }
+
+/** The P5 growth budget: sizes may grow at most 2% over this baseline without a decision. */
+const P5_GROWTH_ALLOWANCE = 0.02;
+const p5Budget = (bytes) => Math.ceil(bytes * (1 + P5_GROWTH_ALLOWANCE));
 
 /* ------------------------------------------------------------------ lint gates */
 
@@ -316,7 +326,7 @@ function build() {
 	const vitest = measureVitest();
 	const rust = measureRust();
 	const sizes = measureSizes();
-	const addons = findPrebuiltAddon();
+	const addons = measureAddonSizes();
 	const depcruise = measureDepcruise();
 	const eslint = measureEslint();
 	const largest = measureLargestFiles();
@@ -403,12 +413,45 @@ loaded by the comparison page, not the main view.
 | First-paint critical JS (minified, not gzipped) | ${formatBytes(sizes.firstPaintJs)} | ≤ 200 KB |
 | First-paint critical CSS (minified, not gzipped) | ${formatBytes(sizes.firstPaintCss)} | ≤ 60 KB |
 
-Both are over budget today — expected at this point in the plan; the slimming work is tasks 1.9
-(markdown-it off first paint) and 5.9 (first-paint splitting), gated by P5.
+First-paint JS ${sizes.firstPaintJs <= 200 * 1024 ? 'is within' : 'is over'} its 200 KB budget;
+first-paint CSS ${sizes.firstPaintCss <= 60 * 1024 ? 'is within' : 'is over'} its 60 KB budget.
+${sizes.firstPaintJs > 200 * 1024 || sizes.firstPaintCss > 60 * 1024
+		? 'The side over budget is what the first-paint splitting work (task 5.9), gated by P5, holds the line on.'
+		: 'Both hold the §3.8.1 line at this HEAD.'}
 `);
 
+	parts.push(`## P5 size budget (2% growth rule)
+
+The P5 ratchet (optimization plan §5 V4/R6): a shipped size below may grow at most **2%** over
+this baseline without a deliberate decision recorded next to the regeneration. The addon is the
+largest file in the VSIX by an order of magnitude, so its per-platform size is budgeted
+separately from the VSIX total; CI's \`cargo bloat --release --crates\` report (native-build.yml,
+non-blocking) is the evidence source when a budget is breached. A row here appears for every
+platform the tree being measured carries a build for — worktrees normally hold only the host
+platform (\`npm run build:native:release\`); CI's matrix covers the rest.
+`);
+
+	const p5Rows = [];
+	if (sizes.vsixBytes !== null) {
+		p5Rows.push(`| Universal VSIX (\`${sizes.vsixPath}\`) | ${formatBytes(sizes.vsixBytes)} | ≤ ${formatBytes(p5Budget(sizes.vsixBytes))} | \`npm run package\` |`);
+	} else {
+		p5Rows.push('| Universal VSIX | not measured (packaging failed) | — | `npm run package` |');
+	}
+	if (addons.length > 0) {
+		for (const addon of addons) {
+			p5Rows.push(`| Addon, \`${addon.platform}\` (\`native/${addon.platform}/git-graph.node\`) | ${formatBytes(addon.bytes)} | ≤ ${formatBytes(p5Budget(addon.bytes))} | \`npm run build:native:release\` (CI matrix for the rest) |`);
+		}
+	} else {
+		p5Rows.push('| Per-platform addon (`.node`) | not measured (no prebuilt addon in this tree) | — | `npm run build:native:release` |');
+	}
+	parts.push(`| Quantity | Baseline | Growth budget (+2%) | Measured by |
+|---|---|---|---|
+${p5Rows.join('\n')}
+`);
+
+
 	const benchNote = addons.length > 0
-		? `A prebuilt engine binary exists (${addons.join(', ')}); \`npm run bench\` was not run by the generator — run \`npm run build:ts && node scripts/bench.mjs <repo-path> --commits 200 --runs 5\` and record the medians here.`
+		? `A prebuilt engine binary exists (${addons.map((addon) => `native/${addon.platform}/git-graph.node`).join(', ')}); \`npm run bench\` was not run by the generator — run \`npm run build:ts && node scripts/bench.mjs <repo-path> --commits 200 --runs 5\` and record the medians here.`
 		: `\`bench.mjs\` first-paint numbers: **not measured here** — no prebuilt engine binary exists in this
 worktree (\`native/<platform>/*.node\` is gitignored and building one needs cargo), and \`bench.mjs\`
 also requires the \`out/\` tree it imports. Reproduce with:
@@ -435,8 +478,11 @@ ${benchNote}
 | dependency-cruiser | ${depcruise.violations} new violations (${depcruise.modules} modules, ${depcruise.dependencies} dependencies cruised); ${depcruise.knownIgnored} known violations ignored (baseline file: ${depcruise.baselineEntries} entries, ${depcruise.staleKnown} already stale — shrink-only regeneration pending) | \`npm run lint:deps\` |
 | ESLint (\`src\` + \`scripts\`) | ${eslint.problems} problems (${eslint.errors} errors, ${eslint.warnings} warnings), exit ${eslint.status} | \`npx eslint src scripts\` |
 
-Both gates exit 0 at this HEAD: the depcruise ratchet means any violation **not** in
-\`docs/depcruise-baseline.json\` fails \`npm run lint:deps\`, and ESLint reports warnings only.
+Both gates exit 0 as the generator runs them (the two tools invoked directly): the depcruise
+ratchet means any violation **not** in \`docs/depcruise-baseline.json\` fails \`npm run lint:deps\`,
+and ESLint reports warnings only. Note that \`npm run lint:deps\` itself also fails while the
+baseline file carries stale entries (${depcruise.staleKnown} at this HEAD) — its shrink-only
+regeneration is owed by whoever removed the last of those violations.
 `);
 
 	parts.push(`## Ten largest non-generated source files
@@ -488,6 +534,7 @@ ${repo.rows.map(([directory, count]) => `| ${directory}/ | ${count} |`).join('\n
 		firstPaintJs: sizes.firstPaintJs,
 		firstPaintCss: sizes.firstPaintCss,
 		vsix: sizes.vsixBytes,
+		addonNodes: Object.fromEntries(addons.map((addon) => [addon.platform, addon.bytes])),
 		depcruiseViolations: depcruise.violations,
 		eslintProblems: eslint.problems,
 		largestFile: largest[0]

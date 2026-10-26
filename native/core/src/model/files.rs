@@ -2,9 +2,11 @@
 //! working-tree status halves the uncommitted row is built from.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 pub enum GitFileStatus {
     #[serde(rename = "A")]
     Added,
@@ -18,7 +20,8 @@ pub enum GitFileStatus {
     Untracked,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitFileChange {
     pub old_file_path: String,
@@ -33,14 +36,16 @@ pub struct GitFileChange {
 
 /// The `+N/-M` line counts of one file, as `git diff --numstat` reports them. Both fields are
 /// `None` for a binary file.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitLineCounts {
     pub additions: Option<u32>,
     pub deletions: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct CommitFile {
     /// The file's text, or `None` when it is not valid UTF-8.
@@ -51,14 +56,15 @@ pub struct CommitFile {
 
 /// One path as the Source Control view lists it: the staged and unstaged halves of its change
 /// kept apart (git's two porcelain columns), in the lowercase status names that view speaks.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ScmChange {
     pub path: String,
     pub old_path: Option<String>,
-    #[ts(type = "string | null")]
+    #[cfg_attr(feature = "ts", ts(type = "string | null"))]
     pub staged: Option<&'static str>,
-    #[ts(type = "string | null")]
+    #[cfg_attr(feature = "ts", ts(type = "string | null"))]
     pub unstaged: Option<&'static str>,
     pub untracked: bool,
     /// The path is unmerged (a merge, rebase or cherry-pick stopped on it): the Source Control

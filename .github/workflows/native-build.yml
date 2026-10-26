@@ -168,6 +168,37 @@ jobs:
         run: node scripts/build/check-binary-compat.mjs native/${{ matrix.directory }}
         shell: bash
 
+      # R6 (optimization plan): a per-crate breakdown of the release addon's size, published as
+      # the P5 report's evidence. Non-blocking — it informs the size budget, it does not gate —
+      # and run once (on the linux-x64-gnu leg): the per-crate split is about the dependency
+      # graph, not the platform. Installed through the same pinned action + version pin as the
+      # other Rust tooling (S4). cargo bloat rebuilds the addon itself; the plain cargo build is
+      # fine here because this report does not ship.
+      - name: Install cargo-bloat
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-bloat@0.12.1
+
+      - name: Report the per-crate size breakdown (non-blocking)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        continue-on-error: true
+        run: |
+          cargo bloat --release --crates --manifest-path native/node/Cargo.toml | tee bloat-crates.txt
+          {
+            echo '### cargo bloat --release --crates (native/node)'
+            echo '```'
+            cat bloat-crates.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        with:
+          name: cargo-bloat-report
+          path: bloat-crates.txt
+          if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.directory }}

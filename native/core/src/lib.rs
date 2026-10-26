@@ -31,6 +31,12 @@ pub mod error;
 pub mod model;
 pub mod protocol;
 
+// The TypeScript generation behind `protocol::typescript`, compiled only under the `ts` feature
+// the `protocol` test enables: the release addon never generates types, so this module — and
+// `ts-rs` with it — stays out of the shipped binary entirely.
+#[cfg(feature = "ts")]
+mod typescript;
+
 pub(crate) mod cancel;
 pub(crate) mod read;
 pub(crate) mod repository;

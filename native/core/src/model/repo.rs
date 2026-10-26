@@ -1,11 +1,13 @@
 //! The repository-level model: the dropdown data, the stash list, and the combined view load.
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ts")]
 use ts_rs::TS;
 
 use crate::model::commits::GitCommitData;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepoInfo {
     pub branches: Vec<String>,
@@ -17,7 +19,8 @@ pub struct GitRepoInfo {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitStash {
     pub hash: String,
@@ -32,7 +35,8 @@ pub struct GitStash {
 
 /// Everything the view opens with, from one ref scan: the dropdown data and the first page.
 /// `loadRepoInfo` + `loadCommits` answer the same, in two calls and two scans.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GitViewData {
     pub info: GitRepoInfo,
