@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { loadOut, git, TIERS } from './env.mjs';
 
-/** Load the compiled modules the harness drives (build:ts output). */
+/** Load the modules the harness drives (the src tree, built on the fly by lib/env.mjs). */
 export function loadPipeline() {
 	return {
 		createBackend: loadOut('extension/git/read/backendIndex.js').createBackend,

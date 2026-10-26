@@ -156,7 +156,7 @@ describe('Logger (host-wired mode, absorbed from src/logger.ts)', () => {
 		expect(channel.lines).toEqual([]);
 	});
 
-	it('mirrors timestamped lines to the log file once enabled', () => {
+	it('mirrors timestamped lines to the log file once enabled', async () => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
 		const logFile = path.join(directory, 'git-graph-rs.log');
 		const logger = new Logger(logFile);
@@ -166,45 +166,51 @@ describe('Logger (host-wired mode, absorbed from src/logger.ts)', () => {
 
 		expect(logger.isEnabled()).toBe(true);
 		expect(logger.getLogFile()).toBe(logFile);
+		// The fresh-file setup is asynchronous (the mirror queue): wait for it before reading.
+		await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true));
 
 		logger.log('hello');
 		logger.logError('boom');
 
-		const contents = fs.readFileSync(logFile, 'utf8');
-		expect(contents).toContain('hello');
-		expect(contents).toContain('ERROR: boom');
-		expect(contents).not.toContain('while disabled');
-		// Every mirrored line is timestamped [YYYY-MM-DD HH:MM:SS.mmm]
-		expect(contents.match(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /gm)).toHaveLength(2);
+		await vi.waitFor(() => {
+			const contents = fs.readFileSync(logFile, 'utf8');
+			expect(contents).toContain('hello');
+			expect(contents).toContain('ERROR: boom');
+			expect(contents).not.toContain('while disabled');
+			// Every mirrored line is timestamped [YYYY-MM-DD HH:MM:SS.mmm]
+			expect(contents.match(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\] /gm)).toHaveLength(2);
+		});
 		expect(channel.lines).toHaveLength(2);
 	});
 
-	it('starts a fresh log file on every enable', () => {
+	it('starts a fresh log file on every enable', async () => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
 		const logFile = path.join(directory, 'git-graph-rs.log');
 		const logger = new Logger(logFile);
 
 		logger.setEnabled(true);
+		await vi.waitFor(() => expect(fs.existsSync(logFile)).toBe(true));
 		logger.log('first session');
+		await vi.waitFor(() => expect(fs.readFileSync(logFile, 'utf8')).toContain('first session'));
 		logger.setEnabled(false);
 		logger.log('while disabled');
 		logger.setEnabled(true);
-
-		const contents = fs.readFileSync(logFile, 'utf8');
-		expect(contents).not.toContain('first session');
-		expect(contents).not.toContain('while disabled');
+		// The truncation runs on the mirror queue: the previous session's line disappears then.
+		await vi.waitFor(() => expect(fs.readFileSync(logFile, 'utf8')).not.toContain('first session'));
+		expect(fs.readFileSync(logFile, 'utf8')).not.toContain('while disabled');
 		logger.log('second session');
-		expect(fs.readFileSync(logFile, 'utf8')).toContain('second session');
+		await vi.waitFor(() => expect(fs.readFileSync(logFile, 'utf8')).toContain('second session'));
 	});
 
-	it('falls back to the channel alone when the log file location is unusable', () => {
+	it('falls back to the channel alone when the log file location is unusable', async () => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
 		const blocker = path.join(directory, 'blocker');
 		fs.writeFileSync(blocker, 'a file, not a directory');
 		const logger = new Logger(path.join(blocker, 'nested', 'git-graph-rs.log'));
 
 		logger.setEnabled(true);
-		expect(logger.getLogFile()).toBeNull();
+		// The failed setup degrades the mirror asynchronously; the channel keeps working meanwhile.
+		await vi.waitFor(() => expect(logger.getLogFile()).toBeNull());
 
 		logger.log('still on the channel');
 		expect(channel.lines.some((line) => line.indexOf('still on the channel') > -1)).toBe(true);

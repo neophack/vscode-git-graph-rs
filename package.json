@@ -46,7 +46,6 @@
 		"build:native": "node scripts/build-addon.mjs",
 		"build:native:release": "node scripts/build-addon.mjs --release",
 		"build:dist": "node scripts/build/build.mjs",
-		"build:ts": "tsc -p src/tsconfig.json",
 		"compile-web": "node scripts/build/webview.mjs && node scripts/package-highlight.js",
 		"compile-web-debug": "node scripts/build/webview.mjs debug && node scripts/package-highlight.js debug",
 		"package": "node scripts/package-without-automation.mjs",
@@ -70,13 +69,9 @@
 		"check": "npm run typecheck && npm run lint:js && npm run lint:css && npm run lint:deps && npm run lint:size && npm run lint && npm run check:generated",
 		"baseline": "node scripts/dev/baseline.mjs"
 	},
-	"dependencies": {
-		"iconv-lite": "0.5.0"
-	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@napi-rs/cli": "^3.8.6",
-		"@types/iconv-lite": "^0.0.1",
 		"@types/jsdom": "^28.0.3",
 		"@types/node": "^22.0.0",
 		"@types/vscode": "1.38.0",

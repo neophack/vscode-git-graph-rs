@@ -257,6 +257,9 @@
 	"src/extension/views/binaryCompare/hexDiffSources.ts": {
 		"@typescript-eslint/no-unused-expressions": {
 			"count": 3
+		},
+		"n/no-sync": {
+			"count": 1
 		}
 	},
 	"src/extension/views/binaryCompare/viewController.ts": {
@@ -331,6 +334,121 @@
 		}
 	},
 	"src/webview/graph/widgets/settings/settingsWidget.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/askpass/askpassMain.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/automation/catalog/menusCommit.ts": {
+		"indent": {
+			"count": 11
+		}
+	},
+	"src/automation/catalog/menusVscode.ts": {
+		"indent": {
+			"count": 48
+		}
+	},
+	"src/automation/catalogConsistency.test.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 9
+		}
+	},
+	"src/automation/fixture.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/automation/hostBridge.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 9
+		}
+	},
+	"src/automation/reportView.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		}
+	},
+	"src/automation/server.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 6
+		},
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/automation/suiteRunner.ts": {
+		"max-lines": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 1
+		}
+	},
+	"src/extension.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 6
+		}
+	},
+	"src/extension/git/read/addonLoader.ts": {
+		"n/no-sync": {
+			"count": 3
+		}
+	},
+	"src/extension/graphView/html.ts": {
+		"n/no-sync": {
+			"count": 3
+		}
+	},
+	"src/extension/graphView/writeFlows.ts": {
+		"n/no-sync": {
+			"count": 5
+		}
+	},
+	"src/types/messages.ts": {
+		"max-lines": {
+			"count": 1
+		}
+	},
+	"src/utils/actions.ts": {
+		"prefer-const": {
+			"count": 5
+		}
+	},
+	"src/utils/bufferedQueue.ts": {
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		}
+	},
+	"src/utils/childProcess.ts": {
+		"prefer-const": {
+			"count": 4
+		}
+	},
+	"src/utils/findGit.ts": {
+		"@typescript-eslint/no-explicit-any": {
+			"count": 1
+		},
+		"@typescript-eslint/no-floating-promises": {
+			"count": 1
+		},
+		"prefer-const": {
+			"count": 2
+		}
+	},
+	"src/utils/paths.ts": {
+		"prefer-const": {
+			"count": 9
+		}
+	},
+	"src/webview/graph/loading/repoLoader.ts": {
 		"max-lines": {
 			"count": 1
 		}

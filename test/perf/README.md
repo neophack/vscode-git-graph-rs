@@ -9,7 +9,6 @@ cannot sandbox.
 Prerequisites (all three gates):
 
 ```bash
-npm run build:ts                       # the compiled out/ tree the harnesses drive
 node scripts/build-addon.mjs           # the engine addon (native/<platform>/git-graph.node)
 npm run build:dist -- --production     # dist/ + media/ (what P5 measures)
 node scripts/package-highlight.js   # media/vendor for P5
@@ -146,6 +145,6 @@ P5 (size) is deterministic and needs none of this.
 | `p3-webview.mjs` | the P3 page, fake host bridge and measurements |
 | `p5-size.mjs` | the P5 artifact weighing |
 | `lib/stats.mjs` | median / P95 / Mann-Whitney U (verified against scipy references) |
-| `lib/env.mjs` | paths, out-tree loading, results IO, CLI parsing, fixture tiers |
+| `lib/env.mjs` | paths, on-the-fly src loading (esbuild), results IO, CLI parsing, fixture tiers |
 | `lib/host-pipeline.mjs` | the fixture pair, backend pair, facade + CommitLoader wiring |
 | `results/` | output (gitignored): per-gate JSON, `baseline.json`, `perf-summary.md` |

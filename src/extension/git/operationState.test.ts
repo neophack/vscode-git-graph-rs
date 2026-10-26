@@ -14,8 +14,8 @@ const NONE = { type: null, conflictedFiles: [], progress: null };
 /** An env answering for one set of existing paths, integer files, and Git reads. */
 function envOf(existing: ReadonlyArray<string>, ints: { [file: string]: number }, reads: { [argv: string]: string | Error }): OperationStateEnv {
 	return {
-		exists: (file) => existing.includes(file),
-		readIntFile: (file) => (file in ints ? ints[file] : null),
+		exists: (file) => Promise.resolve(existing.includes(file)),
+		readIntFile: (file) => Promise.resolve(file in ints ? ints[file] : null),
 		runText: (argv) => {
 			const answer = reads[argv.join(' ')];
 			if (answer === undefined) return Promise.reject(new Error('unexpected argv: ' + argv.join(' ')));
@@ -127,15 +127,15 @@ describe('detectOperationState', () => {
 });
 
 describe('readRebaseProgress', () => {
-	const ints = (a: number, b: number) => ({ readIntFile: (file: string) => (file.endsWith('msgnum') || file.endsWith('next') ? a : b) });
+	const ints = (a: number, b: number) => ({ readIntFile: (file: string) => Promise.resolve(file.endsWith('msgnum') || file.endsWith('next') ? a : b) });
 
-	it('reads the pair when both are plain integers', () => {
-		expect(readRebaseProgress('d/msgnum', 'd/end', ints(2, 5))).toEqual({ step: 2, total: 5 });
+	it('reads the pair when both are plain integers', async () => {
+		await expect(readRebaseProgress('d/msgnum', 'd/end', ints(2, 5))).resolves.toEqual({ step: 2, total: 5 });
 	});
 
-	it('is null when either file is missing or not an integer', () => {
-		expect(readRebaseProgress('d/msgnum', 'd/end', { readIntFile: () => null })).toBeNull();
+	it('is null when either file is missing or not an integer', async () => {
+		await expect(readRebaseProgress('d/msgnum', 'd/end', { readIntFile: () => Promise.resolve(null) })).resolves.toBeNull();
 		// The env contract maps a non-integer file to null (as the real readIntFile does).
-		expect(readRebaseProgress('d/msgnum', 'd/end', { readIntFile: (file) => (file.endsWith('msgnum') ? 2 : null) })).toBeNull();
+		await expect(readRebaseProgress('d/msgnum', 'd/end', { readIntFile: (file) => Promise.resolve(file.endsWith('msgnum') ? 2 : null) })).resolves.toBeNull();
 	});
 });

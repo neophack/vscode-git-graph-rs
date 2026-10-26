@@ -5,7 +5,9 @@
  *
  * The environment (`exists`, `readIntFile`, `runText`) is injected, so the exact legacy sequence
  * — including the precedence of the state files and which failure resolves to "no operation in
- * progress" — is unit-testable without a repository.
+ * progress" — is unit-testable without a repository. Every member is asynchronous: the detection
+ * runs on the shared extension host, whose synchronous fs would stall every other extension in
+ * the window (OPTIMIZATION-PLAN A6).
  */
 
 import * as fs from 'fs';
@@ -18,10 +20,10 @@ export type RepoTextRunner = (argv: ReadonlyArray<string>, repo: string) => Prom
 
 /** The environment the detection runs against; the real one is `fs` plus a Git text runner. */
 export interface OperationStateEnv {
-	/** Whether a path exists (`fs.existsSync`). */
-	readonly exists: (file: string) => boolean;
+	/** Whether a path exists (`fs.promises.access`). */
+	readonly exists: (file: string) => Promise<boolean>;
 	/** Read a file holding one integer, or null when it is missing or not a plain integer. */
-	readonly readIntFile: (file: string) => number | null;
+	readonly readIntFile: (file: string) => Promise<number | null>;
 	/** Run a Git read, resolving its stdout; rejecting when it fails. */
 	readonly runText: (argv: ReadonlyArray<string>) => Promise<string>;
 }
@@ -34,10 +36,10 @@ export interface OperationStateEnv {
  */
 export function fsOperationStateEnv(repo: string, runText: RepoTextRunner): OperationStateEnv {
 	return {
-		exists: (file) => fs.existsSync(file),
-		readIntFile: (file) => {
+		exists: (file) => fs.promises.access(file).then(() => true, () => false),
+		readIntFile: async (file) => {
 			try {
-				const value = parseInt(fs.readFileSync(file).toString().trim(), 10);
+				const value = parseInt((await fs.promises.readFile(file)).toString().trim(), 10);
 				return isNaN(value) ? null : value;
 			} catch (_) {
 				return null;
@@ -74,17 +76,17 @@ export async function detectOperationState(repo: string, env: OperationStateEnv)
 
 		let type: GitOperationType | null = null;
 		let progress: { step: number, total: number } | null = null;
-		if (env.exists(path.join(gitDir, 'rebase-merge'))) {
+		if (await env.exists(path.join(gitDir, 'rebase-merge'))) {
 			type = GitOperationType.Rebase;
-			progress = readRebaseProgress(path.join(gitDir, 'rebase-merge', 'msgnum'), path.join(gitDir, 'rebase-merge', 'end'), env);
-		} else if (env.exists(path.join(gitDir, 'rebase-apply'))) {
+			progress = await readRebaseProgress(path.join(gitDir, 'rebase-merge', 'msgnum'), path.join(gitDir, 'rebase-merge', 'end'), env);
+		} else if (await env.exists(path.join(gitDir, 'rebase-apply'))) {
 			type = GitOperationType.Rebase;
-			progress = readRebaseProgress(path.join(gitDir, 'rebase-apply', 'next'), path.join(gitDir, 'rebase-apply', 'last'), env);
-		} else if (env.exists(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
+			progress = await readRebaseProgress(path.join(gitDir, 'rebase-apply', 'next'), path.join(gitDir, 'rebase-apply', 'last'), env);
+		} else if (await env.exists(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
 			type = GitOperationType.CherryPick;
-		} else if (env.exists(path.join(gitDir, 'REVERT_HEAD'))) {
+		} else if (await env.exists(path.join(gitDir, 'REVERT_HEAD'))) {
 			type = GitOperationType.Revert;
-		} else if (env.exists(path.join(gitDir, 'MERGE_HEAD'))) {
+		} else if (await env.exists(path.join(gitDir, 'MERGE_HEAD'))) {
 			type = GitOperationType.Merge;
 		}
 
@@ -103,7 +105,7 @@ export async function detectOperationState(repo: string, env: OperationStateEnv)
 /**
  * Read a rebase's step counter out of two single-integer marker files in its state directory.
  */
-export function readRebaseProgress(stepFile: string, totalFile: string, env: Pick<OperationStateEnv, 'readIntFile'>): { step: number, total: number } | null {
-	const step = env.readIntFile(stepFile), total = env.readIntFile(totalFile);
+export async function readRebaseProgress(stepFile: string, totalFile: string, env: Pick<OperationStateEnv, 'readIntFile'>): Promise<{ step: number, total: number } | null> {
+	const [step, total] = await Promise.all([env.readIntFile(stepFile), env.readIntFile(totalFile)]);
 	return step !== null && total !== null ? { step, total } : null;
 }

@@ -12,7 +12,10 @@ import { Disposable } from '../../shared/util/disposable';
  * The two construction shapes select the mode:
  * - `new Logger(logFilePath?)` - the live host shape (src/extension.ts): the channel is wired
  *   from `vscode.window` at construction, nothing is recorded until `setEnabled(true)`, and
- *   every recorded line is mirrored to the log file while one is configured.
+ *   every recorded line is mirrored to the log file while one is configured. The mirror is
+ *   written asynchronously: the truncations and appends run through one serialized queue in
+ *   log-call order, so the shared extension host never performs synchronous fs for a log line
+ *   (OPTIMIZATION-PLAN A6) while the file still reads back as an ordered log.
  * - `new Logger(name, factory)` - the injected seam (unit tests, degraded hosts): the channel
  *   comes from the injected factory and logging is ungated; a missing, throwing or unusable
  *   factory degrades every method to a no-op, so logging can never break a request path.
@@ -56,6 +59,8 @@ export class Logger extends Disposable {
 	private logFile: string | null;
 	private logFileBytes: number = 0;
 	private enabled: boolean = false;
+	/** The serialized tail of the file mirror: every truncation and append, in log-call order. */
+	private fileQueue: Promise<void> = Promise.resolve();
 
 	/**
 	 * @param nameOrLogFilePath The channel name in the injected-factory mode, or the log file
@@ -91,21 +96,31 @@ export class Logger extends Disposable {
 	/**
 	 * Enable or disable logging (host-wired mode; a no-op otherwise). Enabling starts a fresh
 	 * log file; disabling stops all recording (what was logged so far stays in the file, and
-	 * can still be opened).
+	 * can still be opened). The fresh file is written asynchronously through the mirror queue;
+	 * until its write lands `getLogFile` may still report a path whose setup then failed (a
+	 * read-only or missing storage location) — the failure then degrades the mirror to the
+	 * Output Channel alone.
 	 */
 	public setEnabled(enabled: boolean): void {
 		if (enabled === this.enabled) return;
 		this.enabled = enabled;
 		if (enabled && this.logFile !== null) {
-			try {
-				const directory = path.dirname(this.logFile);
-				if (!fs.existsSync(directory)) fs.mkdirSync(directory);
-				fs.writeFileSync(this.logFile, '');
-				this.logFileBytes = 0;
-			} catch {
-				// A read-only or missing storage location: the Output Channel still works.
-				this.logFile = null;
-			}
+			this.logFileBytes = 0;
+			const file = this.logFile;
+			this.enqueue(async () => {
+				try {
+					const directory = path.dirname(file);
+					try {
+						await fs.promises.access(directory);
+					} catch {
+						await fs.promises.mkdir(directory);
+					}
+					await fs.promises.writeFile(file, '');
+				} catch {
+					// A read-only or missing storage location: the Output Channel still works.
+					if (this.logFile === file) this.logFile = null;
+				}
+			});
 		}
 	}
 
@@ -135,19 +150,34 @@ export class Logger extends Disposable {
 			const timestamp = date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds()) + '.' + pad3(date.getMilliseconds());
 			const line = '[' + timestamp + '] ' + message;
 			this.channel?.appendLine(line);
-			if (this.logFile !== null) {
-				try {
-					if (this.logFileBytes >= LOG_FILE_MAX_BYTES) {
-						fs.writeFileSync(this.logFile, '');
-						this.logFileBytes = 0;
-					}
-					fs.appendFileSync(this.logFile, line + '\n');
-					this.logFileBytes += Buffer.byteLength(line) + 1;
-				} catch { /* the Output Channel line has already been written */ }
-			}
+			this.mirror(line);
 		} else {
 			this.channel?.appendLine(message);
 		}
+	}
+
+	/**
+	 * Queue one mirrored line on the file: the truncation decision and the byte accounting stay
+	 * synchronous and in log-call order (the same bookkeeping the synchronous mirror kept),
+	 * while the writes themselves run serialized in that order off the event loop.
+	 */
+	private mirror(line: string): void {
+		const file = this.logFile;
+		if (file === null) return;
+		const truncate = this.logFileBytes >= LOG_FILE_MAX_BYTES;
+		if (truncate) this.logFileBytes = 0;
+		this.logFileBytes += Buffer.byteLength(line) + 1;
+		this.enqueue(async () => {
+			try {
+				if (truncate) await fs.promises.writeFile(file, '');
+				await fs.promises.appendFile(file, line + '\n');
+			} catch { /* the Output Channel line has already been written */ }
+		});
+	}
+
+	/** Serialize one file-mirroring step behind the queue, keeping the chain alive after failures. */
+	private enqueue(step: () => Promise<void>): void {
+		this.fileQueue = this.fileQueue.then(step, step);
 	}
 
 	/**

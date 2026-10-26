@@ -166,6 +166,29 @@ export default tseslint.config(
 		}
 	},
 
+	// ---- (a2) synchronous IO off the extension-host event loop (OPTIMIZATION-PLAN A6) ----------
+	// The extension host is shared by every extension in the window, so synchronous fs there
+	// stalls all of them. In scope: src/extension/** production sources. Out of scope:
+	//   - src/extension/git/process/askpass/** — a separate short-lived process git launches;
+	//   - src/extension/graphView/editors/** — likewise (dist/editors/{sequence,message}.js,
+	//     launched by git as the rebase/commit-message editors), so their fs never touches the
+	//     host's event loop;
+	//   - colocated *.test.ts — they run in a Vitest worker on the dev Node, not in the shipped
+	//     host (same rationale as layer (a)'s relaxed floors for tests);
+	//   - src/automation/** (the automation server/suite runner/fixture): it runs IN the
+	//     extension host and should comply once OPTIMIZATION-PLAN A1 moves it under
+	//     src/extension/automation/ — until that move its path is simply outside this block's
+	//     file scope. A deliberate exclusion would have to be re-justified then.
+	// Violations that predate the rule live in eslint-suppressions.json (the bulk-suppression
+	// ratchet; prune them as the owning workstreams make the call sites asynchronous).
+	{
+		files: ['src/extension/**/*.ts'],
+		ignores: ['src/extension/git/process/askpass/**', 'src/extension/graphView/editors/**', 'src/extension/**/*.test.ts'],
+		rules: {
+			'n/no-sync': 'error'
+		}
+	},
+
 	// ---- (b) src/webview/** (Chromium 69 floor) ---------------------------------
 	{
 		files: WEBVIEW_TS,

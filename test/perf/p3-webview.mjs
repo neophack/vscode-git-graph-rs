@@ -26,44 +26,29 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { Module } from 'node:module';
-import { commitStamp, ensureResultsDir, loadOut, mediaDir, parseArguments, writeJson, outDir } from './lib/env.mjs';
+import { commitStamp, ensureResultsDir, loadVscodeModule, mediaDir, parseArguments, writeJson } from './lib/env.mjs';
 import { percentile, summarize } from './lib/stats.mjs';
 import { createLoader, composeRepository, ensureFixturePair, loadPipeline, runLoaderRequest, viewRequest } from './lib/host-pipeline.mjs';
 
 /* ---------- the initialState the real extension embeds (defaults of every setting) ---------- */
 
 /**
- * The compiled config module requires 'vscode' for its defaults; the same scoped loader hook
- * the jsdom webview harness (tests/webviewHarness.mjs) uses serves it here. out/config.js is
- * the tsc build of src/config.ts — the defaults are the ones package.json declares.
+ * The real config/extensionState modules require 'vscode' for their defaults; the same
+ * default-answering stub shape the jsdom webview harness uses serves them through the harness
+ * loader (lib/env.mjs's loadVscodeModule). platform/config.ts builds its ViewColumn table at
+ * module level and platform/storage.ts owns the persisted-state defaults.
  */
 async function importDefaults() {
 	const stub = {
 		Uri: { file: (p) => ({ fsPath: p, path: p }) },
-		env: { language: 'en' },
-		ViewColumn: { Active: 1, Beside: 2 },
+		env: { language: 'en', uriScheme: 'vscode' },
+		ViewColumn: { Active: 1, Beside: 2, One: 3, Two: 4, Three: 5, Four: 6, Five: 7, Six: 8, Seven: 9, Eight: 10, Nine: 11 },
 		window: { showWarningMessage: async () => undefined, showErrorMessage: async () => undefined },
 		workspace: { getConfiguration: () => ({ get: (_s, d) => d, has: () => false, inspect: () => undefined, update: () => Promise.resolve() }) }
 	};
-	const originalLoad = Module._load;
-	let active = true;
-	Module._load = function (request, parent, isMain) {
-		if (request === 'vscode' && active) return stub;
-		return originalLoad.apply(this, arguments);
-	};
-	try {
-		const config = await import(pathToFileUrl(path.join(outDir, 'config.js')));
-		const state = await import(pathToFileUrl(path.join(outDir, 'extensionState.js')));
-		return { getConfig: config.getConfig, defaults: state };
-	} finally {
-		active = false;
-		Module._load = originalLoad;
-	}
-}
-
-function pathToFileUrl(file) {
-	return 'file:///' + file.replace(/\\/g, '/');
+	const config = loadVscodeModule('extension/platform/config.ts', stub);
+	const state = loadVscodeModule('extension/platform/storage.ts', stub);
+	return { getConfig: config.getConfig, defaults: state };
 }
 
 /** The global state the page boots on (the extension's persisted defaults). */

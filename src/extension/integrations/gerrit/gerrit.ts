@@ -323,11 +323,18 @@ export class GerritDataSource {
 
 		const hookPath = path.join(hooksDir, hook);
 		try {
-			const existing = fs.existsSync(hookPath) ? fs.readFileSync(hookPath, 'utf8') : null;
+			const existing = await fs.promises.readFile(hookPath, 'utf8').catch((error) => {
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+				return null;
+			});
 			if (existing === content) return { error: null, installed: false }; // an identical hook is already installed
-			if (!fs.existsSync(hooksDir)) fs.mkdirSync(hooksDir);
-			fs.writeFileSync(hookPath, content, { mode: 0o755 });
-			fs.chmodSync(hookPath, 0o755); // the mode above is only applied when the file is created
+			try {
+				await fs.promises.access(hooksDir);
+			} catch {
+				await fs.promises.mkdir(hooksDir);
+			}
+			await fs.promises.writeFile(hookPath, content, { mode: 0o755 });
+			await fs.promises.chmod(hookPath, 0o755); // the mode above is only applied when the file is created
 		} catch (errorMessage) {
 			return { error: 'Unable to write the ' + hook + ' hook to ' + hookPath + ': ' + errorMessage, installed: false };
 		}

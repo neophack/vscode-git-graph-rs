@@ -15,7 +15,7 @@
  *    containing repository as the option's tooltip, and a configured name always wins.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventOverlay } from '../../common/eventOverlay';
 import { formatStr, strings } from '../../common/i18n/index';
@@ -25,11 +25,34 @@ import type { GraphContext } from '../context';
 import { Dialog } from './dialog';
 import { Dropdown } from './dropdown';
 
+/**
+ * The widgets on these click paths schedule real jsdom timers (the dropdown's 500 ms
+ * double-click window, the dialog's 180 ms delayed removal). A timer that outlives its test
+ * fires after the jsdom environment is torn down and surfaces as a post-teardown error under
+ * heavy parallel load (OPTIMIZATION-PLAN §12's known-flaky). Every window.setTimeout of a
+ * test is captured and whatever is still pending is cleared at the test's end; timing WITHIN
+ * a test stays real, so no assertion changes.
+ */
+let pendingTimers: number[] = [];
+const realSetTimeout = window.setTimeout.bind(window);
+const realClearTimeout = window.clearTimeout.bind(window);
+
 beforeEach(() => {
 	document.body.textContent = '';
 	// jsdom has no layout engine and does not implement scrollIntoView (used when the keyboard
 	// highlight moves).
 	window.Element.prototype.scrollIntoView = function () { };
+	pendingTimers = [];
+	vi.spyOn(window, 'setTimeout').mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+		const id = realSetTimeout(handler, timeout, ...args);
+		pendingTimers.push(id);
+		return id;
+	}) as unknown as typeof window.setTimeout);
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
+	for (const id of pendingTimers.splice(0)) realClearTimeout(id);
 });
 
 /** A dropdown element appended to the page, with the change/info callbacks recorded. */
