@@ -192,13 +192,13 @@ describe('editing the message of an earlier commit', () => {
 		const target = hash('HEAD~1'); // the rebase path is the one that writes the temp files
 		const subjectBefore = subject('HEAD~1');
 
-		// Make the second write (the message editor script) fail like a full disk: the sequence
-		// editor script written just before it must not be left behind in the temp directory.
+		// Make the second staging write (the author file) fail like a full disk: the message
+		// file written just before it must not leave the gg-amend-* staging directory behind.
 		writeGate.failAt = 2;
 		writeGate.writes = 0;
 		let error: unknown;
 		try {
-			error = await editCommitMessage(ctx, repoPath, target, 'must not happen');
+			error = await editCommitMessage(ctx, repoPath, target, 'must not happen', 'Staged Author <staged@author>');
 		} finally {
 			writeGate.failAt = 0;
 		}
