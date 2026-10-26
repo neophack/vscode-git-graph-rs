@@ -168,7 +168,7 @@ export function loadAddon(root: string = path.join(__dirname, '..', '..', '..', 
 	for (const candidate of candidates) {
 		if (!fs.existsSync(candidate)) continue;
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			cached = require(candidate) as NativeAddon;
 			return cached;
 		} catch (error) {

@@ -21,7 +21,7 @@ const vs = vi.hoisted(() => {
 	const viewCalls: unknown[][] = [];
 	return {
 		viewCalls,
-		stateHolder: {} as { state: import('../../../test/support/fakeVscode').VscodeStubState }
+		stateHolder: {} as { state: VscodeStubState }
 	};
 });
 
@@ -41,6 +41,7 @@ import { CommandManager } from '../../../src/extension/commands';
 import { t } from '../../../src/i18n';
 import { encodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
 import { EventEmitter } from '../../../src/utils/event';
+import { GitFileStatus } from '../../../src/types/git';
 import type { VscodeStubState } from '../../support/fakeVscode';
 
 const vscode = () => vs.stateHolder.state as unknown as {
@@ -111,7 +112,8 @@ function createDoubles() {
 		getLastActiveRepo: () => extensionState.lastActiveRepo,
 		getCodeReviews: () => codeReviews,
 		endAllWorkspaceCodeReviews: () => { extensionState.endedAll++; },
-		endCodeReview: async (repo: string, id: string) => { delete codeReviews[repo][id]; return extensionState.endCodeReviewError ?? null; }
+		endCodeReviewError: null as string | null,
+		endCodeReview: async (repo: string, id: string): Promise<string | null> => { delete codeReviews[repo][id]; return extensionState.endCodeReviewError ?? null; }
 	};
 	const avatarManager: any = { clearCache: async () => avatarManager.clearError ?? null };
 	return { repoManager, dataSource, extensionState, avatarManager };
@@ -143,8 +145,8 @@ function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable:
 let doubles!: ReturnType<typeof createDoubles>;
 let manager!: ReturnType<typeof createManager>['manager'];
 let logger!: ReturnType<typeof createManager>['logger'];
-let onDidChangeGitExecutable!: EventEmitter;
-let onDidChangeConfiguration!: EventEmitter;
+let onDidChangeGitExecutable!: EventEmitter<unknown>;
+let onDidChangeConfiguration!: EventEmitter<unknown>;
 
 beforeEach(() => {
 	if (manager) manager.dispose();
@@ -371,7 +373,7 @@ describe('git-graph-rs.fetch', () => {
 		vscode().responses.showQuickPick = [(items: any[]) => items[0]];
 		vscode().runCommand('git-graph-rs.fetch');
 		await flush();
-		assert.deepEqual(vscode().callsTo('showQuickPick')[0].args[0].map((i: any) => i.description), ['/ws/b', '/ws/a']);
+		assert.deepEqual((vscode().callsTo('showQuickPick')[0].args[0] as Array<{ description: string }>).map((i) => i.description), ['/ws/b', '/ws/a']);
 		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/b', runCommandOnLoad: 'fetch' });
 
 		vscode().responses.showQuickPick = [new Error('closed')];
@@ -548,7 +550,7 @@ describe('git-graph-rs.searchCommits', () => {
 // - gerritPushRef + gerritFetchCommitMsgHook -> src/extension/commands/gerrit.test.ts
 describe('git-graph-rs.openFile', () => {
 	it('opens the file behind a Git Graph diff URI (argument or active editor)', async () => {
-		const uri = encodeDiffDocUri('/ws/repo', 'src/a.ts', 'd'.repeat(40), 'M', 1);
+		const uri = encodeDiffDocUri('/ws/repo', 'src/a.ts', 'd'.repeat(40), GitFileStatus.Modified, 1);
 		doubles.dataSource.getNewPathOfRenamedFile = async () => null;
 		vscode().runCommand('git-graph-rs.openFile', uri);
 		await flush();

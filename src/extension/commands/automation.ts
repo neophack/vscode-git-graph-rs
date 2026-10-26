@@ -14,7 +14,7 @@ import type { CommandHost } from './context';
  * build" signal. */
 let automation: AutomationModules | null = null;
 try {
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
 	const { loadAutomationModules } = require('../../automation/modules') as typeof import('../../automation/modules');
 	automation = loadAutomationModules();
 } catch { /* the automation modules are absent from this build: not an error */ }

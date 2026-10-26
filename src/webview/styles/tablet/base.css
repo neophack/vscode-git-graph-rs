@@ -15,9 +15,9 @@
  */
 
 body.tabletMode{
-	--m-bar:48px;
+	--m-bar:38px;
 	--m-target:36px;
-	--m-capsule:36px;
+	--m-capsule:28px;
 	--m-radius:10px;
 	/* The selected row's wash: the accent at low strength (a neutral fill without color-mix) */
 	--t-selected:rgba(128,128,128,0.18);

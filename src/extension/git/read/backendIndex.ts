@@ -15,7 +15,7 @@ import { GitBackendError } from './types';
 import { createFallbackReader } from './fallbackReader';
 
 export * from './types';
-export { GitBackend } from './gitReader';
+export type { GitBackend } from './gitReader';
 export { NativeBackend } from './gitReader';
 export { CliBackend } from './cli';
 

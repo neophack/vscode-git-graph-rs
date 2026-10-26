@@ -32,7 +32,7 @@ describe('the Edit Message dialog\'s body fetch (webview)', () => {
 		cell.dispatchEvent(new h.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
 		const item = [...h.document.querySelectorAll('.contextMenuItem')].find((li) => li.textContent!.includes('Edit Message'))!;
 		assert.ok(item, 'the commit context menu should offer "Edit Message..."');
-		item.click();
+		(item as HTMLElement).click();
 	};
 
 	const commitBodiesRequests = () => sent.filter((m) => m.command === 'commitBodies');

@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it, vi } from 'vitest';
-import { ROW_HEIGHT, VIEWPORT_HEIGHT, bootView, commit, measureRowCoordinates } from '../../support/webviewHost';
+import { VIEWPORT_HEIGHT, bootView, commit, measureRowCoordinates } from '../../support/webviewHost';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
@@ -23,7 +23,7 @@ type Booted = Awaited<ReturnType<typeof bootView>>;
 
 /** Every commit visible before must sit at the identical on-screen coordinate afterwards, and no
  * additional row may have entered the viewport. */
-function assertViewportUnchanged(h: Booted, before: Map<string, number>, after: Map<string, number>, label: string) {
+function assertViewportUnchanged(_h: Booted, before: Map<string, number>, after: Map<string, number>, label: string) {
 	const beforeVisible = new Map([...before].filter(([, y]) => y >= 0 && y < VIEWPORT_HEIGHT));
 	assert.ok(beforeVisible.size >= 10, 'the recorded viewport holds a meaningful number of rows (got ' + beforeVisible.size + ')');
 	for (const [key, y] of beforeVisible) {

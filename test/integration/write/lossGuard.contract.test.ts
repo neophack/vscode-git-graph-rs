@@ -5,11 +5,11 @@ import { execFileSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { RepoBuilder } from '../../support/repoBuilder';
-import { isWarning, writeHarness } from '../../support/writeHarness';
+import { isWarning, warningMessage, writeHarness } from '../../support/writeHarness';
 import {
 	checkoutBranch, checkoutCommit, createBranch, pushBranch, resetToCommit
 } from '../../../src/extension/graphView/writeFlows';
-import { GitPushBranchMode } from '../../../src/types/git';
+import { GitPushBranchMode, GitResetMode } from '../../../src/types/git';
 
 /**
  * The data-loss guards over REAL repositories (the port of `tests/checkoutProtection.test.mjs`
@@ -63,7 +63,7 @@ describe('leaving a detached HEAD with its own commits', () => {
 		const warning = await checkoutBranch(ctx, repo.path, 'other', null, false);
 
 		expect(isWarning(warning)).toBe(true);
-		expect(warning.message).toMatch(/leavingCommitsBehind:1\b/);
+		expect(warningMessage(warning)).toMatch(/leavingCommitsBehind:1\b/);
 		expect(repo.revParse('HEAD')).toBe(detachedCommit);
 		expect(unanchoredCount(detachedCommit)).toBe(1);
 	});
@@ -169,13 +169,13 @@ describe('other operations that can lose work', () => {
 		repo.write('a.txt', 'uncommitted and unrecoverable\n');
 		expect(isDirty()).toBe(true);
 
-		const warning = await resetToCommit(ctx, repo.path, firstCommit, 'hard', false);
+		const warning = await resetToCommit(ctx, repo.path, firstCommit, GitResetMode.Hard, false);
 		expect(isWarning(warning)).toBe(true);
-		expect(warning.message).toMatch(/hardResetLosesChanges/);
+		expect(warningMessage(warning)).toMatch(/hardResetLosesChanges/);
 		expect(isDirty()).toBe(true);
 
 		// Confirmed (the dialog's continue button): the reset runs
-		expect(await resetToCommit(ctx, repo.path, firstCommit, 'hard', true)).toBeNull();
+		expect(await resetToCommit(ctx, repo.path, firstCommit, GitResetMode.Hard, true)).toBeNull();
 		expect(isDirty()).toBe(false);
 	});
 
@@ -183,7 +183,7 @@ describe('other operations that can lose work', () => {
 		repo.write('d.txt', 'to be committed\n');
 		repo.commit('a commit to reset away');
 
-		expect(await resetToCommit(ctx, repo.path, firstCommit, 'soft', false)).toBeNull();
+		expect(await resetToCommit(ctx, repo.path, firstCommit, GitResetMode.Soft, false)).toBeNull();
 		expect(repo.revParse('HEAD')).toBe(firstCommit);
 	});
 
@@ -198,7 +198,7 @@ describe('other operations that can lose work', () => {
 
 		const warning = await pushBranch(ctx, repo.path, 'anchor', 'origin', false, GitPushBranchMode.Force, false);
 		expect(isWarning(warning)).toBe(true);
-		expect(warning.message).toMatch(/anchor/);
+		expect(warningMessage(warning)).toMatch(/anchor/);
 		expect(repo.git(['rev-parse', 'refs/remotes/origin/anchor']).trim()).toBe(remoteBefore);
 
 		expect(await pushBranch(ctx, repo.path, 'anchor', 'origin', false, GitPushBranchMode.Force, true)).toBeNull();
@@ -310,7 +310,7 @@ describe('a stash keeps the detached commits: which switches lose data and which
 		const warning = await checkoutBranch(ctx, repo.path, 'other', null, false);
 
 		expect(isWarning(warning)).toBe(true);
-		expect(warning.message).toMatch(/leavingCommitsBehind:1\b/);
+		expect(warningMessage(warning)).toMatch(/leavingCommitsBehind:1\b/);
 		expect(repo.revParse('HEAD')).toBe(afterStash);
 	});
 
@@ -395,7 +395,7 @@ describe('a stash keeps the detached commits: which switches lose data and which
 		expect(isDirty()).toBe(true);
 		repo.stashPush('before the reset');
 
-		expect(await resetToCommit(ctx, repo.path, mainTip, 'hard', false)).toBeNull();
+		expect(await resetToCommit(ctx, repo.path, mainTip, GitResetMode.Hard, false)).toBeNull();
 		expect(isDirty()).toBe(false);
 		expect(stashList().length).toBe(1);
 	});

@@ -205,7 +205,7 @@ export function createVscodeState(options: { settings?: Record<string, unknown>,
 		},
 		workspace: {
 			get workspaceFolders() { return workspaceFolders.length > 0 ? workspaceFolders : undefined; },
-			set workspaceFolders(value) { workspaceFolders.length = 0; workspaceFolders.push(...(value as unknown[])); },
+			set workspaceFolders(value) { workspaceFolders.length = 0; workspaceFolders.push(...(value as typeof workspaceFolders)); },
 			getConfiguration: (section?: string) => makeConfiguration(section ?? 'git-graph-rs'),
 			onDidChangeConfiguration: onDidChangeConfiguration.event,
 			onDidChangeWorkspaceFolders: onDidChangeWorkspaceFolders.event,

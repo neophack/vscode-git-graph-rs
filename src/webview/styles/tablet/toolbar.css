@@ -19,8 +19,8 @@ body.tabletMode #controls{
 	box-sizing:border-box;
 	min-height:var(--m-bar);
 	/* Chromium 69 fallback (min()/max() need Chrome 79) */
-	padding:6px 8px 6px 12px;
-	padding:6px max(8px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+	padding:4px 8px 4px 12px;
+	padding:4px max(8px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
 	border-bottom:0.5px solid var(--m-sep);
 	background-color:var(--m-bg);
 	line-height:normal;
@@ -85,8 +85,8 @@ body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
 	display:flex;
 }
 body.tabletMode #mobileMoreBtn svg{
-	width:20px !important;
-	height:20px !important;
+	width:16px !important;
+	height:16px !important;
 }
 body.tabletMode #controls .dropdownCurrentValue{
 	position:relative;
@@ -204,8 +204,8 @@ body.tabletMode #controlBtns > div:active{
 }
 body.tabletMode #controlBtns svg{
 	position:static;
-	width:18px !important;
-	height:18px !important;
+	width:15px !important;
+	height:15px !important;
 	fill:var(--m-fg);
 	stroke-width:0 !important;
 	opacity:0.85;
@@ -221,11 +221,11 @@ body.tabletMode #controlBtns > #filterBtn.active svg{
 	opacity:1;
 }
 body.tabletMode #refreshBtn svg{
-	width:16px !important;
-	height:16px !important;
+	width:14px !important;
+	height:14px !important;
 }
 body.tabletMode #refreshBtn.refreshing svg{
-	width:13px !important;
+	width:11px !important;
 }
 
 /* The pinned commits row: chips at touch size */
@@ -288,8 +288,8 @@ body.tabletMode .pinnedChip{
 	body.tabletMode.sidePaneOpen #controls #controlBtns > #refreshBtn,
 	body.tabletMode.sidePaneOpen #controls #controlBtns > #mobileMoreBtn,
 	body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
-		width:32px;
-		height:32px;
+		width:28px;
+		height:28px;
 		margin:0;
 	}
 	body.tabletMode.sidePaneOpen #controlBtns{

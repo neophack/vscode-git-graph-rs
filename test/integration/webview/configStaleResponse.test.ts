@@ -20,8 +20,6 @@ import { bootView } from '../../support/webviewHost';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
-type Booted = Awaited<ReturnType<typeof bootView>>;
-
 /** A GitRepoConfig the Settings Widget renders (the shape the extension host responds with). */
 function repoConfig(authors: unknown[]) {
 	return {

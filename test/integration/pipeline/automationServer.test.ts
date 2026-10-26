@@ -79,10 +79,10 @@ describe('the automation engine over the real pipeline', () => {
 	});
 
 	it('query repoInfo reads through the real pipeline', async () => {
-		const repoInfo = await engine!.query({ kind: 'repoInfo' });
+		const repoInfo = await engine!.query({ kind: 'repoInfo' }) as { command: string; head: string; branches: string[] };
 		assert.equal(repoInfo.command, 'loadRepoInfo');
 		assert.equal(repoInfo.head, 'main');
-		assert.ok((repoInfo.branches as string[]).includes('main'));
+		assert.ok(repoInfo.branches.includes('main'));
 	});
 
 	it('query rejects unknown kinds and invoke validates its message', async () => {
@@ -95,13 +95,15 @@ describe('the automation engine over the real pipeline', () => {
 			message: { command: 'loadRepoInfo', repo, refreshId: 0, showRemoteBranches: true, showStashes: true, hideRemotes: [] }
 		});
 		assert.equal(outcome.ok, true);
-		assert.equal(outcome.response.head, 'main');
+		assert.equal((outcome.response as { head: string }).head, 'main');
+		assert.ok(outcome.timings);
 		assert.ok(outcome.timings.totalMs >= 0);
 	});
 
 	it('run refresh in request mode times the host round trip', async () => {
 		const outcome = await engine!.run({ id: 'control-bar/refresh', mode: 'request' });
 		assert.equal(outcome.ok, true, outcome.error);
+		assert.ok(outcome.timings);
 		assert.ok(outcome.timings.totalMs > 0);
 		const commands = outcome.timings.responses.map((r) => r.command);
 		assert.ok(commands.includes('loadRepoInfo'));
@@ -111,6 +113,7 @@ describe('the automation engine over the real pipeline', () => {
 	it('run refresh in UI mode drives the real webview button', async () => {
 		const outcome = await engine!.run({ id: 'control-bar/refresh', mode: 'ui' });
 		assert.equal(outcome.ok, true, outcome.error);
+		assert.ok(outcome.timings);
 		assert.ok(outcome.timings.totalMs > 0);
 		assert.deepEqual(outcome.timings.responses.map((r) => r.command), ['loadRepoInfo', 'loadCommits']);
 	});
@@ -132,11 +135,12 @@ describe('the automation engine over the real pipeline', () => {
 		execFileSync('git', ['commit', '-am', 'change tracked for file history'], { cwd: repo });
 		const outcome = await engine!.run({ id: 'menu-vscode/filter-by-file-explorer', mode: 'command', timeoutMs: 30000 });
 		assert.equal(outcome.ok, true, outcome.error);
+		assert.ok(outcome.timings);
 		assert.deepEqual(outcome.timings.responses.map((r) => r.command), ['loadCommits']);
 		// The post steps cleared the file filter again: the unfiltered graph is rendered.
 		const rows = await engine!.eval({ expr: 'document.querySelectorAll("#commitTable tr.commit").length' });
 		assert.equal(rows.ok, true, rows.error);
-		assert.ok(rows.value > 1, 'the filter must be cleared after the run (saw ' + rows.value + ' rows)');
+		assert.ok((rows.value as number) > 1, 'the filter must be cleared after the run (saw ' + rows.value + ' rows)');
 	}, 120000);
 
 	it('command mode executes the diff editor title Open File command', async () => {
@@ -151,6 +155,7 @@ describe('the automation engine over the real pipeline', () => {
 		// suppress the toast, and pass the catalog's expectNotifications assertion on its text.
 		const outcome = await engine!.run({ id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook', mode: 'command' });
 		assert.equal(outcome.ok, true, outcome.error);
+		assert.ok(outcome.notifications);
 		assert.ok(outcome.notifications.length > 0, 'the refusal notification must be captured');
 		assert.ok(outcome.notifications.some((message: string) => message.includes('commit-msg')), JSON.stringify(outcome.notifications));
 	});
@@ -195,7 +200,7 @@ describe('the automation engine over the real pipeline', () => {
 	it('eval executes in the page and returns the value', async () => {
 		const outcome = await engine!.eval({ expr: '({ rows: document.querySelectorAll("#commitTable tr.commit").length })' });
 		assert.equal(outcome.ok, true, outcome.error);
-		assert.ok(outcome.value.rows > 0);
+		assert.ok((outcome.value as { rows: number }).rows > 0);
 	});
 
 	it('a failing page step ends the run immediately instead of burning the timeout', async () => {

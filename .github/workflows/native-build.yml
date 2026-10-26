@@ -34,6 +34,30 @@ permissions:
   contents: read
 
 jobs:
+  # Every static gate, through the same `npm run check` a developer runs: the four TypeScript
+  # projects, ESLint (new violations fail, and so do suppressions that no longer match), stylelint,
+  # the dependency rules (new AND stale baseline entries fail), clippy + rustfmt, and the generated
+  # engine types (a Rust protocol change whose TypeScript was not regenerated and committed fails).
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the static checks
+        run: npm run check
+
   # The engine's own tests, which compare it against what `git` reports for the same question.
   # They need no Node and no addon, so they run first and fail fast.
   engine:
@@ -45,27 +69,19 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --all --check
-
-      - name: Lint
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Test
         if: matrix.os != 'ubuntu-latest'
         run: cargo test --workspace
 
-      # Coverage only needs to run once; ubuntu is where clippy/fmt already run.
+      # Coverage only needs to run once, on ubuntu.
       - name: Install cargo-llvm-cov
         if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-llvm-cov
 
       - name: Test with coverage
         if: matrix.os == 'ubuntu-latest'
@@ -73,7 +89,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -103,10 +119,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.target }}
 
@@ -116,7 +132,7 @@ jobs:
 
       # @napi-rs/cli, which the build script drives.
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # The only target that needs anything beyond the Rust toolchain.
       - name: Install the cross-linker for arm64 Linux
@@ -172,7 +188,7 @@ jobs:
           path: native/${{ matrix.directory }}
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # The canonical pipeline (task 1.4): one esbuild bundle on the VS Code 1.38 floor
       # (Node 10.11), the askpass launchers, the webview assets, and the ES2018 compat gates
@@ -184,11 +200,15 @@ jobs:
           node scripts/package-highlight.js
           node scripts/package-markdown.js
 
-      # The unit gate (task 1.5): the Vitest suite over src/** and test/** (vitest.config.ts).
-      # The legacy node:test suite was drained in plan Phase 7 (task 7.1) — every scenario now
-      # lives in these layers.
+      # The unit gate: the Vitest suite over src/** and test/** (vitest.config.ts). On ubuntu it
+      # runs with coverage, and fails below the floors set in vitest.config.ts.
       - name: Unit and integration tests (Vitest)
+        if: matrix.os != 'ubuntu-latest'
         run: npx vitest run
+
+      - name: Unit and integration tests with coverage (Vitest)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run test:coverage
 
       # The artifact syntax gate (task 1.8), standalone: re-proves what build.mjs already
       # enforced inline - every dist/ script parses as ES2018.
@@ -210,7 +230,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Build the extension bundle (dist pipeline)
         run: npm run build:dist -- --production
@@ -248,7 +268,7 @@ jobs:
   # Everything in one place, ready to be dropped into a VSIX.
   package:
     name: Package
-    needs: [engine, build, integration]
+    needs: [static, engine, build, integration]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -273,7 +293,7 @@ jobs:
           ls -lR native
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # The canonical pipeline (task 1.4): the dist bundle + the webview assets are what the
       # VSIX packages (package.json's main points at dist/extension.js). media/vendor/*.min.js

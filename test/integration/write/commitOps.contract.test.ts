@@ -8,7 +8,7 @@ import { RepoBuilder } from '../../support/repoBuilder';
 import { writeHarness } from '../../support/writeHarness';
 import { abortOperation, continueOperation, createFixupCommit, createSquashCommit } from '../../../src/extension/graphView/writeFlows';
 import { GitConfigKey, setConfigValue, unsetConfigValue } from '../../../src/extension/git/write/ops/config';
-import { GitOperationType } from '../../../src/types/git';
+import { GitConfigLocation, GitOperationType } from '../../../src/types/git';
 import { resolveGlobalAuthorAfterSave } from '../../../src/extension/graphView/globalSettings';
 
 /**
@@ -273,9 +273,9 @@ describe('the Author Identities feature against real repositories', () => {
 	/** Git with the controlled global-config HOME (what the flow's own spawns see). */
 	const gitGlobal = (args: ReadonlyArray<string>, cwd: string = repo.path) =>
 		execFileSync('git', [...args], { cwd: cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: globalConfigDir } }).trim();
-	const setGlobal = (key: GitConfigKey, value: string) => ctx.repo.write.run(repo.path, setConfigValue({ key: key, value: value, location: 'global' }));
-	const setLocal = (key: GitConfigKey, value: string) => ctx.repo.write.run(repo.path, setConfigValue({ key: key, value: value, location: 'local' }));
-	const unsetLocal = (key: GitConfigKey) => ctx.repo.write.run(repo.path, unsetConfigValue({ key: key, location: 'local' }));
+	const setGlobal = (key: GitConfigKey, value: string) => ctx.repo.write.run(repo.path, setConfigValue({ key: key, value: value, location: GitConfigLocation.Global }));
+	const setLocal = (key: GitConfigKey, value: string) => ctx.repo.write.run(repo.path, setConfigValue({ key: key, value: value, location: GitConfigLocation.Local }));
+	const unsetLocal = (key: GitConfigKey) => ctx.repo.write.run(repo.path, unsetConfigValue({ key: key, location: GitConfigLocation.Local }));
 
 	beforeAll(() => {
 		globalConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-authors-home-'));
@@ -335,8 +335,8 @@ describe('the Author Identities feature against real repositories', () => {
 		const globalUser = await ctx.repo.read.getGlobalUserDetails(repo.path);
 		const author = resolveGlobalAuthorAfterSave([AUTHOR_A, AUTHOR_B], { name: globalUser.name, email: globalUser.email });
 		expect(author).toEqual(AUTHOR_A);
-		expect(await setGlobal(GitConfigKey.UserName, author.name)).toBeNull();
-		expect(await setGlobal(GitConfigKey.UserEmail, author.email)).toBeNull();
+		expect(await setGlobal(GitConfigKey.UserName, author!.name)).toBeNull();
+		expect(await setGlobal(GitConfigKey.UserEmail, author!.email)).toBeNull();
 
 		expect(globalConfigValue(GitConfigKey.UserName)).toBe(AUTHOR_A.name);
 		// An identity-less repository (no local override anywhere) commits with the new global author
@@ -361,8 +361,8 @@ describe('the Author Identities feature against real repositories', () => {
 		const globalUser = await ctx.repo.read.getGlobalUserDetails(repo.path);
 		const author = resolveGlobalAuthorAfterSave([AUTHOR_B], { name: globalUser.name, email: globalUser.email });
 		expect(author).toEqual(AUTHOR_B);
-		expect(await setGlobal(GitConfigKey.UserName, author.name)).toBeNull();
-		expect(await setGlobal(GitConfigKey.UserEmail, author.email)).toBeNull();
+		expect(await setGlobal(GitConfigKey.UserName, author!.name)).toBeNull();
+		expect(await setGlobal(GitConfigKey.UserEmail, author!.email)).toBeNull();
 		expect(globalConfigValue(GitConfigKey.UserName)).toBe(AUTHOR_B.name);
 	});
 });

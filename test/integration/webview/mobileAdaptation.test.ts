@@ -85,7 +85,7 @@ describe('the narrow window (mobileAdaptation) layout', () => {
 		const before = checkbox.checked;
 		const switchItem = (menu.querySelector('.mobileMenuSwitch') as HTMLElement)!.closest('.contextMenuItem')!;
 		assert.equal((switchItem.querySelector('.mobileMenuSwitch') as HTMLElement)!.classList.contains('on'), before, 'the switch shows the checkbox state');
-		switchItem.click();
+		(switchItem as HTMLElement).click();
 		assert.equal(checkbox.checked, !before, 'the switch toggled Show Remote Branches');
 	});
 

@@ -108,9 +108,10 @@ describe('the unified dist pipeline (build.mjs)', () => {
 		);
 	});
 
+	// Parses every dist/ script: several seconds alone, far more while the whole suite competes for the CPU.
 	maybeIt('the emitted artifacts pass the ES2018 compatibility gate', () => {
 		assert.deepEqual(checkCompat(), []);
-	});
+	}, 60000);
 
 	maybeIt('the VSIX manifest contract: the packaged file list is exactly the allowlist (task 1.4)', () => {
 		// The dry-run listing `vsce ls` prints is the exact set `npm run package` zips (both go

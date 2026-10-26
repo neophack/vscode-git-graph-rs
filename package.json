@@ -15,8 +15,7 @@
 	},
 	"homepage": "https://github.com/neophack/vscode-git-graph-rs#readme",
 	"engines": {
-		"vscode": "^1.38.0",
-		"node": ">=18"
+		"vscode": "^1.38.0"
 	},
 	"extensionKind": [
 		"workspace"
@@ -40,7 +39,7 @@
 		"build:native": "node scripts/build-addon.mjs",
 		"build:native:release": "node scripts/build-addon.mjs --release",
 		"build:dist": "node scripts/build/build.mjs",
-		"build:ts": "tsc -p tsconfig.json",
+		"build:ts": "tsc -p src/tsconfig.json",
 		"compile-web": "node scripts/build/webview.mjs && node scripts/package-highlight.js && node scripts/package-markdown.js",
 		"compile-web-debug": "node scripts/build/webview.mjs debug && node scripts/package-highlight.js debug && node scripts/package-markdown.js debug",
 		"package": "node scripts/package-without-automation.mjs",
@@ -48,6 +47,7 @@
 		"test": "npm run test:rust && npm run test:unit",
 		"test:rust": "cargo test --workspace",
 		"test:unit": "vitest run",
+		"test:coverage": "vitest run --coverage",
 		"perf": "node test/perf/run.mjs",
 		"perf:record": "node test/perf/run.mjs --record",
 		"analyze-log": "node scripts/analyze-log.mjs",
@@ -55,7 +55,11 @@
 		"lint": "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check",
 		"lint:js": "eslint src scripts",
 		"lint:css": "stylelint \"src/webview/styles/**/*.css\"",
-		"lint:deps": "depcruise src --config .dependency-cruiser.cjs",
+		"lint:deps": "node scripts/dev/check-deps.mjs",
+		"lint:size": "node scripts/dev/check-file-size.mjs",
+		"typecheck": "tsc -p src/tsconfig.json --noEmit && tsc -p src/webview/tsconfig.json && tsc -p tsconfig.json && tsc -p test/e2e/tsconfig.json --noEmit",
+		"check:generated": "cargo test -p git-graph-core --test protocol && git diff --exit-code -- src/shared/engine",
+		"check": "npm run typecheck && npm run lint:js && npm run lint:css && npm run lint:deps && npm run lint:size && npm run lint && npm run check:generated",
 		"baseline": "node scripts/dev/baseline.mjs"
 	},
 	"dependencies": {
@@ -65,8 +69,10 @@
 		"@eslint/js": "^10.0.1",
 		"@napi-rs/cli": "^3.8.6",
 		"@types/iconv-lite": "^0.0.1",
+		"@types/jsdom": "^28.0.3",
 		"@types/node": "^22.0.0",
 		"@types/vscode": "1.38.0",
+		"@vitest/coverage-v8": "^3.2.7",
 		"@vscode/test-electron": "^3.1.0",
 		"@vscode/vsce": "^2.19.0",
 		"browserslist": "^4.29.4",

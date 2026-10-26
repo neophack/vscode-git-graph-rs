@@ -212,8 +212,8 @@ describe('RepoManager recently-opened tracking', () => {
 			rootOf: (repo) => repo === REPO_A ? 'E:/ws/repo-moved' : repo
 		});
 
-		await settleStartupTasks();
-		expect(manager.getRecentRepos()).toEqual(['E:/ws/repo-moved']);
+		// The transfer waits on the root lookup's file system IO, which no fixed number of ticks covers.
+		await vi.waitFor(() => expect(manager.getRecentRepos()).toEqual(['E:/ws/repo-moved']));
 	});
 
 	it('drops a repository from the list when it is ignored (removed)', async () => {

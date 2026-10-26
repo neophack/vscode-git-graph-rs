@@ -462,6 +462,9 @@ export class TextFormatter {
 				case NodeType.Emoji:
 					html.push(escapeText(node.emoji));
 					break;
+				case NodeType.Root:
+					// The root is the tree itself, never one of its children.
+					break;
 			}
 			nextHtmlIndex = node.end + 1;
 		};

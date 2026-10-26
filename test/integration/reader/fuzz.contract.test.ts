@@ -18,6 +18,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, it, vi } from 'vitest';
 import { CliBackend, NativeBackend } from '../../../src/extension/git/read/backendIndex';
 import { isAddonAvailable } from '../../../src/extension/git/read/addonLoader';
+import type { LogOptions } from '../../../src/extension/git/read/types';
+import { CommitOrdering } from '../../../src/types/webview';
 
 vi.setConfig({ testTimeout: 300000, hookTimeout: 300000 });
 
@@ -256,7 +258,7 @@ describe('the backends agree on randomly generated repositories', () => {
 			});
 
 			it('builds the same graph', async () => {
-				const options = { maxCommits: 500, showTags: true, showRemoteBranches: true, showUncommittedChanges: true, showUntrackedFiles: true, commitOrdering: 'date' };
+				const options: LogOptions = { maxCommits: 500, showTags: true, showRemoteBranches: true, showUncommittedChanges: true, showUntrackedFiles: true, commitOrdering: CommitOrdering.Date };
 				const [a, b] = await Promise.all([rust.getCommits(root as never, options), cli.getCommits(root as never, options)]);
 				assert.equal(a.error, null, `the engine failed: ${a.error}`);
 				assert.equal(b.error, null, `the CLI failed: ${b.error}`);

@@ -183,3 +183,26 @@ their subtrees finish moving.
   and expect first-run iteration.
 - Gerrit/PR row badges still ride the first-paint entry (moving them needs an async badge
   path); ADR-0005 records the recalibrated first-paint closure budget.
+
+Open items of [OPTIMIZATION-PLAN.md](OPTIMIZATION-PLAN.md). Remove each line in the PR that
+lands it.
+
+- `GitGraphView.currentPanel` is still a static service locator, and the composition root wires
+  9–12 positional collaborators by hand (A2).
+- Six production files outside `git/process/` (plus two automation files) import
+  `child_process`, and `checkUnsafeGitArgs` is called from 19 sites in 6 files (A3).
+- Two configuration readers coexist: `takeSnapshot()` and the legacy `getConfig()` (A4).
+- 15 TypeScript and 2 Rust production files exceed 600 lines; `eslint-suppressions.json` and
+  `scripts/dev/check-file-size.mjs` list them (A5, R8).
+- Synchronous file IO on the host's event loop (`graphView/html.ts`, `git/operationState.ts`,
+  `platform/logger.ts`) (A6).
+- `activate()` awaits the `git --version` probe before it registers commands (V1).
+- No `capabilities.untrustedWorkspaces` declaration: the extension is disabled in Restricted
+  Mode by omission (V2, decision D-1).
+- The engine's repository handles are never evicted, and its caches are bounded by entry count
+  rather than bytes (R1, R2).
+- No timing markers exist, so no timing budget in REFACTOR-PLAN §3.8.1 has been measured (P1).
+- The webview store is ~30 public mutable fields, and `RepoLoader` encodes its load lifecycle in
+  flags (F1, F2). Accessibility semantics are minimal (F5).
+- `noUncheckedIndexedAccess` is off: enabling it reports 332 host and 886 webview errors
+  (decision D-6).

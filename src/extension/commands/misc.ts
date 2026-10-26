@@ -64,9 +64,7 @@ export function openFile(host: CommandHost, arg?: unknown) {
 		// A Git Graph URI has been provided
 		const request = decodeDiffDocUri(uri);
 		return openFileInEditor(request.repo, request.filePath, request.commit, host.repo.read, vscode.ViewColumn.Active).then((errorInfo) => {
-			if (errorInfo !== null) {
-				return showErrorMessage(t('unableToOpenFile', errorInfo));
-			}
+			return errorInfo !== null ? showErrorMessage(t('unableToOpenFile', errorInfo)) : undefined;
 		});
 	} else {
 		return showErrorMessage(t('openFileMissingArgs'));

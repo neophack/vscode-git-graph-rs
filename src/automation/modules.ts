@@ -13,7 +13,6 @@
  */
 
 declare global {
-	// eslint-disable-next-line no-var
 	const __AUTOMATION__: boolean | undefined;
 }
 
@@ -32,11 +31,11 @@ export interface AutomationModules {
 export function loadAutomationModules(): AutomationModules | null {
 	if (typeof __AUTOMATION__ === 'undefined' || __AUTOMATION__) {
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const suiteRunner = require('./suiteRunner') as typeof import('./suiteRunner');
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const reportView = require('./reportView') as typeof import('./reportView');
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const e2eGate = require('./e2eGate') as typeof import('./e2eGate');
 			return {
 				runAutomationSuite: suiteRunner.runAutomationSuite,

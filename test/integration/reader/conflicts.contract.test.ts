@@ -47,6 +47,7 @@ describe.skipIf(leg.needsAddon && !addonAvailable)(`predictConflicts (the merge/
 
 			const statusBefore = repo.git(['status', '--porcelain']);
 			const prediction = await leg.backend.predictConflicts(repo.path, 'main', 'conflicting-branch');
+			if (prediction === null) throw new Error('the reader returned no prediction');
 			expect(prediction.conflicted).toBe(true);
 			expect([...prediction.files]).toEqual(['shared.txt']);
 			expect(repo.git(['status', '--porcelain'])).toBe(statusBefore);

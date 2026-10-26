@@ -1,0 +1,25 @@
+{
+	// The options every TypeScript project in the repository shares. The leaves pick their own
+	// runtime floor (lib/target/module/types) and file set:
+	//   src/tsconfig.json          the extension host (bundled by scripts/build/build.mjs)
+	//   src/webview/tsconfig.json  the webview (bundled by scripts/build/webview.mjs)
+	//   tsconfig.json              the tests (Vitest) and the build configs they load
+	//   test/e2e/tsconfig.json     the E2E launcher (emitted to test/e2e/out)
+	// `npm run typecheck` checks all four.
+	"compilerOptions": {
+		"strict": true,
+		"noImplicitOverride": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+		"forceConsistentCasingInFileNames": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		// esbuild transpiles one file at a time, so every file must be compilable on its own.
+		"isolatedModules": true,
+		// Assignment semantics for class fields regardless of `target`: the shipped bundles
+		// target ES2018, where this is TypeScript's default, and the tests must run the same.
+		"useDefineForClassFields": false
+	}
+}

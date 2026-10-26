@@ -41,7 +41,7 @@ afterAll(() => {
 });
 
 /** A synchronous GitRunner over execFileSync, standing in for DataSource's spawned Git. */
-const runnerFor = (repo: string) => ({
+const runnerFor = (_repo: string) => ({
 	gitOutput: (args: string[], cwd: string, resolveValue: (v: string) => unknown) => Promise.resolve(resolveValue(execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))),
 	runGitCommand: (args: string[], cwd: string) => {
 		try {
@@ -147,7 +147,7 @@ describe('GerritDataSource over a throwaway repository', () => {
 
 describe('the Rust engine parses the NoteDb metas', () => {
 	/** A read-only synchronous GitRunner (the engine-agreement fixture needs no writes). */
-	const readRunner = (repo: string) => ({
+	const readRunner = (_repo: string) => ({
 		gitOutput: (args: string[], cwd: string, resolveValue: (v: string) => unknown) => Promise.resolve(resolveValue(execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))),
 		runGitCommand: () => Promise.resolve(null),
 		runGitCommandWithInput: () => Promise.resolve(null)

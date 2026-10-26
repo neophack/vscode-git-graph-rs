@@ -1,7 +1,9 @@
 # Backend Split: What Runs on the Rust Engine (gix), What Runs on the git CLI
 
-Every repository operation in the extension goes through `DataSource` (`src/dataSource.ts`).
-It holds a `GitBackend` (created by `createBackend()` in `src/backend/index.ts`):
+Every repository operation in the extension goes through the `GitRepository` facade
+(`src/extension/git/gitRepository.ts`): reads through its `read` face, a `GitBackend` created by
+`createBackend()` in `src/extension/git/read/backendIndex.ts`, and writes through its `write`
+face, the `GitWriter` (`src/extension/git/write/`), which always runs the `git` CLI. The reads:
 
 - **Rust engine** (`NativeBackend` → `native/win32-x64-msvc/git-graph.node` → `git-graph-core`,
   based on [gix]): reads the object database, refs and index directly, keeping the repository
@@ -9,29 +11,30 @@ It holds a `GitBackend` (created by `createBackend()` in `src/backend/index.ts`)
 - **git CLI** (`CliBackend`): spawns a `git` subprocess per call — the other half, behaving
   exactly like the original extension.
 
-The selection rule lives in `src/backend/index.ts`: **prefer the Rust engine**; only when the
+The selection rule lives in `backendIndex.ts` and `fallbackReader.ts`: **prefer the Rust engine**; only when the
 engine raises an "ask someone else" error — "Not a repository" or "not implemented" — does the
 code automatically fall back to the CLI (and log it). Genuine Git failures (bad revision,
 corrupt object) do not fall back — rerunning them through the CLI would only fail again, a
 little slower. On platforms without a prebuilt engine (or when the setting forces `git-cli`),
-the whole extension runs on the CLI, matching the original behaviour.
+the whole extension runs on the CLI, matching the original behaviour. The reverse also holds:
+on a machine with no `git` executable, `createBackend()` returns the engine alone, every read
+still works, and write operations report that they need Git.
 
 To find out which backend is currently in use: the Settings widget's **Backend (this platform)**
 section shows, per functional area, whether the Rust engine or the `git` CLI serves it on this
 platform (and the engine's version, or that it is absent); `describeBackend()` answers the same
-question in one string. To compare the shipped backend (what `createBackend()` returns on this machine) against the
-bare CLI on the same repository: `node scripts/bench.mjs <repo-path>` (the view load) or
-`node scripts/bench.mjs <repo-path> --all` (every read operation, one table row each). While `git-graph-rs.enableLog` is on, spawned commands
+question in one string. How the two backends are measured against each other is described in
+[performance.md](performance.md). While `git-graph-rs.enableLog` is on, spawned commands
 are logged with their durations and fallbacks with their reasons; `node scripts/analyze-log.mjs
 <logfile>` turns a session log into a summary of where the time went, which methods fell back to
 the CLI, and what failed.
 
 ## Operations served by the Rust engine (gix)
 
-These `DataSource` methods turn each request into a single JSON call to the engine (the
-`GitBackend` interface in `src/backend/api.ts` — 30 methods plus handle management):
+These reader methods turn each request into a single JSON call to the engine (the
+`GitBackend` interface in `src/extension/git/read/gitReader.ts`, plus handle management):
 
-| Feature (as the user sees it) | DataSource method | Engine implementation |
+| Feature (as the user sees it) | Reader method | Engine implementation |
 |---|---|---|
 | Branch/tag/remote/stash/HEAD lists shown when the view opens | `getRepoInfo` | `graph.rs: repo_info` |
 | Each page of the commit graph (three sort orders, filter by branch/author/path) | `getCommits` | `log.rs` + `graph.rs` |
@@ -56,8 +59,8 @@ These `DataSource` methods turn each request into a single JSON call to the engi
 | Number of commits newer than the pinned commit | `countCommitsBefore` | `log.rs: count_commits_before` |
 | Repository handle warm-up (when the view opens) | `openRepository` | `repository.rs: RepoManager` |
 
-The engine's error classification is `GitErrorKind` in `src/backend/types.ts`; cross-backend
-consistency is enforced by `tests/backends.test.mjs` — both backends must give identical
+The engine's error classification is `GitErrorKind` in `src/extension/git/read/types.ts`; cross-backend
+consistency is enforced by the reader contracts (`test/integration/reader/*.contract.test.ts`, run against both backends) — both backends must give identical
 answers for the same repository, and any divergence is an engine bug.
 
 ## Operations served by the git CLI
@@ -67,13 +70,13 @@ credential environment), matching the original extension's implementation:
 
 **Read operations (everything that still spawns git)**
 
-| Feature | DataSource method |
+| Feature | Method |
 |---|---|
 | Single-file diff of an arbitrary from→to pair (comparison view) | `getCommitFileDiff` (hybrid: only the commit↔its-parent case goes to the engine) |
 | "Are changes staged?" (checked before committing a squash) | `areStagedChanges` (private) |
 | Which remotes contain a commit (checked before pushing a tag) | `getRemotesContainingCommit` (private) |
 
-The engine also *declines* four argument shapes, which `FallbackBackend` then routes here
+The engine also *declines* four argument shapes, which the fallback reader (`fallbackReader.ts`) then routes here
 automatically: `countCommitsBefore` with reflog tips or `--glob=` patterns or an empty branch
 list, `getConfigList` for a file carrying `include`/`includeIf` directives, and `getCommits`
 when `useMailmap` is on and the work tree carries a `.mailmap` (served with `log.mailmap=true`).
@@ -97,9 +100,11 @@ when `useMailmap` is on and the work tree carries a `.mailmap` (served with `log
 - **All writes stay on the CLI**: git's write paths have the subtlest behaviour (reflog,
   hooks, merge state files, …), so the engine's payoff is small while its risk is large.
   When porting a write path, follow the same rule: implement it on both sides + add a
-  cross-backend comparison test.
+  cross-backend comparison test. Moving every write has a hard external limit: gix does not
+  implement `push`, and its fetch needs the network feature set. Migrating the writes is not
+  planned (REFACTOR-PLAN §2.2); `GitWriter` is the seam a future engine adapter would plug into.
 - **Fallback is a feature, not a crutch**: capabilities the engine hasn't implemented are
-  transparently routed to the CLI by `FallbackBackend`, invisible to the extension layer —
+  transparently routed to the CLI by the fallback reader, invisible to the extension layer —
   this lets the engine grow one capability at a time.
 
 ## Known behaviour differences (engine vs git)
@@ -110,6 +115,7 @@ when `useMailmap` is on and the work tree carries a `.mailmap` (served with `log
 | Tag signatures | The engine reads presence in-process; the extension delegates verification to `verify-tag --raw` when Git is available. Engine-only installations remain at status E |
 | Ordering | The engine is exact within a bounded window; whole-history ordering may differ from git |
 | Working-tree line counts | Files with unstaged modifications get no additions/deletions in "any revision vs working tree" comparisons |
+| Deferred line counts | Every details/comparison load renders its file list first (statuses only) and settles the `+N/-M` counts afterwards through `getLineCounts`, visible rows first, then background batches; a working-tree comparison settles nothing |
 | Unstaged renames | `getNewPathOfRenamedFile` follows committed renames exactly; a rename that exists only in the working tree (file moved but never committed) is not reassembled by the engine |
 | Lightweight tags | The Tag Details dialogue shows no Tagger/Date row (a lightweight tag has no tagger); the original showed an empty tagger and an invalid date |
 | mailmap | With `useMailmap` on and a `.mailmap` in the work tree the engine declines and the CLI answers with `log.mailmap=true`; the `mailmap.file`/`mailmap.blob` config keys are not consulted, so a repository redirecting its mailmap elsewhere stays on the engine path with unmapped names |

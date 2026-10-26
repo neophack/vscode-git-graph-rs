@@ -18,7 +18,7 @@ import { BlockSource, CHUNK_SIZE, destroyStream, EMPTY_BUFFER, GitStreamSpawner,
  * owns it — the section layout, the row builder and the background scan (REFACTOR-PLAN task 6.1).
  */
 
-export { GitStreamSpawner } from './hexDiffSources';
+export type { GitStreamSpawner } from './hexDiffSources';
 
 /** Bytes shown per row of the hex comparison view. */
 export const HEX_BYTES_PER_ROW = 16;

@@ -257,7 +257,7 @@ describe('the clipboard responder', () => {
 		vscodeState.resetCalls();
 		const posted: any[] = [];
 		await respondCopyToClipboard((message: unknown) => posted.push(message) as never, 'Hex Bytes', '48690AFF');
-		assert.deepEqual(posted, [{ command: 'copyToClipboard', type: 'Hex Bytes', error: null }]);
+		assert.deepEqual(posted.slice(), [{ command: 'copyToClipboard', type: 'Hex Bytes', error: null }]);
 		assert.equal(vscodeState.callsTo('clipboard.writeText')[0].args[0], '48690AFF');
 
 		// A refused write surfaces the localised failure the page's status line shows instead.

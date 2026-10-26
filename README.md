@@ -212,9 +212,9 @@ exactly as the original did; the Settings widget's **Backend** section shows whi
 which backend on this machine. Which operations the engine serves and which still spawn `git` is
 documented in [docs/BACKENDS.md](docs/BACKENDS.md).
 
-The write path (checkout, merge, rebase, stash operations, remotes, tags) is not on the
-`GitBackend` interface yet and still spawns `git` directly, exactly as the original did;
-[GAPS.md](GAPS.md) is the inventory of what is missing.
+The write path (checkout, merge, rebase, stash operations, remotes, tags) runs the `git` CLI,
+exactly as the original did; [docs/BACKENDS.md](docs/BACKENDS.md) lists every operation and the
+known behaviour differences between the engine and `git`.
 
 Correctness is checked against Git itself: the engine's tests build fixture repositories with the
 `git` command line and compare every reader to what git reports, and the reader contract suite under `test/integration/reader/`

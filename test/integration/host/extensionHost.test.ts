@@ -23,6 +23,7 @@ import { StatusBarItem } from '../../../src/extension/statusBar';
 import { DiffDocProvider, encodeDiffDocUri, decodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
 import { AskpassManager } from '../../../src/askpass/askpassManager';
 import { EventEmitter } from '../../../src/utils/event';
+import { GitFileStatus } from '../../../src/types/git';
 import { t } from '../../../src/i18n';
 import { activate, deactivate } from '../../../src/extension';
 
@@ -110,7 +111,7 @@ describe('StatusBarItem', () => {
 		const configEmitter = new EventEmitter();
 		const logger = { lines: [] as unknown[], log() { /* silent */ }, logCmd() { /* silent */ }, logError() { /* silent */ }, dispose() { /* silent */ } };
 		vscodeState.statusBarItems.length = 0;
-		const item = new StatusBarItem(3, repoEmitter.subscribe as never, configEmitter.subscribe as never, logger as never);
+		new StatusBarItem(3, repoEmitter.subscribe as never, configEmitter.subscribe as never, logger as never);
 		assert.equal((vscodeState.statusBarItems[0] as any).visible, true);
 	});
 });
@@ -121,7 +122,7 @@ describe('DiffDocProvider', () => {
 		const read = { getCommitFile: async (repo: string, commit: string, filePath: string) => { fetches++; return { contents: `${repo}@${commit}:${filePath}` }; } };
 		const provider = new DiffDocProvider(read as never);
 		vscodeState.textDocumentContentProviders.clear();
-		const uri = encodeDiffDocUri('/r', 'dir/f.txt', 'abc', 'M', 1);
+		const uri = encodeDiffDocUri('/r', 'dir/f.txt', 'abc', GitFileStatus.Modified, 1);
 
 		assert.equal(await provider.provideTextDocumentContent(uri), '/r@abc:dir/f.txt');
 		assert.equal(await provider.provideTextDocumentContent(uri), '/r@abc:dir/f.txt');
@@ -137,21 +138,21 @@ describe('DiffDocProvider', () => {
 
 	it('returns empty content for a side that does not exist, and the read error otherwise', async () => {
 		const provider = new DiffDocProvider({ getCommitFile: async () => { throw 'no such object'; } } as never);
-		const missing = encodeDiffDocUri('/r', 'f.txt', 'abc', 'A', 0);
+		const missing = encodeDiffDocUri('/r', 'f.txt', 'abc', GitFileStatus.Added, 0);
 		assert.equal((missing as any).path.endsWith(' (non-existent)'), true);
 		assert.equal(await provider.provideTextDocumentContent(missing), '');
-		assert.equal(await provider.provideTextDocumentContent(encodeDiffDocUri('/r', 'f.txt', 'abc', 'M', 1)), t('unableToRetrieveFile' as never, 'no such object'));
+		assert.equal(await provider.provideTextDocumentContent(encodeDiffDocUri('/r', 'f.txt', 'abc', GitFileStatus.Modified, 1)), t('unableToRetrieveFile' as never, 'no such object'));
 		assert.match(String(await provider.provideTextDocumentContent((stub.Uri.file('/x') as any).with({ scheme: 'git-graph-rs', query: '!!!' }))), /^Error inside provideTextDocumentContent/);
 		provider.dispose();
 	});
 
 	it('encodes / decodes the URI data, tolerating URL-encoded queries', () => {
-		const uri = encodeDiffDocUri('/r', 'dir\\f.txt', 'abc', 'D', 0) as any;
+		const uri = encodeDiffDocUri('/r', 'dir\\f.txt', 'abc', GitFileStatus.Deleted, 0) as any;
 		assert.equal(uri.scheme, 'git-graph-rs');
 		assert.deepEqual(decodeDiffDocUri(uri), { filePath: 'dir/f.txt', commit: 'abc', repo: '/r', exists: true });
 		assert.deepEqual(decodeDiffDocUri(uri.with({ query: encodeURIComponent(uri.query) })), decodeDiffDocUri(uri));
-		assert.equal((encodeDiffDocUri('/r', 'f.txt', '*', 'M', 1) as any).scheme, 'file');
-		assert.equal((encodeDiffDocUri('/r', 'f.txt', '*', 'D', 1) as any).scheme, 'git-graph-rs');
+		assert.equal((encodeDiffDocUri('/r', 'f.txt', '*', GitFileStatus.Modified, 1) as any).scheme, 'file');
+		assert.equal((encodeDiffDocUri('/r', 'f.txt', '*', GitFileStatus.Deleted, 1) as any).scheme, 'git-graph-rs');
 		const malformedMessage = t('malformedDiffDocUri' as never).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		assert.throws(() => decodeDiffDocUri((stub.Uri.file('/x') as any).with({ query: '%%%' })), new RegExp(malformedMessage));
 	});
@@ -172,7 +173,7 @@ describe('askpass bridge', () => {
 		assert.ok(env.VSCODE_GIT_GRAPH_ASKPASS_HANDLE!.includes('git-graph-askpass-'));
 	});
 
-	function runAskpassMain(args: string[], extraEnv: Record<string, string>) {
+	function runAskpassMain(args: string[], extraEnv: Record<string, string>): Promise<{ code: number; stderr: string; skipped: string | null }> {
 		// The askpass helper ships as dist/askpass/askpassMain.js (npm run build:dist); the suite
 		// self-skips when the dist tree has not been built.
 		const helper = path.join(root, 'dist', 'askpass', 'askpassMain.js');
@@ -181,7 +182,7 @@ describe('askpass bridge', () => {
 			const child = spawn(process.execPath, [helper, ...args], { env: { ...process.env, ...manager.getEnv(), ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
 			let stderr = '';
 			child.stderr.on('data', (d) => stderr += d);
-			child.on('exit', (code) => resolve({ code: code ?? -1, stderr, skipped: null as string | null }));
+			child.on('exit', (code) => resolve({ code: code ?? -1, stderr, skipped: null }));
 		});
 	}
 

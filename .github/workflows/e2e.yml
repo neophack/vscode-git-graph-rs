@@ -54,15 +54,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       # The native engine binary the extension loads (native/linux-x64-gnu/git-graph.node); the
       # E2E launcher's dist build bundles the host but never builds the addon itself.

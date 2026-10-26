@@ -1,4 +1,4 @@
-// ESLint flat config — Phase 1.6 (docs/REFACTOR-PLAN.md §5, task 1.6; §3.7.2 compatibility layers).
+// ESLint flat config (docs/REFACTOR-PLAN.md §3.7.2 compatibility layers).
 //
 // Scope: `npm run lint:js` → `eslint src scripts`.
 //
@@ -12,36 +12,32 @@
 //         environment from the runtime environment": tooling uses Node >=20).
 //   (b) src/webview/** — eslint-plugin-compat against browserslist `chrome 69`
 //         (§3.7.2, Chromium 69 floor; see .browserslistrc), no-implicit-globals
-//         at error (§5.1), and no Node builtins importable at all (§3.6).
+//         (§5.1), and no Node builtins importable at all (§3.6).
 //   (c) `(vscode.window as any)`-style API probes are forbidden outside
 //         src/extension/platform/** (§3.7.2 "VS Code API" row: post-1.38 APIs go
-//         through extension/platform/vscodeCompat.ts only; G7: zero `as any` API
-//         probes). Expressed with no-restricted-syntax: any TS `as any` cast
-//         whose expression mentions the `vscode` identifier.
-//   (d) task 4.10: native-UI calls (vscode.window.show* dialogs and
-//         createTerminal) are forbidden outside platform/** and views/** —
-//         they must run through the platform adapters or the UiPort
-//         (see src/extension/platform/INVENTORY.md). Three files that still
-//         carry unabsorbed sites are relaxed to warn until their owners absorb
-//         them (comments in place).
+//         through extension/platform/vscodeCompat.ts only). Expressed with
+//         no-restricted-syntax: any TS `as any` cast whose expression mentions the
+//         `vscode` identifier.
+//   (d) native-UI calls (vscode.window.show* dialogs and createTerminal) are
+//         forbidden outside platform/** and views/** — they must run through the
+//         platform adapters or the UiPort (see src/extension/platform/INVENTORY.md).
+//   (e) production sources: at most 600 lines per file, and the type-aware rules
+//         that catch dropped promises and non-exhaustive switches.
 //
 // Style (§4.2): tabs, single quotes, semicolons — kept via ESLint stylistic
 // rules only. NO Prettier, no repo-wide formatting sweep. ESLint 10 still ships
 // the core formatting rules and they parse TypeScript fine when the
-// typescript-eslint parser is used (verified: interface/enum/namespace/generics).
+// typescript-eslint parser is used.
 //
-// Ratchet-down plan (§5 task 1.6: "The dependency rules go live at warn level
-// first with a violation list; at the end of each phase, the relevant
-// directory's rules become error"):
-//   - End of Phase 3 (host git layer): the n/* floors and no-explicit-any go to
-//     error for src/extension/git/** once the legacy flat files have drained.
-//   - End of Phase 4 (host split): the vscode-probe rule goes to error once
-//     gitGraphView's remaining probe moved to platform/vscodeCompat.ts (task 1.8).
-//   - End of Phase 5 (webview): compat/compat goes to error (task 5.8 zeroes the
-//     existing violations); the §3.6 layer rules for src/webview tighten.
-//   - Every warn rule below records the current count in the Phase 1.6 report;
-//     counts may only go down. Rules that are error today must stay at 0.
+// The ratchet: every rule is at error. The violations that predate a rule live in
+// eslint-suppressions.json (ESLint bulk suppressions), so they do not fail the run
+// while any NEW violation does. The file may only shrink: ESLint fails when an
+// entry no longer matches anything, and `npx eslint src scripts --prune-suppressions`
+// removes the fixed ones. Adding entries (`--suppress-rule <rule>`) is a deliberate,
+// reviewed act, reserved for introducing a new rule over an existing backlog.
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import nPlugin from 'eslint-plugin-n';
@@ -53,34 +49,21 @@ const WEBVIEW_TS = ['src/webview/**/*.ts'];
 const PLATFORM_TS = ['src/extension/platform/**/*.ts'];
 const VIEWS_TS = ['src/extension/views/**/*.ts'];
 const HOST_TS_NO_WEBVIEW = ['src/**/*.ts', '!src/webview/**'];
-const HOST_TS_NO_WEBVIEW_NO_TESTS = ['src/**/*.ts', '!src/webview/**', '!src/**/*.test.ts'];
+const TESTS_TS = ['src/**/*.test.ts'];
 const SCRIPTS = ['scripts/**/*.{js,mjs,cjs}'];
 
-// Task 4.10 (REFACTOR-PLAN): every native-UI dialog the host shows must run through the platform
-// layer - the adapters (platform/notifications.ts, terminal.ts, clipboard.ts) or the UiPort
-// (platform/uiPort.ts) - so the E2E build can inject a ScriptedUiPort and replay every branch.
+// Every native-UI dialog the host shows must run through the platform layer - the adapters
+// (platform/notifications.ts, terminal.ts, clipboard.ts) or the UiPort (platform/uiPort.ts) - so
+// the E2E build can inject a ScriptedUiPort and replay every branch.
 // src/extension/platform/INVENTORY.md is the authoritative per-site survey this rule enforces.
-// platform/** owns the seams, and the plan allows vscode UI types in views/**; the files that
-// still carry unabsorbed sites (INVENTORY.md #6/#7, #8, #18) are temporarily relaxed to warn
-// below and ratchet to error as their owners absorb them.
+// platform/** owns the seams, and the plan allows vscode UI types in views/**.
 //
 // Expressed with no-restricted-syntax (no-restricted-properties cannot match the nested
 // `vscode.window` object path). `vscode.window['prop']`-style literal access is not matched;
 // the host never writes member access that way.
 const NATIVE_UI_SELECTOR = "MemberExpression[object.object.name='vscode'][object.property.name='window'][property.name=/^(showErrorMessage|showWarningMessage|showInformationMessage|showQuickPick|showInputBox|showSaveDialog|showOpenDialog|createTerminal)$/]";
 
-// The files that still carry unabsorbed native-UI sites: their rule stays at warn until their
-// owners absorb the sites, then they join the error block. commands/context.ts (#18), graphView/
-// globalSettings.ts (#6/#7) and repos/repoManager.ts (#8) are INVENTORY.md-registered.
-// graphView/panelContext.ts's archive save-dialog site was absorbed onto the UiPort by task
-// 4.10's ScriptedUiPort wave (scenarios answer it), so it left the carriers and is at error.
-const NATIVE_UI_CARRIERS = [
-	'src/extension/commands/context.ts',
-	'src/extension/graphView/globalSettings.ts',
-	'src/extension/repos/repoManager.ts'
-];
-
-const NATIVE_UI_MESSAGE = "Native UI goes through the platform layer (REFACTOR-PLAN task 4.10): route 'vscode.window' dialogs through the platform adapters (notifications.ts / terminal.ts) or the UiPort - see src/extension/platform/INVENTORY.md.";
+const NATIVE_UI_MESSAGE = "Native UI goes through the platform layer: route 'vscode.window' dialogs through the platform adapters (notifications.ts / terminal.ts) or the UiPort - see src/extension/platform/INVENTORY.md.";
 
 // The `as any` vscode probe selector of layer (c), lifted to a constant so layer (d)'s
 // re-declaration of no-restricted-syntax (a later flat-config block replaces the whole
@@ -109,6 +92,12 @@ export default tseslint.config(
 			'.probe/**'
 		]
 	},
+	// A disable directive that suppresses nothing hides the next real violation on that line.
+	{
+		linterOptions: {
+			reportUnusedDisableDirectives: 'error'
+		}
+	},
 
 	// ---- scripts/** (.js/.mjs/.cjs dev tooling) --------------------------------
 	// Dev scripts run on the developer's Node (engines.node >=18), NOT on the
@@ -125,8 +114,8 @@ export default tseslint.config(
 		rules: {
 			'n/no-unsupported-features/es-builtins': ['error', { version: '>=18.0.0' }],
 			'n/no-unsupported-features/node-builtins': ['error', { version: '>=18.0.0' }],
-			'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
-			'prefer-const': 'warn'
+			'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
+			'prefer-const': 'error'
 		}
 	},
 
@@ -138,33 +127,15 @@ export default tseslint.config(
 			// no-undef is the TypeScript compiler's job (types, ambient modules,
 			// DOM globals); ESLint core no-undef misfires on TS sources.
 			'no-undef': 'off',
-			// Repo style (§4.2): tabs, single quotes, semicolons. quotes/semi/
-			// no-mixed-spaces-and-tabs are error — the tree already conforms.
-			// indent starts at warn: 68 hits today, concentrated in the legacy
-			// flat files and src/automation/catalog.ts (claimed by other waves);
-			// ratchets to error as those drain.
+			// Repo style (§4.2): tabs, single quotes, semicolons.
 			quotes: ['error', 'single', { avoidEscape: true }],
 			semi: ['error', 'always'],
 			'no-mixed-spaces-and-tabs': 'error',
-			indent: ['warn', 'tab', { SwitchCase: 1 }],
-			// Realistic starting bar (§5 task 1.6): rules that fire on the legacy
-			// flat files start at warn and ratchet to error per phase. Phase 1.6
-			// starting counts (drift with in-flight migration work — the binding
-			// constraint is zero errors): prefer-const ~98, indent ~68 (mostly the
-			// legacy flat files and the automation catalog), no-explicit-any ~48,
-			// no-require-imports 3, no-unused-expressions 3 (src/hexDiff.ts),
-			// no-namespace 1 (src/repoManager.ts), no-this-alias 1
-			// (src/webview/binaryCompare/hexView.ts, in-flight migration).
-			'prefer-const': 'warn',
-			'@typescript-eslint/no-explicit-any': 'warn',
-			'@typescript-eslint/no-require-imports': 'warn',
-			'@typescript-eslint/no-unused-expressions': 'warn',
-			'@typescript-eslint/no-namespace': 'warn',
-			'@typescript-eslint/no-this-alias': 'warn',
+			indent: ['error', 'tab', { SwitchCase: 1 }],
 			// Unused `_`-prefixed args and ignored catch bindings are idiomatic
 			// in this repo; tsc's noUnusedLocals/noUnusedParameters remains the
 			// real gate for compiled code.
-			'@typescript-eslint/no-unused-vars': ['warn', {
+			'@typescript-eslint/no-unused-vars': ['error', {
 				args: 'all',
 				argsIgnorePattern: '^_',
 				caughtErrors: 'none',
@@ -181,8 +152,8 @@ export default tseslint.config(
 		files: HOST_TS_NO_WEBVIEW,
 		plugins: { n: nPlugin },
 		rules: {
-			'n/no-unsupported-features/es-builtins': ['warn', { version: '>=10.11.0' }],
-			'n/no-unsupported-features/node-builtins': ['warn', { version: '>=10.11.0' }]
+			'n/no-unsupported-features/es-builtins': ['error', { version: '>=10.11.0' }],
+			'n/no-unsupported-features/node-builtins': ['error', { version: '>=10.11.0' }]
 		}
 	},
 	{
@@ -199,9 +170,8 @@ export default tseslint.config(
 		files: WEBVIEW_TS,
 		...compatPlugin.configs['flat/recommended'],
 		rules: {
-			// §5.8: existing compat violations are listed now and zeroed in Phase 5.
-			'compat/compat': 'warn',
-			// §5.1 acceptance: modules do not communicate via globals.
+			'compat/compat': 'error',
+			// §5.1: modules do not communicate via globals.
 			'no-implicit-globals': 'error',
 			// §3.6: webview may import webview/** and shared/** only.
 			'no-restricted-imports': ['error', {
@@ -228,17 +198,14 @@ export default tseslint.config(
 		}
 	},
 
-	// ---- (c) vscode `as any` API probes (§3.7.2 VS Code API row, G7) ------------
+	// ---- (c) vscode `as any` API probes (§3.7.2 VS Code API row) ----------------
 	// Applies everywhere in src except the platform compat module, which is the
 	// single sanctioned place for runtime feature detection (§3.7.3).
 	{
 		files: HOST_TS,
 		ignores: PLATFORM_TS,
 		rules: {
-			'no-restricted-syntax': ['warn', {
-				selector: 'TSAsExpression[typeAnnotation.type=\'TSAnyKeyword\'] Identifier[name=\'vscode\']',
-				message: 'Do not probe the vscode API with `as any` casts (REFACTOR-PLAN §3.7.2/§3.7.3): route post-1.38 APIs through extension/platform/vscodeCompat.ts.'
-			}]
+			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR]
 		}
 	},
 	{
@@ -248,27 +215,46 @@ export default tseslint.config(
 		}
 	},
 
-	// ---- (d) native UI through the platform layer (task 4.10, INVENTORY.md) -----
+	// ---- (d) native UI through the platform layer (INVENTORY.md) ----------------
 	// After (c) deliberately: a later block replaces the whole rule value per file
-	// set, so this block re-declares the `as any` probe selector to keep it in force
-	// at its ratcheted level (error - it is at zero today, G7 forbids the probes).
+	// set, so this block re-declares the `as any` probe selector to keep it in force.
 	// The native-UI selector applies everywhere except the platform layer (which owns
-	// the seams) and views/ (the plan allows vscode UI types there); the three files
-	// that still carry unabsorbed sites are relaxed to warn in the block that follows.
+	// the seams) and views/ (the plan allows vscode UI types there).
 	{
 		files: HOST_TS,
-		ignores: [...PLATFORM_TS, ...VIEWS_TS, ...NATIVE_UI_CARRIERS],
+		ignores: [...PLATFORM_TS, ...VIEWS_TS],
 		rules: {
 			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY]
 		}
 	},
+
+	// ---- (e) production sources: size and type-aware rules -----------------------
+	// Type information comes from the nearest tsconfig.json (src/tsconfig.json for the host,
+	// src/webview/tsconfig.json for the webview). Tests are left out: they are not shipped, and
+	// their deliberately loose doubles would drown the signal.
 	{
-		// Temporary relaxations (ratchet to error when absorbed - see INVENTORY.md): the files
-		// listed in NATIVE_UI_CARRIERS. Their owners absorb the sites onto the UiPort; the probe
-		// rule of layer (c) keeps its current warn level for these files.
-		files: NATIVE_UI_CARRIERS,
+		files: HOST_TS,
+		ignores: TESTS_TS,
+		languageOptions: {
+			parserOptions: {
+				projectService: true,
+				tsconfigRootDir: path.dirname(fileURLToPath(import.meta.url))
+			}
+		},
 		rules: {
-			'no-restricted-syntax': ['warn', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY]
+			'@typescript-eslint/no-floating-promises': 'error',
+			'@typescript-eslint/no-misused-promises': 'error',
+			'@typescript-eslint/await-thenable': 'error',
+			'@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }]
+		}
+	},
+	// The string dictionaries are data tables, not modules to split. Rust sources get the same
+	// limit from scripts/dev/check-file-size.mjs.
+	{
+		files: HOST_TS,
+		ignores: [...TESTS_TS, 'src/shared/i18n/**'],
+		rules: {
+			'max-lines': ['error', { max: 600 }]
 		}
 	}
 );

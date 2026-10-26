@@ -22,7 +22,29 @@ export default defineConfig({
 	},
 	test: {
 		include: ['src/**/*.test.ts', 'test/integration/**/*.test.ts', 'test/tooling/**/*.test.ts', 'test/e2e/*.test.ts'],
-		environment: 'node'
+		environment: 'node',
+		// The 5 s default is shorter than CPU-bound unit tests take while every file runs in
+		// parallel, more so under coverage instrumentation. Slow integration files set their own.
+		testTimeout: 20000,
+		// `npm run test:coverage`. The webview journeys drive the compiled bundle inside jsdom, which
+		// v8 cannot map back to src/webview, so the webview figures count its unit tests only.
+		coverage: {
+			provider: 'v8',
+			include: ['src/**/*.ts'],
+			exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'src/shared/engine/**'],
+			reporter: ['text-summary', 'json-summary', 'lcov'],
+			// Floors, not targets: each is the measured figure rounded down, minus one point (so a
+			// platform difference does not trip it). Raise them by hand in the PR that raises
+			// coverage; never lower one to make a PR pass.
+			thresholds: {
+				statements: 68, branches: 79, functions: 74, lines: 68,
+				'src/extension/git/**': { statements: 88, branches: 88, functions: 92, lines: 88 },
+				'src/extension/**': { statements: 82, branches: 83, functions: 84, lines: 82 },
+				'src/webview/**': { statements: 35, branches: 70, functions: 57, lines: 35 },
+				'src/shared/**': { statements: 99, branches: 99, functions: 99, lines: 99 },
+				'src/automation/**': { statements: 92, branches: 75, functions: 93, lines: 92 }
+			}
+		}
 	}
 });
 

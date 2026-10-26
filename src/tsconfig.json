@@ -1,28 +1,29 @@
 {
+	// The extension host, as it ships: scripts/build/build.mjs bundles it for VS Code 1.38's
+	// Node 10.11, which implements ES2018. Node API floors are ESLint's job (eslint-plugin-n);
+	// `lib` here keeps newer ECMAScript builtins out. Colocated tests run on the dev Node and are
+	// checked by the root tsconfig.json instead.
+	"extends": "../tsconfig.base.json",
 	"compilerOptions": {
-		"declaration": true,
 		"lib": [
-			"es6"
+			"es2018"
 		],
+		"target": "es2018",
 		"module": "commonjs",
 		"moduleResolution": "node",
-		"outDir": "../out",
-		"noFallthroughCasesInSwitch": true,
-		"noImplicitAny": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"removeComments": true,
-		"sourceMap": true,
-		"strict": true,
-		"target": "es6",
 		"types": [
 			"node",
-			"vscode",
-			"./utils/@types/node"
+			"vscode"
 		],
-		"skipLibCheck": true
+		// Emitted only by `npm run build:ts`, for the performance gates (test/perf/lib/env.mjs).
+		"outDir": "../out",
+		"sourceMap": true
 	},
+	"include": [
+		"**/*.ts"
+	],
 	"exclude": [
-		"webview"
+		"webview",
+		"**/*.test.ts"
 	]
 }

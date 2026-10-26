@@ -1,0 +1,12 @@
+# Third-party actions are pinned by commit SHA (with the release in a trailing comment), so a
+# moved tag cannot change what CI runs. Dependabot proposes the bumps.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'

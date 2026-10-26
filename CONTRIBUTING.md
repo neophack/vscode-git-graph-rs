@@ -51,15 +51,35 @@ full-test script). The complete old→new mapping is recorded in the drain commi
 test layout is now exactly the L0–L4 structure of `docs/REFACTOR-PLAN.md` §6.1; there is no
 separate legacy runner.
 
-## Lint
+## Static checks
 
 ```bash
+npm run check          # everything below, in order: what the CI `static` job runs
+npm run typecheck      # the four TypeScript projects (host, webview, tests, E2E launcher)
+npm run lint:js        # ESLint over src/ and scripts/
+npm run lint:css       # stylelint (the Chromium 69 floor)
+npm run lint:deps      # the dependency rules (dependency-cruiser) and their baseline
+npm run lint:size      # the 600-line limit for the Rust sources
 npm run lint           # cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
+npm run check:generated  # regenerates src/shared/engine and fails if it differs from the commit
+npm run test:coverage  # the Vitest suite with coverage; fails below the floors in vitest.config.ts
 ```
 
-Warnings are errors. The Rust engine takes no `unsafe`. The TypeScript lint toolchain
-(ESLint, dependency-cruiser, compat rules) is being brought up alongside the refactor; its
-rules tighten per the plan's §3.6 dependency rules as each directory's migration completes.
+Every rule is an error. Violations that predate a rule are recorded rather than waived, and
+each record may only shrink:
+
+- **ESLint**: `eslint-suppressions.json` (ESLint bulk suppressions). A new violation fails; so
+  does a suppression that no longer matches anything. After fixing suppressed code, run
+  `npx eslint src scripts --prune-suppressions` and commit the smaller file.
+- **dependency-cruiser**: `docs/depcruise-baseline.json`. A new violation fails, and so does an
+  entry that no longer occurs; `npm run lint:deps -- --fix` removes those.
+- **Rust file size**: the `KNOWN` list in `scripts/dev/check-file-size.mjs`.
+- **Coverage**: the floors in `vitest.config.ts`. Raise them in the PR that raises coverage.
+
+The Rust engine takes no `unsafe`.
+
+The tooling needs Node 20 or newer (`.nvmrc`). That is the developer's Node only: the shipped
+extension runs on VS Code 1.38's Node 10.11, which the build and lint gates hold it to.
 
 ## Repository layout and where code goes
 

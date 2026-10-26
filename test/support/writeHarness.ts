@@ -59,7 +59,7 @@ export function writeHarness(): WriteHarness {
 		config: { squashPullMessageFormat: SquashMessageFormat.Default, squashMergeMessageFormat: SquashMessageFormat.Default },
 		ui: {
 			quoteForTerminal: () => null,
-			openGitTerminal: () => null
+			openGitTerminal: () => Promise.resolve(null)
 		},
 		repoConfig: { invalidate: () => undefined }
 	};
@@ -73,4 +73,10 @@ export function writeHarness(): WriteHarness {
 /** TRUE when a flow's result is a data-loss warning (an object with a message) rather than an ErrorInfo. */
 export function isWarning(value: unknown): value is { message: string } {
 	return value !== null && typeof value === 'object' && typeof (value as { message: unknown }).message === 'string';
+}
+
+/** The message of a flow's data-loss warning; throws when the result is not one. */
+export function warningMessage(value: unknown): string {
+	if (!isWarning(value)) throw new Error('expected a data-loss warning, got ' + JSON.stringify(value));
+	return value.message;
 }

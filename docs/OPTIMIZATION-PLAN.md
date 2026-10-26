@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | Proposal, pending review (§10 lists decisions) |
+| Status | Accepted with M0 in progress (§12); §10 decisions D-1, D-2, D-4 still open |
 
 ---
 
@@ -645,3 +645,50 @@ Total ≈ **51–59 person-days**, ≈ 6–7 weeks with two people (M1 ∥ M2, t
 - No frontend framework, no Prettier, no `engines.vscode` bump (REFACTOR-PLAN D1/D4/D6 stand).
 - No migration of writes onto the engine (still a non-goal. `gix` has no push, and the seam exists).
 - No new runtime dependencies. `axe-core`, `cargo-deny`, `cargo-fuzz` and `cargo-bloat` are dev/CI only.
+
+---
+
+## 12. Progress
+
+### M0 (branch `task/m0-gates`)
+
+Landed: G1, G2, G4, G5, S4, and D except the `build:ts` removal. G3 landed without
+`no-unnecessary-condition`. [dod-status.md](dod-status.md) is rewritten under the "held = CI fails
+on regression" rule.
+
+Measured while doing it, correcting §1:
+
+- `checkUnsafeGitArgs` has **19 call sites in 6 files**, not 2. A3's "one call site" target is
+  correspondingly larger.
+- The `max-lines` backlog is 15 TypeScript files plus 2 Rust files. `commitTable.ts` crossed 600
+  lines after this plan was written; the i18n dictionaries are data tables and are exempt.
+- **The test tree was never typechecked.** The old root `tsconfig.json` covered `src/` only, so
+  `test/**` held 94 type errors. They are fixed, and the tests are now the root project.
+- ESLint's backlog is 306 suppressions. The type-aware rules added 74 `no-floating-promises` and
+  7 `no-misused-promises` findings, all suppressed and due for burn-down as §3 touches each file.
+
+Deviations from the text above:
+
+- **G5, `tsc -b`**: not used. Project references would force `composite` and declaration emit
+  for every leaf, and buy only incremental builds. `npm run typecheck` runs the four leaves
+  (`src/tsconfig.json` host, `src/webview/tsconfig.json`, root `tsconfig.json` tests,
+  `test/e2e/tsconfig.json`) over a shared `tsconfig.base.json`. The host leaf stays at
+  `src/tsconfig.json` until A1 empties the flat root, because esbuild and Vitest resolve the
+  nearest config. The bundles are byte-identical to before, apart from two `return undefined`
+  statements that `noImplicitReturns` required.
+- **G5 / D-6, `noUncheckedIndexedAccess`**: not enabled. It reports 332 host and 886 webview
+  errors, and TypeScript has no bulk-suppression file, so "on, with suppressions" would mean
+  about 1,200 `@ts-expect-error` comments. Proposal: enable it per directory as F1/F2 rewrite
+  the code it matters most for (`commitLookup`, the table).
+- **G3, `no-unnecessary-condition`**: left out. With `noUncheckedIndexedAccess` off, TypeScript
+  treats every indexed read as defined, so the rule flags every legitimate `if (arr[i])` guard.
+  Enable it together with D-6.
+- **D, `build-vsix.bat`**: kept. It is tracked (commit 58fc9d6), not untracked clutter. The other
+  root artifacts listed in §9 were already gitignored.
+- **D, `build:ts`**: kept, now compiling the host leaf only. Moving `test/perf/lib/env.mjs` to an
+  in-memory esbuild build is left for when P2 is next touched.
+- **G4**: the Vitest default timeout is raised to 20 s, and one fixed-tick wait in
+  `repoManager.test.ts` became a `vi.waitFor`. Under coverage instrumentation the suite
+  otherwise failed 1–3 different load-sensitive tests per run.
+
+Found, not fixed: `docs/performance.md` still cites the deleted `scripts/bench.mjs`.

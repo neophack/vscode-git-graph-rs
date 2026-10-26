@@ -19,7 +19,9 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { vscodeState } from './vscodeAlias';
 import { vscodeMockOf } from './fakeVscode';
+import type * as vscode from 'vscode';
 import { EventEmitter } from '../../src/utils/event';
+import type { GitExecutable } from '../../src/utils/findGit';
 import { Logger } from '../../src/extension/platform/logger';
 import { ExtensionState } from '../../src/extension/platform/storage';
 import { AvatarManager } from '../../src/extension/integrations/avatars/avatarManager';
@@ -133,7 +135,7 @@ let graphPanel: any = null;
  * hidden-commit regression test pins down). */
 const fileWatchers: any[] = [];
 function makeFileWatcher() {
-	const watcher = { __handlers: { change: [] as Array<(uri: unknown) => void>, create: [] as Array<(uri: unknown) => void>, delete: [] as Array<(uri: unknown) => void> }, __disposed: false };
+	const watcher: any = { __handlers: { change: [] as Array<(uri: unknown) => void>, create: [] as Array<(uri: unknown) => void>, delete: [] as Array<(uri: unknown) => void> }, __disposed: false };
 	watcher.onDidChange = (handler: (uri: unknown) => void) => { watcher.__handlers.change.push(handler); return disposable(); };
 	watcher.onDidCreate = (handler: (uri: unknown) => void) => { watcher.__handlers.create.push(handler); return disposable(); };
 	watcher.onDidDelete = (handler: (uri: unknown) => void) => { watcher.__handlers.delete.push(handler); return disposable(); };
@@ -233,8 +235,8 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	stub.workspace.workspaceFolders[0] = { uri: stub.Uri.file(repo), name: path.basename(repo), index: 0 };
 
 	const logger = new Logger();
-	const gitExecutableEmitter = new EventEmitter();
-	const configurationEmitter = new EventEmitter();
+	const gitExecutableEmitter = new EventEmitter<GitExecutable | null>();
+	const configurationEmitter = new EventEmitter<vscode.ConfigurationChangeEvent>();
 
 	// A real in-memory memento: the extension persists per-repo state (code reviews, repository
 	// preferences, ...) through workspaceState, and stateless stubs made every read forget every
@@ -299,7 +301,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 		// call registers and engine-opens further repositories whose memory-mapped pack files
 		// would otherwise hold the after-hook's cleanup hostage on Windows (EPERM past the whole
 		// bounded-removal budget).
-		for (const known of Object.keys(repoManager.getRepos())) repoManager.removeRepo(known);
+		for (const known of Object.keys(repoManager.getRepos())) repoManager['removeRepo'](known);
 		try { viewReader.closeAllRepositories(); } catch { /* nothing opened yet */ }
 		for (const server of createdServers.splice(0)) server.close();
 	};

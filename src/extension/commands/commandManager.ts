@@ -144,6 +144,7 @@ export class CommandManager extends Disposable implements CommandHost {
 					return result;
 				} catch (error) {
 					this.logger.logError('Command "' + command + '" failed: ' + error);
+					return undefined;
 				}
 			})
 		);

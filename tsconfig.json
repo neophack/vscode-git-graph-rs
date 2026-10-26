@@ -1,23 +1,35 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "lib": ["ES2022"],
-    "outDir": "out",
-    "rootDir": "src",
-    "strict": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "exactOptionalPropertyTypes": false,
-    "declaration": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/webview/**"]
+	// The tests: the colocated host unit tests and the test/ tree, as Vitest runs them (ES modules
+	// on the dev Node, jsdom for the webview journeys). Production sources they import are checked
+	// here under these options too, and on their own floors by src/tsconfig.json and
+	// src/webview/tsconfig.json.
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": [
+			"ES2022",
+			"DOM",
+			"DOM.Iterable"
+		],
+		"target": "ES2022",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"types": [
+			"node"
+		],
+		// The tooling tests import the build scripts (.mjs): infer their types, without checking them.
+		"allowJs": true,
+		"checkJs": false,
+		"noEmit": true
+	},
+	"include": [
+		"src/**/*.test.ts",
+		"test/support/**/*.ts",
+		"test/integration/**/*.ts",
+		"test/tooling/**/*.ts",
+		"test/e2e/*.test.ts",
+		"vitest.config.ts"
+	],
+	"exclude": [
+		"src/webview/**"
+	]
 }
