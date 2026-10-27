@@ -1,18 +1,21 @@
-import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { Avatar, AvatarCache } from '../integrations/avatars/avatarManager';
-import { t } from './i18n';
+import { Avatar } from '../integrations/avatars/avatarManager';
 import { BooleanOverride, FileViewType, GitGraphViewGlobalState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, RepoCommitOrdering } from '../../shared/model/webview';
-import { CodeReview, GitRepoSet, GitRepoState } from '../../shared/model/repoState';
-import { ErrorInfo } from '../../shared/protocol/messages';
+import { GitRepoSet, GitRepoState } from '../../shared/model/repoState';
 import { GitExecutable } from '../git/executable/findGit';
 import { getPathFromStr } from './paths';
 import { Disposable } from '../../shared/util/disposable';
 import { GgEvent } from '../../shared/util/event';
 import type { ConfigProvider } from './config';
-import { isStateRecord, readVersionedState, encodeVersionedState } from './storageVersioned';
+import { isStateRecord, VersionedStateKv } from './storageVersioned';
+import { AvatarStore } from './storageAvatars';
+import { CodeReviewStore } from './storageCodeReviews';
+import type { CodeReviews } from './storageCodeReviews';
+import { ViewStateStore } from './storageViewState';
 
 export { STORAGE_MIGRATIONS, STORAGE_STATE_VERSION } from './storageVersioned';
+export type { CodeReviewData, CodeReviews } from './storageCodeReviews';
+export { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE } from './storageViewState';
 
 /**
  * Platform storage adapter (REFACTOR-PLAN 3.3): the ONE storage module, unifying the
@@ -30,7 +33,12 @@ export { STORAGE_MIGRATIONS, STORAGE_STATE_VERSION } from './storageVersioned';
  *
  * The `ExtensionState` values are versioned user data (REFACTOR-PLAN §3.7.2): reads migrate
  * older versions leniently and preserve newer writers' unknown fields, while every write
- * stamps `STORAGE_STATE_VERSION` - see ./storageVersioned.ts for the envelope and migrations.
+ * stamps `STORAGE_STATE_VERSION`. All of it sits on ONE versioned KV (`VersionedStateKv`,
+ * ./storageVersioned.ts); the per-store modules are ./storageAvatars.ts (the avatar cache and
+ * storage folder), ./storageCodeReviews.ts (the code-review records) and ./storageViewState.ts
+ * (the global/workspace view state and the view snapshot), with this class the facade that
+ * holds the repository, Git-executable and author-identity keys and keeps the flat
+ * `ExtensionState` API every consumer already uses.
  */
 
 /** The `vscode.Memento` surface this adapter uses. */
@@ -98,18 +106,12 @@ export class Storage {
 // The Git Graph Extension State (absorbed verbatim from the former flat src/extensionState.ts)
 // --------------------------------------------------------------------------------------
 
-const AVATAR_STORAGE_FOLDER = '/avatars';
-const AVATAR_CACHE = 'avatarCache';
-const CODE_REVIEWS = 'codeReviews';
 const GLOBAL_AUTHOR_WRITTEN = 'globalAuthorWritten';
-const GLOBAL_VIEW_STATE = 'globalViewState';
 const IGNORED_REPOS = 'ignoredRepos';
 const LAST_ACTIVE_REPO = 'lastActiveRepo';
 const LAST_KNOWN_GIT_PATH = 'lastKnownGitPath';
 const LAST_KNOWN_GIT = 'lastKnownGit';
 const REPO_STATES = 'repoStates';
-const VIEW_SNAPSHOT = 'viewSnapshot';
-const WORKSPACE_VIEW_STATE = 'workspaceViewState';
 
 /** The author identity of the global Git configuration that this extension wrote. */
 export interface WrittenGlobalAuthor {
@@ -155,33 +157,15 @@ export const DEFAULT_REPO_STATE: GitRepoState = {
 	workspaceFolderIndex: null
 };
 
-export const DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE: GitGraphViewGlobalState = {
-	alwaysAcceptCheckoutCommit: false,
-	issueLinkingConfig: null,
-	pushTagSkipRemoteCheck: false
-};
-
-const DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE: GitGraphViewWorkspaceState = {
-	findIsCaseSensitive: false,
-	findIsRegex: false,
-	findOpenCommitDetailsView: false
-};
-
-export interface CodeReviewData {
-	lastActive: number;
-	lastViewedFile: string | null;
-	remainingFiles: string[];
-}
-export type CodeReviews = { [repo: string]: { [id: string]: CodeReviewData } };
-
 /**
  * Manages the Git Graph Extension State, which stores data in both the Visual Studio Code Global & Workspace State.
  */
 export class ExtensionState extends Disposable {
-	private readonly globalState: vscode.Memento;
-	private readonly workspaceState: vscode.Memento;
+	private readonly kv: VersionedStateKv;
 	private readonly globalStoragePath: string;
-	private avatarStorageAvailable: boolean = false;
+	private readonly avatars: AvatarStore;
+	private readonly codeReviews: CodeReviewStore;
+	private readonly viewState: ViewStateStore;
 
 	/**
 	 * Creates the Git Graph Extension State.
@@ -191,24 +175,11 @@ export class ExtensionState extends Disposable {
 	 */
 	constructor(context: vscode.ExtensionContext, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, private readonly config: ConfigProvider) {
 		super();
-		this.globalState = context.globalState;
-		this.workspaceState = context.workspaceState;
-
+		this.kv = new VersionedStateKv(context.globalState, context.workspaceState);
 		this.globalStoragePath = getPathFromStr(context.globalStoragePath);
-		fs.stat(this.globalStoragePath + AVATAR_STORAGE_FOLDER, (err) => {
-			if (!err) {
-				this.avatarStorageAvailable = true;
-			} else {
-				fs.mkdir(this.globalStoragePath, () => {
-					fs.mkdir(this.globalStoragePath + AVATAR_STORAGE_FOLDER, (err) => {
-						if (!err || err.code === 'EEXIST') {
-							// The directory was created, or it already exists
-							this.avatarStorageAvailable = true;
-						}
-					});
-				});
-			}
-		});
+		this.avatars = new AvatarStore(this.kv, this.globalStoragePath);
+		this.codeReviews = new CodeReviewStore(this.kv);
+		this.viewState = new ViewStateStore(this.kv);
 
 		this.registerDisposable(
 			onDidChangeGitExecutable((gitExecutable) => {
@@ -226,7 +197,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The set of repositories.
 	 */
 	public getRepos() {
-		const repoSet = this.getWorkspaceState<GitRepoSet>(REPO_STATES, {});
+		const repoSet = this.kv.readWorkspace<GitRepoSet>(REPO_STATES, {});
 		if (!isStateRecord(repoSet)) return {};
 		const outputSet: GitRepoSet = {};
 		let showRemoteBranchesDefaultValue: boolean | null = null;
@@ -249,7 +220,7 @@ export class ExtensionState extends Disposable {
 	 * @param gitRepoSet The set of repositories.
 	 */
 	public saveRepos(gitRepoSet: GitRepoSet) {
-		this.updateWorkspaceState(REPO_STATES, gitRepoSet);
+		this.kv.writeWorkspace(REPO_STATES, gitRepoSet);
 	}
 
 	/**
@@ -271,65 +242,6 @@ export class ExtensionState extends Disposable {
 	}
 
 
-	/* Global View State */
-
-	/**
-	 * Get the global state of the Git Graph View.
-	 * @returns The global state.
-	 */
-	public getGlobalViewState() {
-		const globalViewState = this.getGlobalState<GitGraphViewGlobalState>(GLOBAL_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE);
-		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, isStateRecord(globalViewState) ? globalViewState : {});
-	}
-
-	/**
-	 * Set the global state of the Git Graph View.
-	 * @param state The global state.
-	 */
-	public setGlobalViewState(state: GitGraphViewGlobalState) {
-		return this.updateGlobalState(GLOBAL_VIEW_STATE, state);
-	}
-
-
-	/* Workspace View State */
-
-	/**
-	 * Get the workspace state of the Git Graph View.
-	 * @returns The workspace state.
-	 */
-	public getWorkspaceViewState() {
-		const workspaceViewState = this.getWorkspaceState<GitGraphViewWorkspaceState>(WORKSPACE_VIEW_STATE, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE);
-		return Object.assign({}, DEFAULT_GIT_GRAPH_VIEW_WORKSPACE_STATE, isStateRecord(workspaceViewState) ? workspaceViewState : {});
-	}
-
-	/**
-	 * Set the workspace state of the Git Graph View.
-	 * @param state The workspace state.
-	 */
-	public setWorkspaceViewState(state: GitGraphViewWorkspaceState) {
-		return this.updateWorkspaceState(WORKSPACE_VIEW_STATE, state);
-	}
-
-
-	/* View Snapshot */
-
-	/**
-	 * Get the last view state the Git Graph View's page reported in the current workspace.
-	 * @returns The snapshot, or NULL if none was reported yet.
-	 */
-	public getViewSnapshot() {
-		return this.getWorkspaceState<GitGraphViewSnapshot | null>(VIEW_SNAPSHOT, null);
-	}
-
-	/**
-	 * Set the last view state the Git Graph View's page reported in the current workspace.
-	 * @param snapshot The snapshot.
-	 */
-	public setViewSnapshot(snapshot: GitGraphViewSnapshot) {
-		this.updateWorkspaceState(VIEW_SNAPSHOT, snapshot);
-	}
-
-
 	/* Ignored Repos */
 
 	/**
@@ -337,7 +249,7 @@ export class ExtensionState extends Disposable {
 	 * @returns An array of the paths of ignored repositories.
 	 */
 	public getIgnoredRepos() {
-		const ignoredRepos = this.getWorkspaceState<unknown>(IGNORED_REPOS, []);
+		const ignoredRepos = this.kv.readWorkspace<unknown>(IGNORED_REPOS, []);
 		return Array.isArray(ignoredRepos) ? ignoredRepos as string[] : [];
 	}
 
@@ -346,7 +258,7 @@ export class ExtensionState extends Disposable {
 	 * @param ignoredRepos An array of the paths of ignored repositories.
 	 */
 	public setIgnoredRepos(ignoredRepos: string[]) {
-		return this.updateWorkspaceState(IGNORED_REPOS, ignoredRepos);
+		return this.kv.writeWorkspace(IGNORED_REPOS, ignoredRepos);
 	}
 
 
@@ -357,7 +269,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The path of the last active repository.
 	 */
 	public getLastActiveRepo() {
-		const repo = this.getWorkspaceState<unknown>(LAST_ACTIVE_REPO, null);
+		const repo = this.kv.readWorkspace<unknown>(LAST_ACTIVE_REPO, null);
 		return typeof repo === 'string' || repo === null ? repo : null;
 	}
 
@@ -366,7 +278,7 @@ export class ExtensionState extends Disposable {
 	 * @param repo The path of the last active repository.
 	 */
 	public setLastActiveRepo(repo: string | null) {
-		this.updateWorkspaceState(LAST_ACTIVE_REPO, repo);
+		this.kv.writeWorkspace(LAST_ACTIVE_REPO, repo);
 	}
 
 
@@ -377,7 +289,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The path of the Git executable.
 	 */
 	public getLastKnownGitPath() {
-		const path = this.getGlobalState<unknown>(LAST_KNOWN_GIT_PATH, null);
+		const path = this.kv.readGlobal<unknown>(LAST_KNOWN_GIT_PATH, null);
 		return typeof path === 'string' || path === null ? path : null;
 	}
 
@@ -386,7 +298,7 @@ export class ExtensionState extends Disposable {
 	 * @param path The path of the Git executable.
 	 */
 	private setLastKnownGitPath(path: string) {
-		this.updateGlobalState(LAST_KNOWN_GIT_PATH, path);
+		this.kv.writeGlobal(LAST_KNOWN_GIT_PATH, path);
 	}
 
 
@@ -398,7 +310,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The record, or NULL when none was persisted (or the persisted shape is unreadable).
 	 */
 	public getLastKnownGit(): LastKnownGitRecord | null {
-		const record = this.getGlobalState<unknown>(LAST_KNOWN_GIT, null);
+		const record = this.kv.readGlobal<unknown>(LAST_KNOWN_GIT, null);
 		if (record === null || typeof record !== 'object') return null;
 		const candidate = record as { path?: unknown, version?: unknown, mtimeMs?: unknown };
 		if (typeof candidate.path !== 'string' || typeof candidate.version !== 'string') return null;
@@ -414,7 +326,7 @@ export class ExtensionState extends Disposable {
 	 * @param record The record to persist.
 	 */
 	public setLastKnownGit(record: LastKnownGitRecord) {
-		this.updateGlobalState(LAST_KNOWN_GIT, record);
+		this.kv.writeGlobal(LAST_KNOWN_GIT, record);
 	}
 
 
@@ -427,7 +339,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The identity Git Graph wrote, or NULL.
 	 */
 	public getGlobalAuthorWritten(): WrittenGlobalAuthor | null {
-		const written = this.getGlobalState<WrittenGlobalAuthor | null>(GLOBAL_AUTHOR_WRITTEN, null);
+		const written = this.kv.readGlobal<WrittenGlobalAuthor | null>(GLOBAL_AUTHOR_WRITTEN, null);
 		return written !== null && typeof written.name === 'string' && typeof written.email === 'string' ? written : null;
 	}
 
@@ -439,18 +351,69 @@ export class ExtensionState extends Disposable {
 	 * @param identity The identity Git Graph wrote, or NULL.
 	 */
 	public setGlobalAuthorWritten(identity: WrittenGlobalAuthor | null) {
-		return this.updateGlobalState(GLOBAL_AUTHOR_WRITTEN, identity);
+		return this.kv.writeGlobal(GLOBAL_AUTHOR_WRITTEN, identity);
 	}
 
 
-	/* Avatars */
+	/* View State (global, workspace and the view snapshot) - ./storageViewState.ts */
+
+	/**
+	 * Get the global state of the Git Graph View.
+	 * @returns The global state.
+	 */
+	public getGlobalViewState() {
+		return this.viewState.getGlobalViewState();
+	}
+
+	/**
+	 * Set the global state of the Git Graph View.
+	 * @param state The global state.
+	 */
+	public setGlobalViewState(state: GitGraphViewGlobalState) {
+		return this.viewState.setGlobalViewState(state);
+	}
+
+	/**
+	 * Get the workspace state of the Git Graph View.
+	 * @returns The workspace state.
+	 */
+	public getWorkspaceViewState() {
+		return this.viewState.getWorkspaceViewState();
+	}
+
+	/**
+	 * Set the workspace state of the Git Graph View.
+	 * @param state The workspace state.
+	 */
+	public setWorkspaceViewState(state: GitGraphViewWorkspaceState) {
+		return this.viewState.setWorkspaceViewState(state);
+	}
+
+	/**
+	 * Get the last view state the Git Graph View's page reported in the current workspace.
+	 * @returns The snapshot, or NULL if none was reported yet.
+	 */
+	public getViewSnapshot() {
+		return this.viewState.getViewSnapshot();
+	}
+
+	/**
+	 * Set the last view state the Git Graph View's page reported in the current workspace.
+	 * @param snapshot The snapshot.
+	 */
+	public setViewSnapshot(snapshot: GitGraphViewSnapshot) {
+		this.viewState.setViewSnapshot(snapshot);
+	}
+
+
+	/* Avatars - ./storageAvatars.ts */
 
 	/**
 	 * Checks whether the Avatar Storage Folder is available to store avatars.
 	 * @returns TRUE => Avatar Storage Folder is available, FALSE => Avatar Storage Folder isn't available.
 	 */
 	public isAvatarStorageAvailable() {
-		return this.avatarStorageAvailable;
+		return this.avatars.isAvatarStorageAvailable();
 	}
 
 	/**
@@ -458,7 +421,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The folder path.
 	 */
 	public getAvatarStoragePath() {
-		return this.globalStoragePath + AVATAR_STORAGE_FOLDER;
+		return this.avatars.getAvatarStoragePath();
 	}
 
 	/**
@@ -466,8 +429,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The avatar cache.
 	 */
 	public getAvatarCache() {
-		const avatars = this.getGlobalState<AvatarCache>(AVATAR_CACHE, {});
-		return isStateRecord(avatars) ? avatars : {};
+		return this.avatars.getAvatarCache();
 	}
 
 	/**
@@ -476,9 +438,7 @@ export class ExtensionState extends Disposable {
 	 * @param avatar The details of the avatar.
 	 */
 	public saveAvatar(email: string, avatar: Avatar) {
-		const avatars = this.getAvatarCache();
-		avatars[email] = avatar;
-		this.updateGlobalState(AVATAR_CACHE, avatars);
+		this.avatars.saveAvatar(email, avatar);
 	}
 
 	/**
@@ -486,9 +446,7 @@ export class ExtensionState extends Disposable {
 	 * @param email The email address of the avatar to remove.
 	 */
 	public removeAvatarFromCache(email: string) {
-		const avatars = this.getAvatarCache();
-		delete avatars[email];
-		this.updateGlobalState(AVATAR_CACHE, avatars);
+		this.avatars.removeAvatarFromCache(email);
 	}
 
 	/**
@@ -496,12 +454,7 @@ export class ExtensionState extends Disposable {
 	 * @param emails The email addresses of the avatars to remove.
 	 */
 	public removeAvatarsFromCache(emails: string[]) {
-		if (emails.length === 0) return;
-		const avatars = this.getAvatarCache();
-		for (let i = 0; i < emails.length; i++) {
-			delete avatars[emails[i]];
-		}
-		this.updateGlobalState(AVATAR_CACHE, avatars);
+		this.avatars.removeAvatarsFromCache(emails);
 	}
 
 	/**
@@ -509,23 +462,11 @@ export class ExtensionState extends Disposable {
 	 * @returns A Thenable resolving to the ErrorInfo that resulted from executing this method.
 	 */
 	public clearAvatarCache() {
-		return this.updateGlobalState(AVATAR_CACHE, {}).then((errorInfo) => {
-			if (errorInfo === null) {
-				fs.readdir(this.globalStoragePath + AVATAR_STORAGE_FOLDER, (err, files) => {
-					if (err) return;
-					for (let i = 0; i < files.length; i++) {
-						fs.unlink(this.globalStoragePath + AVATAR_STORAGE_FOLDER + '/' + files[i], () => { });
-					}
-				});
-			}
-			return errorInfo;
-		});
+		return this.avatars.clearAvatarCache();
 	}
 
 
-	/* Code Review */
-
-	// Note: id => the commit arguments to 'git diff' (either <commit hash> or <commit hash>-<commit hash>)
+	/* Code Review - ./storageCodeReviews.ts */
 
 	/**
 	 * Start a new Code Review.
@@ -536,13 +477,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The Code Review that was started.
 	 */
 	public startCodeReview(repo: string, id: string, files: string[], lastViewedFile: string | null) {
-		const reviews = this.getCodeReviews();
-		if (typeof reviews[repo] === 'undefined') reviews[repo] = {};
-		reviews[repo][id] = { lastActive: (new Date()).getTime(), lastViewedFile: lastViewedFile, remainingFiles: files };
-		return this.setCodeReviews(reviews).then((err) => ({
-			codeReview: <CodeReview>Object.assign({ id: id }, reviews[repo][id]),
-			error: err
-		}));
+		return this.codeReviews.startCodeReview(repo, id, files, lastViewedFile);
 	}
 
 	/**
@@ -551,9 +486,7 @@ export class ExtensionState extends Disposable {
 	 * @param id The ID of the Code Review.
 	 */
 	public endCodeReview(repo: string, id: string) {
-		const reviews = this.getCodeReviews();
-		removeCodeReview(reviews, repo, id);
-		return this.setCodeReviews(reviews);
+		return this.codeReviews.endCodeReview(repo, id);
 	}
 
 	/**
@@ -563,14 +496,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The Code Review.
 	 */
 	public getCodeReview(repo: string, id: string) {
-		const reviews = this.getCodeReviews();
-		if (typeof reviews[repo] !== 'undefined' && typeof reviews[repo][id] !== 'undefined') {
-			reviews[repo][id].lastActive = (new Date()).getTime();
-			this.setCodeReviews(reviews);
-			return <CodeReview>Object.assign({ id: id }, reviews[repo][id]);
-		} else {
-			return null;
-		}
+		return this.codeReviews.getCodeReview(repo, id);
 	}
 
 	/**
@@ -582,48 +508,21 @@ export class ExtensionState extends Disposable {
 	 * @returns An error message if request can't be completed.
 	 */
 	public updateCodeReview(repo: string, id: string, remainingFiles: string[], lastViewedFile: string | null) {
-		const reviews = this.getCodeReviews();
-
-		if (typeof reviews[repo] === 'undefined' || typeof reviews[repo][id] === 'undefined') {
-			return Promise.resolve(t('codeReviewNotFound'));
-		}
-
-		if (remainingFiles.length > 0) {
-			reviews[repo][id].remainingFiles = remainingFiles;
-			reviews[repo][id].lastActive = (new Date()).getTime();
-			if (lastViewedFile !== null) {
-				reviews[repo][id].lastViewedFile = lastViewedFile;
-			}
-		} else {
-			removeCodeReview(reviews, repo, id);
-		}
-
-		return this.setCodeReviews(reviews);
+		return this.codeReviews.updateCodeReview(repo, id, remainingFiles, lastViewedFile);
 	}
 
 	/**
 	 * Delete any Code Reviews that haven't been active during the last 90 days.
 	 */
 	public expireOldCodeReviews() {
-		const reviews = this.getCodeReviews(), expireReviewsBefore = (new Date()).getTime() - 7776000000; // 90 days x 24 hours x 60 minutes x 60 seconds x 1000 milliseconds
-		let change = false;
-		Object.keys(reviews).forEach((repo) => {
-			Object.keys(reviews[repo]).forEach((id) => {
-				if (reviews[repo][id].lastActive < expireReviewsBefore) {
-					delete reviews[repo][id];
-					change = true;
-				}
-			});
-			removeCodeReviewRepoIfEmpty(reviews, repo);
-		});
-		if (change) this.setCodeReviews(reviews);
+		this.codeReviews.expireOldCodeReviews();
 	}
 
 	/**
 	 * End all Code Reviews in the current workspace.
 	 */
 	public endAllWorkspaceCodeReviews() {
-		this.setCodeReviews({});
+		this.codeReviews.endAllWorkspaceCodeReviews();
 	}
 
 	/**
@@ -631,8 +530,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The set of Code Reviews.
 	 */
 	public getCodeReviews() {
-		const reviews = this.getWorkspaceState<CodeReviews>(CODE_REVIEWS, {});
-		return isStateRecord(reviews) ? reviews : {};
+		return this.codeReviews.getCodeReviews();
 	}
 
 	/**
@@ -640,85 +538,6 @@ export class ExtensionState extends Disposable {
 	 * @param reviews The set of Code Reviews.
 	 */
 	public setCodeReviews(reviews: CodeReviews) {
-		return this.updateWorkspaceState(CODE_REVIEWS, reviews);
-	}
-
-
-	/* Update State Memento's */
-
-	/**
-	 * Read a versioned value from the Git Graph Global State (lenient): the stored value migrated
-	 * to the current schema, or the fallback when absent, corrupt or unreadable.
-	 * @param key The key.
-	 * @param fallback The value to answer when the key holds nothing readable.
-	 * @returns The decoded value.
-	 */
-	private getGlobalState<T>(key: string, fallback: T): T {
-		return readVersionedState<T>(this.globalState, key, fallback);
-	}
-
-	/**
-	 * Read a versioned value from the Git Graph Workspace State (lenient, as getGlobalState).
-	 * @param key The key.
-	 * @param fallback The value to answer when the key holds nothing readable.
-	 * @returns The decoded value.
-	 */
-	private getWorkspaceState<T>(key: string, fallback: T): T {
-		return readVersionedState<T>(this.workspaceState, key, fallback);
-	}
-
-	/**
-	 * Update the Git Graph Global State with a new <key, value> pair. Values are stored in the
-	 * versioned envelope (strict write, §3.7.2); undefined removes the key.
-	 * @param key The key.
-	 * @param value The value.
-	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Global State.
-	 */
-	private updateGlobalState(key: string, value: unknown): Thenable<ErrorInfo> {
-		return this.globalState.update(key, encodeVersionedState(value)).then(
-			() => null,
-			() => 'Visual Studio Code was unable to save the Git Graph Global State Memento.'
-		);
-	}
-
-	/**
-	 * Update the Git Graph Workspace State with a new <key, value> pair, versioned as the
-	 * Global State writes are.
-	 * @param key The key.
-	 * @param value The value.
-	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Workspace State.
-	 */
-	private updateWorkspaceState(key: string, value: unknown): Thenable<ErrorInfo> {
-		return this.workspaceState.update(key, encodeVersionedState(value)).then(
-			() => null,
-			() => 'Visual Studio Code was unable to save the Git Graph Workspace State Memento.'
-		);
-	}
-}
-
-
-/* Helper Methods */
-
-/**
- * Remove a Code Review from a set of Code Reviews.
- * @param reviews The set of Code Reviews.
- * @param repo The repository the Code Review is in.
- * @param id The ID of the Code Review.
- */
-function removeCodeReview(reviews: CodeReviews, repo: string, id: string) {
-	if (typeof reviews[repo] !== 'undefined' && typeof reviews[repo][id] !== 'undefined') {
-		delete reviews[repo][id];
-		removeCodeReviewRepoIfEmpty(reviews, repo);
-	}
-}
-
-/**
- * Remove a repository from a set of Code Reviews if the repository doesn't contain any Code Reviews.
- * @param reviews The set of Code Reviews.
- * @param repo The repository to perform this action on.
- */
-function removeCodeReviewRepoIfEmpty(reviews: CodeReviews, repo: string) {
-	if (typeof reviews[repo] !== 'undefined' && Object.keys(reviews[repo]).length === 0) {
-		delete reviews[repo];
+		return this.codeReviews.setCodeReviews(reviews);
 	}
 }

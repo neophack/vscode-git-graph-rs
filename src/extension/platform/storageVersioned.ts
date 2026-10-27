@@ -12,12 +12,27 @@
  * - **Strict write** - every write stamps the current version.
  * - **Migrations** - ordered steps that upgrade one version to the next. Every step must
  *   spread unknown fields through, so forward-compatibility survives each migration.
+ *
+ * This module is also the ONE versioned KV every store of the `ExtensionState` sits on
+ * (`VersionedStateKv`): the per-store modules (avatars, code reviews, view state, and the
+ * keys the facade keeps) read and write through it, so the lenient-read / strict-write
+ * semantics and the two memento failure messages exist exactly once.
  */
+
+import type { ErrorInfo } from '../../shared/protocol/messages';
 
 /** The memento surface the versioned read helper needs (`vscode.Memento` satisfies it). */
 interface MementoReader {
 	get<T>(key: string): T | undefined;
 }
+
+/** The memento surface the versioned KV writes through (`vscode.Memento` satisfies it). */
+interface MementoWriter {
+	update(key: string, value: unknown): Thenable<void>;
+}
+
+/** The memento surface the versioned KV reads and writes (`vscode.Memento` satisfies it). */
+interface VersionedMemento extends MementoReader, MementoWriter { }
 
 /** A value of the globalState / workspaceState surface together with its schema version. */
 export interface VersionedStateRecord {
@@ -93,4 +108,73 @@ export function readVersionedState<T>(memento: MementoReader | null | undefined,
 /** Whether a decoded value is a non-null, non-array object (the shape record keys expect). */
 export function isStateRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The one versioned KV over the extension's globalState / workspaceState memento pair. The
+ * `ExtensionState` facade and its per-store modules (avatars, code reviews, view state) read
+ * and write through this object only - never through a memento directly - so every key of the
+ * Git Graph state carries the same versioned envelope.
+ */
+export class VersionedStateKv {
+	private readonly globalState: VersionedMemento;
+	private readonly workspaceState: VersionedMemento;
+
+	/**
+	 * @param globalState The global-state memento (`vscode.Memento` satisfies the shape).
+	 * @param workspaceState The workspace-state memento.
+	 */
+	constructor(globalState: VersionedMemento, workspaceState: VersionedMemento) {
+		this.globalState = globalState;
+		this.workspaceState = workspaceState;
+	}
+
+	/**
+	 * Read a versioned value from the Git Graph Global State (lenient): the stored value
+	 * migrated to the current schema, or the fallback when absent, corrupt or unreadable.
+	 * @param key The key.
+	 * @param fallback The value to answer when the key holds nothing readable.
+	 * @returns The decoded value.
+	 */
+	public readGlobal<T>(key: string, fallback: T): T {
+		return readVersionedState<T>(this.globalState, key, fallback);
+	}
+
+	/**
+	 * Read a versioned value from the Git Graph Workspace State (lenient, as readGlobal).
+	 * @param key The key.
+	 * @param fallback The value to answer when the key holds nothing readable.
+	 * @returns The decoded value.
+	 */
+	public readWorkspace<T>(key: string, fallback: T): T {
+		return readVersionedState<T>(this.workspaceState, key, fallback);
+	}
+
+	/**
+	 * Update the Git Graph Global State with a new <key, value> pair. Values are stored in the
+	 * versioned envelope (strict write, §3.7.2); undefined removes the key.
+	 * @param key The key.
+	 * @param value The value.
+	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Global State.
+	 */
+	public writeGlobal(key: string, value: unknown): Thenable<ErrorInfo> {
+		return this.globalState.update(key, encodeVersionedState(value)).then(
+			() => null,
+			() => 'Visual Studio Code was unable to save the Git Graph Global State Memento.'
+		);
+	}
+
+	/**
+	 * Update the Git Graph Workspace State with a new <key, value> pair, versioned as the
+	 * Global State writes are.
+	 * @param key The key.
+	 * @param value The value.
+	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Workspace State.
+	 */
+	public writeWorkspace(key: string, value: unknown): Thenable<ErrorInfo> {
+		return this.workspaceState.update(key, encodeVersionedState(value)).then(
+			() => null,
+			() => 'Visual Studio Code was unable to save the Git Graph Workspace State Memento.'
+		);
+	}
 }
