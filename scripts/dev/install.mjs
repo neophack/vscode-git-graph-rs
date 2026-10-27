@@ -96,7 +96,7 @@ const flags = { dryRun: false, skipNative: false, skipTests: false, noInstall: f
 // `npm` and the VS Code CLI are `.cmd` shims on Windows: they only spawn through a shell.
 const IS_WINDOWS = process.platform === 'win32';
 
-let childEnv = { ...process.env };
+const childEnv = { ...process.env };
 // rustup's canonical location, for shells whose PATH does not carry it (from the old .sh).
 if (!commandExists('cargo') && fs.existsSync(path.join(os.homedir(), '.cargo', 'bin'))) {
 	childEnv.PATH = path.join(os.homedir(), '.cargo', 'bin') + path.delimiter + (childEnv.PATH || '');

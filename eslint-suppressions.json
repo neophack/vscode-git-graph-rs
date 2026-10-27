@@ -1,9 +1,4 @@
 {
-  "scripts/dev/install.mjs": {
-    "prefer-const": {
-      "count": 1
-    }
-  },
   "scripts/dev/loadHost.mjs": {
     "no-unused-vars": {
       "count": 1
@@ -12,16 +7,6 @@
   "scripts/dev/theme-audit/pages-compare.mjs": {
     "no-unused-vars": {
       "count": 1
-    }
-  },
-  "src/extension/automation/catalog/menusCommit.ts": {
-    "indent": {
-      "count": 11
-    }
-  },
-  "src/extension/automation/catalog/menusVscode.ts": {
-    "indent": {
-      "count": 48
     }
   },
   "src/extension/automation/catalogConsistency.test.ts": {
@@ -75,9 +60,6 @@
   "src/extension/automation/suiteRunner.ts": {
     "n/no-sync": {
       "count": 2
-    },
-    "prefer-const": {
-      "count": 1
     }
   },
   "src/extension/commands/automation.ts": {
@@ -113,9 +95,6 @@
   "src/extension/commands/repositories.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 8
-    },
-    "prefer-const": {
-      "count": 1
     }
   },
   "src/extension/commands/sourceControl.ts": {
@@ -126,27 +105,11 @@
   "src/extension/commands/view.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 3
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension/git/executable/findGit.ts": {
-    "prefer-const": {
-      "count": 2
     }
   },
   "src/extension/git/process/askpass/askpassMain.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
-  "src/extension/git/process/childProcess.ts": {
-    "prefer-const": {
-      "count": 3
     }
   },
   "src/extension/git/read/addonLoader.ts": {
@@ -156,16 +119,6 @@
   },
   "src/extension/git/read/cli/files.ts": {
     "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    }
-  },
-  "src/extension/git/read/gitReader.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/extension/graphView/commitLoader.ts": {
-    "max-lines": {
       "count": 1
     }
   },
@@ -190,9 +143,6 @@
   "src/extension/graphView/panel.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 2
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/extension/graphView/panelContext.ts": {
@@ -217,14 +167,6 @@
     },
     "@typescript-eslint/no-misused-promises": {
       "count": 2
-    },
-    "prefer-const": {
-      "count": 9
-    }
-  },
-  "src/extension/integrations/avatars/avatarQueue.ts": {
-    "prefer-const": {
-      "count": 1
     }
   },
   "src/extension/integrations/gerrit/gerritProtocol.test.ts": {
@@ -240,38 +182,6 @@
   "src/extension/integrations/pullRequests.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
-    },
-    "indent": {
-      "count": 5
-    }
-  },
-  "src/extension/platform/actions.ts": {
-    "prefer-const": {
-      "count": 5
-    }
-  },
-  "src/extension/platform/config.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 12
-    }
-  },
-  "src/extension/platform/paths.ts": {
-    "prefer-const": {
-      "count": 9
-    }
-  },
-  "src/extension/platform/storage.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "prefer-const": {
-      "count": 9
     }
   },
   "src/extension/repos/repoConfigFile.ts": {
@@ -282,9 +192,6 @@
   "src/extension/repos/repoDiscovery.ts": {
     "@typescript-eslint/no-misused-promises": {
       "count": 1
-    },
-    "prefer-const": {
-      "count": 5
     }
   },
   "src/extension/repos/repoManager.ts": {
@@ -294,14 +201,8 @@
     "@typescript-eslint/no-misused-promises": {
       "count": 1
     },
-    "max-lines": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
-    },
-    "prefer-const": {
-      "count": 13
     }
   },
   "src/extension/views/binaryCompare/hexDiffSources.ts": {
@@ -309,11 +210,6 @@
       "count": 3
     },
     "n/no-sync": {
-      "count": 1
-    }
-  },
-  "src/extension/views/binaryCompare/viewController.ts": {
-    "indent": {
       "count": 1
     }
   },
@@ -365,21 +261,6 @@
       "count": 7
     }
   },
-  "src/webview/comparison/model.ts": {
-    "indent": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/actions/contextMenuActions.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/commitDetails/commitDetails.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/webview/graph/loading/configApply.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -387,21 +268,6 @@
   },
   "src/webview/graph/loading/followUps.ts": {
     "no-restricted-properties": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/render/commitTable.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/webview/graph/text/textFormatter.ts": {
-    "prefer-const": {
-      "count": 3
-    }
-  },
-  "src/webview/graph/widgets/settings/settingsWidget.ts": {
-    "max-lines": {
       "count": 1
     }
   }

@@ -59,7 +59,7 @@ npm run typecheck      # the four TypeScript projects (host, webview, tests, E2E
 npm run lint:js        # ESLint over src/ and scripts/
 npm run lint:css       # stylelint (the Chromium 69 floor)
 npm run lint:deps      # the dependency rules (dependency-cruiser) and their baseline
-npm run lint:size      # the 600-line limit for the Rust sources
+npm run lint:size      # the 600-line limit for the TypeScript and Rust sources
 npm run lint           # cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
 npm run check:generated  # regenerates src/shared/engine and fails if it differs from the commit
 npm run test:coverage  # the Vitest suite with coverage; fails below the floors in vitest.config.ts
@@ -73,7 +73,9 @@ each record may only shrink:
   `npx eslint src scripts --prune-suppressions` and commit the smaller file.
 - **dependency-cruiser**: `docs/depcruise-baseline.json`. A new violation fails, and so does an
   entry that no longer occurs; `npm run lint:deps -- --fix` removes those.
-- **Rust file size**: the `KNOWN` list in `scripts/dev/check-file-size.mjs`.
+- **File size**: the `KNOWN` list in `scripts/dev/check-file-size.mjs`, for TypeScript and Rust
+  alike. A listed file may not grow past its recorded size; delete its entry in the PR that
+  brings it under 600 lines.
 - **Coverage**: the floors in `vitest.config.ts`. Raise them in the PR that raises coverage.
 
 The Rust engine takes no `unsafe`.

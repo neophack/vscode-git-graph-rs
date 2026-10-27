@@ -306,14 +306,8 @@ export default tseslint.config(
 			'@typescript-eslint/await-thenable': 'error',
 			'@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }]
 		}
-	},
-	// The string dictionaries are data tables, not modules to split. Rust sources get the same
-	// limit from scripts/dev/check-file-size.mjs.
-	{
-		files: HOST_TS,
-		ignores: [...TESTS_TS, 'src/shared/i18n/**'],
-		rules: {
-			'max-lines': ['error', { max: 600 }]
-		}
 	}
+	// The 600-line file limit is not an ESLint rule: scripts/dev/check-file-size.mjs (`npm run
+	// lint:size`) holds it for TypeScript and Rust alike, and also forbids an over-limit file
+	// from growing, which a max-lines bulk suppression cannot express.
 );
