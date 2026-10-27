@@ -21,19 +21,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MAX_LINES = 600;
-const KNOWN = {
-	'src/extension/git/read/gitReader.ts': 635,
-	'src/extension/graphView/commitLoader.ts': 896,
-	// 790 -> 794: the A4 configuration migration's wiring plus the watcher callback's
-	// purposeful log line. The A5 split of this file deletes the entry.
-	'src/extension/graphView/panel.ts': 794,
-	'src/extension/platform/storage.ts': 724,
-	'src/extension/repos/repoManager.ts': 891,
-	'src/webview/graph/actions/contextMenuActions.ts': 717,
-	'src/webview/graph/commitDetails/commitDetails.ts': 953,
-	'src/webview/graph/render/commitTable.ts': 640,
-	'src/webview/graph/widgets/settings/settingsWidget.ts': 1009
-};
+// Empty since the A5 splits: every former entry landed under the limit. New entries record the
+// file's exact size at the moment they are added, and the split that brings a file back under
+// deletes its row.
+const KNOWN = {};
 const SOURCES = ['native/*.rs', 'src/*.ts'];
 const isExempt = (file) => file.startsWith('native/core/tests/')
 	|| file.endsWith('.test.ts')

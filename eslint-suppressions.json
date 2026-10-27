@@ -140,11 +140,6 @@
       "count": 3
     }
   },
-  "src/extension/graphView/panel.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 2
-    }
-  },
   "src/extension/graphView/panelContext.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 3
@@ -196,7 +191,7 @@
   },
   "src/extension/repos/repoManager.ts": {
     "@typescript-eslint/no-floating-promises": {
-      "count": 7
+      "count": 2
     },
     "@typescript-eslint/no-misused-promises": {
       "count": 1
