@@ -228,6 +228,10 @@ manifest ↔ schema parity.
 | `graphView/panel.ts` (753) | `PanelHost` (vscode panel lifecycle), `MessageRouter` (inbound validation → handler table), `ViewState` |
 | `platform/storage.ts` (681) | per-store modules (avatars, code reviews, view snapshot) over one versioned KV |
 | `git/read/gitReader.ts` (635) | contract types vs the Native adapter |
+| `webview/.../settingsWidget.ts` (1009) | one module per settings section (repo, remotes, integrations, tools); the widget keeps the shell |
+| `webview/.../commitDetails.ts` (953) | view shell vs file list vs the body/review panes; `fileTree.ts` and `fileActions.ts` already exist |
+| `webview/.../contextMenuActions.ts` (717) | one module per menu (branch, commit, remote, stash, tag, uncommitted); the chunk is already on demand |
+| `webview/.../commitTable.ts` (640) | row-model building vs DOM patching |
 | `automation/server.ts`, `suiteRunner.ts`, `fixture.ts` | not shipped; split, but lowest priority |
 
 ### A6. Synchronous IO off the host's event loop (1 day)
@@ -912,3 +916,98 @@ Found, not fixed (wave 4's queue):
 - The theme-audit references for the `out` pages are stale; regenerate with
   `theme-audit --update-reference` (F6's close-out verified the current outputs
   pixel-identical).
+
+### Wave 4: M4 (A4, A5 groundwork, P3 evidence) ∥ M3 close-out (F1) ∥ the watcher defect (branch `task/m0-gates`, 2026-10-27)
+
+Three parallel agents over disjoint file domains (the `external/commit-appears` defect, A4, F1),
+plus the gate consolidation and the P3 evidence measurement. The watcher defect's engine leg is
+the wave's remaining item; this section is finalized when it lands.
+
+Landed: **A4** (one configuration model), **F1** (store slices and change sets), the **P3
+evidence** (no entry split), and the **600-line gate consolidation**.
+
+- **A4** — `platform/config.ts` (1189 lines) is replaced by `platform/config/`: `schema.ts`
+  (99 keyed rows; the `[K in SnapshotField]` shape makes a row's default unable to drift from
+  its field's type at compile time), `snapshot.ts` (`takeSnapshot`, `onConfigChange`),
+  `migrations.ts`, `cooked.ts` (every former per-key getter as a pure `*Of(snapshot)` view),
+  `service.ts` (`ConfigProvider`/`ConfigService`), and a 47-line `legacy.ts` shim kept only
+  for `repoManager.ts` (deleted when the A5 split migrates it). `getConfig()` is gone; ~57
+  call sites across 17 production files migrated; the contract test (676 lines) asserts
+  manifest ↔ schema parity in both directions plus the snapshot/cooked/service semantics.
+  The migration drained the last 2 `git-layer-isolation` depcruise violations (`findGit` and
+  `childProcess` take the paths/values as parameters instead of reading platform config).
+  Found, undecided: the manifest key `sourceCodeProviderIntegrationLocation` has no consumer
+  (kept for parity, flagged for a separate decision).
+- **F1** — the store is six slices (`repos`, `refs`, `commits`, `details`, `ui`,
+  `integrations`) behind `state/slices/`, changed only through named actions, each emitting a
+  typed `SliceChange` (`state/changes.ts`; row-scoped changes carry `hashes`, the keyed
+  patcher's future input). The render scheduler routes by subscription: a pass runs only the
+  renderers subscribed to the frame's slices, in pass order. `commitLookup` is a
+  `Map<string, number>` owned by the commits slice (3 write sites, pinned by tests). Grep
+  proves zero store-field writes outside `state/`. Deviation from the plan text, deliberate:
+  actions emit only where the old code invalidated render (or where the same response's
+  `renderSync` satisfies it) — literal "every action emits" measurably regressed the
+  seamless-update guarantees; the routing mechanism is exercised by the pull-request path
+  and the scheduler tests.
+- **P3 evidence (no split)** — `scripts/dev/measure-activation.mjs` loads `dist/extension.js`
+  (440 KB) under plain Node with a `vscode` stub: module evaluation **median 6.15 ms**
+  (21 samples), `activate()`'s sync phase ~11.75 ms — both inside the §3.8.1 20 ms budget, so
+  the entry stays whole (the plan's "only on measured evidence" line). The P4 event-loop probe
+  remains the final authority on in-host blocking.
+- **Gate consolidation** — the 600-line limit is enforced once, by
+  `scripts/dev/check-file-size.mjs`, for TypeScript and Rust alike; ESLint's `max-lines` rule
+  and its bulk suppressions are retired (a suppressed max-lines file could grow without
+  limit; the size gate's KNOWN list holds each file at its recorded size and fails on
+  growth). KNOWN holds 9 files; the A5 table above gained their webview rows. Suppression
+  burn-down: 136 lines left `eslint-suppressions.json`.
+- **The watcher defect (`external/commit-appears`)** — root-caused past the TS chain: the
+  watcher fires, the refresh cycles, and the response applies — but the engine serves the
+  **pre-change commit page while `head_id()` answers the new commit** (a page whose head is
+  not among its own commits), persisting across handle close/re-open and incremental-store
+  invalidation, only inside the long-lived extension-host session (isolated engine calls are
+  always fresh). Landed remedies: the panel drops the engine handle on `commitsAffected`
+  (mirroring the automation reseed), `close()`/`close_all()` invalidate the process-wide
+  incremental store, and the page mirrors truthful load diagnostics onto `<body>` data
+  attributes (the scenario's old `data-gg-refresh` counter read an attribute nothing wrote).
+  The engine-leg fix and the scenario verdict are recorded in the addendum below.
+
+**The watcher defect, closed.** Three faults stacked; each fix is landed and pinned:
+
+1. **The engine's date-ordered window had no topological guarantee.** gix's
+   `Sorting::ByCommitTime` is a pure date queue, so a tip whose committer date is older than the
+   history around it (an out-of-band commit under a pinned date, an imported branch) fell
+   outside the traversal window — a page whose `head` (read fresh) is not among its own commits.
+   `walk_date_order_window` (read/log/walk.rs) now collects the window the way git's
+   `--date-order` does: one pass counting every reachable commit's children (git's
+   `limit_list`), then a date-ranked ready set over the counted graph. The shape is pinned by
+   `an_out_of_band_commit_older_than_history_stays_on_the_first_page` (compares the engine's
+   page against real `git log --date-order`), and the incremental property suites confirm the
+   cost is not measurable (the incremental suite runs in its pre-fix time; it was never fast —
+   its cost is git spawns, not reads). A first attempted "seed the tips into the window" fix was
+   disproved by that same test: a window boundary commit's child count is undercounted (its
+   other child sits outside the window), letting the boundary commit pop early — exactness
+   needs the full count.
+2. **The E2E harness pinned the out-of-band commit's dates.** The launcher sets
+   `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` for every git process (fixture determinism), and the
+   scenario's "a commit the way a user's terminal would" inherited the pins — tying it with the
+   fixture's whole history, where the (now correct) tie order buried the row at position 286 of
+   304, outside the 55-row rendered window. The pre-action setup now strips the two variables
+   for that one spawn (`SetupGitEnv`): the commit carries the wall clock, is the newest commit
+   in the repository, and the scenario asserts what it always meant to.
+3. **The automation shim could wedge on a never-settling step.** An eval whose poll died in a
+   `setTimeout` callback (a transient DOM throw) never settled its promise, and the shim then
+   answered every later batch "a step batch is already running" — a whole-suite stall that
+   masqueraded as the watcher defect twice. The shim gained a batch watchdog (60 s, well past
+   the longest legitimate step) and the scenario's poll is exception-proof. The page also
+   mirrors the LAST APPLIED commit response's own truth (`data-gg-last-commits`: count, head,
+   head-in-list, head index, first entries) — "the response applied" and "the response was
+   fresh" are finally separable, which is what cracked 1 and 2.
+
+Reverted with intent: the transitional engine-handle drop on `commitsAffected` and the
+close-invalidates-the-incremental-store change (both landed mid-investigation against the
+stale-handle theory the ordering fix disproved; the handle drop also forced a full re-walk on
+every external change). Freshness is the incremental store's guards' job, as before. The
+watcher's purposeful log line stays, and `externalChange.contract.test.ts` pins the
+head-in-its-own-list invariant at the reader seam. Full smoke: 23 passed, 0 failed,
+2 skipped (VS Code 1.143.1, engine backend) — the scenario green for the first time since the
+F2 wiring.

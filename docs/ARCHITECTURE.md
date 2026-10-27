@@ -196,7 +196,7 @@ lands it.
   built via their own `open` factories rather than the composition root (A2 leftover).
 - Two configuration readers coexist: `takeSnapshot()` and the legacy `getConfig()` (A4).
 - 10 TypeScript production files exceed 600 lines (the Rust backlog is empty); the
-  `max-lines` suppressions and `scripts/dev/check-file-size.mjs` list them (A5).
+  `KNOWN` list in `scripts/dev/check-file-size.mjs` holds each at its recorded size (A5).
 - 323 comments still reference plan task numbers or deleted code (A7).
 - The webview store is ~30 public mutable fields with no change sets (F1), and layout reads
   bypass `render/measure.ts` (F4).

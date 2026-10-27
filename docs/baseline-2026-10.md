@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Generated | 2026-10-27 |
-| HEAD | `8ce2baa76` on branch `task/m0-gates` |
+| HEAD | `032cd94ca` on branch `task/m0-gates` |
 | Machine | Windows dev machine (process starts are slower than CI's Linux runner; REFACTOR-PLAN §3.8.1 records the two reference environments separately) |
 | Node | v24.14.0 |
 | Reproduce | `npm run baseline` — regenerates this file end to end and prints it to stdout |
@@ -56,18 +56,18 @@ VSIX ships no native binaries).
 
 | Artifact | Size |
 |---|---|
-| dist/extension.js | 450300 B (439.7 KiB) |
+| dist/extension.js | 450639 B (440.1 KiB) |
 | dist/askpass/askpassMain.js | 1380 B (1.3 KiB) |
 | dist/askpass/askpass.sh | 656 B (0.6 KiB) |
 | dist/askpass/askpass-empty.sh | 17 B (0 KiB) |
-| media/out.min.js | 221688 B (216.5 KiB) |
+| media/out.min.js | 222263 B (217.1 KiB) |
 | media/out.min.css | 61216 B (59.8 KiB) |
 | media/comparison.min.js | 75853 B (74.1 KiB) |
 | media/comparison.min.css | 17663 B (17.2 KiB) |
 | media/binaryCompare.min.js | 60031 B (58.6 KiB) |
 | media/binaryCompare.min.css | 9384 B (9.2 KiB) |
 | media/vendor/highlight.min.js | 136226 B (133 KiB) |
-| git-graph-rs-1.1.0.vsix (universal VSIX) | 3012292 B (2941.7 KiB) |
+| git-graph-rs-1.1.0.vsix (universal VSIX) | 3012575 B (2942 KiB) |
 
 The generator deletes the VSIX after measuring it; `npm run package` recreates it at any time.
 
@@ -78,7 +78,7 @@ loaded by the comparison page, not the main view.
 
 | Quantity | Value | Budget (§3.8.1) |
 |---|---|---|
-| First-paint critical JS (minified, not gzipped) | 221688 B (216.5 KiB) | ≤ 200 KB |
+| First-paint critical JS (minified, not gzipped) | 222263 B (217.1 KiB) | ≤ 200 KB |
 | First-paint critical CSS (minified, not gzipped) | 61216 B (59.8 KiB) | ≤ 60 KB |
 
 First-paint JS is over its 200 KB budget;
@@ -97,7 +97,7 @@ platform (`npm run build:native:release`); CI's matrix covers the rest.
 
 | Quantity | Baseline | Growth budget (+2%) | Measured by |
 |---|---|---|---|
-| Universal VSIX (`git-graph-rs-1.1.0.vsix`) | 3012292 B (2941.7 KiB) | ≤ 3072538 B (3000.5 KiB) | `npm run package` |
+| Universal VSIX (`git-graph-rs-1.1.0.vsix`) | 3012575 B (2942 KiB) | ≤ 3072827 B (3000.8 KiB) | `npm run package` |
 | Addon, `win32-x64-msvc` (`native/win32-x64-msvc/git-graph.node`) | 5661184 B (5528.5 KiB) | ≤ 5774408 B (5639.1 KiB) | `npm run build:native:release` (CI matrix for the rest) |
 
 ## Bench first-paint
@@ -108,7 +108,7 @@ A prebuilt engine binary exists (native/win32-x64-msvc/git-graph.node); the firs
 
 | Gate | Result | Command |
 |---|---|---|
-| dependency-cruiser | 0 new violations (439 modules, 1363 dependencies cruised); 21 known violations ignored (baseline file: 21 entries, null already stale — shrink-only regeneration pending) | `npm run lint:deps` |
+| dependency-cruiser | 0 new violations (440 modules, 1365 dependencies cruised); 21 known violations ignored (baseline file: 21 entries, null already stale — shrink-only regeneration pending) | `npm run lint:deps` |
 | ESLint (`src` + `scripts`) | null problems (null errors, null warnings), exit 0 | `npx eslint src scripts` |
 
 Both gates exit 0 as the generator runs them (the two tools invoked directly): the depcruise
@@ -139,7 +139,7 @@ Line counts are `wc -l` semantics. Command shape: `git ls-files '*.ts' '*.mjs' '
 | 879 | src/webview/styles/settingsWidget.css |
 | 858 | native/core/tests/graph_and_diff.rs |
 | 826 | native/core/tests/queries.rs |
-| 790 | src/extension/graphView/panel.ts |
+| 792 | src/extension/graphView/panel.ts |
 
 Goal G2 ratchets non-generated files down to ≤ 600 lines; `src/dataSource.ts` (the v1.0 god
 module still carrying the shipped view until Phase 4 deletes it) tops the table as expected.
@@ -174,4 +174,4 @@ Tracked files per top-level directory (`git ls-files | cut -d/ -f1 | sort | uniq
 | Platform VSIX sizes | each needs its cross-compiled addon from CI's cargo matrix | `node scripts/package-platforms.mjs` (in CI: `.github/workflows/native-build.yml`) |
 | All §3.8.1 timing scenarios (T0–T5, P50/P95) | the marker infrastructure and P1–P5 harness do not exist yet | `test/perf/` (P2–P5) and `native/core/benches/` (P1) — status tracked in `docs/performance.md` |
 
-<!-- baseline-summary: {"vitestCases":1672,"vitestFiles":154,"vitestMatchedFiles":143,"rustTests":174,"extensionJs":450300,"firstPaintJs":221688,"firstPaintCss":61216,"vsix":3012292,"addonNodes":{"win32-x64-msvc":5661184},"depcruiseViolations":0,"eslintProblems":null,"largestFile":{"file":"src/extension/platform/config.ts","lines":1189}} -->
+<!-- baseline-summary: {"vitestCases":1672,"vitestFiles":154,"vitestMatchedFiles":143,"rustTests":174,"extensionJs":450639,"firstPaintJs":222263,"firstPaintCss":61216,"vsix":3012575,"addonNodes":{"win32-x64-msvc":5661184},"depcruiseViolations":0,"eslintProblems":null,"largestFile":{"file":"src/extension/platform/config.ts","lines":1189}} -->
