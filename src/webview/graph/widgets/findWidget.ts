@@ -10,6 +10,7 @@ import { strings, formatStr } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import { abbrevCommit, modifyColourOpacity, UNCOMMITTED } from '../../common/util';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 import { getBranchLabels } from '../layout/refLabels';
 import { cancelScheduledFrame, scheduleFrame } from '../render/scheduler';
@@ -29,7 +30,15 @@ const ATTR_ERROR = 'data-error';
 /** How many commits one search slice tests before yielding to the frame (task 5.10). */
 const FIND_SEARCH_SLICE = 500;
 
-export class FindWidget implements FindWidgetSurface {
+/**
+ * The Find Widget: searches the loaded commits (message, author, hash, refs, date), highlights the
+ * matches in the rendered rows and steps through them.
+ *
+ * Every listener the widget creates lives in its component store (F3) — the widget is a page
+ * singleton, but its controls' handlers still answer to dispose(), and every DOM lookup runs
+ * under its own element (or the commit table it highlights).
+ */
+export class FindWidget extends Component implements FindWidgetSurface {
 	private text: string = '';
 	private matches: { hash: string, elem: HTMLElement }[] = [];
 	private position: number = -1;
@@ -57,16 +66,23 @@ export class FindWidget implements FindWidgetSurface {
 	private readonly prevElem: HTMLElement;
 	private readonly nextElem: HTMLElement;
 
+	protected override onDispose(): void {
+		// A disposed widget must not leave an in-flight scan (its next slice would run after
+		// the listeners are gone) or a pending keyup debounce behind (F3)
+		this.cancelSearch();
+	}
+
 	constructor(private readonly ctx: () => GraphContext) {
-		this.widgetElem = document.createElement('div');
+		super(document.createElement('div'));
+		this.widgetElem = <HTMLElement>this.root;
 		this.widgetElem.className = 'findWidget';
 		setHtml(this.widgetElem, html`<input id="findInput" type="text" placeholder="${strings.findPlaceholder}" disabled/><button type="button" id="findCaseSensitive" class="findModifier" title="${strings.findMatchCase}" aria-label="${strings.findMatchCase}">Aa</button><button type="button" id="findRegex" class="findModifier" title="${strings.findUseRegex}" aria-label="${strings.findUseRegex}">.*</button><span id="findPosition"></span><button type="button" id="findPrev" title="${strings.findPrevMatch}" aria-label="${strings.findPrevMatch}"></button><button type="button" id="findNext" title="${strings.findNextMatch}" aria-label="${strings.findNextMatch}"></button><button type="button" id="findOpenCdv" title="${strings.findOpenCdv}" aria-label="${strings.findOpenCdv}"></button><button type="button" id="findClose" title="${strings.findClose}" aria-label="${strings.findClose}"></button>`);
 		document.body.appendChild(this.widgetElem);
 
 		const workspaceState = ctx().store.workspaceViewState;
-		this.inputElem = <HTMLInputElement>document.getElementById('findInput')!;
+		this.inputElem = <HTMLInputElement>this.byId('findInput')!;
 		let keyupTimeout: number | null = null;
-		this.inputElem.addEventListener('keyup', (e) => {
+		this.listen(this.inputElem, 'keyup', (e) => {
 			// The Enter of an IME composition commit also reports keyCode 13 — jumping to the
 			// next match of the PREVIOUS query on the very keystroke that confirms the new one
 			// is wrong; skip it and let the text-change path below handle the new query.
@@ -102,48 +118,48 @@ export class FindWidget implements FindWidgetSurface {
 			}
 		});
 
-		this.caseSensitiveElem = document.getElementById('findCaseSensitive')!;
+		this.caseSensitiveElem = this.byId('findCaseSensitive')!;
 		alterClass(this.caseSensitiveElem, CLASS_ACTIVE, workspaceState.findIsCaseSensitive);
-		this.caseSensitiveElem.addEventListener('click', () => {
+		this.listen(this.caseSensitiveElem, 'click', () => {
 			this.ctx().persistence.updateWorkspaceViewState('findIsCaseSensitive', !workspaceState.findIsCaseSensitive);
 			alterClass(this.caseSensitiveElem, CLASS_ACTIVE, workspaceState.findIsCaseSensitive);
 			this.clearMatches();
 			this.findMatches(this.getCurrentHash(), true, true);
 		});
 
-		this.regexElem = document.getElementById('findRegex')!;
+		this.regexElem = this.byId('findRegex')!;
 		alterClass(this.regexElem, CLASS_ACTIVE, workspaceState.findIsRegex);
-		this.regexElem.addEventListener('click', () => {
+		this.listen(this.regexElem, 'click', () => {
 			this.ctx().persistence.updateWorkspaceViewState('findIsRegex', !workspaceState.findIsRegex);
 			alterClass(this.regexElem, CLASS_ACTIVE, workspaceState.findIsRegex);
 			this.clearMatches();
 			this.findMatches(this.getCurrentHash(), true, true);
 		});
 
-		this.positionElem = document.getElementById('findPosition')!;
+		this.positionElem = this.byId('findPosition')!;
 
-		this.prevElem = document.getElementById('findPrev')!;
+		this.prevElem = this.byId('findPrev')!;
 		this.prevElem.classList.add(CLASS_DISABLED);
 		setHtml(this.prevElem, SVG_ICONS.arrowUp);
-		this.prevElem.addEventListener('click', () => this.prev());
+		this.listen(this.prevElem, 'click', () => this.prev());
 
-		this.nextElem = document.getElementById('findNext')!;
+		this.nextElem = this.byId('findNext')!;
 		this.nextElem.classList.add(CLASS_DISABLED);
 		setHtml(this.nextElem, SVG_ICONS.arrowDown);
-		this.nextElem.addEventListener('click', () => this.next());
+		this.listen(this.nextElem, 'click', () => this.next());
 
-		const openCdvElem = document.getElementById('findOpenCdv')!;
+		const openCdvElem = this.byId('findOpenCdv')!;
 		setHtml(openCdvElem, SVG_ICONS.cdv);
 		alterClass(openCdvElem, CLASS_ACTIVE, workspaceState.findOpenCommitDetailsView);
-		openCdvElem.addEventListener('click', () => {
+		this.listen(openCdvElem, 'click', () => {
 			this.ctx().persistence.updateWorkspaceViewState('findOpenCommitDetailsView', !workspaceState.findOpenCommitDetailsView);
 			alterClass(openCdvElem, CLASS_ACTIVE, workspaceState.findOpenCommitDetailsView);
 			this.openCommitDetailsViewForCurrentMatchIfEnabled();
 		});
 
-		const findCloseElem = document.getElementById('findClose')!;
+		const findCloseElem = this.byId('findClose')!;
 		setHtml(findCloseElem, SVG_ICONS.close);
-		findCloseElem.addEventListener('click', () => this.close());
+		this.listen(findCloseElem, 'click', () => this.close());
 	}
 
 	/**
@@ -315,8 +331,9 @@ export class FindWidget implements FindWidgetSurface {
 			: null;
 		const colVisibility = ctx.layout.isTwoLineRows() ? { date: false, author: true, commit: true } : ctx.layout.getColumnVisibility();
 		// A static snapshot: the live collection of rows would be re-derived on each access,
-		// turning the scan below into an O(n^2) pass over the full commit list.
-		const commitElems = Array.from(document.getElementsByClassName('commit')) as HTMLElement[];
+		// turning the scan below into an O(n^2) pass over the full commit list. Scoped to the
+		// commit table (F3): the rows are the table's, not the document's.
+		const commitElems = Array.from(ctx.dom.table.getElementsByClassName('commit')) as HTMLElement[];
 		const commits = store.commits;
 		const total = candidates !== null ? candidates.length : commits.length;
 		// The document-order cursor over the (ascending data-id) rows, shared by every slice

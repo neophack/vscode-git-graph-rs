@@ -1,17 +1,11 @@
-/**
- * The Settings Widget: an overlay with the Repository Settings (the persisted state of the
- * current repository, its remotes, commit author, issue linking and pull request integrations,
- * Gerrit) and the Global Settings (the Extension Settings that shape the graph, commit loading,
- * fetching and review integrations), plus the entries of the repository tools.
- */
-
-import { addListenerToClass, alterClass, CLASS_ACTIVE, CLASS_LOADING, CLASS_TRANSITION, makeKeyboardActivatable, makeKeyboardActivatableCollection, observeElemScroll } from '../../../common/dom';
+import { alterClass, CLASS_ACTIVE, CLASS_LOADING, CLASS_TRANSITION } from '../../../common/dom';
 import { helpTooltipAttrs, html, SafeHtml, setHtml } from '../../../common/html';
 import { ELLIPSIS, formatStr, markup, strings } from '../../../common/i18n/index';
 import { SVG_ICONS } from '../../../common/icons';
 import { injectOnDemandStyles } from '../../../common/onDemandStyles';
 import * as GG from '../../../common/protocol';
 import { arraysStrictlyEqualIgnoringOrder, formatCommaSeparatedList, getRepoName } from '../../../common/util';
+import { Component } from '../../component';
 import { GraphContext } from '../../context';
 import { getIncludeCommitsMentionedByReflogs, getOnlyFollowFirstParent, getOnRepoLoadShowCheckedOutBranch, getOnRepoLoadShowSpecificBranches, getShowStashes, getShowTags } from '../../state/repoSettings';
 import { SettingsWidgetState, TargetType } from '../../state/types';
@@ -27,7 +21,19 @@ import tabletPanelsCss from '../../../styles/tablet/panels.css';
 injectOnDemandStyles(settingsCss);
 injectOnDemandStyles(tabletPanelsCss);
 
-export class SettingsWidget implements SettingsWidgetSurface {
+/**
+ * The Settings Widget: an overlay with the Repository Settings (the persisted state of the
+ * current repository, its remotes, commit author, issue linking and pull request integrations,
+ * Gerrit) and the Global Settings (the Extension Settings that shape the graph, commit loading,
+ * fetching and review integrations), plus the entries of the repository tools.
+ *
+ * The widget is a page singleton with two listener lifetimes (F3): the shell's own (the close
+ * button, the widget's scroll) live in the component store for dispose(), and each RENDER's
+ * wiring (the settings rows it just wrote) lives on the surface store, cleared at the top of
+ * the next render and on close — a re-render or a repo switch cannot accumulate handlers or
+ * pin the replaced rows' elements. Every DOM lookup runs under the widget's own element.
+ */
+export class SettingsWidget extends Component implements SettingsWidgetSurface {
 	private currentRepo: string | null = null;
 	private repo: Readonly<GG.GitRepoState> | null = null;
 	private config: Readonly<GG.GitRepoConfig> | null = null;
@@ -42,12 +48,13 @@ export class SettingsWidget implements SettingsWidgetSurface {
 	private readonly loadingElem: HTMLElement;
 
 	constructor(private readonly ctx: () => GraphContext) {
-		this.widgetElem = document.createElement('div');
+		super(document.createElement('div'));
+		this.widgetElem = <HTMLElement>this.root;
 		this.widgetElem.id = 'settingsWidget';
 		setHtml(this.widgetElem, html`<h2>${strings.settingsTitle}</h2><div id="settingsContent"></div><div id="settingsLoading"></div><div id="settingsClose"></div>`);
 		document.body.appendChild(this.widgetElem);
 
-		observeElemScroll(this.widgetElem, this.scrollTop, (scrollTop) => {
+		this.observeElemScroll(this.widgetElem, this.scrollTop, (scrollTop) => {
 			this.scrollTop = scrollTop;
 		}, () => {
 			if (this.currentRepo !== null) {
@@ -55,13 +62,13 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}
 		});
 
-		this.contentsElem = document.getElementById('settingsContent')!;
-		this.loadingElem = document.getElementById('settingsLoading')!;
+		this.contentsElem = this.byId('settingsContent')!;
+		this.loadingElem = this.byId('settingsLoading')!;
 
-		const settingsClose = document.getElementById('settingsClose')!;
+		const settingsClose = this.byId('settingsClose')!;
 		setHtml(settingsClose, SVG_ICONS.close);
-		makeKeyboardActivatable(settingsClose);
-		settingsClose.addEventListener('click', () => this.close());
+		this.makeKeyboardActivatable(settingsClose);
+		this.listen(settingsClose, 'click', () => this.close());
 	}
 
 	/**
@@ -102,6 +109,8 @@ export class SettingsWidget implements SettingsWidgetSurface {
 	/** Close the Settings Widget, sliding it up out of view. */
 	public close() {
 		if (this.currentRepo === null) return;
+		// The open render's wiring goes with its content (F3)
+		this.clearSurfaceListeners();
 		this.currentRepo = null;
 		this.repo = null;
 		this.config = null;
@@ -141,6 +150,10 @@ export class SettingsWidget implements SettingsWidgetSurface {
 	/* Rendering */
 
 	private render() {
+		// The previous render's wiring dies with the elements it was attached to (F3): the
+		// surface store is cleared before the content is replaced, so neither the store nor the
+		// closures in it can pin the replaced rows.
+		this.clearSurfaceListeners();
 		if (this.currentRepo !== null && this.repo !== null) {
 			const ctx = this.ctx();
 			const repoHtml = this.renderRepoColumn(this.currentRepo, this.repo);
@@ -148,17 +161,18 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 			setHtml(this.contentsElem, html`<div id="settingsColumns"><div class="settingsColumn" id="settingsRepoColumn"><h3 class="settingsColumnTitle" title="${strings.settingsColumnRepoHint}">${strings.settingsColumnRepo}</h3>${repoHtml}</div><div class="settingsColumn" id="settingsGlobalColumn"><h3 class="settingsColumnTitle" title="${strings.settingsColumnGlobalHint}">${strings.settingsColumnGlobal}</h3>${globalHtml}</div></div>`);
 
-			observeElemScroll(document.getElementById('settingsRepoColumn'), this.repoColumnScrollTop, (scrollTop) => {
+			this.observeSurfaceElemScroll(this.byId('settingsRepoColumn'), this.repoColumnScrollTop, (scrollTop) => {
 				this.repoColumnScrollTop = scrollTop;
 			}, () => ctx.persistence.saveState());
-			observeElemScroll(document.getElementById('settingsGlobalColumn'), this.globalColumnScrollTop, (scrollTop) => {
+			this.observeSurfaceElemScroll(this.byId('settingsGlobalColumn'), this.globalColumnScrollTop, (scrollTop) => {
 				this.globalColumnScrollTop = scrollTop;
 			}, () => ctx.persistence.saveState());
 
 			this.wireGlobalSettings();
 			this.wireRepoSettings(this.repo);
 
-			makeKeyboardActivatableCollection(this.widgetElem, '.settingsSectionButtons > div, .settingsSection > table td.btns > div, .hideRemoteBtn, .authorSwitchRow');
+			const btns = this.widgetElem.querySelectorAll('.settingsSectionButtons > div, .settingsSection > table td.btns > div, .hideRemoteBtn, .authorSwitchRow');
+			for (let i = 0; i < btns.length; i++) this.makeSurfaceKeyboardActivatable(<HTMLElement>btns[i]);
 		}
 
 		alterClass(this.widgetElem, CLASS_LOADING, this.loading);
@@ -346,6 +360,15 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 	/* Wiring */
 
+	/**
+	 * Register a listener on every element under the rendered content carrying a class name, on
+	 * the surface store (F3): the next render or close removes them all.
+	 */
+	private listenToClassOnSurface(className: string, event: string, listener: EventListener) {
+		const elems = this.contentsElem.getElementsByClassName(className);
+		for (let i = 0; i < elems.length; i++) this.listenOnSurface(elems[i], event, listener);
+	}
+
 	private wireGlobalSettings() {
 		const ctx = this.ctx(), viewConfig = ctx.store.config;
 		this.wireGlobalSelect('settingsGraphStyle', 'graph.style');
@@ -375,13 +398,13 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 		this.wireGlobalCheckbox('settingsPullRequestsEnabled', 'pullRequests.enabled');
 
-		document.getElementById('settingsAddAuthor')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('settingsAddAuthor')!, 'click', () => {
 			this.showAuthorDialog(-1);
 		});
-		addListenerToClass(document, 'editAuthor', 'click', (e) => {
+		this.listenToClassOnSurface('editAuthor', 'click', (e) => {
 			this.showAuthorDialog(this.getAuthorIndexForBtnEvent(e));
 		});
-		addListenerToClass(document, 'deleteAuthor', 'click', (e) => {
+		this.listenToClassOnSurface('deleteAuthor', 'click', (e) => {
 			const index = this.getAuthorIndexForBtnEvent(e);
 			const authors = this.getCommitAuthors();
 			const author = authors[index];
@@ -391,9 +414,9 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, null);
 		});
 
-		const interfaceLanguageElem = <HTMLSelectElement>document.getElementById('settingsInterfaceLanguage');
+		const interfaceLanguageElem = <HTMLSelectElement>this.byId('settingsInterfaceLanguage');
 		interfaceLanguageElem.value = viewConfig.interfaceLanguageSetting;
-		interfaceLanguageElem.addEventListener('change', () => {
+		this.listenOnSurface(interfaceLanguageElem, 'change', () => {
 			const value = interfaceLanguageElem.value;
 			const language: 'auto' | 'en' | 'zh-cn' = value === 'en' || value === 'zh-cn' ? value : 'auto';
 			if (language === ctx.store.config.interfaceLanguageSetting) return;
@@ -401,11 +424,11 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			ctx.actions.run({ command: 'setInterfaceLanguage', language: language }, strings.settingsSavingLanguage);
 		});
 
-		document.getElementById('openExtensionSettings')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('openExtensionSettings')!, 'click', () => {
 			ctx.bridge.send({ command: 'openExtensionSettings' });
 		});
 
-		document.getElementById('openLogFile')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('openLogFile')!, 'click', () => {
 			ctx.bridge.send({ command: 'openLogFile' });
 		});
 	}
@@ -414,7 +437,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		const ctx = this.ctx(), store = ctx.store, viewConfig = store.config;
 		const initialBranchesLocallyConfigured = repo.onRepoLoadShowCheckedOutBranch !== GG.BooleanOverride.Default || repo.onRepoLoadShowSpecificBranches !== null;
 
-		document.getElementById('editRepoName')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('editRepoName')!, 'click', () => {
 			if (this.currentRepo === null || this.repo === null) return;
 			ctx.dialog.showForm(strings.settingsNameDialogMessage, [
 				{ type: DialogInputType.Text, name: strings.settingsNameInput, default: this.repo.name || '', placeholder: getRepoName(this.currentRepo) }
@@ -427,7 +450,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		});
 
 		if (repo.name !== null) {
-			document.getElementById('deleteRepoName')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('deleteRepoName')!, 'click', () => {
 				if (this.currentRepo === null || this.repo === null || this.repo.name === null) return;
 				ctx.dialog.showConfirmation(formatStr(markup.settingsDeleteNameConfirm, this.repo.name, getRepoName(this.currentRepo)), strings.settingsYesDelete, () => {
 					if (this.currentRepo === null) return;
@@ -438,7 +461,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			});
 		}
 
-		document.getElementById('editInitialBranches')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('editInitialBranches')!, 'click', () => {
 			if (this.repo === null) return;
 			const showCheckedOutBranch = getOnRepoLoadShowCheckedOutBranch(this.repo.onRepoLoadShowCheckedOutBranch, viewConfig);
 			const showSpecificBranches = getOnRepoLoadShowSpecificBranches(this.repo.onRepoLoadShowSpecificBranches, viewConfig);
@@ -456,7 +479,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		});
 
 		if (initialBranchesLocallyConfigured) {
-			document.getElementById('clearInitialBranches')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('clearInitialBranches')!, 'click', () => {
 				ctx.dialog.showConfirmation(strings.settingsClearInitialBranchesConfirm, strings.settingsYesClear, () => {
 					if (this.currentRepo === null) return;
 					ctx.persistence.saveRepoStateValue(this.currentRepo, 'onRepoLoadShowCheckedOutBranch', GG.BooleanOverride.Default);
@@ -473,20 +496,20 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			{ id: 'settingsOnlyFollowFirstParentCheckbox', key: 'onlyFollowFirstParent', get: (value) => getOnlyFollowFirstParent(value, viewConfig) }
 		];
 		for (const field of repoBooleanOverrides) {
-			const elem = <HTMLInputElement>document.getElementById(field.id);
+			const elem = <HTMLInputElement>this.byId(field.id);
 			elem.checked = field.get(repo[field.key]);
-			elem.addEventListener('change', () => {
+			this.listenOnSurface(elem, 'change', () => {
 				if (this.currentRepo === null) return;
-				const current = <HTMLInputElement | null>document.getElementById(field.id);
+				const current = <HTMLInputElement | null>this.byId(field.id);
 				if (current === null) return;
 				ctx.persistence.saveRepoStateValue(this.currentRepo, field.key, current.checked ? GG.BooleanOverride.Enabled : GG.BooleanOverride.Disabled);
 				ctx.loader.refresh(true);
 			});
 		}
 
-		const gerritFetchRefsElem = <HTMLInputElement | null>document.getElementById('settingsGerritFetchRefsCheckbox');
+		const gerritFetchRefsElem = <HTMLInputElement | null>this.byId('settingsGerritFetchRefsCheckbox');
 		if (gerritFetchRefsElem !== null) {
-			gerritFetchRefsElem.addEventListener('change', () => {
+			this.listenOnSurface(gerritFetchRefsElem, 'change', () => {
 				if (this.currentRepo === null || this.repo === null) return;
 				if (gerritFetchRefsElem.checked) {
 					// Enabling: the repository is marked stale on the extension host, so the
@@ -509,9 +532,9 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			{ id: 'settingsGerritStatusWip', status: 'wip' }
 		];
 		for (const field of gerritStatusFields) {
-			const elem = <HTMLInputElement | null>document.getElementById(field.id + 'Checkbox');
+			const elem = <HTMLInputElement | null>this.byId(field.id + 'Checkbox');
 			if (elem === null) continue;
-			elem.addEventListener('change', () => {
+			this.listenOnSurface(elem, 'change', () => {
 				if (this.currentRepo === null || this.repo === null) return;
 				const statusFilter = Object.assign({}, this.repo.gerritStatusFilter);
 				statusFilter[field.status] = elem.checked;
@@ -522,9 +545,9 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			});
 		}
 
-		const editGerritFetchLimitElem = document.getElementById('editGerritFetchLimit');
+		const editGerritFetchLimitElem = this.byId('editGerritFetchLimit');
 		if (editGerritFetchLimitElem !== null) {
-			editGerritFetchLimitElem.addEventListener('click', () => {
+			this.listenOnSurface(editGerritFetchLimitElem, 'click', () => {
 				if (this.currentRepo === null || this.repo === null) return;
 				const current = this.repo.gerritFetchLimit !== undefined ? this.repo.gerritFetchLimit : null;
 				ctx.dialog.showForm(strings.settingsGerritFetchLimitEditTitle, [
@@ -550,7 +573,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			this.wireConfigSettings();
 		}
 
-		document.getElementById('editIssueLinking')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('editIssueLinking')!, 'click', () => {
 			if (this.repo === null) return;
 			const globalIssueLinking = store.globalViewState.issueLinkingConfig;
 			const issueLinkingConfig = this.repo.issueLinkingConfig || globalIssueLinking;
@@ -563,7 +586,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		});
 
 		if (repo.issueLinkingConfig !== null || store.globalViewState.issueLinkingConfig !== null) {
-			document.getElementById('removeIssueLinking')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('removeIssueLinking')!, 'click', () => {
 				if (this.repo === null) return;
 				const locallyConfigured = this.repo.issueLinkingConfig !== null;
 				const globalConfigured = store.globalViewState.issueLinkingConfig !== null;
@@ -574,7 +597,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		}
 
 		if (this.config !== null) {
-			document.getElementById('editPullRequestIntegration')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('editPullRequestIntegration')!, 'click', () => {
 				if (this.repo === null || this.config === null) return;
 
 				if (this.config.remotes.length === 0) {
@@ -611,7 +634,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			});
 
 			if (repo.pullRequestConfig !== null) {
-				document.getElementById('removePullRequestIntegration')!.addEventListener('click', () => {
+				this.listenOnSurface(this.byId('removePullRequestIntegration')!, 'click', () => {
 					ctx.dialog.showConfirmation(strings.settingsRemovePrConfirm, strings.settingsYesRemove, () => {
 						this.setPullRequestConfig(null);
 					}, null);
@@ -619,7 +642,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}
 		}
 
-		document.getElementById('exportRepositoryConfig')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('exportRepositoryConfig')!, 'click', () => {
 			ctx.dialog.showConfirmation(strings.settingsExportRepoConfigConfirm, strings.settingsYesExport, () => {
 				if (this.currentRepo === null) return;
 				ctx.actions.run({ command: 'exportRepoConfig', repo: this.currentRepo }, strings.settingsExportingRepoConfig);
@@ -628,8 +651,8 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 		// The Repository Tools open as overlays over the view: close the Settings Widget first,
 		// so the tool slides down in its place instead of the two overlays stacking
-		document.getElementById('openReflogView')!.addEventListener('click', () => this.openRepositoryTool(ctx.widgets.reflog));
-		document.getElementById('openWorktreeDialog')!.addEventListener('click', () => this.openRepositoryTool(ctx.widgets.worktree));
+		this.listenOnSurface(this.byId('openReflogView')!, 'click', () => this.openRepositoryTool(ctx.widgets.reflog));
+		this.listenOnSurface(this.byId('openWorktreeDialog')!, 'click', () => this.openRepositoryTool(ctx.widgets.worktree));
 	}
 
 	/** The actions that need the repository's configuration: authors, remotes. */
@@ -639,7 +662,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		// Applying an author identity to this repository writes its name and email to the
 		// repository's local Git configuration, so every commit made in the repository -
 		// from any tool - uses the selected identity
-		addListenerToClass(document, 'authorSwitchRow', 'click', (e) => {
+		this.listenToClassOnSurface('authorSwitchRow', 'click', (e) => {
 			if (this.currentRepo === null || this.config === null) return;
 			const row = <HTMLElement>(<Element>e.target).closest('.authorSwitchRow')!;
 			if (row.id === 'useGlobalAuthorRow') return; // handled by its own listener
@@ -662,7 +685,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 		// override is removed. When the global author is still the implicit default (the
 		// first identity, not materialised into the global Git configuration yet), it is
 		// written there as part of the same action, so the commits really use it
-		document.getElementById('useGlobalAuthorRow')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('useGlobalAuthorRow')!, 'click', () => {
 			if (this.currentRepo === null || this.config === null) return;
 			const userName = this.config.user.name, userEmail = this.config.user.email;
 			const hasLocalOverride = userName.local !== null || userEmail.local !== null;
@@ -700,7 +723,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 		// Setting an author as the global default writes it to the global Git
 		// configuration; repositories without their own selection follow it
-		addListenerToClass(document, 'setGlobalAuthor', 'click', (e) => {
+		this.listenToClassOnSurface('setGlobalAuthor', 'click', (e) => {
 			if (this.currentRepo === null || this.config === null) return;
 			const author = this.getCommitAuthors()[this.getAuthorIndexForBtnEvent(e)];
 			if (author === undefined) return;
@@ -715,7 +738,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, strings.settingsSettingUserDetails);
 		});
 
-		document.getElementById('settingsAddRemote')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('settingsAddRemote')!, 'click', () => {
 			ctx.dialog.showForm(strings.settingsAddRemoteDialogMessage, [
 				{ type: DialogInputType.Text, name: strings.settingsNameInput, default: '', placeholder: null },
 				{ type: DialogInputType.Text, name: strings.settingsFetchUrlInput, default: '', placeholder: null },
@@ -727,7 +750,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, { type: TargetType.Repo });
 		});
 
-		addListenerToClass(document, 'editRemote', 'click', (e) => {
+		this.listenToClassOnSurface('editRemote', 'click', (e) => {
 			const remote = this.getRemoteForBtnEvent(e);
 			if (remote === null) return;
 			ctx.dialog.showForm(formatStr(markup.settingsEditRemoteDialogMessage, remote.name), [
@@ -740,7 +763,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, { type: TargetType.Repo });
 		});
 
-		addListenerToClass(document, 'deleteRemote', 'click', (e) => {
+		this.listenToClassOnSurface('deleteRemote', 'click', (e) => {
 			const remote = this.getRemoteForBtnEvent(e);
 			if (remote === null) return;
 			ctx.dialog.showConfirmation(formatStr(markup.settingsDeleteRemoteConfirm, remote.name), strings.settingsYesDelete, () => {
@@ -749,7 +772,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, { type: TargetType.Repo });
 		});
 
-		addListenerToClass(document, 'fetchRemote', 'click', (e) => {
+		this.listenToClassOnSurface('fetchRemote', 'click', (e) => {
 			const remote = this.getRemoteForBtnEvent(e);
 			if (remote === null) return;
 			ctx.dialog.showForm(formatStr(markup.settingsFetchRemoteConfirm, remote.name), [
@@ -761,7 +784,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, { type: TargetType.Repo });
 		});
 
-		addListenerToClass(document, 'pruneRemote', 'click', (e) => {
+		this.listenToClassOnSurface('pruneRemote', 'click', (e) => {
 			const remote = this.getRemoteForBtnEvent(e);
 			if (remote === null) return;
 			ctx.dialog.showConfirmation(formatStr(markup.settingsPruneRemoteConfirm, remote.name), strings.settingsYesPrune, () => {
@@ -770,7 +793,7 @@ export class SettingsWidget implements SettingsWidgetSurface {
 			}, { type: TargetType.Repo });
 		});
 
-		addListenerToClass(document, 'hideRemoteBtn', 'click', (e) => {
+		this.listenToClassOnSurface('hideRemoteBtn', 'click', (e) => {
 			if (this.currentRepo === null || this.repo === null || this.config === null) return;
 			const source = <HTMLElement>(<Element>e.target).closest('.hideRemoteBtn')!;
 			const remote = this.config.remotes[parseInt(source.dataset.index!)].name;
@@ -803,16 +826,16 @@ export class SettingsWidget implements SettingsWidgetSurface {
 
 	/** Wire a checkbox rendered by `checkbox()` to the Global Setting it controls. */
 	private wireGlobalCheckbox(id: string, setting: string) {
-		const elem = <HTMLInputElement | null>document.getElementById(id + 'Checkbox');
+		const elem = <HTMLInputElement | null>this.byId(id + 'Checkbox');
 		if (elem === null) return;
-		elem.addEventListener('change', () => this.saveGlobalSetting(setting, elem.checked));
+		this.listenOnSurface(elem, 'change', () => this.saveGlobalSetting(setting, elem.checked));
 	}
 
 	/** Wire a `<select>` rendered by `selectRow()` to the Global Setting it controls. */
 	private wireGlobalSelect(id: string, setting: string) {
-		const elem = <HTMLSelectElement | null>document.getElementById(id);
+		const elem = <HTMLSelectElement | null>this.byId(id);
 		if (elem === null) return;
-		elem.addEventListener('change', () => this.saveGlobalSetting(setting, elem.value));
+		this.listenOnSurface(elem, 'change', () => this.saveGlobalSetting(setting, elem.value));
 	}
 
 	/**
@@ -820,9 +843,9 @@ export class SettingsWidget implements SettingsWidgetSurface {
 	 * Values outside [min, max] (and non-numeric input) are rejected, restoring the saved value.
 	 */
 	private wireGlobalNumber(id: string, setting: string, min: number, max: number, current: number) {
-		const elem = <HTMLInputElement | null>document.getElementById(id);
+		const elem = <HTMLInputElement | null>this.byId(id);
 		if (elem === null) return;
-		elem.addEventListener('change', () => {
+		this.listenOnSurface(elem, 'change', () => {
 			const value = parseInt(elem.value, 10);
 			if (isNaN(value) || value < min || value > max) {
 				elem.value = String(current);

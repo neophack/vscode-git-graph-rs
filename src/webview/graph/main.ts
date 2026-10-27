@@ -126,6 +126,22 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	ctx.controls = new ControlBar(getContext);
 	ctx.pinned = new PinnedRow(getContext);
 
+	// The F3 teardown: every top-level component answers to dispose(), which removes the
+	// listeners it registered through its Component store. A repository switch does NOT run
+	// this — the components are page singletons that close their surfaces instead (see
+	// GraphContext.dispose); this is the page reset's hook.
+	ctx.dispose = () => {
+		ctx.controls.dispose();
+		ctx.details.dispose();
+		ctx.dialog.dispose();
+		ctx.contextMenu.dispose();
+		ctx.widgets.conflictBanner.dispose();
+		ctx.widgets.find.dispose();
+		ctx.widgets.settings.dispose();
+		ctx.widgets.reflog.dispose();
+		ctx.widgets.worktree.dispose();
+		ctx.widgets.statistics.dispose();
+	};
 	ctx.controls.renderToolbarText();
 	dom.view.focus();
 	ctx.pinned.init();
@@ -184,6 +200,15 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 }
 
 let loaded = false;
+/**
+ * The view the last completed boot composed (F3 dispose wiring): the reset path of this page —
+ * a `load` event reaching the module again — tears it down before a new view is composed, so
+ * the components' document-level listeners (dropdowns' capture handlers, the context menu's
+ * close listeners, the help tooltips' observers) cannot double up. A repository switch never
+ * reaches this: components are page singletons whose close paths clear their surfaces (see
+ * `GraphContext.dispose`).
+ */
+let activeView: GraphContext | null = null;
 
 /**
  * The P1 T5 marker (OPTIMIZATION-PLAN §7 P1): once the boot's data push (T4) has been routed,
@@ -226,7 +251,9 @@ window.addEventListener('load', () => {
 
 		// A page replacing one left behind by an Extension Host restart has no state of its own yet:
 		// it reopens on the snapshot the old page reported (only the fields a reload restores)
+		if (activeView !== null) activeView.dispose();
 		const ctx = createView(dom, decodePersistedWebViewState(bridge.getState()) || <WebViewState | null>initialState.restoredSnapshot);
+		activeView = ctx;
 
 		bridge.onMessage(createResponseRouter(ctx));
 

@@ -5,13 +5,14 @@
  * exposed as dropdown filters and dialogs inside this single webview panel.
  */
 
-import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
+import { CLASS_ACTIVE } from '../../common/dom';
 import { escapeHtml, helpTooltipAttrs, html, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { abbrevCommit } from '../../common/util';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 import { DialogInputType } from './dialog';
 import { WorktreeDialogSurface } from './surfaces';
@@ -23,24 +24,25 @@ import tabletPanelsCss from '../../styles/tablet/panels.css';
 injectOnDemandStyles(worktreeCss);
 injectOnDemandStyles(tabletPanelsCss);
 
-export class WorktreeDialog implements WorktreeDialogSurface {
+export class WorktreeDialog extends Component implements WorktreeDialogSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;
 	private worktrees: ReadonlyArray<GG.GitWorktree> = [];
 
 	constructor(private readonly ctx: () => GraphContext) {
-		this.widgetElem = document.createElement('div');
+		super(document.createElement('div'));
+		this.widgetElem = <HTMLElement>this.root;
 		this.widgetElem.id = 'worktreeWidget';
 		setHtml(this.widgetElem, html`<h2>${strings.worktreeDialogTitle}</h2><div id="worktreeContent"></div><div id="worktreeClose"></div>`);
 		document.body.appendChild(this.widgetElem);
 
-		this.contentElem = document.getElementById('worktreeContent')!;
+		this.contentElem = this.byId('worktreeContent')!;
 
-		const closeBtn = document.getElementById('worktreeClose')!;
+		const closeBtn = this.byId('worktreeClose')!;
 		setHtml(closeBtn, SVG_ICONS.close);
-		makeKeyboardActivatable(closeBtn);
-		closeBtn.addEventListener('click', () => this.close());
+		this.makeKeyboardActivatable(closeBtn);
+		this.listen(closeBtn, 'click', () => this.close());
 	}
 
 	public show() {
@@ -99,26 +101,28 @@ export class WorktreeDialog implements WorktreeDialogSurface {
 				return html`<tr class="worktreeRow" data-path="${worktree.path}"><td class="worktreePathCol">${worktree.path}${worktree.isMain ? html` <span class="worktreeBadge worktreeBadgeMain">${strings.worktreeMainBadge}</span>` : ''}${worktree.locked ? html` <span class="worktreeBadge worktreeBadgeLocked">${strings.worktreeLocked}</span>` : ''}${worktree.prunable ? html` <span ${helpTooltipAttrs(strings.worktreePrunableInfo, 'worktreeBadge worktreeBadgePrunable')}>${strings.worktreePrunable}</span>` : ''}</td><td class="worktreeBranchCol">${worktree.branch !== null ? escapeHtml(worktree.branch) : html`<i>${strings.worktreeDetached} (${abbrevCommit(worktree.hash)})</i>`}</td><td class="worktreeActionsCol">${worktree.isMain ? '' : html`<span ${helpTooltipAttrs(strings.worktreeRemoveTitle, 'worktreeRemoveBtn')} role="button">${SVG_ICONS.trash}</span>`}</td></tr>`;
 			})}</tbody></table>`;
 		}
+		// The previous render's rows and buttons go with their markup (F3)
+		this.clearSurfaceListeners();
 		setHtml(this.contentElem, html`${content}<div id="worktreeAddBtn" class="roundedBtn" role="button" tabindex="0">${strings.worktreeAddTitle}</div><div id="worktreePruneBtn" class="roundedBtn" role="button" tabindex="0">${strings.worktreePruneTitle}</div>`);
 
 		const removeBtns = this.contentElem.querySelectorAll('.worktreeRemoveBtn');
 		for (let i = 0; i < removeBtns.length; i++) {
 			const btn = <HTMLElement>removeBtns[i];
 			const path = (<HTMLElement>btn.closest('.worktreeRow'))!.getAttribute('data-path')!;
-			makeKeyboardActivatable(btn);
-			btn.addEventListener('click', (e) => {
+			this.makeSurfaceKeyboardActivatable(btn);
+			this.listenOnSurface(btn, 'click', (e) => {
 				e.stopPropagation();
 				this.removeWorktreeAction(path);
 			});
 		}
 
-		const addBtn = document.getElementById('worktreeAddBtn')!;
-		makeKeyboardActivatable(addBtn);
-		addBtn.addEventListener('click', () => this.addWorktreeAction());
+		const addBtn = this.byId('worktreeAddBtn')!;
+		this.makeSurfaceKeyboardActivatable(addBtn);
+		this.listenOnSurface(addBtn, 'click', () => this.addWorktreeAction());
 
-		const pruneBtn = document.getElementById('worktreePruneBtn')!;
-		makeKeyboardActivatable(pruneBtn);
-		pruneBtn.addEventListener('click', () => {
+		const pruneBtn = this.byId('worktreePruneBtn')!;
+		this.makeSurfaceKeyboardActivatable(pruneBtn);
+		this.listenOnSurface(pruneBtn, 'click', () => {
 			ctx.dialog.showConfirmation(strings.worktreePruneConfirm, strings.worktreePruneTitle, () => {
 				ctx.actions.run({ command: 'worktreePrune', repo: ctx.store.currentRepo }, strings.worktreePruneTitle);
 			}, null);

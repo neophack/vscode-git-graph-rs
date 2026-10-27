@@ -117,16 +117,24 @@ export function handledEvent(event: Event) {
 /**
  * Make a non-native button (e.g. a `<div role="button">`) activate on Enter / Space, the way a
  * real `<button>` does.
+ * @param group When given (a component's listener store, F3), the keydown listener is registered
+ * there and removed with it; otherwise the listener lives on the element itself.
  */
-export function makeKeyboardActivatable(elem: HTMLElement) {
+export function makeKeyboardActivatable(elem: HTMLElement, group?: ListenerGroup) {
 	if (elem.getAttribute('role') === null) elem.setAttribute('role', 'button');
 	if (elem.tabIndex < 0) elem.tabIndex = 0;
-	elem.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' || e.key === ' ') {
+	const listener: EventListener = (e) => {
+		const key = (<KeyboardEvent>e).key;
+		if (key === 'Enter' || key === ' ') {
 			elem.click();
 			handledEvent(e);
 		}
-	});
+	};
+	if (group !== undefined) {
+		group.add(elem, 'keydown', listener);
+	} else {
+		elem.addEventListener('keydown', listener);
+	}
 }
 
 /** `makeKeyboardActivatable` for every element under `root` matching a selector. */
@@ -139,20 +147,27 @@ export function makeKeyboardActivatableCollection(root: ParentNode, selector: st
  * Initialise the scroll position of an element and observe its scrolling: `onScroll` runs on
  * every scroll, `onScrolled` once the scrolling has rested for 250 ms (when the position should
  * be saved).
+ * @param group When given (a component's listener store, F3), the scroll listener is registered
+ * there and removed with it; otherwise it lives on the element itself.
  */
-export function observeElemScroll(elem: HTMLElement | null, initialScrollTop: number, onScroll: (scrollTop: number) => void, onScrolled: () => void) {
+export function observeElemScroll(elem: HTMLElement | null, initialScrollTop: number, onScroll: (scrollTop: number) => void, onScrolled: () => void, group?: ListenerGroup) {
 	if (elem === null) return;
 	let timeout: number | null = null;
 	elem.scroll(0, initialScrollTop);
 	// Passive (task 5.10): the handler never prevents the default scroll
-	elem.addEventListener('scroll', () => {
+	const listener = () => {
 		onScroll(elem.scrollTop);
 		if (timeout !== null) window.clearTimeout(timeout);
 		timeout = window.setTimeout(() => {
 			onScrolled();
 			timeout = null;
 		}, 250);
-	}, { passive: true });
+	};
+	if (group !== undefined) {
+		group.add(elem, 'scroll', listener, { passive: true });
+	} else {
+		elem.addEventListener('scroll', listener, { passive: true });
+	}
 }
 
 /** The value of a VS Code theme variable set on the document element. */

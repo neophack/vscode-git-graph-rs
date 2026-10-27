@@ -62,9 +62,9 @@ const VIEW_HTML = `<!DOCTYPE html><html><head></head><body>
 			<span id="repoControl"><span id="repoControlLabel" class="unselectable"></span><div id="repoDropdown" class="dropdown"></div></span>
 			<span id="branchControl"><span id="branchControlLabel" class="unselectable"></span><div id="branchDropdown" class="dropdown"></div></span>
 			<span id="authorControl"><span id="authorControlLabel" class="unselectable"></span><div id="authorDropdown" class="dropdown"></div></span>
-		</div>
 		<label id="showRemoteBranchesControl"><input type="checkbox" id="showRemoteBranchesCheckbox" tabindex="-1"><span class="customCheckbox"></span><span id="showRemoteBranchesLabel"></span></label>
 		<span id="controlBtns"><div id="currentBtn"></div><div id="findBtn"></div><div id="filterBtn"></div><div id="statisticsBtn"></div><div id="terminalBtn"></div><div id="settingsBtn"></div><div id="fetchBtn"></div><div id="refreshBtn"></div></span>
+		</div>
 		<div id="prStatus" style="display:none"></div>
 		<div id="pinnedControls" style="display:none"></div>
 	</div>

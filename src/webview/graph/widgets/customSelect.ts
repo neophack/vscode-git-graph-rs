@@ -1,9 +1,10 @@
-import { addListenerToCollectionElems, alterClass, CLASS_FOCUSSED, CLASS_SELECTED, handledEvent } from '../../common/dom';
+import { alterClass, CLASS_FOCUSSED, CLASS_SELECTED, handledEvent } from '../../common/dom';
 import { escapeHtml, html, setHtml } from '../../common/html';
 import { strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { formatCommaSeparatedList } from '../../common/util';
 import { SelectOption } from '../state/store';
+import { Component } from '../component';
 
 /** The data of a select input of a dialog. */
 export type CustomSelectData = {
@@ -23,8 +24,14 @@ let customSelectCount = 0;
 
 /**
  * The custom select inputs used in dialogs (single or multiple selection, keyboard navigable).
+ *
+ * A select owns its outside-click capture listener for its whole lifetime (F3): `remove()`
+ * — or any parent's dispose(), the dialog registers each select with itself — removes it, so
+ * a dialog open/close cycle cannot leak a document-level handler per select. The open
+ * options list is the surface: its listeners (option hover, mouse leave) are registered on
+ * the surface store and removed together when the list closes.
  */
-export class CustomSelect {
+export class CustomSelect extends Component {
 	private readonly data: CustomSelectData;
 	private readonly selected: boolean[];
 	private lastSelected: number = -1;
@@ -37,7 +44,6 @@ export class CustomSelect {
 	private elem: HTMLElement | null;
 	private currentElem: HTMLElement | null;
 	private optionsElem: HTMLElement | null = null;
-	private clickHandler: ((e: MouseEvent) => void) | null;
 
 	/**
 	 * @param data The data configuring the select input.
@@ -46,6 +52,7 @@ export class CustomSelect {
 	 * @param dialogElem The element of the dialog the select input is rendered in.
 	 */
 	constructor(data: CustomSelectData, container: HTMLElement, tabIndex: number, dialogElem: HTMLElement) {
+		super(container);
 		this.data = data;
 		this.selected = data.options.map(() => false);
 		this.open = false;
@@ -71,7 +78,7 @@ export class CustomSelect {
 		this.currentElem = currentElem;
 		container.appendChild(currentElem);
 
-		this.clickHandler = (e: MouseEvent) => {
+		this.listen(document, 'click', (e: MouseEvent) => {
 			if (!e.target) return;
 			const targetElem = <HTMLElement>e.target;
 			if (targetElem.closest('.customSelectContainer') !== this.elem && (this.optionsElem === null || targetElem.closest('.customSelectOptions') !== this.optionsElem)) {
@@ -94,10 +101,9 @@ export class CustomSelect {
 					}
 				}
 			}
-		};
-		document.addEventListener('click', this.clickHandler, true);
+		}, true);
 
-		currentElem.addEventListener('keydown', (e) => {
+		this.listen(currentElem, 'keydown', (e) => {
 			if (this.open && e.key === 'Tab') {
 				this.render(false);
 			} else if (this.open && (e.key === 'Enter' || e.key === 'Escape')) {
@@ -150,6 +156,9 @@ export class CustomSelect {
 
 	/** Remove the select input, releasing everything linked to it. */
 	public remove() {
+		// dispose() (the component base, F3) removes the document-level click capture listener
+		// and the open options list's listeners, so a removed select leaves nothing behind
+		this.dispose();
 		this.dialogElem = null;
 		if (this.elem !== null) {
 			this.elem.remove();
@@ -162,10 +171,6 @@ export class CustomSelect {
 		if (this.optionsElem !== null) {
 			this.optionsElem.remove();
 			this.optionsElem = null;
-		}
-		if (this.clickHandler !== null) {
-			document.removeEventListener('click', this.clickHandler, true);
-			this.clickHandler = null;
 		}
 	}
 
@@ -214,6 +219,9 @@ export class CustomSelect {
 			this.open = open;
 			this.currentElem.setAttribute('aria-expanded', open ? 'true' : 'false');
 			if (open) {
+				// A fresh list opens: the previous one's listeners went with its close, and any
+				// straggler must not survive the element being replaced (F3)
+				this.clearSurfaceListeners();
 				if (this.optionsElem !== null) {
 					this.optionsElem.remove();
 				}
@@ -230,13 +238,16 @@ export class CustomSelect {
 				setHtml(this.optionsElem, html`${this.data.options.map((option, index) =>
 					html`<div class="customSelectOption" role="option" id="${this.idBase + index.toString()}" data-index="${index}">${icon}${option.name}</div>`
 				)}`);
-				addListenerToCollectionElems(this.optionsElem.children, 'mousemove', (e) => {
+				// Surface-owned (F3): both go when the list closes (or the select is removed). The
+				// option hover is ONE delegated listener on the list (its `data-index` options carry
+				// the index), not one per option.
+				this.listenOnSurface(this.optionsElem, 'mousemove', (e) => {
 					if (!e.target) return;
 					const elem = (<HTMLElement>e.target).closest('.customSelectOption');
 					if (elem === null) return;
 					this.setFocussed(parseInt((<HTMLElement>elem).dataset.index!));
 				});
-				this.optionsElem.addEventListener('mouseleave', () => this.setFocussed(-1));
+				this.listenOnSurface(this.optionsElem, 'mouseleave', () => this.setFocussed(-1));
 				this.dialogElem.appendChild(this.optionsElem);
 			} else {
 				if (this.optionsElem !== null) {
@@ -244,6 +255,8 @@ export class CustomSelect {
 					this.optionsElem = null;
 				}
 				this.setFocussed(-1);
+				// The list is gone: its listeners must not outlive it (F3)
+				this.clearSurfaceListeners();
 			}
 			alterClass(this.elem, 'open', open);
 		}

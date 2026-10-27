@@ -8,7 +8,7 @@
  */
 
 import { formatShortDate } from '../../common/dates';
-import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
+import { CLASS_ACTIVE } from '../../common/dom';
 import { helpTooltipAttrs, html, setHtml } from '../../common/html';
 import { ELLIPSIS, formatStr, markup, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
@@ -16,6 +16,7 @@ import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { abbrevCommit } from '../../common/util';
 import { currentBranchHtml } from '../actions/dialogActions';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 import { ContextMenuActions } from './contextMenu';
 import { ReflogViewSurface } from './surfaces';
@@ -49,7 +50,7 @@ export function classifyReflogAction(message: string): string {
 	return 'reflogDefault';
 }
 
-export class ReflogView implements ReflogViewSurface {
+export class ReflogView extends Component implements ReflogViewSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;
@@ -57,17 +58,18 @@ export class ReflogView implements ReflogViewSurface {
 	private limit: number = REFLOG_PAGE_SIZE;
 
 	constructor(private readonly ctx: () => GraphContext) {
-		this.widgetElem = document.createElement('div');
+		super(document.createElement('div'));
+		this.widgetElem = <HTMLElement>this.root;
 		this.widgetElem.id = 'reflogWidget';
 		setHtml(this.widgetElem, html`<h2>${strings.reflogTitle}</h2><div id="reflogContent"></div><div id="reflogClose"></div>`);
 		document.body.appendChild(this.widgetElem);
 
-		this.contentElem = document.getElementById('reflogContent')!;
+		this.contentElem = this.byId('reflogContent')!;
 
-		const closeBtn = document.getElementById('reflogClose')!;
+		const closeBtn = this.byId('reflogClose')!;
 		setHtml(closeBtn, SVG_ICONS.close);
-		makeKeyboardActivatable(closeBtn);
-		closeBtn.addEventListener('click', () => this.close());
+		this.makeKeyboardActivatable(closeBtn);
+		this.listen(closeBtn, 'click', () => this.close());
 	}
 
 	public isVisible() {
@@ -125,6 +127,8 @@ export class ReflogView implements ReflogViewSurface {
 			return;
 		}
 
+		// The previous render's rows and button go with their markup (F3)
+		this.clearSurfaceListeners();
 		setHtml(this.contentElem, html`<table class="reflogTable"><tbody>${entries.map((entry, i) => {
 			const date = formatShortDate(entry.date, dateFormat);
 			return html`<tr class="reflogRow" tabindex="0" data-index="${i}"><td class="reflogDotCol"><span class="reflogDot ${classifyReflogAction(entry.message)}"></span></td><td class="reflogHashCol">${entry.abbrevHash}</td><td class="reflogMessageCol">${entry.message}${entry.dangling ? html` <span ${helpTooltipAttrs(strings.reflogDangling)}>${SVG_ICONS.alert}</span>` : ''}</td><td class="reflogDateCol" title="${date.title}">${date.formatted}</td></tr>`;
@@ -134,14 +138,14 @@ export class ReflogView implements ReflogViewSurface {
 		for (let i = 0; i < rows.length; i++) {
 			const row = <HTMLElement>rows[i];
 			const entry = entries[i];
-			makeKeyboardActivatable(row);
-			row.addEventListener('click', (e) => this.showRowActions(entry, row, <MouseEvent>e));
+			this.makeSurfaceKeyboardActivatable(row);
+			this.listenOnSurface(row, 'click', (e) => this.showRowActions(entry, row, <MouseEvent>e));
 		}
 
 		if (moreAvailable) {
-			const loadMoreBtn = document.getElementById('reflogLoadMoreBtn')!;
-			makeKeyboardActivatable(loadMoreBtn);
-			loadMoreBtn.addEventListener('click', () => {
+			const loadMoreBtn = this.byId('reflogLoadMoreBtn')!;
+			this.makeSurfaceKeyboardActivatable(loadMoreBtn);
+			this.listenOnSurface(loadMoreBtn, 'click', () => {
 				this.limit += REFLOG_PAGE_SIZE;
 				this.load();
 			});

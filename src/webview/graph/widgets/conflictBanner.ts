@@ -8,17 +8,26 @@
  * periodic refresh, and after every action.
  */
 
-import { makeKeyboardActivatable } from '../../common/dom';
 import { html, joinHtml, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import * as GG from '../../common/protocol';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 
-export class ConflictBanner {
+/**
+ * The Conflict Banner's component (F3): the banner owns its element subtree, and the buttons'
+ * listeners of one update live on the surface store, replaced with the next update.
+ */
+export class ConflictBanner extends Component {
 	private type: GG.GitOperationType | null = null;
 
-	constructor(private readonly ctx: () => GraphContext, private readonly elem: HTMLElement) { }
+	private readonly elem: HTMLElement;
+
+	constructor(private readonly ctx: () => GraphContext, elem: HTMLElement) {
+		super(elem);
+		this.elem = elem;
+	}
 
 	/**
 	 * Update the banner to reflect the repository's current Git operation state.
@@ -43,15 +52,17 @@ export class ConflictBanner {
 			? ' (' + formatStr(strings.conflictBannerRebaseProgress, progress.step.toString(), progress.total.toString()) + ')'
 			: '');
 
+		// The previous update's buttons go with their markup (F3)
+		this.clearSurfaceListeners();
 		setHtml(this.elem, html`<span class="conflictBannerIcon">${SVG_ICONS.alert}</span><span class="conflictBannerTitle">${title}</span>${conflictedFiles.length > 0 ? html`<span class="conflictBannerFiles"><b>${strings.conflictBannerFilesLabel}</b> ${joinHtml(conflictedFiles, ', ')}</span>` : ''}<div id="conflictBannerContinueBtn" class="roundedBtn" role="button" tabindex="0">${strings.conflictBannerContinue}</div><div id="conflictBannerAbortBtn" class="roundedBtn" role="button" tabindex="0">${strings.conflictBannerAbort}</div>`);
 		this.elem.style.display = 'flex';
 
-		const continueBtn = document.getElementById('conflictBannerContinueBtn')!;
-		const abortBtn = document.getElementById('conflictBannerAbortBtn')!;
-		makeKeyboardActivatable(continueBtn);
-		makeKeyboardActivatable(abortBtn);
-		continueBtn.addEventListener('click', () => this.continueOperation());
-		abortBtn.addEventListener('click', () => this.abortOperation());
+		const continueBtn = this.byId('conflictBannerContinueBtn')!;
+		const abortBtn = this.byId('conflictBannerAbortBtn')!;
+		this.makeSurfaceKeyboardActivatable(continueBtn);
+		this.makeSurfaceKeyboardActivatable(abortBtn);
+		this.listenOnSurface(continueBtn, 'click', () => this.continueOperation());
+		this.listenOnSurface(abortBtn, 'click', () => this.abortOperation());
 	}
 
 	private continueOperation() {

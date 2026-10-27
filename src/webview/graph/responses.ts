@@ -154,7 +154,8 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 			// dialog the user has since replaced with a different one must not patch it. A
 			// NULL prediction (git too old, or the probe itself failed) leaves the placeholder
 			// hidden, and a clean prediction never surfaces to the user.
-			const box = document.getElementById('predictedConflicts');
+			const dialogElem = ctx.dialog.openElem;
+			const box = dialogElem !== null ? dialogElem.querySelector<HTMLElement>('#predictedConflicts') : null;
 			if (box !== null && box.getAttribute('data-ours') === msg.ours && box.getAttribute('data-theirs') === msg.theirs && msg.prediction !== null && msg.prediction.conflicted) {
 				box.style.display = '';
 				setHtml(box, html`<br><span class="dialogAlert warning">${SVG_ICONS.alert}${strings.conflictPredictedTitle}</span><span class="messageContent"><b>${strings.conflictBannerFilesLabel}</b> ${msg.prediction.files.map((file, i) => (i > 0 ? ', ' : '') + file)}</span>`);

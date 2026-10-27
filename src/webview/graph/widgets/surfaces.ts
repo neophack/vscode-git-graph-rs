@@ -32,6 +32,8 @@ export interface FindWidgetSurface {
 	isVisible(): boolean;
 	/** Is an incremental search still scanning the loaded commits? */
 	isScanning(): boolean;
+	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
+	dispose(): void;
 }
 
 /** The Settings widget's surface (see {@link SettingsWidget} for the implementation). */
@@ -42,6 +44,8 @@ export interface SettingsWidgetSurface {
 	getState(): SettingsWidgetState;
 	restoreState(state: SettingsWidgetState): void;
 	isVisible(): boolean;
+	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
+	dispose(): void;
 }
 
 /** The Reflog view's surface (see {@link ReflogView} for the implementation). */
@@ -51,6 +55,8 @@ export interface ReflogViewSurface {
 	isVisible(): boolean;
 	refresh(): void;
 	processResponse(msg: GG.ResponseReflog): void;
+	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
+	dispose(): void;
 }
 
 /** The Worktree dialog's surface (see {@link WorktreeDialog} for the implementation). */
@@ -60,6 +66,8 @@ export interface WorktreeDialogSurface {
 	isVisible(): boolean;
 	refresh(): void;
 	processListResponse(msg: GG.ResponseWorktreeList): void;
+	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
+	dispose(): void;
 }
 
 /** The Statistics view's surface (see {@link StatisticsView} for the implementation). */
@@ -68,4 +76,6 @@ export interface StatisticsViewSurface {
 	close(): void;
 	isVisible(): boolean;
 	processResponse(msg: GG.ResponseRepoStatistics): void;
+	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
+	dispose(): void;
 }

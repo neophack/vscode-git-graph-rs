@@ -134,17 +134,21 @@ describe('dropdown information button', () => {
 	});
 
 	it('is wired by the control bar to the repository information dialog', () => {
-		// The skeleton the extension host renders for the control bar
+		// The skeleton the extension host renders for the control bar: the control bar scopes its
+		// lookups to the #controls subtree (F3), so the elements live inside one here too
+		const controlsElem = document.createElement('div');
+		controlsElem.id = 'controls';
+		document.body.appendChild(controlsElem);
 		for (const id of ['repoDropdown', 'branchDropdown', 'authorDropdown']) {
 			const dropdownElem = document.createElement('div');
 			dropdownElem.id = id;
 			dropdownElem.className = 'dropdown';
-			document.body.appendChild(dropdownElem);
+			controlsElem.appendChild(dropdownElem);
 		}
 		const checkbox = document.createElement('input');
 		checkbox.id = 'showRemoteBranchesCheckbox';
-		document.body.appendChild(checkbox);
-		document.body.appendChild(Object.assign(document.createElement('div'), { id: 'refreshBtn' }));
+		controlsElem.appendChild(checkbox);
+		controlsElem.appendChild(Object.assign(document.createElement('div'), { id: 'refreshBtn' }));
 
 		const dialog = new Dialog({
 			eventOverlay: new EventOverlay(() => { }),
@@ -157,7 +161,8 @@ describe('dropdown information button', () => {
 			loader: { loadRepo: () => { }, clearCommits: () => { }, requestLoadRepoInfoAndCommits: () => { }, refresh: () => { }, forgetPullRequestsRequest: () => { } },
 			store: { currentRepo: '/ws/main', refreshState: { inProgress: false }, config: { repoDropdownOrder: GG.RepoDropdownOrder.FullPath, initialLoadCommits: 100 } },
 			persistence: { saveState: () => { }, saveRepoStateValue: () => { } },
-			viewport: { capturePendingViewportAnchor: () => { } }
+			viewport: { capturePendingViewportAnchor: () => { } },
+			dom: { controls: <HTMLElement>controlsElem }
 		};
 		const controls = new ControlBar(() => ctx as unknown as GraphContext);
 		controls.init();

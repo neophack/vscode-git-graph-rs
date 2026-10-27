@@ -158,7 +158,7 @@ export class Viewport {
 	 * is exact, and includes the sticky table column headers `getHeaderHeight()` leaves out.
 	 */
 	public getRowTop(index: number) {
-		const colHeadersElem = document.getElementById('tableColHeaders'), rowHeight = this.ctx().layout.getRowHeight();
+		const colHeadersElem = this.ctx().dom.table.querySelector<HTMLElement>('#tableColHeaders'), rowHeight = this.ctx().layout.getRowHeight();
 		return this.getHeaderHeight()
 			+ (colHeadersElem !== null ? colHeadersElem.offsetHeight : rowHeight)
 			+ index * rowHeight;

@@ -37,7 +37,7 @@ export class ColumnLayout {
 
 		// Only the Graph column header is needed here: look it up directly by id (its class-based
 		// collection is scanned separately - and more expensively, on a large table - by makeTableResizable).
-		const graphColElem = document.getElementById('tableHeaderGraphCol');
+		const graphColElem = tableElem.querySelector<HTMLElement>('#tableHeaderGraphCol');
 		if (graphColElem === null) return;
 
 		// Reset any padding this function applied on a previous call before measuring: otherwise
@@ -80,7 +80,7 @@ export class ColumnLayout {
 		// instead of document.getElementsByClassName: that searches the whole document (every cell of
 		// every commit row) for a handful of matches, and - being a live HTMLCollection - would also
 		// re-run that document-wide scan on every .length/indexed access below if captured directly.
-		const colHeadersElem = document.getElementById('tableColHeaders')!, cols = Array.from(colHeadersElem.children) as HTMLElement[];
+		const colHeadersElem = tableElem.querySelector<HTMLElement>('#tableColHeaders')!, cols = Array.from(colHeadersElem.children) as HTMLElement[];
 
 		let columnWidths: GG.ColumnWidth[], mouseX = -1, col = -1, colIndex = -1;
 

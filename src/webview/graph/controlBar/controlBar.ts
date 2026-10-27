@@ -128,10 +128,27 @@ export class ControlBar {
 
 	constructor(private readonly ctx: () => GraphContext) { }
 
+	/** One of the toolbar's elements, by id, under the skeleton's #controls subtree (F3). */
+	private byId(id: string): HTMLElement | null {
+		return this.ctx().dom.controls.querySelector<HTMLElement>('#' + id);
+	}
+
+	/**
+	 * Tear the control bar's own components down (F3): the dropdowns. They own the bar's only
+	 * page-level listeners (the document-level capture handlers); the toolbar buttons' handlers
+	 * sit on the host-rendered skeleton, which lives and dies with the page itself.
+	 */
+	public dispose() {
+		this.repoDropdown.dispose();
+		this.branchDropdown.dispose();
+		this.authorDropdown.dispose();
+	}
+
 	/** Create the dropdowns and wire the controls (once the rest of the view exists). */
 	public init() {
 		const ctx = this.ctx(), store = ctx.store;
-		const byId = (id: string) => document.getElementById(id)!;
+		// The control bar's elements are the skeleton's #controls subtree (F3): look them up there
+		const byId = (id: string) => ctx.dom.controls.querySelector<HTMLElement>('#' + id)!;
 
 		this.repoDropdown = new Dropdown(byId('repoDropdown'), true, false, strings.dropdownRepos, (values) => {
 			ctx.loader.loadRepo(values[0]);
@@ -190,7 +207,8 @@ export class ControlBar {
 	/** Wire the toolbar buttons (after the initial load was requested, as in the reference behaviour). */
 	public initToolbar() {
 		const ctx = this.ctx(), store = ctx.store;
-		const currentBtn = document.getElementById('currentBtn')!, fetchBtn = document.getElementById('fetchBtn')!, findBtn = document.getElementById('findBtn')!, settingsBtn = document.getElementById('settingsBtn')!, terminalBtn = document.getElementById('terminalBtn')!;
+		const controls = ctx.dom.controls;
+		const currentBtn = controls.querySelector<HTMLElement>('#currentBtn')!, fetchBtn = controls.querySelector<HTMLElement>('#fetchBtn')!, findBtn = controls.querySelector<HTMLElement>('#findBtn')!, settingsBtn = controls.querySelector<HTMLElement>('#settingsBtn')!, terminalBtn = controls.querySelector<HTMLElement>('#terminalBtn')!;
 		currentBtn.title = strings.scrollToHeadTitle;
 		setHtml(currentBtn, SVG_ICONS.current);
 		currentBtn.addEventListener('click', () => {
@@ -216,12 +234,12 @@ export class ControlBar {
 				name: store.repoState.name || getRepoName(store.currentRepo)
 			}, strings.openingTerminal);
 		});
-		const filterBtn = document.getElementById('filterBtn');
+		const filterBtn = controls.querySelector<HTMLElement>('#filterBtn');
 		if (filterBtn !== null) {
 			filterBtn.addEventListener('click', () => this.showPathFilterDialog());
 			this.renderFilterButton();
 		}
-		const statisticsBtn = document.getElementById('statisticsBtn');
+		const statisticsBtn = controls.querySelector<HTMLElement>('#statisticsBtn');
 		if (statisticsBtn !== null) {
 			statisticsBtn.title = strings.statisticsTitle;
 			setHtml(statisticsBtn, SVG_ICONS.graph);
@@ -229,7 +247,7 @@ export class ControlBar {
 		}
 		// The mobile layout's app bar keeps only Find and Refresh: every other control (and the
 		// "Show Remote Branches" checkbox) moves into this overflow menu. Hidden in the wide layout.
-		const controlBtns = document.getElementById('controlBtns');
+		const controlBtns = controls.querySelector<HTMLElement>('#controlBtns');
 		let moreBtn: HTMLElement | null = null;
 		if (controlBtns !== null) {
 			moreBtn = document.createElement('div');
@@ -261,14 +279,15 @@ export class ControlBar {
 	 */
 	private showMobileOverflowMenu(event: MouseEvent) {
 		const ctx = this.ctx(), store = ctx.store;
-		const click = (id: string) => () => { const btn = document.getElementById(id); if (btn !== null) btn.click(); };
+		const controls = this.ctx().dom.controls;
+		const click = (id: string) => () => { const btn = controls.querySelector<HTMLElement>('#' + id); if (btn !== null) btn.click(); };
 		const item = (icon: SafeHtml, label: string): SafeHtml => html`<span class="mobileMenuIcon">${icon}</span><span class="mobileMenuLabel">${label}</span>`;
 		const filterLabel = store.commitPathFilter !== null ? formatStr(strings.filterTitleActive, store.commitPathFilter) : strings.filterTitle;
 		ctx.contextMenu.show([
 			[
 				{ title: item(SVG_ICONS.current, strings.mobileGoToHead), visible: store.commitHead !== null, onClick: click('currentBtn') },
 				{ title: item(SVG_ICONS.download, store.config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle), visible: store.gitRemotes.length > 0, onClick: click('fetchBtn') },
-				{ title: item(SVG_ICONS.filter, filterLabel), visible: document.getElementById('filterBtn') !== null, onClick: click('filterBtn') },
+				{ title: item(SVG_ICONS.filter, filterLabel), visible: controls.querySelector<HTMLElement>('#filterBtn') !== null, onClick: click('filterBtn') },
 				{ title: item(SVG_ICONS.person, strings.mobileFilterAuthors), visible: store.gitConfig !== null && store.gitConfig.authors.length > 0, onClick: () => this.showMobileAuthorFilter() }
 			],
 			[
@@ -279,7 +298,7 @@ export class ControlBar {
 				}
 			],
 			[
-				{ title: item(SVG_ICONS.graph, strings.statisticsTitle), visible: document.getElementById('statisticsBtn') !== null, onClick: click('statisticsBtn') },
+				{ title: item(SVG_ICONS.graph, strings.statisticsTitle), visible: controls.querySelector<HTMLElement>('#statisticsBtn') !== null, onClick: click('statisticsBtn') },
 				{ title: item(SVG_ICONS.terminal, strings.terminalTitle), visible: true, onClick: click('terminalBtn') },
 				{ title: item(SVG_ICONS.gear, strings.settingsTitle), visible: true, onClick: click('settingsBtn') }
 			]
@@ -319,7 +338,7 @@ export class ControlBar {
 
 	/** Update the filter button to reflect the active path filter. */
 	public renderFilterButton() {
-		const filterBtn = document.getElementById('filterBtn');
+		const filterBtn = this.byId('filterBtn');
 		if (filterBtn === null) return;
 		const store = this.ctx().store;
 		setHtml(filterBtn, SVG_ICONS.filter);
@@ -358,16 +377,16 @@ export class ControlBar {
 	public renderToolbarText() {
 		const store = this.ctx().store;
 		const setText = (id: string, text: string) => {
-			const elem = document.getElementById(id);
+			const elem = this.byId(id);
 			if (elem !== null) elem.textContent = text;
 		};
 		setText('repoControlLabel', strings.repoLabel);
 		setText('branchControlLabel', strings.branchesLabel);
 		setText('authorControlLabel', strings.authorsLabel);
 		setText('showRemoteBranchesLabel', strings.showRemoteBranchesLabel);
-		const showRemoteBranchesControl = document.getElementById('showRemoteBranchesControl');
+		const showRemoteBranchesControl = this.byId('showRemoteBranchesControl');
 		if (showRemoteBranchesControl !== null) showRemoteBranchesControl.title = strings.showRemoteBranchesTitle;
-		const filterBtn = document.getElementById('filterBtn');
+		const filterBtn = this.byId('filterBtn');
 		if (filterBtn !== null) {
 			filterBtn.title = store.commitPathFilter !== null
 				? formatStr(strings.filterTitleActive, store.commitPathFilter)

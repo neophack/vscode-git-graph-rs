@@ -36,7 +36,8 @@ export interface GraphRenderMetrics {
  */
 export function measureGraphRender(store: Store, tableElem: HTMLElement, expandedCommitElem: HTMLElement | null, cdvHeight: number, inlineCdvOpen: boolean): GraphRenderMetrics {
 	// (+1 for the header row's bottom border; the mobile layout hides the header row, adding nothing)
-	const colHeadersElem = document.getElementById('tableColHeaders');
+	// The headers are the table's own subtree (F3): look them up under the table it measures
+	const colHeadersElem = tableElem.querySelector<HTMLElement>('#tableColHeaders');
 	const headerHeight = colHeadersElem !== null && colHeadersElem.clientHeight > 0 ? colHeadersElem.clientHeight + 1 : 0;
 	const expandY = expandedCommitElem !== null ? expandedCommitElem.getBoundingClientRect().height : cdvHeight;
 	// The row height is MEASURED from the rendered table (real rows can deviate from the configured

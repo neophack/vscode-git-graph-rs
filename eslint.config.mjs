@@ -222,6 +222,41 @@ export default tseslint.config(
 		}
 	},
 
+	// ---- (b2) DOM ownership in the webview (OPTIMIZATION-PLAN §6 F3) ------------
+	// The graph view's components reach their DOM through their own root (the scoped
+	// query/queryAll/byId of src/webview/graph/component.ts): a document-wide lookup crosses a
+	// component's ownership boundary and keeps the cross-component id coupling the component
+	// convention forbids. Sanctioned callers:
+	//   - src/webview/graph/main.ts — the composition root resolving the view's skeleton;
+	//   - src/webview/common/dom.ts — the shared helpers.
+	// Colocated *.test.ts are out of scope: they run against a jsdom document, are not shipped,
+	// and the components they construct are exercised through their real roots.
+	// Violations that predate the rule live in eslint-suppressions.json (the bulk-suppression
+	// ratchet); prune them as the owning workstreams scope their lookups.
+	{
+		files: WEBVIEW_TS,
+		ignores: ['src/webview/graph/main.ts', 'src/webview/common/dom.ts', 'src/**/*.test.ts'],
+		rules: {
+			'no-restricted-properties': ['error',
+				{
+					object: 'document',
+					property: 'getElementById',
+					message: 'Look the element up under the component\'s own root (graph/component.ts byId/query); document-wide lookups are sanctioned only in src/webview/graph/main.ts and src/webview/common/dom.ts (OPTIMIZATION-PLAN §6 F3).'
+				},
+				{
+					object: 'document',
+					property: 'querySelector',
+					message: 'Look the element up under the component\'s own root (graph/component.ts query); document-wide lookups are sanctioned only in src/webview/graph/main.ts and src/webview/common/dom.ts (OPTIMIZATION-PLAN §6 F3).'
+				},
+				{
+					object: 'document',
+					property: 'querySelectorAll',
+					message: 'Look the elements up under the component\'s own root (graph/component.ts queryAll); document-wide lookups are sanctioned only in src/webview/graph/main.ts and src/webview/common/dom.ts (OPTIMIZATION-PLAN §6 F3).'
+				}
+			]
+		}
+	},
+
 	// ---- (c) vscode `as any` API probes (§3.7.2 VS Code API row) ----------------
 	// Applies everywhere in src except the platform compat module, which is the
 	// single sanctioned place for runtime feature detection (§3.7.3).

@@ -33,15 +33,19 @@ beforeEach(() => {
 describe('the Statistics overlay', () => {
 	it('is opened by the toolbar button, which sends the repoStatistics request', () => {
 		// The skeleton of the toolbar the extension host renders (the button placement itself is
-		// the host's markup; the wiring of the button is the control bar's)
+		// the host's markup; the wiring of the button is the control bar's). The control bar scopes
+		// its lookups to the #controls subtree (F3), so the buttons live inside one here too.
+		const controlsElem = document.createElement('div');
+		controlsElem.id = 'controls';
+		document.body.appendChild(controlsElem);
 		for (const id of ['currentBtn', 'fetchBtn', 'findBtn', 'filterBtn', 'statisticsBtn', 'terminalBtn', 'settingsBtn']) {
-			document.body.appendChild(Object.assign(document.createElement('div'), { id: id }));
+			controlsElem.appendChild(Object.assign(document.createElement('div'), { id: id }));
 		}
-		document.body.appendChild(Object.assign(document.createElement('div'), { id: 'controlBtns' }));
+		controlsElem.appendChild(Object.assign(document.createElement('div'), { id: 'controlBtns' }));
 
 		const context = makeContext();
 		const statistics = new StatisticsView(() => context.ctx);
-		const ctx = { ...context.ctx, widgets: { statistics: statistics }, store: { ...context.ctx.store, commitHead: null, commitPathFilter: null, config: { fetchAndPrune: false } } };
+		const ctx = { ...context.ctx, dom: { controls: <HTMLElement>controlsElem }, widgets: { statistics: statistics }, store: { ...context.ctx.store, commitHead: null, commitPathFilter: null, config: { fetchAndPrune: false } } };
 		const controls = new ControlBar(() => ctx as unknown as GraphContext);
 		controls.initToolbar();
 

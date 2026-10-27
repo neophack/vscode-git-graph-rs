@@ -32,7 +32,11 @@ const LINE_COUNTS_CHUNK_SIZE = 200;
 const LINE_COUNTS_CHUNK_DELAY = 300;
 
 export class LineCounts {
-	constructor(private readonly ctx: () => GraphContext) { }
+	/**
+	 * @param getRoot The open Commit Details View's element (#cdv): every lookup runs under it
+	 * (F3) — the counts patch the open view's rows, never the document's.
+	 */
+	constructor(private readonly ctx: () => GraphContext, private readonly getRoot: () => HTMLElement | null) { }
 
 	/**
 	 * Reset the deferred-counts state for the file list that has just arrived: every path that can
@@ -122,8 +126,10 @@ export class LineCounts {
 	private collectVisiblePendingPaths(): string[] {
 		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.lineCounts.pending === null || expandedCommit.fileChanges === null) return [];
-		const filesElem = document.getElementById('cdvFiles');
-		const scrollElem = document.getElementById(ctx.details.getFilesScrollElemId());
+		const root = this.getRoot();
+		if (root === null) return [];
+		const filesElem = root.querySelector('#cdvFiles');
+		const scrollElem = root.querySelector('#' + ctx.details.getFilesScrollElemId());
 		if (filesElem === null || scrollElem === null) return [];
 		// The viewport is the file list's scroll container: #cdvFiles itself, or in the mobile sheet
 		// #cdvContent (#cdvFiles is unclipped there, so its own rect would count every file as visible)
@@ -163,7 +169,8 @@ export class LineCounts {
 		if (expandedCommit === null || expandedCommit.fileChanges === null || expandedCommit.lineCounts.pending === null) return;
 		if (expandedCommit.commitHash !== msg.commitHash || expandedCommit.compareWithHash !== msg.compareWithHash) return; // a stale reply for a view that is no longer open
 		expandedCommit.lineCounts.chunkInFlight = false;
-		const filesElem = document.getElementById('cdvFiles');
+		const root = this.getRoot();
+		const filesElem = root !== null ? root.querySelector('#cdvFiles') : null;
 		for (const path in msg.counts) {
 			if (!expandedCommit.lineCounts.pending.has(path)) continue;
 			expandedCommit.lineCounts.pending.delete(path);
@@ -177,7 +184,7 @@ export class LineCounts {
 				if (record !== null) patchFileRowCounts(<HTMLElement>record, expandedCommit.fileChanges[index]);
 			}
 		}
-		const statElem = document.querySelector('#cdvFilesHeader .cdvmFilesStat');
+		const statElem = root !== null ? root.querySelector('#cdvFilesHeader .cdvmFilesStat') : null;
 		if (statElem !== null) setHtml(statElem, getMobileFilesStatHtml(expandedCommit.fileChanges, expandedCommit.lineCounts.pending));
 		this.pumpChunk();
 	}

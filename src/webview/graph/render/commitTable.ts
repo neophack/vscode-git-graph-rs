@@ -145,7 +145,8 @@ export class CommitTable {
 
 		const cdvHeight = store.repoState.cdvHeight;
 		const expandedCommit = ctx.layout.isCdvDocked() ? null : store.expandedCommit;
-		const expandedCommitElem = expandedCommit !== null ? document.getElementById('cdv') : null;
+		// The details panel is CommitDetails' element (F3): it is asked for, not re-queried from the document
+		const expandedCommitElem = expandedCommit !== null ? ctx.details.openElem : null;
 
 		// Every layout READ this pass needs, batched in one place (measure.ts) BEFORE the graph - a
 		// pure write phase - runs: interleaving reads with the writes below would force a layout
@@ -186,7 +187,7 @@ export class CommitTable {
 		// treated as one of the commit rows, and re-creating it would discard its scroll position,
 		// its file-tree open/closed state and every event listener - which is what makes an
 		// unrelated background refresh look like the commit "closing and reopening".
-		const cdvElem = store.expandedCommit !== null && !ctx.layout.isCdvDocked() ? document.getElementById('cdv') : null;
+		const cdvElem = store.expandedCommit !== null && !ctx.layout.isCdvDocked() ? ctx.details.openElem : null;
 		if (cdvElem !== null && cdvElem.parentNode !== null) cdvElem.parentNode.removeChild(cdvElem);
 
 		// The layout (wide, phone or tablet) is re-evaluated on every render, before any row is
@@ -266,7 +267,8 @@ export class CommitTable {
 			// Only a freshly swapped footer needs the listener: an untouched button keeps the one
 			// attached when it was created. The button is a <div> (not a native <button>), so it is
 			// also made keyboard activatable (Enter / Space, on top of the markup's role/tabindex)
-			const loadMoreBtn = document.getElementById('loadMoreCommitsBtn')!;
+			// The button lives in the view's #footer, not the table (F3: scoped to the owner's subtree)
+			const loadMoreBtn = this.ctx().dom.footer.querySelector<HTMLElement>('#loadMoreCommitsBtn')!;
 			makeKeyboardActivatable(loadMoreBtn);
 			loadMoreBtn.addEventListener('click', () => {
 				ctx.loader.loadMoreCommits();
@@ -321,7 +323,7 @@ export class CommitTable {
 	 */
 	public renderUncommittedChanges() {
 		const store = this.store, dateFormat = store.config.dateFormat;
-		const uncommittedElem = document.getElementById('uncommittedChanges');
+		const uncommittedElem = this.tableElem.querySelector<HTMLElement>('#uncommittedChanges');
 		if (uncommittedElem === null) return; // not rendered (e.g. outside the windowed render range)
 		const row = store.commits[0];
 		const date = formatShortDate(row.date, dateFormat);
@@ -354,7 +356,7 @@ export class CommitTable {
 		if (id === null) return null;
 		// Use an attribute selector (backed by the browser's query engine) instead of scanning every
 		// commit row: with many loaded commits this lookup runs on every vertex hover / interaction
-		return document.querySelector('tr.commit[data-id="' + id.toString() + '"]') as HTMLElement | null;
+		return this.tableElem.querySelector('tr.commit[data-id="' + id.toString() + '"]') as HTMLElement | null;
 	}
 
 	/**

@@ -83,4 +83,11 @@ export interface GraphContext {
 	readonly widgets: Widgets;
 	/** Close the open dialog and context menu (if any). */
 	closeDialogAndContextMenu(): void;
+	/**
+	 * Tear every component down (F3 "Component lifecycle and DOM ownership"): the parent's hook,
+	 * called when the view's page is reset. The components are page singletons — a repository
+	 * switch does NOT dispose them (they keep serving the next repository); it only closes their
+	 * open surfaces, and those close paths clear the surface listener stores.
+	 */
+	dispose(): void;
 }

@@ -1,7 +1,7 @@
 /* The interactions of the Commit Details View's file list: opening folders, viewing diffs, copying
    paths, opening files, resetting a file, marking files reviewed - and the file context menu. */
 
-import { addListenerToClass, handledEvent } from '../../common/dom';
+import { handledEvent, ListenerGroup } from '../../common/dom';
 import { ELLIPSIS, formatStr, markup, strings } from '../../common/i18n/index';
 import * as GG from '../../common/protocol';
 import { abbrevCommit, UNCOMMITTED } from '../../common/util';
@@ -12,8 +12,11 @@ import { alterFileTreeFolderOpen, fileIsBinary } from './fileTree';
 /**
  * Wire the rendered file list (after each render of the file view): folder toggles, repository
  * links, the file row and its action buttons, and the file context menu.
+ *
+ * The listeners are registered on the caller's store (F3) and the class lookups run under the
+ * caller's panel (#cdv), not the document: a re-render or a close removes them all.
  */
-export function makeFileViewInteractive(ctx: GraphContext) {
+export function makeFileViewInteractive(ctx: GraphContext, scope: ParentNode, listeners: ListenerGroup) {
 	const store = ctx.store, details = ctx.details;
 	const getFileElemOfEventTarget = (target: EventTarget) => <HTMLElement>(<Element>target).closest('.fileTreeFileRecord');
 	const getFileOfFileElem = (fileChanges: ReadonlyArray<GG.GitFileChange>, fileElem: HTMLElement) => fileChanges[parseInt(fileElem.dataset.index!)];
@@ -132,7 +135,7 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		ctx.bridge.send({ command: 'openFile', repo: store.currentRepo, hash: getCommitHashForFile(file, expandedCommit), filePath: file.newFilePath });
 	};
 
-	addListenerToClass(document, 'fileTreeFolder', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'fileTreeFolder', 'click', (e) => {
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileTree === null || e.target === null) return;
 
@@ -144,14 +147,14 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		details.lineCounts.scheduleVisible();
 	});
 
-	addListenerToClass(document, 'fileTreeRepo', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'fileTreeRepo', 'click', (e) => {
 		if (e.target === null) return;
 		ctx.loader.loadRepos(store.repos, null, {
 			repo: decodeURIComponent((<HTMLElement>(<Element>e.target).closest('.fileTreeRepo')).dataset.path!)
 		});
 	});
 
-	addListenerToClass(document, 'fileTreeFile', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'fileTreeFile', 'click', (e) => {
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || e.target === null) return;
 
@@ -160,7 +163,7 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		triggerViewFileDiff(getFileOfFileElem(expandedCommit.fileChanges, fileElem), fileElem);
 	});
 
-	addListenerToClass(document, 'copyGitFile', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'copyGitFile', 'click', (e) => {
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || e.target === null) return;
 
@@ -168,7 +171,7 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		triggerCopyFilePath(getFileOfFileElem(expandedCommit.fileChanges, fileElem), true);
 	});
 
-	addListenerToClass(document, 'viewGitFileAtRevision', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'viewGitFileAtRevision', 'click', (e) => {
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || e.target === null) return;
 
@@ -176,7 +179,7 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		triggerViewFileAtRevision(getFileOfFileElem(expandedCommit.fileChanges, fileElem), fileElem);
 	});
 
-	addListenerToClass(document, 'openGitFile', 'click', (e) => {
+	wireClassListeners(scope, listeners, 'openGitFile', 'click', (e) => {
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || e.target === null) return;
 
@@ -184,7 +187,7 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 		triggerOpenFile(getFileOfFileElem(expandedCommit.fileChanges, fileElem), fileElem);
 	});
 
-	addListenerToClass(document, 'fileTreeFileRecord', 'contextmenu', (e: Event) => {
+	wireClassListeners(scope, listeners, 'fileTreeFileRecord', 'contextmenu', (e: Event) => {
 		handledEvent(e);
 		const expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || e.target === null) return;
@@ -268,4 +271,10 @@ export function makeFileViewInteractive(ctx: GraphContext) {
 			expandedCommit.contextMenuOpen.fileView = -1;
 		});
 	});
+}
+
+/** Register a listener on every element under `scope` carrying a class name, on the given store. */
+function wireClassListeners(scope: ParentNode, listeners: ListenerGroup, className: string, event: string, listener: EventListener) {
+	const elems = (<Element>scope).getElementsByClassName(className);
+	for (let i = 0; i < elems.length; i++) listeners.add(elems[i], event, listener);
 }

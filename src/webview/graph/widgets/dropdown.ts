@@ -3,6 +3,7 @@ import { escapeHtml, html, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { formatCommaSeparatedList } from '../../common/util';
+import { Component } from '../component';
 
 export interface DropdownOption {
 	readonly name: string;
@@ -13,8 +14,13 @@ export interface DropdownOption {
 
 /**
  * The dropdown inputs of the control bar (repository, branches, authors).
+ *
+ * A dropdown registers every listener it creates with its component store (F3): the two
+ * document-level capture listeners that open/close it, the current-value button's keyboard
+ * activation and the filter input's keys. `dispose()` removes them all, so re-creating the
+ * control bar's dropdowns cannot stack a second set of document handlers.
  */
-export class Dropdown {
+export class Dropdown extends Component {
 	private readonly showInfo: boolean;
 	private readonly multipleAllowed: boolean;
 	private readonly changeCallback: (values: string[]) => void;
@@ -44,6 +50,7 @@ export class Dropdown {
 	 * @param infoCallback Invoked when an option's information button is selected.
 	 */
 	constructor(elem: HTMLElement, showInfo: boolean, multipleAllowed: boolean, dropdownType: string, changeCallback: (values: string[]) => void, infoCallback: ((option: DropdownOption) => void) | null = null) {
+		super(elem);
 		this.showInfo = showInfo;
 		this.multipleAllowed = multipleAllowed;
 		this.changeCallback = changeCallback;
@@ -75,7 +82,7 @@ export class Dropdown {
 		alterClass(this.elem, 'multi', multipleAllowed);
 		this.elem.appendChild(this.menuElem);
 
-		document.addEventListener('click', (e) => {
+		this.listen(document, 'click', (e) => {
 			if (!e.target) return;
 			if (e.target === this.currentValueElem) {
 				if (this.dropdownVisible) {
@@ -105,15 +112,15 @@ export class Dropdown {
 				}
 			}
 		}, true);
-		document.addEventListener('contextmenu', () => this.close(), true);
-		this.currentValueElem.addEventListener('keydown', (e) => {
+		this.listen(document, 'contextmenu', () => this.close(), true);
+		this.listen(this.currentValueElem, 'keydown', (e) => {
 			if (!this.dropdownVisible && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
 				// Open the dropdown from the keyboard, without requiring a mouse click
 				this.open();
 				handledEvent(e);
 			}
 		});
-		this.filterInput.addEventListener('keyup', (e) => {
+		this.listen(this.filterInput, 'keyup', (e) => {
 			if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Tab') {
 				// These keys are handled entirely on keydown below (they navigate/select rather than
 				// change the filter text); re-running filter() on their keyup would reset
@@ -123,7 +130,7 @@ export class Dropdown {
 			}
 			this.filter();
 		});
-		this.filterInput.addEventListener('keydown', (e) => {
+		this.listen(this.filterInput, 'keydown', (e) => {
 			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 				this.moveHighlighted(e.key === 'ArrowDown' ? 1 : -1);
 				handledEvent(e);
@@ -136,6 +143,11 @@ export class Dropdown {
 				this.close();
 			}
 		});
+	}
+
+	protected override onDispose(): void {
+		// A disposed dropdown must not leave a pending double-click timer behind (F3)
+		this.close();
 	}
 
 	/** Open the dropdown, ready for keyboard or mouse selection. */

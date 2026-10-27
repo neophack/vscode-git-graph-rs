@@ -333,11 +333,44 @@
   "src/webview/binaryCompare/hexView.ts": {
     "@typescript-eslint/no-this-alias": {
       "count": 1
+    },
+    "no-restricted-properties": {
+      "count": 1
     }
   },
   "src/webview/binaryCompare/imageView.test.ts": {
     "@typescript-eslint/no-this-alias": {
       "count": 1
+    }
+  },
+  "src/webview/binaryCompare/imageView.ts": {
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/webview/binaryCompare/main.ts": {
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/webview/common/eventOverlay.ts": {
+    "no-restricted-properties": {
+      "count": 2
+    }
+  },
+  "src/webview/comparison/diffView.ts": {
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/webview/comparison/fileTree.ts": {
+    "no-restricted-properties": {
+      "count": 4
+    }
+  },
+  "src/webview/comparison/main.ts": {
+    "no-restricted-properties": {
+      "count": 7
     }
   },
   "src/webview/comparison/model.ts": {
@@ -352,6 +385,16 @@
   },
   "src/webview/graph/commitDetails/commitDetails.ts": {
     "max-lines": {
+      "count": 1
+    }
+  },
+  "src/webview/graph/loading/configApply.ts": {
+    "no-restricted-properties": {
+      "count": 1
+    }
+  },
+  "src/webview/graph/loading/followUps.ts": {
+    "no-restricted-properties": {
       "count": 1
     }
   },

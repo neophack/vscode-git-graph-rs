@@ -4,12 +4,13 @@
  * commits-by-author. Read-only - no actions.
  */
 
-import { CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
+import { CLASS_ACTIVE } from '../../common/dom';
 import { html, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { injectOnDemandStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 import { StatisticsViewSurface } from './surfaces';
 import statisticsCss from '../../styles/statisticsView.css';
@@ -22,23 +23,24 @@ injectOnDemandStyles(tabletPanelsCss);
 
 const STATISTICS_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export class StatisticsView implements StatisticsViewSurface {
+export class StatisticsView extends Component implements StatisticsViewSurface {
 	private readonly widgetElem: HTMLElement;
 	private readonly contentElem: HTMLElement;
 	private isOpen: boolean = false;
 
 	constructor(private readonly ctx: () => GraphContext) {
-		this.widgetElem = document.createElement('div');
+		super(document.createElement('div'));
+		this.widgetElem = <HTMLElement>this.root;
 		this.widgetElem.id = 'statisticsWidget';
 		setHtml(this.widgetElem, html`<h2>${strings.statisticsTitle}</h2><div id="statisticsContent"></div><div id="statisticsClose"></div>`);
 		document.body.appendChild(this.widgetElem);
 
-		this.contentElem = document.getElementById('statisticsContent')!;
+		this.contentElem = this.byId('statisticsContent')!;
 
-		const closeBtn = document.getElementById('statisticsClose')!;
+		const closeBtn = this.byId('statisticsClose')!;
 		setHtml(closeBtn, SVG_ICONS.close);
-		makeKeyboardActivatable(closeBtn);
-		closeBtn.addEventListener('click', () => this.close());
+		this.makeKeyboardActivatable(closeBtn);
+		this.listen(closeBtn, 'click', () => this.close());
 	}
 
 	public show() {

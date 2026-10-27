@@ -124,7 +124,8 @@ function showGerritDialog(dialog: Dialog, state: GG.GerritChangeState, dateForma
  * replaced it removed its marker element from the DOM.
  */
 export function refreshGerritReviewDialog(dialog: Dialog, gerritStates: { [hash: string]: GG.GerritChangeState }, dateFormat: GG.DateFormat) {
-	const elem = document.querySelector<HTMLElement>('.dialog .gg-dialog[data-change]');
+	const dialogElem = dialog.openElem;
+	const elem = dialogElem !== null ? dialogElem.querySelector<HTMLElement>('.gg-dialog[data-change]') : null;
 	if (elem === null) return;
 	const change = parseInt(elem.dataset.change!, 10);
 	const hashes = Object.keys(gerritStates);

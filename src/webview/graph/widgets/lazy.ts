@@ -30,7 +30,7 @@ const FIND_STATE_DEFAULT: FindWidgetState = { text: '', currentHash: null, visib
  * The shared machinery of one lazily loaded widget: the instance appears when the module first
  * loads, and every facade method answers through {@link loaded} or arms itself via {@link ensure}.
  */
-class LazyWidget<W> {
+class LazyWidget<W extends { dispose?(): void }> {
 	private widget: W | null = null;
 	private pending: Promise<W> | null = null;
 
@@ -64,6 +64,12 @@ class LazyWidget<W> {
 	/** Load the widget, then call into it; an import that fails leaves nothing to call. */
 	protected ensureAndCall(call: (widget: W) => void): void {
 		void this.ensure().then(call, () => undefined);
+	}
+
+	/** Tear the widget down (F3) once it has loaded: a facade before the load has nothing to remove. */
+	public dispose(): void {
+		const w = this.loaded();
+		if (w !== null && typeof w.dispose === 'function') w.dispose();
 	}
 }
 

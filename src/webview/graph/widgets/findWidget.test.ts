@@ -60,7 +60,9 @@ function makeHarness(commits: GG.GitCommit[]) {
 		},
 		layout: { isTwoLineRows: () => false, getColumnVisibility: () => ({ date: true, author: true, commit: true }) },
 		details: { isOpen: () => true, load: noop },
-		table: { findCommitElem: () => null }
+		table: { findCommitElem: () => null },
+		// The widget scopes its row scan to the commit table (F3): the rows above are its DOM
+		dom: { table: <HTMLElement>table }
 	} as unknown as GraphContext;
 
 	const widget = new FindWidget(() => ctx);

@@ -3,6 +3,7 @@ import { html, joinHtml, SafeHtml, setHtml } from '../../common/html';
 import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
+import { Component } from '../component';
 import { ContextMenuTarget, TargetType } from '../state/types';
 
 export const CLASS_CONTEXT_MENU_ACTIVE = 'contextMenuActive';
@@ -19,8 +20,16 @@ export type ContextMenuActions = ReadonlyArray<ReadonlyArray<ContextMenuAction>>
 
 /**
  * The Git Graph View's context menus.
+ *
+ * One instance serves every menu of the view: the document-level close listeners are owned for
+ * the instance's whole lifetime (dispose() removes them), and each open menu is the component's
+ * "surface" — its listeners (click, contextmenu, keydown) are registered on the surface store
+ * and removed together when the menu closes, so open/close cycles never accumulate handlers.
+ * The items' clicks are delegated to ONE listener on the menu element, reading the item's
+ * `data-index` (the same anchor the coverage matrix extracts), instead of one listener per item
+ * per menu.
  */
-export class ContextMenu {
+export class ContextMenu extends Component {
 	private elem: HTMLElement | null = null;
 	private onClose: (() => void) | null = null;
 	private target: ContextMenuTarget | null = null;
@@ -31,9 +40,19 @@ export class ContextMenu {
 	 * @param findCommitElem Resolve the rendered row of the commit at an index (NULL if it isn't rendered).
 	 */
 	constructor(private readonly findCommitElem: (index: number) => HTMLElement | null) {
+		super(document);
 		const listener = () => this.close();
-		document.addEventListener('click', listener);
-		document.addEventListener('contextmenu', listener);
+		this.listen(document, 'click', listener);
+		this.listen(document, 'contextmenu', listener);
+	}
+
+	protected override get scope(): HTMLElement | Document {
+		return this.elem !== null ? this.elem : this.root;
+	}
+
+	protected override onDispose(): void {
+		// A disposed menu leaves no open surface behind
+		this.close();
 	}
 
 	/**
@@ -105,30 +124,31 @@ export class ContextMenu {
 		this.elem = menu;
 		this.onClose = onClose;
 
-		const itemElems = menu.getElementsByClassName('contextMenuItem');
-		for (let i = 0; i < itemElems.length; i++) {
-			itemElems[i].addEventListener('click', (e) => {
-				// The user clicked on a context menu item => call the corresponding handler
-				e.stopPropagation();
-				this.close();
-				handlers[parseInt((<HTMLElement>(<Element>e.target).closest('.contextMenuItem')!).dataset.index!)]();
-			});
-		}
-
-		menu.addEventListener('click', (e) => {
-			// The user clicked on the context menu (but not a specific item) => keep the context menu open to allow the user to reattempt clicking on a specific item
+		// The items' clicks are DELEGATED to this one listener (F3): the item carries its index
+		// as `data-index` (the anchor the coverage matrix extracts), so an open/close cycle
+		// registers three handlers for the menu instead of one per item, and none survives the
+		// close below (they live on the surface store).
+		this.listenOnSurface(menu, 'click', (e) => {
+			// A click inside the menu (item or not) must not reach the document-level close listener
 			e.stopPropagation();
+			const item = (<Element>e.target).closest('.contextMenuItem');
+			if (item !== null) {
+				// The user clicked on a context menu item => call the corresponding handler
+				this.close();
+				handlers[parseInt((<HTMLElement>item).dataset.index!)]();
+				return;
+			}
 			// In the mobile layout the menu element is the action sheet's full-screen scrim: a tap
 			// on the scrim itself, outside the sheet's items, dismisses it
 			if (e.target === menu && document.body.classList.contains(CLASS_MOBILE_MODE)) this.close();
 		});
 
-		menu.addEventListener('contextmenu', (e) => {
+		this.listenOnSurface(menu, 'contextmenu', (e) => {
 			// The user right-clicked on the context menu => keep the context menu open
 			e.stopPropagation();
 		});
 
-		menu.addEventListener('keydown', (e) => {
+		this.listenOnSurface(menu, 'keydown', (e) => {
 			// Arrow-key navigation of the menu items (F5 accessibility): the focus walks the items,
 			// wrapping at either end; Home / End jump to the first / last item. Escape is left to the
 			// document-level handler (it closes the menu, and close() below returns the focus).
@@ -168,6 +188,8 @@ export class ContextMenu {
 
 	/** Close the context menu (if one is open). */
 	public close() {
+		// The open menu's listeners go with it (F3): an open/close cycle leaves none behind
+		this.clearSurfaceListeners();
 		if (this.elem !== null) {
 			// Return the focus to the invoker (F5 accessibility) when it is still usable and the
 			// focus is free (on <body>) or still inside the menu being removed - never steal it

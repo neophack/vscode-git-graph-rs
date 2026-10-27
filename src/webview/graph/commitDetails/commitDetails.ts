@@ -6,7 +6,7 @@
  */
 
 import { formatLongDate } from '../../common/dates';
-import { addListenerToClass, alterClass, CLASS_ACTIVE, CLASS_ENABLED, insertAfter, insertBeforeFirstChildWithClass, makeKeyboardActivatable, observeElemScroll } from '../../common/dom';
+import { alterClass, CLASS_ACTIVE, CLASS_ENABLED, insertAfter, insertBeforeFirstChildWithClass, ListenerGroup } from '../../common/dom';
 import { generateSignatureHtml } from '../../common/gitNames';
 import { html, SafeHtml, setHtml } from '../../common/html';
 import { formatStr, markup, strings } from '../../common/i18n/index';
@@ -14,6 +14,7 @@ import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
+import { Component } from '../component';
 import { GraphContext } from '../context';
 import { ExpandedCommit, FileTreeFolder } from '../state/types';
 import { hasMarkdown, isMarkdownLoaded, loadMarkdown, renderMarkdown } from '../text/markdown';
@@ -25,11 +26,55 @@ import { getCdvMessageBody, getMobileCdvTitle, renderMobileCommitSummary, render
 
 const CLASS_COMMIT_DETAILS_OPEN = 'commitDetailsOpen';
 
-export class CommitDetails {
+/**
+ * The Commit Details View: the panel that expands a commit (or a comparison of two commits) to
+ * show its details and its changed files - inline under the commit's row, docked to the bottom of
+ * the view, or as a full-screen sheet in the mobile layout - together with the file tree, the
+ * deferred line counts and the code review.
+ *
+ * One instance serves every open of the view (F3): the open panel (#cdv) is the component's
+ * "surface" — the controls' listeners registered on each render live in the surface store,
+ * cleared when the next render replaces the content or the view closes, and the file list's
+ * listeners (rewired independently when only the file view changes) live in their own group.
+ * Every DOM lookup runs under #cdv; the document is touched only to create or place it.
+ */
+export class CommitDetails extends Component {
 	public readonly lineCounts: LineCounts;
 
+	/** The open view's element (#cdv), or NULL while the view is closed. */
+	private elem: HTMLElement | null = null;
+
+	/** The open view's element (#cdv), or NULL when closed (for the commit table's sanctioned cross-component lookup). */
+	public get openElem(): HTMLElement | null {
+		return this.elem;
+	}
+	/** The file list's listeners, rewired when only the file view re-renders (a type switch). */
+	private readonly fileViewListeners = new ListenerGroup();
+
 	constructor(private readonly ctx: () => GraphContext) {
-		this.lineCounts = new LineCounts(ctx);
+		super(document);
+		this.lineCounts = new LineCounts(ctx, () => this.elem);
+	}
+
+	/** The subtree DOM lookups run against: the open view, or the document before one is open. */
+	protected override get scope(): HTMLElement | Document {
+		return this.elem !== null ? this.elem : this.root;
+	}
+
+	/**
+	 * Wire the rendered file list (folder toggles, file actions, its context menu). Its listeners
+	 * live in their own group (F3): a file-view-only re-render (a type switch) replaces just this
+	 * wiring, while the rest of the open panel's stays live.
+	 */
+	private wireFileView() {
+		this.fileViewListeners.removeAll();
+		if (this.elem !== null) makeFileViewInteractive(this.ctx(), this.elem, this.fileViewListeners);
+	}
+
+	/** A disposed view leaves no listeners and no open panel behind (F3). */
+	protected override onDispose(): void {
+		this.fileViewListeners.removeAll();
+		this.close(false);
 	}
 
 	private get store() {
@@ -83,9 +128,13 @@ export class CommitDetails {
 		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit;
 		if (expandedCommit === null) return;
 
-		const elem = document.getElementById('cdv'), isDocked = ctx.layout.isCdvDocked();
+		// The panel's listeners go with it (F3): they lived on the surface and file-view stores
+		this.clearSurfaceListeners();
+		this.fileViewListeners.removeAll();
+		const elem = this.elem, isDocked = ctx.layout.isCdvDocked();
 		if (elem !== null) {
 			elem.remove();
+			this.elem = null;
 		}
 		if (isDocked) {
 			ctx.dom.view.style.bottom = '0px';
@@ -347,7 +396,7 @@ export class CommitDetails {
 			// still the open one.
 			void loadMarkdown().then(() => {
 				if (this.store.expandedCommit !== expandedCommit) return;
-				const bodyElem = document.getElementById('cdvMessageBody');
+				const bodyElem = this.byId('cdvMessageBody');
 				if (bodyElem !== null) setHtml(bodyElem, renderMarkdown(body));
 			}, () => undefined);
 			return html`<span id="cdvMessageBody">${textFormatter.format(body)}</span>${offerToggle ? html`<span id="cdvMarkdownToggle" class="cdvMarkdownToggle" role="button" tabindex="0">${strings.plainTextToggleLabel}</span>` : ''}`;
@@ -407,7 +456,11 @@ export class CommitDetails {
 		const expandedCommitLoaded = typeof store.commitLookup[expandedCommit.commitHash] === 'number';
 		if (!expandedCommit.loading && !expandedCommitLoaded) return; // The commit is no longer loaded (e.g. after a refresh)
 
-		let elem = document.getElementById('cdv');
+		// This render replaces the panel's content: the previous render's wiring dies here (F3),
+		// together with the file list's (rewired below from its own group).
+		this.clearSurfaceListeners();
+		this.fileViewListeners.removeAll();
+		let elem = this.elem;
 		const isDocked = layout.isCdvDocked();
 		const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		const codeReviewPossible = !expandedCommit.loading && commitOrder.to !== UNCOMMITTED;
@@ -424,6 +477,7 @@ export class CommitDetails {
 			elem = document.createElement(isDocked ? 'div' : 'tr');
 			elem.id = 'cdv';
 			elem.className = isDocked ? 'docked' : 'inline';
+			this.elem = elem;
 			this.setHeight(elem, isDocked);
 			if (isDocked) {
 				document.body.appendChild(elem);
@@ -496,17 +550,17 @@ export class CommitDetails {
 		}
 
 		this.makeHeightResizable();
-		const markdownToggle = document.getElementById('cdvMarkdownToggle');
+		const markdownToggle = this.byId('cdvMarkdownToggle');
 		if (markdownToggle !== null) {
-			makeKeyboardActivatable(markdownToggle);
-			markdownToggle.addEventListener('click', () => this.toggleMessageMarkdown());
+			this.makeSurfaceKeyboardActivatable(markdownToggle);
+			this.listenOnSurface(markdownToggle, 'click', () => this.toggleMessageMarkdown());
 		}
-		document.getElementById('cdvClose')!.addEventListener('click', () => {
+		this.listenOnSurface(this.byId('cdvClose')!, 'click', () => {
 			this.close(true);
 		});
-		const mobileActionsBtn = document.getElementById('cdvMobileActions');
+		const mobileActionsBtn = this.byId('cdvMobileActions');
 		if (mobileActionsBtn !== null) {
-			mobileActionsBtn.addEventListener('click', (e) => {
+			this.listenOnSurface(mobileActionsBtn, 'click', (e) => {
 				// Open the commit row's own context menu (the table's contextmenu handler builds it), as
 				// the bottom action sheet of the mobile stylesheet. The click must not reach the
 				// document listener that closes any open context menu.
@@ -519,12 +573,12 @@ export class CommitDetails {
 		}
 
 		if (!expandedCommit.loading) {
-			makeFileViewInteractive(ctx);
+			this.wireFileView();
 			this.renderFileViewTypeBtns();
 			this.renderExternalDiffBtn();
 			this.makeDividerDraggable();
 
-			observeElemScroll(document.getElementById('cdvSummary'), expandedCommit.scrollTop.summary, (scrollTop) => {
+			this.observeSurfaceElemScroll(this.byId('cdvSummary'), expandedCommit.scrollTop.summary, (scrollTop) => {
 				if (store.expandedCommit === null) return;
 				store.expandedCommit.scrollTop.summary = scrollTop;
 				if (store.expandedCommit.contextMenuOpen.summary) {
@@ -533,7 +587,7 @@ export class CommitDetails {
 				}
 			}, () => ctx.persistence.saveState());
 
-			observeElemScroll(document.getElementById(this.getFilesScrollElemId()), expandedCommit.scrollTop.fileView, (scrollTop) => {
+			this.observeSurfaceElemScroll(this.byId(this.getFilesScrollElemId()), expandedCommit.scrollTop.fileView, (scrollTop) => {
 				if (store.expandedCommit === null) return;
 				store.expandedCommit.scrollTop.fileView = scrollTop;
 				this.lineCounts.scheduleVisible();
@@ -543,22 +597,22 @@ export class CommitDetails {
 				}
 			}, () => ctx.persistence.saveState());
 
-			document.getElementById('cdvFileViewTypeTree')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('cdvFileViewTypeTree')!, 'click', () => {
 				this.changeFileViewType(GG.FileViewType.Tree);
 			});
-			document.getElementById('cdvFileViewTypeList')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('cdvFileViewTypeList')!, 'click', () => {
 				this.changeFileViewType(GG.FileViewType.List);
 			});
-			document.getElementById('cdvCollapse')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('cdvCollapse')!, 'click', () => {
 				this.openFolders(false);
 			});
-			document.getElementById('cdvExpand')!.addEventListener('click', () => {
+			this.listenOnSurface(this.byId('cdvExpand')!, 'click', () => {
 				this.openFolders(true);
 			});
 
 			if (codeReviewPossible) {
 				this.renderCodeReviewBtn();
-				document.getElementById('cdvCodeReview')!.addEventListener('click', (e) => {
+				this.listenOnSurface(this.byId('cdvCodeReview')!, 'click', (e) => {
 					const expandedCommit = store.expandedCommit;
 					if (expandedCommit === null || e.target === null) return;
 					const sourceElem = <HTMLElement>(<Element>e.target).closest('#cdvCodeReview')!;
@@ -582,7 +636,7 @@ export class CommitDetails {
 			}
 
 			if (externalDiffPossible) {
-				document.getElementById('cdvExternalDiff')!.addEventListener('click', () => {
+				this.listenOnSurface(this.byId('cdvExternalDiff')!, 'click', () => {
 					const expandedCommit = store.expandedCommit;
 					if (expandedCommit === null || store.gitConfig === null || (store.gitConfig.diffTool === null && store.gitConfig.guiDiffTool === null)) return;
 					const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
@@ -618,7 +672,7 @@ export class CommitDetails {
 
 	private setDivider() {
 		const percent = (this.store.repoState.cdvDivider * 100).toFixed(2) + '%';
-		const summaryElem = document.getElementById('cdvSummary'), dividerElem = document.getElementById('cdvDivider'), filesElem = document.getElementById('cdvFiles');
+		const summaryElem = this.byId('cdvSummary'), dividerElem = this.byId('cdvDivider'), filesElem = this.byId('cdvFiles');
 		if (summaryElem !== null) summaryElem.style.width = percent;
 		if (dividerElem !== null) dividerElem.style.left = percent;
 		if (filesElem !== null) filesElem.style.left = percent;
@@ -639,7 +693,7 @@ export class CommitDetails {
 
 			if (repoState.cdvHeight !== height) {
 				repoState.cdvHeight = height;
-				const elem = document.getElementById('cdv');
+				const elem = this.byId('cdv');
 				if (elem !== null) this.setHeight(elem, isDocked);
 				if (!isDocked) ctx.table.renderGraph();
 			}
@@ -652,10 +706,14 @@ export class CommitDetails {
 			ctx.eventOverlay.remove();
 		};
 
-		addListenerToClass(document, 'cdvHeightResize', 'mousedown', (e) => {
-			prevY = (<MouseEvent>e).pageY;
-			ctx.eventOverlay.create('rowResize', processResizingCdvHeight, stopResizingCdvHeight);
-		});
+		// The handle is this panel's own element; the listener is surface-owned (F3)
+		const handles = this.queryAll('.cdvHeightResize');
+		for (let i = 0; i < handles.length; i++) {
+			this.listenOnSurface(handles[i], 'mousedown', (e) => {
+				prevY = (<MouseEvent>e).pageY;
+				ctx.eventOverlay.create('rowResize', processResizingCdvHeight, stopResizingCdvHeight);
+			});
+		}
 	}
 
 	private makeDividerDraggable() {
@@ -681,8 +739,8 @@ export class CommitDetails {
 			ctx.eventOverlay.remove();
 		};
 
-		document.getElementById('cdvDivider')!.addEventListener('mousedown', () => {
-			const contentElem = document.getElementById('cdvContent');
+		this.listenOnSurface(this.byId('cdvDivider')!, 'mousedown', () => {
+			const contentElem = this.byId('cdvContent');
 			if (contentElem === null) return;
 
 			const bounds = contentElem.getBoundingClientRect();
@@ -701,7 +759,7 @@ export class CommitDetails {
 		if (expandedCommit === null || expandedCommit.commitDetails === null || expandedCommit.commitHash === UNCOMMITTED) return;
 		expandedCommit.showMarkdown = !expandedCommit.showMarkdown;
 		const textFormatter = this.createMessageFormatter();
-		const bodyElem = document.getElementById('cdvMessageBody'), toggleElem = document.getElementById('cdvMarkdownToggle');
+		const bodyElem = this.byId('cdvMessageBody'), toggleElem = this.byId('cdvMarkdownToggle');
 		if (bodyElem === null || toggleElem === null) return;
 		const body = getCdvMessageBody(expandedCommit.commitDetails.body, this.ctx().layout.isTouchLayout());
 		const renderBody = () => setHtml(bodyElem, expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body));
@@ -716,14 +774,14 @@ export class CommitDetails {
 	}
 
 	private changeFileViewType(type: GG.FileViewType) {
-		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit, filesElem = document.getElementById('cdvFiles');
+		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit, filesElem = this.byId('cdvFiles');
 		if (expandedCommit === null || expandedCommit.fileTree === null || expandedCommit.fileChanges === null || filesElem === null) return;
 		this.closeContextMenuIfOpen(expandedCommit);
 		store.repoState.fileViewType = type;
 		ctx.persistence.saveRepoState();
 		const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		setHtml(filesElem, generateFileViewHtml(expandedCommit.fileTree, expandedCommit.fileChanges, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, type, commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending, this.getFileViewOptions()));
-		makeFileViewInteractive(ctx);
+		this.wireFileView();
 		this.renderFileViewTypeBtns();
 		this.lineCounts.scheduleVisible();
 	}
@@ -740,7 +798,7 @@ export class CommitDetails {
 	private openFolders(open: boolean) {
 		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileTree === null) return;
-		const folders = document.getElementsByClassName('fileTreeFolder');
+		const folders = this.queryAll('.fileTreeFolder');
 		for (let i = 0; i < folders.length; i++) {
 			const sourceElem = <HTMLElement>(folders[i]);
 			const parent = sourceElem.parentElement!;
@@ -761,13 +819,13 @@ export class CommitDetails {
 
 	private renderFileViewTypeBtns() {
 		if (this.store.expandedCommit === null) return;
-		const treeBtnElem = document.getElementById('cdvFileViewTypeTree'), listBtnElem = document.getElementById('cdvFileViewTypeList');
+		const treeBtnElem = this.byId('cdvFileViewTypeTree'), listBtnElem = this.byId('cdvFileViewTypeList');
 		if (treeBtnElem === null || listBtnElem === null) return;
 
 		const listView = this.getFileViewType() === GG.FileViewType.List;
 		alterClass(treeBtnElem, CLASS_ACTIVE, !listView);
 		alterClass(listBtnElem, CLASS_ACTIVE, listView);
-		const btns = document.getElementsByClassName('cdvFolderBtn');
+		const btns = this.queryAll('.cdvFolderBtn');
 		for (let i = 0; i < btns.length; i++) {
 			if (listView) btns[i].classList.add('hidden');
 			else btns[i].classList.remove('hidden');
@@ -778,7 +836,7 @@ export class CommitDetails {
 	public renderExternalDiffBtn() {
 		const store = this.store;
 		if (store.expandedCommit === null) return;
-		const externalDiffBtnElem = document.getElementById('cdvExternalDiff');
+		const externalDiffBtnElem = this.byId('cdvExternalDiff');
 		if (externalDiffBtnElem === null) return;
 
 		alterClass(externalDiffBtnElem, CLASS_ENABLED, store.gitConfig !== null && (store.gitConfig.diffTool !== null || store.gitConfig.guiDiffTool !== null));
@@ -811,12 +869,12 @@ export class CommitDetails {
 	 * @param fileWasViewed Was the file viewed - if so, set it to be the last viewed file.
 	 */
 	public updateFileState(file: GG.GitFileChange, fileElem: HTMLElement, isReviewed: boolean | null, fileWasViewed: boolean) {
-		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit, filesElem = document.getElementById('cdvFiles'), filePath = file.newFilePath;
+		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit, filesElem = this.byId('cdvFiles'), filePath = file.newFilePath;
 		if (expandedCommit === null || expandedCommit.fileTree === null || filesElem === null) return;
 
 		if (fileWasViewed) {
 			expandedCommit.lastViewedFile = filePath;
-			let lastViewedElem = document.getElementById('cdvLastFileViewed');
+			let lastViewedElem = this.byId('cdvLastFileViewed');
 			if (lastViewedElem !== null) lastViewedElem.remove();
 			lastViewedElem = document.createElement('span');
 			lastViewedElem.id = 'cdvLastFileViewed';
@@ -871,7 +929,7 @@ export class CommitDetails {
 	}
 
 	private saveAndRenderCodeReview(codeReview: GG.CodeReview | null) {
-		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit, filesElem = document.getElementById('cdvFiles');
+		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit, filesElem = this.byId('cdvFiles');
 		if (expandedCommit === null || expandedCommit.fileTree === null || filesElem === null) return;
 
 		expandedCommit.codeReview = codeReview;
@@ -884,7 +942,7 @@ export class CommitDetails {
 	private renderCodeReviewBtn() {
 		const expandedCommit = this.store.expandedCommit;
 		if (expandedCommit === null) return;
-		const btnElem = document.getElementById('cdvCodeReview');
+		const btnElem = this.byId('cdvCodeReview');
 		if (btnElem === null) return;
 
 		const active = expandedCommit.codeReview !== null;

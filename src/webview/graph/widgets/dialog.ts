@@ -8,6 +8,11 @@ import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { REF_INVALID_REGEX } from '../../common/util';
+import { DialogInput, DialogInputType, DialogInputValue } from './dialogInputs';
+
+export { DialogInputType } from './dialogInputs';
+export type { DialogCheckboxInput, DialogInput, DialogInputValue, DialogRadioInput, DialogSelectInput, DialogTextRefInput, DialogTextInput, DialogTextareaInput } from './dialogInputs';
+import { Component } from '../component';
 import { SelectOption } from '../state/store';
 import { CommitTarget, DialogTarget, RefTarget, TargetType } from '../state/types';
 import { CustomSelect } from './customSelect';
@@ -22,71 +27,7 @@ const enum DialogType {
 	Message
 }
 
-export const enum DialogInputType {
-	Text,
-	Textarea,
-	TextRef,
-	Select,
-	Radio,
-	Checkbox
-}
 
-interface DialogTextareaInput {
-	readonly type: DialogInputType.Textarea;
-	readonly name: string;
-	readonly default: string;
-	readonly placeholder: string | null;
-	readonly info?: string;
-	readonly lines?: number;
-}
-
-interface DialogTextInput {
-	readonly type: DialogInputType.Text;
-	readonly name: string;
-	readonly default: string;
-	readonly placeholder: string | null;
-	readonly info?: string;
-}
-
-interface DialogTextRefInput {
-	readonly type: DialogInputType.TextRef;
-	readonly name: string;
-	readonly default: string;
-	readonly info?: string;
-}
-
-type DialogSelectInput = {
-	readonly type: DialogInputType.Select;
-	readonly name: string;
-	readonly options: ReadonlyArray<SelectOption>;
-	readonly default: string;
-	readonly multiple?: false;
-	readonly info?: string;
-} | {
-	readonly type: DialogInputType.Select;
-	readonly name: string;
-	readonly options: ReadonlyArray<SelectOption>;
-	readonly defaults: ReadonlyArray<string>;
-	readonly multiple: true;
-	readonly info?: string;
-};
-
-interface DialogRadioInput {
-	readonly type: DialogInputType.Radio;
-	readonly name: string;
-	readonly options: ReadonlyArray<SelectOption>;
-	readonly default: string;
-}
-
-interface DialogCheckboxInput {
-	readonly type: DialogInputType.Checkbox;
-	readonly name: string;
-	readonly value: boolean;
-	readonly info?: string;
-}
-
-export type DialogInput = DialogTextInput | DialogTextareaInput | DialogTextRefInput | DialogSelectInput | DialogRadioInput | DialogCheckboxInput;
-export type DialogInputValue = string | string[] | boolean;
 
 /** The content of a dialog: markup, or text (escaped). */
 export type DialogMessage = SafeHtml | string;
@@ -103,9 +44,12 @@ export interface DialogDeps {
 }
 
 /**
- * The Git Graph View's dialogs.
+ * The Git Graph View's dialogs. One instance serves every dialog of the view (F3): each open
+ * dialog is the component's "surface" — its listeners are registered on the surface store and
+ * removed together when the dialog closes, so an open/close cycle never accumulates handlers.
+ * DOM lookups run against the open dialog (`scope`), never the document.
  */
-export class Dialog {
+export class Dialog extends Component {
 	private elem: HTMLElement | null = null;
 	private target: DialogTarget | null = null;
 	private actioned: (() => void) | null = null;
@@ -113,10 +57,27 @@ export class Dialog {
 	private customSelects: { [inputIndex: string]: CustomSelect } = {};
 	/** Where the focus returns to when the dialog closes (wherever it sat when the dialog opened). */
 	private previouslyFocused: HTMLElement | null = null;
+	/** The dialogs still playing their closing fade: a dialog being replaced is removed immediately when the next one opens (tracked here — every dialog is this instance's own). */
+	private closingElems: HTMLElement[] = [];
 
 	private static readonly WHITESPACE_REGEXP = /\s/gu;
 
-	constructor(private readonly deps: DialogDeps) { }
+	constructor(private readonly deps: DialogDeps) { super(document); }
+
+	/** The subtree DOM lookups run against: the open dialog, or the document before one is open. */
+	protected override get scope(): HTMLElement | Document {
+		return this.elem !== null ? this.elem : this.root;
+	}
+
+	/** The open dialog's element, or NULL when none is open (for cross-component lookups). */
+	public get openElem(): HTMLElement | null {
+		return this.elem;
+	}
+
+	/** A disposed dialog leaves no open dialog and no registered selects behind (F3). */
+	protected override onDispose(): void {
+		this.close();
+	}
 
 	/**
 	 * Show a confirmation dialog.
@@ -231,10 +192,11 @@ export class Dialog {
 			: html`${message}`;
 
 		const areFormValuesInvalid = () => this.elem === null || this.elem.classList.contains(CLASS_DIALOG_NO_INPUT) || this.elem.classList.contains(CLASS_DIALOG_INPUT_INVALID);
+		// The form's inputs live under the open dialog: look them up through the scope (F3)
 		const getFormValues = () => inputs.map((input, index) => {
 			if (input.type === DialogInputType.Radio) {
 				// Iterate through all of the radio options to get the checked value
-				const elems = <NodeListOf<HTMLInputElement>>document.getElementsByName('dialogInput' + index);
+				const elems = this.scope.querySelectorAll<HTMLInputElement>('input[name="dialogInput' + index + '"]');
 				for (let i = 0; i < elems.length; i++) {
 					if (elems[i].checked) {
 						return input.options[parseInt(elems[i].value)].value;
@@ -244,7 +206,7 @@ export class Dialog {
 			} else if (input.type === DialogInputType.Select) {
 				return this.customSelects[index.toString()].getValue();
 			} else {
-				const elem = <HTMLInputElement>document.getElementById('dialogInput' + index);
+				const elem = <HTMLInputElement>this.query('#dialogInput' + index)!;
 				return input.type === DialogInputType.Checkbox
 					? elem.checked // Checkboxes return a boolean indicating if the value is checked
 					: elem.value; // All other fields return the value as a string
@@ -268,11 +230,12 @@ export class Dialog {
 		// order already places each select between the inputs it belongs between.
 		inputs.forEach((input, index) => {
 			if (input.type === DialogInputType.Select) {
-				this.customSelects[index.toString()] = new CustomSelect(input, document.getElementById('dialogFormSelect' + index)!, 0, this.elem!);
+				// registered with the dialog, so even its dispose() releases the select's document listener
+				this.register(this.customSelects[index.toString()] = new CustomSelect(input, this.byId('dialogFormSelect' + index)!, 0, this.elem!));
 				if (input.name === '') {
 					// A single unnamed select is named by the dialog's message, like the other
 					// unnamed single inputs (the CustomSelect only names itself from data.name)
-					const currentElem = document.querySelector('#dialogFormSelect' + index.toString() + ' .customSelectCurrent');
+					const currentElem = this.query('#dialogFormSelect' + index.toString() + ' .customSelectCurrent');
 					if (currentElem !== null) currentElem.setAttribute('aria-label', messageText);
 				}
 			}
@@ -281,7 +244,7 @@ export class Dialog {
 		// If the dialog contains a TextRef input, attach event listeners for validation
 		const textRefInput = inputs.findIndex((input) => input.type === DialogInputType.TextRef);
 		if (textRefInput > -1) {
-			const dialogInput = <HTMLInputElement>document.getElementById('dialogInput' + textRefInput), dialogAction = document.getElementById('dialogAction')!;
+			const dialogInput = <HTMLInputElement>this.byId('dialogInput' + textRefInput)!, dialogAction = this.byId('dialogAction')!;
 			if (dialogInput.value === '') this.elem!.classList.add(CLASS_DIALOG_NO_INPUT);
 			const validateRefInput = () => {
 				if (this.elem === null) return;
@@ -310,16 +273,17 @@ export class Dialog {
 				}
 			};
 			// 'input' catches a value pasted with the mouse (keyup never fires for it) and 'keyup'
-			// keeps parity with the keyboard-driven flow; both run the same validation. It also
-			// runs once now, so an invalid pre-filled default is flagged from the start.
-			dialogInput.addEventListener('input', validateRefInput);
-			dialogInput.addEventListener('keyup', validateRefInput);
+			// keeps parity with the keyboard-driven flow; both run the same validation, surface-owned
+			// (F3: close() removes them with the rest of the open dialog's handlers). It also runs
+			// once now, so an invalid pre-filled default is flagged from the start.
+			this.listenOnSurface(dialogInput, 'input', validateRefInput);
+			this.listenOnSurface(dialogInput, 'keyup', validateRefInput);
 			validateRefInput();
 		}
 
 		if (inputs.length > 0 && (inputs[0].type === DialogInputType.Text || inputs[0].type === DialogInputType.TextRef)) {
 			// If the first input is a text field, set focus to it.
-			(<HTMLInputElement>document.getElementById('dialogInput0')).focus();
+			(<HTMLInputElement>this.byId('dialogInput0')).focus();
 		}
 	}
 
@@ -334,7 +298,7 @@ export class Dialog {
 	 */
 	public useCloseIcon() {
 		if (this.elem === null) return;
-		const secondaryAction = document.getElementById('dialogSecondaryAction');
+		const secondaryAction = this.byId('dialogSecondaryAction');
 		if (secondaryAction !== null) secondaryAction.style.display = 'none';
 		const closeIcon = document.createElement('span');
 		closeIcon.id = 'dialogCloseIcon';
@@ -344,7 +308,7 @@ export class Dialog {
 		// The icon is a plain <span>: give it the button semantics and the Enter / Space activation
 		// of one, so the replaced Close button stays reachable from the keyboard
 		makeKeyboardActivatable(closeIcon);
-		closeIcon.addEventListener('click', () => this.close());
+		this.listenOnSurface(closeIcon, 'click', () => this.close());
 		this.elem.appendChild(closeIcon);
 	}
 
@@ -357,7 +321,7 @@ export class Dialog {
 		const elems = this.elem.querySelectorAll<HTMLElement>(selector);
 		for (let i = 0; i < elems.length; i++) {
 			const elem = elems[i];
-			elem.addEventListener('click', (event) => {
+			this.listenOnSurface(elem, 'click', (event) => {
 				event.stopPropagation();
 				handler(elem);
 			});
@@ -404,8 +368,8 @@ export class Dialog {
 		ensureWidgetStyles(() => import('../../styles/onDemand'));
 		this.deps.closeDialogAndContextMenu();
 		// A dialog being replaced is fading out: remove it immediately so it doesn't overlap the new one
-		const closing = document.querySelectorAll('.dialog.closing');
-		for (let i = 0; i < closing.length; i++) closing[i].remove();
+		for (let i = 0; i < this.closingElems.length; i++) this.closingElems[i].remove();
+		this.closingElems.length = 0;
 
 		this.type = type;
 		this.target = target;
@@ -424,8 +388,9 @@ export class Dialog {
 		if (labelText !== '') dialog.setAttribute('aria-label', labelText.length > 120 ? labelText.substring(0, 117) + '...' : labelText);
 		// The focus trap (F5 accessibility): Tab and Shift+Tab cycle inside the dialog, so the
 		// keyboard can reach neither the page behind it nor the browser outside the webview. The
-		// document-level handler keeps its keys (Enter submits, Escape closes); the trap only owns Tab.
-		dialog.addEventListener('keydown', (e) => {
+		// document-level handler keeps its keys (Enter submits, Escape closes); the trap only owns
+		// Tab. Surface-owned (F3): close() removes it with the open dialog's handlers.
+		this.listenOnSurface(dialog, 'keydown', (e) => {
 			if (e.key !== 'Tab') return;
 			const focusable = Dialog.getFocusableElems(dialog);
 			if (focusable.length === 0) {
@@ -461,10 +426,10 @@ export class Dialog {
 		}
 		dialog.style.top = Math.max(Math.round((docHeight - dialogHeight) / 2), 10) + 'px';
 		if (actionName !== null && actioned !== null) {
-			document.getElementById('dialogAction')!.addEventListener('click', actioned);
+			this.listenOnSurface(this.byId('dialogAction')!, 'click', actioned);
 			this.actioned = actioned;
 		}
-		document.getElementById('dialogSecondaryAction')!.addEventListener('click', secondaryActioned !== null ? secondaryActioned : () => this.close());
+		this.listenOnSurface(this.byId('dialogSecondaryAction')!, 'click', secondaryActioned !== null ? secondaryActioned : () => this.close());
 
 		// The initial focus (F5 accessibility): the primary action, or the Close button when there
 		// is no primary action - a dialog never opens with the focus left on <body>. A form whose
@@ -496,6 +461,8 @@ export class Dialog {
 
 	/** Close the dialog (if one is open). */
 	public close() {
+		// The open dialog's listeners go with it (F3)
+		this.clearSurfaceListeners();
 		this.deps.eventOverlay.remove();
 		if (this.elem !== null) {
 			const elem = this.elem;
@@ -513,7 +480,12 @@ export class Dialog {
 				this.previouslyFocused.focus();
 			}
 			elem.classList.add('closing');
-			window.setTimeout(() => elem.remove(), 180);
+			this.closingElems.push(elem);
+			window.setTimeout(() => {
+				elem.remove();
+				const i = this.closingElems.indexOf(elem);
+				if (i > -1) this.closingElems.splice(i, 1); // the fade is done: no longer replaced
+			}, 180);
 			this.elem = null;
 		}
 		removeClassFromAll(document, CLASS_DIALOG_ACTIVE);
