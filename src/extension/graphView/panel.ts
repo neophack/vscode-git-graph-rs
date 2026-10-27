@@ -1,11 +1,9 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
-import { deliverAutomationHostMessage, deliverAutomationShimResult } from '../automation/graphViewPort';
-import { commitOrderingOf, resolvedInterfaceLanguage, squashMessageFormatOf, tabIconColourThemeOf } from '../platform/config';
+import { deliverAutomationHostMessage } from '../automation/graphViewPort';
+import { resolvedInterfaceLanguage, tabIconColourThemeOf } from '../platform/config';
 import type { ExtensionState } from '../platform/storage';
-import { t } from '../platform/i18n';
-import { TextMessageKey } from '../../shared/i18n';
 import type { Logger } from '../platform/logger';
 import { PullRequestDataSource } from '../integrations/pullRequests';
 import type { ProductionGitRepository } from '../git/gitRepository';
@@ -14,50 +12,34 @@ import { RepoFileWatcher } from '../repos/repoFileWatcher';
 import { TabIconColourTheme } from '../../shared/model/webview';
 import type { GitRepoSet } from '../../shared/model/repoState';
 import type { GitGraphViewSnapshot, LoadGitGraphViewTo } from '../../shared/model/webview';
-import type { RequestLoadView, ResponseLoadCommits } from '../../shared/protocol/loading';
-import type { RequestMessage, RequestWebviewTraces, ResponseMessage } from '../../shared/protocol/messages';
-import { mark, MARK, mergeWebviewMarks, span } from '../../shared/perf/trace';
-import type { RequestCommand, WriteEffect } from '../../shared/protocol/graphView';
-import { WRITE_EFFECTS } from '../../shared/protocol/graphView';
-import { showErrorMessage } from '../platform/actions';
+import type { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
+import { mark, MARK } from '../../shared/perf/trace';
 import { Disposable, toDisposable } from '../../shared/util/disposable';
 import { CommitLoader } from './commitLoader';
-import type { CommitDataPort, LoadViewTicket } from './commitLoader';
-import { refreshAfterWrite } from './impactRefresh';
-import type { ImpactRefreshDeps } from './impactRefresh';
-import { dispatchRequest, isMutatingCommand } from './handlers/index';
-import type { HandlerContext } from './handlers/context';
 import { canLoadGraphView, getWebviewConfig, renderGraphViewHtml } from './html';
 import { hostScheduler } from './scheduler';
 import type { AuxiliaryViewsPort, GitRunnerPort } from './gitRunner';
 import { createCommitLoader, createLoaderReads, createPanelPorts, createViewPort } from './panelContext';
 import type { PanelRefreshIds } from './panelContext';
+import { createMessageRouter } from './messageRouter';
+import type { MessageRouter } from './messageRouter';
+import { createViewState } from './viewState';
+import type { ViewState } from './viewState';
 import type { ExtensionServices } from '../services';
 import type { PanelRegistry } from './panelRegistry';
 import { BackgroundChangePoller } from './poller';
 
-/** The write-path localizer: the ports speak plain string keys, the i18n table's own keys are what they carry. */
-function localizeWriteKey(key: string, ...params: Array<string | number>): string {
-	return t(key as TextMessageKey, ...params);
-}
-
 /**
- * The dispatched requests the P1 op spans measure (OPTIMIZATION-PLAN §7 P1, the "if cheap" row):
- * load-more (`loadCommits`), expand-details (`commitDetails`), and the refs/HEAD repo-info op
- * (`loadRepoInfo`). Every other dispatched request starts no span.
- */
-const OP_TRACE_COMMANDS: ReadonlySet<string> = new Set(['loadCommits', 'commitDetails', 'loadRepoInfo']);
-
-/**
- * The Git Graph view panel (REFACTOR-PLAN task 4.4): the lifecycle, serialization restore,
- * orphaned-tab replacement and message routing of the view formerly known as
- * src/gitGraphView.ts's GitGraphView. Every inbound webview message routes through the
- * exhaustive handler table (handlers/index.ts); this class owns the panel itself - the
- * collaborators' ports (panelContext.ts), the staged commit loader (commitLoader.ts), the
- * background poll (poller.ts), the HTML shell (html.ts) - and the view state no handler may
- * touch directly. Its repository access is the `GitRepository` facade of the new git layer
- * (task 3.6); the open path is push-based (task 4.7): the panel begins the merged loadView read
- * when the page is (re)generated and pushes the result when the page reports `ready`.
+ * The Git Graph view panel (REFACTOR-PLAN task 4.4) — the PanelHost of OPTIMIZATION-PLAN A5:
+ * this class owns the vscode Webview Panel lifecycle (creation, serializer revival, the
+ * orphaned-tab replacement of orphanedTabs.ts, disposal) and the wiring of the collaborators:
+ * the collaborators' ports (panelContext.ts), the staged commit loader (commitLoader.ts), the
+ * background poll (poller.ts), the HTML shell (html.ts), the inbound message routing
+ * (messageRouter.ts) and the serialization/restore state (viewState.ts) — plus the view state
+ * no other module may touch directly. Its repository access is the `GitRepository` facade of
+ * the new git layer (task 3.6); the open path is push-based (task 4.7): the panel begins the
+ * merged loadView read when the page is (re)generated and pushes the result when the page
+ * reports `ready`.
  *
  * The panel is a plain instance now (OPTIMIZATION-PLAN A2): it registers itself with the
  * composition root's {@link PanelRegistry} at every lifecycle point (creation, revival,
@@ -118,26 +100,16 @@ export class GitGraphView extends Disposable {
 	private readonly ports: ReturnType<typeof createPanelPorts>;
 	private readonly viewPort: ReturnType<typeof createViewPort>;
 	private readonly pullRequests: PullRequestDataSource = new PullRequestDataSource();
+	/** The inbound message routing and dispatch (messageRouter.ts). */
+	private readonly messageRouter: MessageRouter;
+	/** The serialization/restore state of the rendered page (viewState.ts). */
+	private readonly viewState: ViewState;
 	/** The refresh ids the staged requests record and the regenerated page embeds. */
 	private readonly refreshIds: PanelRefreshIds = { loadRepoInfo: 0, loadCommits: 0, loadConfig: 0 };
-	/** The merged open-path read in flight for the current page, pushed when the page reports `ready`. */
-	private pendingViewLoad: { readonly request: RequestLoadView; readonly ticket: LoadViewTicket } | null = null;
-	/** The loader's reads port, shared with the write-path impact refresh (task 4.8). */
-	private readonly loaderReads: CommitDataPort;
-	/**
-	 * The write effects the GitWriter reported while a request is being dispatched (task 4.8):
-	 * the per-op truth the impact refresh prefers over the protocol's per-command table. Keyed by
-	 * repository, cleared as each dispatched request's finally block consumes it.
-	 */
-	private readonly observedEffects: Map<string, Set<WriteEffect>> = new Map();
-	/** > 0 while a webview request is being dispatched: the window the writer's effects collect in. */
-	private dispatchDepth = 0;
 
 	private isGraphViewLoaded: boolean = false;
 	private isPanelVisible: boolean = true;
 	private currentRepo: string | null = null;
-	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to update, and is then reset to null
-	private restoredSnapshot: GitGraphViewSnapshot | null = null; // Is used by the next call to update, and is then reset to null
 	private pendingReposEvent: RepoChangeEvent | null = null; // A repo-set change that arrived while the panel was hidden, replayed on the next show
 
 	/**
@@ -181,8 +153,6 @@ export class GitGraphView extends Disposable {
 		this.extensionState = services.state;
 		this.repoManager = services.repos;
 		this.logger = services.logger;
-		this.loadViewTo = options.loadViewTo;
-		this.restoredSnapshot = options.restoredSnapshot ?? null;
 
 		const config = services.config.current;
 		if (options.existingPanel !== undefined) {
@@ -209,8 +179,8 @@ export class GitGraphView extends Disposable {
 		// T1 (P1): the panel exists - the boot trace the view command began at T0 continues here
 		// (a restored or orphan-replaced panel has no T0 and opens a session trace instead).
 		mark(MARK.panelCreated);
-		this.loaderReads = createLoaderReads(this.repo, services.config);
-		this.loader = createCommitLoader(this.repo, this.git, this.logger, services.config, this.loaderReads);
+		const loaderReads = createLoaderReads(this.repo, services.config);
+		this.loader = createCommitLoader(this.repo, this.git, this.logger, services.config, loaderReads);
 		this.ports = createPanelPorts({
 			repo: this.repo,
 			git: this.git,
@@ -269,19 +239,39 @@ export class GitGraphView extends Disposable {
 				this.currentRepo = repoPath;
 				this.noteActivity();
 			},
-			pushViewLoad: () => { void this.pushViewLoad(); }
+			pushViewLoad: () => { void this.viewState.pushViewLoad(); }
+		});
+		this.viewState = createViewState({
+			config: services.config,
+			loader: this.loader,
+			viewPort: this.viewPort,
+			extensionState: this.extensionState,
+			repoManager: this.repoManager,
+			refreshIds: this.refreshIds,
+			currentRepo: () => this.currentRepo,
+			send: (msg) => this.sendMessage(msg),
+			initialLoadViewTo: options.loadViewTo,
+			initialSnapshot: options.restoredSnapshot ?? null
+		});
+		this.messageRouter = createMessageRouter({
+			repo: this.repo,
+			git: this.git,
+			config: services.config,
+			ports: this.ports,
+			viewPort: this.viewPort,
+			loader: this.loader,
+			loaderReads: loaderReads,
+			refreshIds: this.refreshIds,
+			watcher: this.repoFileWatcher,
+			logger: this.logger,
+			currentRepo: () => this.currentRepo,
+			send: (msg) => this.sendMessage(msg)
 		});
 
 		this.registerDisposables(
-			// The write-path impact collection (task 4.8): the GitWriter reports the effects of
-			// every op that ran while a request was being dispatched — the per-op truth the
-			// impact refresh prefers over the protocol's per-command table.
-			this.repo.write.onRepositoryChanged((repoPath, effects) => {
-				if (this.dispatchDepth === 0) return; // a write outside a dispatched request: the repo file watcher reports it
-				const observed = this.observedEffects.get(repoPath);
-				if (observed === undefined) this.observedEffects.set(repoPath, new Set(effects));
-				else for (const effect of effects) observed.add(effect);
-			}),
+			// The write-path impact collection (task 4.8), created with the router: the GitWriter
+			// reports the effects of every op that ran while a request was being dispatched into it.
+			this.messageRouter.effectCollection,
 
 			// Dispose Git Graph View resources when disposed
 			toDisposable(() => {
@@ -323,7 +313,7 @@ export class GitGraphView extends Disposable {
 			this.avatarManagerOnAvatar(this.services.avatars),
 
 			// Respond to messages sent from the Webview
-			this.panel.webview.onDidReceiveMessage((msg) => this.onDidReceiveWebviewMessage(msg)),
+			this.panel.webview.onDidReceiveMessage((msg) => this.messageRouter.onWebviewMessage(msg)),
 
 			// Dispose the Webview Panel when disposed
 			this.panel,
@@ -364,7 +354,7 @@ export class GitGraphView extends Disposable {
 
 	/** Stash a "load view to" request for the view's next render (the registry's `open` on a hidden view). */
 	public stashLoadViewTo(loadViewTo: LoadGitGraphViewTo): void {
-		this.loadViewTo = loadViewTo;
+		this.viewState.setLoadViewTo(loadViewTo);
 	}
 
 	/**
@@ -388,7 +378,7 @@ export class GitGraphView extends Disposable {
 
 	/** Inject a request as if the webview had sent it (request-mode automation runs). */
 	public runAutomationRequest(message: RequestMessage): void {
-		void this.respondToMessage(message);
+		void this.messageRouter.dispatch(message);
 	}
 
 	/**
@@ -419,224 +409,6 @@ export class GitGraphView extends Disposable {
 		return this.panel.viewColumn;
 	}
 
-	/* ---------- Message routing ---------- */
-
-	private onDidReceiveWebviewMessage(msg: unknown): void {
-		// Results from the in-page automation shim are not RequestMessages: route them to the
-		// port (which forwards to the installed listener, if any) and keep them away from the
-		// handler table's command guard.
-		if (typeof msg === 'object' && msg !== null
-			&& (msg as { __ggAutomationResult?: unknown }).__ggAutomationResult !== undefined) {
-			deliverAutomationShimResult((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
-			return;
-		}
-		// The P1 trace report (OPTIMIZATION-PLAN §7 P1): the webview's collected marks arrive
-		// once, after T5 - append them to the open trace and record it. Deliberately not a
-		// handler-table request: no handler exists (or may exist) for it.
-		if (typeof msg === 'object' && msg !== null
-			&& (msg as { command?: unknown }).command === 'webviewTraces') {
-			mergeWebviewMarks((msg as RequestWebviewTraces).marks);
-			return;
-		}
-		void this.respondToMessage(msg);
-	}
-
-	/**
-	 * Respond to a message sent from the front-end: route it through the exhaustive handler
-	 * table with the RepoFileWatcher muted. When the command's handler can mutate the
-	 * repository, the ONE refresh that follows is the impact-based partial update of task 4.8
-	 * (see {@link refreshAfterWrite}) — picked from the effects the GitWriter reported for the
-	 * dispatched request (the per-op truth) with the protocol's per-command table as the
-	 * fallback (a refused write, or a flow that bypassed the writer).
-	 * @param msg The message that was received.
-	 */
-	private async respondToMessage(msg: unknown): Promise<void> {
-		const command = typeof msg === 'object' && msg !== null ? (msg as { command?: unknown }).command : undefined;
-		const mutates = typeof command === 'string' && isMutatingCommand(command);
-		// The P1 op spans: load-more, expand-details, and the refs/HEAD repo-info op, timed as
-		// one dispatch each (the span ends when the handler's promise settles).
-		const opSpan = typeof command === 'string' && OP_TRACE_COMMANDS.has(command) ? 'op:' + command : null;
-		this.repoFileWatcher.mute();
-		this.dispatchDepth++;
-		try {
-			const context = this.buildContext();
-			const result = await (opSpan !== null ? span(opSpan, () => dispatchRequest(msg, context)) : dispatchRequest(msg, context));
-			if (result === 'unknown') {
-				// No handler exists for the command: say so in exactly one log line and surface an
-				// error, instead of silently dropping the message (task 4.2). The protocol has no
-				// generic error response a host could answer an unknown command with, so the error
-				// shows as the localized action-handling notification.
-				this.logger.logError('Received an unknown "' + String(command) + '" message from the Git Graph View.');
-				showErrorMessage(t('actionHandlingError'));
-			}
-		} catch (error) {
-			this.logger.logError('Failed to handle "' + command + '" message: ' + error);
-			showErrorMessage(t('actionHandlingError'));
-		} finally {
-			this.dispatchDepth--;
-			this.repoFileWatcher.unmute();
-			if (mutates && typeof command === 'string') {
-				// The handler ran with the RepoFileWatcher muted, so any repository change it made
-				// bypassed the watcher-based invalidation — the pushed refresh below is the one
-				// refresh of this operation (the webview does not also refresh itself).
-				this.refreshAfterWrite(command, msg);
-			}
-		}
-	}
-
-	/**
-	 * Push the impact-based refresh of one completed write (task 4.8): the effects the GitWriter
-	 * reported for the dispatched repository — the per-op truth, e.g. a plain `createBranch` is
-	 * `refs` only — or, when none arrived, the protocol's per-command fallback. The impact
-	 * refresh itself (impactRefresh.ts) picks the minimal partial update per §3.8.3.
-	 */
-	private refreshAfterWrite(command: string, msg: unknown): void {
-		const repo = typeof msg === 'object' && msg !== null ? (msg as { repo?: unknown }).repo : undefined;
-		if (typeof repo !== 'string' || repo !== this.currentRepo) return; // the view shows another (or no) repository
-		const table = Object.prototype.hasOwnProperty.call(WRITE_EFFECTS, command) ? WRITE_EFFECTS[command as RequestCommand] : undefined;
-		const observed = this.observedEffects.get(repo);
-		this.observedEffects.delete(repo);
-		let effects: ReadonlyArray<WriteEffect> | null;
-		if (observed === undefined || observed.size === 0) {
-			// No writer event (a refused write, a flow that ran outside the writer) or an op that
-			// declares nothing: the per-command table's conservative union decides.
-			effects = table ?? null;
-		} else {
-			effects = [...observed];
-		}
-		if (effects === null || effects.length === 0) return;
-		const deps: ImpactRefreshDeps = {
-			reads: this.loaderReads,
-			view: this.loader,
-			getConfig: () => ({ showRemoteHeads: this.services.config.current.repositoryShowRemoteHeads }),
-			logger: this.logger,
-			refreshIds: () => ({ loadRepoInfo: this.refreshIds.loadRepoInfo, loadCommits: this.refreshIds.loadCommits }),
-			send: (message) => this.sendMessage(message),
-			pushConfig: (repoPath, remotes) => { void this.pushConfigAfterWrite(repoPath, remotes); }
-		};
-		// The impact read is what the user just acted on: interactive, so background work yields.
-		void hostScheduler.run('refresh:' + repo, 'interactive', () => refreshAfterWrite(deps, repo, effects as ReadonlyArray<WriteEffect>));
-	}
-
-	/**
-	 * The `config`-class partial update (task 4.8): drop the cached repository configuration and
-	 * push one fresh `loadConfig` response under the refresh id the view last used — never a
-	 * rejection: a failed read is logged and simply not pushed (the settings widget keeps its
-	 * previous data, exactly as an unrequested failed load would).
-	 */
-	private async pushConfigAfterWrite(repo: string, remotes: ReadonlyArray<string>): Promise<void> {
-		try {
-			this.ports.repoConfig.invalidate(repo);
-			const data = await this.ports.repoConfig.load(repo, remotes);
-			this.sendMessage({ command: 'loadConfig', repo: repo, refreshId: this.refreshIds.loadConfig, config: data.config, error: data.error });
-		} catch (error) {
-			this.logger.logError('Failed to push the configuration of ' + repo + ' after a write: ' + (error instanceof Error ? error.message : String(error)));
-		}
-	}
-
-	/** The HandlerContext one request runs with: the collaborators' ports and the send function. */
-	private buildContext(): HandlerContext {
-		const snapshot = this.services.config.current;
-		return {
-			repo: this.repo,
-			git: this.git,
-			repoConfig: this.ports.repoConfig,
-			gerrit: this.ports.gerrit,
-			t: localizeWriteKey,
-			config: {
-				gerrit: { remote: snapshot.gerritRemote },
-				showRemoteHeads: snapshot.repositoryShowRemoteHeads,
-				squashPullMessageFormat: squashMessageFormatOf(snapshot.dialogPullBranchSquashMessageFormat),
-				squashMergeMessageFormat: squashMessageFormatOf(snapshot.dialogMergeSquashMessageFormat)
-			},
-			ui: this.ports.ui,
-			loader: this.loader,
-			avatars: this.ports.avatars,
-			storage: this.ports.storage,
-			repos: this.ports.repos,
-			userConfig: this.ports.userConfig,
-			settings: this.ports.settings,
-			pullRequests: this.ports.pullRequests,
-			view: this.viewPort,
-			send: (msg) => this.sendMessage(msg)
-		};
-	}
-
-	/* ---------- The open path (task 4.7): begin the merged read, push it on `ready` ---------- */
-
-	/**
-	 * Begin the merged loadView read for the repository the CURRENT page will boot on. Called
-	 * whenever the page's HTML is (re)generated: the page reports `ready` once its router is
-	 * installed, and the panel pushes this completed (or in-flight) result — the webview's boot
-	 * sends no loadRepoInfo/loadCommits requests of its own.
-	 */
-	private beginViewLoad(bootRepo: string | null): void {
-		if (bootRepo === null) {
-			this.pendingViewLoad = null;
-			return;
-		}
-		const config = this.services.config.current;
-		const request: RequestLoadView = {
-			command: 'loadView',
-			repo: bootRepo,
-			refreshId: ++this.refreshIds.loadCommits,
-			hard: false,
-			branches: null, // Show All: the pushed first page uses the default view options
-			authors: null,
-			maxCommits: config.repositoryCommitsInitialLoad,
-			showTags: config.repositoryShowTags,
-			showRemoteBranches: config.repositoryShowRemoteBranches,
-			includeCommitsMentionedByReflogs: config.repositoryIncludeCommitsMentionedByReflogs,
-			onlyFollowFirstParent: config.repositoryOnlyFollowFirstParent,
-			commitOrdering: commitOrderingOf(config),
-			remotes: [],
-			hideRemotes: [],
-			stashes: [],
-			filterPath: this.loadViewTo !== null && typeof this.loadViewTo.filterPath === 'string' ? this.loadViewTo.filterPath : null
-		};
-		this.pendingViewLoad = { request: request, ticket: this.loader.beginLoadView(request) };
-	}
-
-	/** The repository the page about to be rendered will boot on (the webview's own pick, mirrored). */
-	private computeBootRepo(loadViewTo: LoadGitGraphViewTo): string | null {
-		const repos = this.repoManager.getRepos();
-		if (loadViewTo !== null && repos[loadViewTo.repo] !== undefined) return loadViewTo.repo;
-		if (this.currentRepo !== null && repos[this.currentRepo] !== undefined) return this.currentRepo;
-		const snapshotRepo = typeof (this.restoredSnapshot as { currentRepo?: unknown } | null)?.currentRepo === 'string'
-			? (this.restoredSnapshot as { currentRepo: string }).currentRepo
-			: null;
-		if (snapshotRepo !== null && repos[snapshotRepo] !== undefined) return snapshotRepo;
-		const lastActive = this.extensionState.getLastActiveRepo();
-		if (lastActive !== null && repos[lastActive] !== undefined) return lastActive;
-		const keys = Object.keys(repos);
-		return keys.length > 0 ? keys[0] : null;
-	}
-
-	/**
-	 * Push the merged loadView result to the webview that just reported `ready` (the ViewPort's
-	 * handshake): the completed or in-flight read of {@link beginViewLoad}, then its staged
-	 * follow-ups (remote refs, the "Uncommitted Changes" row). When nothing is pending (e.g. a
-	 * page that regenerated without a known repository), a fresh read begins and pushes instead.
-	 */
-	private async pushViewLoad(): Promise<void> {
-		let pending = this.pendingViewLoad;
-		if (pending === null) {
-			this.beginViewLoad(this.currentRepo);
-			pending = this.pendingViewLoad;
-			if (pending === null) return;
-		}
-		this.pendingViewLoad = null;
-		const response = await pending.ticket.promise;
-		if (response === null) return; // superseded while in flight: the newer load answers instead
-		// The pushed response doubles as the boot's repository switch: the last-active record,
-		// the repo file watcher and the poll baseline follow the pushed repository.
-		this.viewPort.repoSwitched(response.repo);
-		// T3 (P1): the boot's data is ready and is about to be posted to the page.
-		mark(MARK.hostDataReady);
-		this.sendMessage(response);
-		pending.ticket.followUps((commitsResponse: ResponseLoadCommits) => this.sendMessage(commitsResponse));
-	}
-
 	/* ---------- Panel state transitions ---------- */
 
 	private handlePanelShown(): void {
@@ -647,7 +419,7 @@ export class GitGraphView extends Disposable {
 			const event = this.pendingReposEvent;
 			this.pendingReposEvent = null;
 			this.handleReposChange(event);
-		} else if (this.isGraphViewLoaded && this.loadViewTo === null) {
+		} else if (this.isGraphViewLoaded && this.viewState.loadViewTo === null) {
 			// The webview is already rendered: refresh its data in place instead of regenerating
 			// the HTML, which would reload the page and re-render the entire graph from scratch
 			// (a blank flash on every tab switch). The webview's soft refresh keeps the rendered
@@ -699,7 +471,7 @@ export class GitGraphView extends Disposable {
 	private handleReposChange(event: RepoChangeEvent) {
 		const loadViewTo = event.loadRepo !== null ? { repo: event.loadRepo } : null;
 		if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
-			this.loadViewTo = loadViewTo;
+			this.viewState.setLoadViewTo(loadViewTo);
 			this.update();
 		} else {
 			this.respondLoadRepos(event.repos, loadViewTo);
@@ -736,7 +508,7 @@ export class GitGraphView extends Disposable {
 		const gitCliAvailable = this.git.hasGit();
 		this.isGraphViewLoaded = Object.keys(repos).length > 0 && canLoadGraphView(gitCliAvailable, this.extensionPath);
 		this.lastSentInterfaceLanguage = resolvedInterfaceLanguage(config.interfaceLanguage, vscode.env.language);
-		const loadViewTo = this.loadViewTo;
+		const loadViewTo = this.viewState.loadViewTo;
 		this.panel.webview.html = renderGraphViewHtml({
 			extensionPath: this.extensionPath,
 			cspSource: this.panel.webview.cspSource,
@@ -746,17 +518,15 @@ export class GitGraphView extends Disposable {
 			loadViewTo: loadViewTo,
 			repos: repos,
 			refreshIds: this.refreshIds,
-			restoredSnapshot: this.restoredSnapshot,
+			restoredSnapshot: this.viewState.restoredSnapshot,
 			globalState: this.extensionState.getGlobalViewState(),
 			workspaceState: this.extensionState.getWorkspaceViewState(),
 			gitCliAvailable: gitCliAvailable,
 			logger: this.logger
 		});
-		this.loadViewTo = null;
-		this.restoredSnapshot = null;
-		// The open path (task 4.7): begin the merged read for the repository this page boots on,
-		// so it is (nearly) complete by the time the page reports `ready` and gets pushed.
-		this.beginViewLoad(this.computeBootRepo(loadViewTo));
+		// Consume the rendered page's one-shot state and begin the open-path read for the
+		// repository it boots on.
+		this.viewState.pageRendered(loadViewTo);
 		// The page's loaded state (and, through the pushed read, the shown repository) changed:
 		// publish the new activity to the registry.
 		this.noteActivity();

@@ -14,8 +14,9 @@
  *
  * Scope note (the half of plan 3.2 that does NOT hold yet): the router itself guards the
  * `command` only - the `repo` must name a known repository" check is the panel caller's
- * responsibility per dispatchRequest's contract, and panel.ts does not implement it (it is a
- * sibling-owned file of this wave). What this suite pins instead is the next-best guarantee
+ * responsibility per dispatchRequest's contract, and the panel's dispatch caller
+ * (graphView/messageRouter.ts) does not implement it. What this suite pins instead is the
+ * next-best guarantee
  * proved end to end: an unknown repo path can reach a genuine handler, but the write chain
  * behind it refuses or fails without any mutation, and the error is surfaced. A pre-dispatch
  * repo allowlist in the panel would tighten this to rejection without dispatch.
