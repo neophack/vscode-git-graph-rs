@@ -96,6 +96,7 @@ function fakeHost(upstream: string | null, resetResult: ErrorInfo = null, amendR
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
+		config: { current: { repositorySignCommits: false } },
 		repo: {
 			read: { getCurrentBranchUpstream: async () => upstream },
 			write: {

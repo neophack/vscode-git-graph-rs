@@ -19,10 +19,11 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { vscodeState } from './vscodeAlias';
 import { vscodeMockOf } from './fakeVscode';
-import type * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import { EventEmitter } from '../../src/shared/util/event';
 import type { GitExecutable } from '../../src/extension/git/executable/findGit';
 import { Logger } from '../../src/extension/platform/logger';
+import { ConfigService } from '../../src/extension/platform/config';
 import { ExtensionState } from '../../src/extension/platform/storage';
 import { AvatarManager } from '../../src/extension/integrations/avatars/avatarManager';
 import { RepoManager } from '../../src/extension/repos/repoManager';
@@ -262,7 +263,10 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 		storagePath: path.join(rootDir, 'target', 'harness-storage'),
 		asAbsolutePath: (p: string) => path.join(rootDir, p)
 	};
-	const extensionState = new ExtensionState(context as any, gitExecutableEmitter.subscribe);
+	// The configuration service over the alias stub (the harness's live settings source,
+	// OPTIMIZATION-PLAN A4): the services below answer from its current snapshot.
+	const config = new ConfigService(vscode.workspace);
+	const extensionState = new ExtensionState(context as any, gitExecutableEmitter.subscribe, config);
 
 	// The GitRepository facade the view reads and writes through, over the same real git binary
 	// (engine preferred, CLI fallback - createBackend decides), and the raw runner the editor-
@@ -274,7 +278,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	const gitRunner = createGitRunner(gitProcess, null, (key: string) => key);
 	const auxViews: AuxiliaryViewsPort = { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } };
 
-	const avatarManager = new AvatarManager(viewReader, extensionState, logger);
+	const avatarManager = new AvatarManager(viewReader, extensionState, logger, config);
 	const repoManager = new RepoManager({
 		repo: viewRepo,
 		git: gitRunner,
@@ -308,6 +312,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 		auxViews: auxViews,
 		gerrit: commandGerrit,
 		gitResolution: commandGitResolution,
+		config: config,
 		onDidChangeConfiguration: configurationEmitter.subscribe
 	} as unknown as ExtensionServices;
 	const panels = new PanelRegistry(services);

@@ -8,7 +8,8 @@ import { GitRepository, repoTextRunnerOf } from './git/gitRepository';
 import type { ProductionGitRepository } from './git/gitRepository';
 import { AvatarManager } from './integrations/avatars/avatarManager';
 import { CommandManager } from './commands';
-import { getConfig, takeSnapshot } from './platform/config';
+import { ConfigService, gitPathsOf, viewColumnOfEditorGroup } from './platform/config';
+import { setDefaultEditorGroupSource } from './platform/actions';
 import { DiffDocProvider } from './views/diffDocProvider';
 import { ExtensionState } from './platform/storage';
 import { PanelRegistry } from './graphView/panelRegistry';
@@ -32,6 +33,7 @@ import { StatusBarItem } from './statusBar';
 import { createTrustGate } from './platform/workspaceTrust';
 import { findGit, unableToFindGitMsg } from './git/executable/findGit';
 import { followGitPathSetting, showErrorMessage, showInformationMessageOncePerVersion, showRestrictedModeNoticeOnce } from './platform/actions';
+import { setInterfaceLanguageSource } from './platform/i18n';
 import { EventEmitter } from '../shared/util/event';
 import type { ExtensionServices } from './services';
 
@@ -44,15 +46,22 @@ import type { ExtensionServices } from './services';
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
+	// The configuration service first: the latest snapshot of the settings, kept current by one
+	// subscription (A4) — every read below answers from `.current` instead of re-reading
+	// vscode.workspace.getConfiguration, and the platform free-function seams (the interface
+	// language, the default editor group) are pointed at it before anything can localize.
+	const config = new ConfigService(vscode.workspace);
+	setInterfaceLanguageSource(() => config.current.interfaceLanguage);
+	setDefaultEditorGroupSource(() => viewColumnOfEditorGroup(config.current.openNewTabEditorGroup));
 	const logger = new Logger(path.join(context.globalStoragePath, 'git-graph-rs.log'));
-	logger.setEnabled(getConfig().enableLog);
-	setEnabled(getConfig().enableLog);
+	logger.setEnabled(config.current.enableLog);
+	setEnabled(config.current.enableLog);
 	mark(MARK.activation);
 	logger.log('Starting Git Graph ...');
 
 	const gitExecutableEmitter = new EventEmitter<GitExecutable | null>();
 	const onDidChangeGitExecutable = gitExecutableEmitter.subscribe;
-	const state = new ExtensionState(context, onDidChangeGitExecutable);
+	const state = new ExtensionState(context, onDidChangeGitExecutable, config);
 
 	// Workspace Trust (V2): untrusted means Restricted Mode — engine-only reads, no Git runs.
 	const trust = createTrustGate();
@@ -64,7 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const gitResolution = createGitResolution({
 		cache: state,
 		restricted: () => !trust.isTrusted,
-		find: () => findGit(state),
+		find: () => findGit(state, gitPathsOf(vscode.workspace)),
 		onResolved: (executable) => {
 			gitExecutableEmitter.emit(executable);
 			// No Git but an engine: usable as-is (said once per version); no engine: the plain failure.
@@ -98,8 +107,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	const rebuildBackend = () => { readerCell.backend = buildBackend(gitResolution.current(), logger, !trust.isTrusted); };
 
 	const writer = new GitWriter(gitProcess, () => ({
-		signCommits: getConfig().signCommits,
-		signTags: getConfig().signTags
+		signCommits: config.current.repositorySignCommits,
+		signTags: config.current.repositorySignTags
 	}), localize);
 	// The facade the view runs on: reads, writes, and operation state over the process adapter.
 	const repo: ProductionGitRepository = new GitRepository(reader, writer, repoTextRunnerOf(gitProcess));
@@ -108,9 +117,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	// The view's raw runner: the few spawns that are not pure ops (rebase editor, difftool, `update-ref --stdin`).
 	const git = createGitRunner(gitProcess, engine, (key) => localize(key));
 
-	const avatars = new AvatarManager(reader, state, logger);
+	const avatars = new AvatarManager(reader, state, logger, config);
 	const repos = new RepoManager({ repo, git, state, onDidChangeConfiguration, logger });
-	const statusBarItem = new StatusBarItem(repos.getNumRepos(), repos.onDidChangeRepos, onDidChangeConfiguration, logger);
+	const statusBarItem = new StatusBarItem(repos.getNumRepos(), repos.onDidChangeRepos, onDidChangeConfiguration, config, logger);
 	const diffDocProvider = new DiffDocProvider(reader);
 	// The auxiliary views port (with its streaming spawner) and the Gerrit integration, same git layer.
 	const auxViews = createAuxiliaryViews(reader, gitProcess);
@@ -119,7 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const services: ExtensionServices = Object.freeze({
 		context: context, logger: logger, state: state, repo: repo, reader: reader, git: git,
 		avatars: avatars, repos: repos, auxViews: auxViews, gerrit: gerrit,
-		gitResolution: gitResolution, onDidChangeConfiguration: onDidChangeConfiguration
+		gitResolution: gitResolution, config: config, onDidChangeConfiguration: onDidChangeConfiguration
 	});
 	const panels = new PanelRegistry(services);
 	const commandManager = new CommandManager(services, panels);
@@ -131,7 +140,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		readerFactory: () => prewarmReader,
 		recentRepos: () => services.repos.getRecentRepos(),
 		liveView: panels,
-		enabled: takeSnapshot(vscode.workspace).prewarm,
+		enabled: config.current.prewarm,
 		log: (message) => logger.log(message)
 	});
 
@@ -141,10 +150,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		panels.watchForOrphanedTabs(),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-graph-rs')) {
-				logger.setEnabled(getConfig().enableLog);
+				logger.setEnabled(config.current.enableLog);
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {
-				const paths = getConfig().gitPaths;
+				const paths = gitPathsOf(vscode.workspace);
 				if (paths.length > 0) followGitPathSetting(paths, (executable) => gitExecutableEmitter.emit(executable), () => { void repos.searchWorkspaceForRepos(); }, logger);
 			}
 		}),
@@ -156,6 +165,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		configurationEmitter,
 		state,
 		gitExecutableEmitter,
+		config,
 		logger
 	);
 

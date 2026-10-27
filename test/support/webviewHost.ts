@@ -19,7 +19,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { getConfig } from '../../src/extension/platform/config';
+import * as vscode from 'vscode';
+import type { GitGraphViewConfig } from '../../src/shared/model/webview';
+import { getWebviewConfig } from '../../src/extension/graphView/html';
+import { takeSnapshot } from '../../src/extension/platform/config';
 import { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, DEFAULT_REPO_STATE } from '../../src/extension/platform/storage';
 
 export const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -109,21 +112,16 @@ export function uncommittedRow(headHash: string, count: number) {
 	};
 }
 
-/** The webview configuration the extension passes at boot, materialised from the real Config class. */
+/** The webview configuration the extension passes at boot, materialised from the configuration model. */
 function webviewConfig() {
-	// Materialise the view config the extension passes to the webview: a Config instance exposes
-	// every setting as a prototype getter over the (stubbed, all-default) workspace configuration;
-	// the few fields the extension renames on the way into initialState are mapped explicitly
-	// (see the panel's getHtmlForWebview)
-	const configInstance = getConfig() as any;
-	const settings: Record<string, unknown> = {};
-	for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(configInstance))) {
-		if (key === 'constructor') continue;
-		const value = configInstance[key];
-		if (typeof value !== 'function') settings[key] = JSON.parse(JSON.stringify(value));
-	}
-	const config: any = { ...settings, commitOrdering: settings.commitOrder, mute: settings.muteCommits };
-	config.graph.rowHeight = ROW_HEIGHT;
+	// Materialise the view config the extension passes to the webview: `getWebviewConfig` over a
+	// snapshot of the (stubbed, all-default) workspace configuration answers exactly the fields
+	// the panel embeds into initialState (OPTIMIZATION-PLAN A4 - the former Config instance's
+	// prototype getters are gone; the cooked views of the snapshot replace them)
+	const config = getWebviewConfig(takeSnapshot(vscode.workspace), 'en', false) as {
+		-readonly [K in keyof GitGraphViewConfig]: GitGraphViewConfig[K];
+	};
+	(config.graph as { rowHeight: number }).rowHeight = ROW_HEIGHT;
 	config.fetchAvatars = false;
 	config.pullRequests.enabled = false;
 	config.showCommitBodyInline = false;

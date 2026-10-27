@@ -2,20 +2,6 @@
   {
     "type": "dependency",
     "from": "src/extension/git/executable/findGit.ts",
-    "to": "src/extension/platform/config.ts",
-    "unresolvedTo": "../../platform/config",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "git-layer-isolation"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/extension/git/executable/findGit.ts",
     "to": "src/extension/platform/i18n.ts",
     "unresolvedTo": "../../platform/i18n",
     "dependencyTypes": [
@@ -62,20 +48,6 @@
     "unresolvedTo": "vscode",
     "dependencyTypes": [
       "npm-dev",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "git-layer-isolation"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/extension/git/process/childProcess.ts",
-    "to": "src/extension/platform/config.ts",
-    "unresolvedTo": "../../platform/config",
-    "dependencyTypes": [
-      "local",
       "import"
     ],
     "rule": {

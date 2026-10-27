@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { ExtensionState } from '../platform/storage';
-import { getConfig } from '../platform/config';
+import { gerritOf, viewColumnOfEditorGroup } from '../platform/config';
+import type { ConfigProvider, ConfigSnapshot } from '../platform/config';
 import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
 import { unableToFindGitMsg } from '../git/executable/findGit';
@@ -70,6 +71,8 @@ export interface PanelPortDeps {
 	readonly repoManager: RepoManager;
 	readonly logger: Logger;
 	readonly extensionPath: string;
+	/** The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4). */
+	readonly config: ConfigProvider;
 	/** The shared pull-request data source (HTTP + parsing; owned by the Panel). */
 	readonly pullRequests: { getPullRequests(url: string): Promise<{ prs: PullRequestInfo[], complete: boolean } | null> };
 	/** The repository the view currently shows (the working directory of the Git invocations). */
@@ -101,7 +104,7 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 	const prDeps: PullRequestFetchDeps = {
 		gitOutput: (args, repo, resolveValue) => deps.git.gitOutput(args, repo, resolveValue),
 		loadPullRequests: (url) => deps.pullRequests.getPullRequests(url),
-		isEnabled: () => getConfig().pullRequests.enabled,
+		isEnabled: () => deps.config.current.pullRequestsEnabled,
 		logger: deps.logger
 	};
 	// The Gerrit integration over the shared runner. Its `GitRunner` seam predates the engine fast
@@ -153,7 +156,7 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 				return viewDiff(repo, hash, UNCOMMITTED, filePath, newFilePath, type);
 			},
 			viewFileAtRevision: (repo, hash, filePath) => viewFileAtRevision(repo, hash, filePath),
-			openFile: (repo, filePath, hash) => openFileResolvingRenames(deps.repo, repo, filePath, hash),
+			openFile: (repo, filePath, hash) => openFileResolvingRenames(deps.repo, deps.config.current, repo, filePath, hash),
 			createArchive: (repo, ref) => createArchive(deps.repo, repo, ref),
 			createPullRequest: (config, sourceOwner, sourceRepo, sourceBranch) => createPullRequest(config, sourceOwner, sourceRepo, sourceBranch),
 			setInterfaceLanguage: (language) => setInterfaceLanguage(deps.logger, language),
@@ -167,9 +170,9 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 					oldFilePath: oldFilePath, newFilePath: newFilePath, type: type, additions: null, deletions: null
 				});
 			},
-			openGitTerminal: (repo, command, name) => openTerminalAt(deps.git, repo, command, name),
-			openExternalDirDiff: (repo, fromHash, toHash, isGui) => openExternalDirDiff(deps.git, deps.logger, repo, fromHash, toHash, isGui),
-			quoteForTerminal: (obj) => quoteForShell(obj, detectTerminalShellKind())
+			openGitTerminal: (repo, command, name) => openTerminalAt(deps.git, deps.config.current.integratedTerminalShell, repo, command, name),
+			openExternalDirDiff: (repo, fromHash, toHash, isGui) => openExternalDirDiff(deps.git, deps.logger, deps.config.current, repo, fromHash, toHash, isGui),
+			quoteForTerminal: (obj) => quoteForShell(obj, detectTerminalShellKind(deps.config.current.integratedTerminalShell))
 		},
 		avatars: {
 			fetchAvatarImage: (email, repo, remote, commits) => deps.avatarManager.fetchAvatarImage(email, repo, remote, commits),
@@ -209,7 +212,8 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 				repoConfig: repoConfig,
 				state: deps.extensionState,
 				currentRepo: deps.currentRepo,
-				logger: deps.logger
+				logger: deps.logger,
+				config: deps.config
 			}, setting, value, previousValue)
 		},
 		pullRequests: {
@@ -260,10 +264,10 @@ export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): A
  * repo-info half, the operation state, and the refs-only reads (`getRefSnapshot` / `annotate`)
  * whose engine requests answer a refs-only refresh without any traversal.
  */
-export function createLoaderReads(repo: ProductionGitRepository): CommitDataPort {
+export function createLoaderReads(repo: ProductionGitRepository, config: ConfigProvider): CommitDataPort {
 	return {
-		getCommits: (repoPath, query, signal) => repo.read.getCommits(repoPath, logOptionsOf(query), signal),
-		getUncommittedChanges: (repoPath) => repo.read.getUncommittedChangeCount(repoPath, getConfig().showUntrackedFiles),
+		getCommits: (repoPath, query, signal) => repo.read.getCommits(repoPath, logOptionsOf(query, config.current), signal),
+		getUncommittedChanges: (repoPath) => repo.read.getUncommittedChangeCount(repoPath, config.current.repositoryShowUntrackedFiles),
 		getRepoInfo: (repoPath, options) => loadRepoInfoHalf(repo, repoPath, options),
 		getOperationState: (repoPath) => repo.getOperationState(repoPath),
 		getRefSnapshot: (repoPath, options) => repo.read.getRefSnapshot(repoPath, options),
@@ -281,7 +285,7 @@ export function createLoaderReads(repo: ProductionGitRepository): CommitDataPort
  * share ONE port with the impact refresh; the scheduler (task 4.8) routes the page reads as
  * interactive jobs and the follow-ups as background ones.
  */
-export function createCommitLoader(repo: ProductionGitRepository, git: GitRunnerPort, logger: Logger, reads: CommitDataPort = createLoaderReads(repo), scheduler: HostScheduler = hostScheduler): CommitLoader {
+export function createCommitLoader(repo: ProductionGitRepository, git: GitRunnerPort, logger: Logger, config: ConfigProvider, reads: CommitDataPort = createLoaderReads(repo, config), scheduler: HostScheduler = hostScheduler): CommitLoader {
 	const gerrit = gerritDataSourceFor(git);
 	return new CommitLoader({
 		reads: reads,
@@ -294,11 +298,11 @@ export function createCommitLoader(repo: ProductionGitRepository, git: GitRunner
 			getChangeUrlBase: (repoPath, remote) => gerrit.getChangeUrlBase(repoPath, remote)
 		},
 		getConfig: () => {
-			const config = getConfig();
+			const snapshot = config.current;
 			return {
-				showUncommittedChanges: config.showUncommittedChanges,
-				showRemoteHeads: config.showRemoteHeads,
-				gerrit: { remote: config.gerrit.remote, fetchLimit: config.gerrit.fetchLimit }
+				showUncommittedChanges: snapshot.repositoryShowUncommittedChanges,
+				showRemoteHeads: snapshot.repositoryShowRemoteHeads,
+				gerrit: gerritOf(snapshot)
 			};
 		},
 		logger: logger,
@@ -355,20 +359,19 @@ async function loadRepoInfoHalf(repo: ProductionGitRepository, repoPath: string,
 }
 
 /** Map the loader's commit-page query onto the read layer's `LogOptions` (the legacy branch filtering included). */
-function logOptionsOf(query: CommitLoadQuery): LogOptions {
+function logOptionsOf(query: CommitLoadQuery, config: ConfigSnapshot): LogOptions {
 	// Branch names arrive from the webview: drop any that Git could misread as an option. Custom
 	// Branch Glob Patterns are the one legitimate exception (a single `--glob=<pattern>` token).
 	const branches = query.branches === null
 		? null
 		: query.branches.filter((branch) => isSafeRefName(branch) || isValidCommitHash(branch) || branch.startsWith('--glob='));
-	const config = getConfig();
 	return {
 		branches: branches !== null ? [...branches] : null,
 		authors: query.authors,
 		maxCommits: query.maxCommits,
 		showTags: query.showTags,
 		showRemoteBranches: query.showRemoteBranches,
-		showRemoteHeads: config.showRemoteHeads,
+		showRemoteHeads: config.repositoryShowRemoteHeads,
 		includeCommitsMentionedByReflogs: query.includeCommitsMentionedByReflogs,
 		onlyFollowFirstParent: query.onlyFollowFirstParent,
 		commitOrdering: query.commitOrdering,
@@ -381,17 +384,17 @@ function logOptionsOf(query: CommitLoadQuery): LogOptions {
 		filterPaths: query.filterPath !== null ? query.filterPath.split(',').filter((p) => p !== '') : undefined,
 		deferUncommittedChanges: query.deferUncommittedChanges,
 		deferRemoteRefs: query.deferRemoteRefs,
-		showUncommittedChanges: config.showUncommittedChanges,
-		showUntrackedFiles: config.showUntrackedFiles,
-		showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags,
-		useMailmap: config.useMailmap
+		showUncommittedChanges: config.repositoryShowUncommittedChanges,
+		showUntrackedFiles: config.repositoryShowUntrackedFiles,
+		showCommitsOnlyReferencedByTags: config.repositoryShowCommitsOnlyReferencedByTags,
+		useMailmap: config.repositoryUseMailmap
 	};
 }
 
 /* ---------- The ui port's platform flows ---------- */
 
 /** Open a file of the repository, resolving a rename through the backend when the file is gone. */
-async function openFileResolvingRenames(repo: ProductionGitRepository, repoPath: string, filePath: string, hash: string): Promise<ErrorInfo> {
+async function openFileResolvingRenames(repo: ProductionGitRepository, config: ConfigSnapshot, repoPath: string, filePath: string, hash: string): Promise<ErrorInfo> {
 	let newFilePath = filePath;
 	let fileExists = await doesFileExist(repoPath + '/' + newFilePath);
 	if (!fileExists) {
@@ -404,7 +407,7 @@ async function openFileResolvingRenames(repo: ProductionGitRepository, repoPath:
 	if (fileExists) {
 		return vscode.commands.executeCommand('vscode.open', vscode.Uri.file(repoPath + '/' + newFilePath), {
 			preview: true,
-			viewColumn: getConfig().openNewTabEditorGroup
+			viewColumn: viewColumnOfEditorGroup(config.openNewTabEditorGroup)
 		}).then(
 			() => null,
 			() => t('openFileFailed', newFilePath)
@@ -414,15 +417,15 @@ async function openFileResolvingRenames(repo: ProductionGitRepository, repoPath:
 }
 
 /** Open the integrated terminal at `repo` (the legacy DataSource.openGitTerminal). */
-async function openTerminalAt(git: GitRunnerPort, repo: string, command: string | null, name: string): Promise<ErrorInfo> {
+async function openTerminalAt(git: GitRunnerPort, shellPath: string, repo: string, command: string | null, name: string): Promise<ErrorInfo> {
 	const gitPath = git.gitPath();
 	if (gitPath === null) return unableToFindGitMsg();
-	openGitTerminal(repo, gitPath, command, name);
+	openGitTerminal(repo, gitPath, command, name, shellPath);
 	return new Promise<ErrorInfo>((resolve) => setTimeout(() => resolve(null), 1000));
 }
 
 /** Open the external diff tool over the directory diff of two revisions (the legacy DataSource.openExternalDirDiff). */
-function openExternalDirDiff(git: GitRunnerPort, logger: Logger, repo: string, fromHash: string, toHash: string, isGui: boolean): Promise<ErrorInfo> {
+function openExternalDirDiff(git: GitRunnerPort, logger: Logger, config: ConfigSnapshot, repo: string, fromHash: string, toHash: string, isGui: boolean): Promise<ErrorInfo> {
 	return new Promise<ErrorInfo>((resolve) => {
 		const gitPath = git.gitPath();
 		if (gitPath === null) {
@@ -430,9 +433,8 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, repo: string, f
 			return;
 		}
 		const args = ['difftool', '--dir-diff'];
-		const config = getConfig(repo);
-		if (config.extDiffToolArgs && config.extDiffToolArgs.length > 0) {
-			args.push(...config.extDiffToolArgs);
+		if (config.repositoryExtDiffToolArgs.length > 0) {
+			args.push(...config.repositoryExtDiffToolArgs);
 		}
 		if (isGui) args.push('-g');
 		if (fromHash === toHash) {
@@ -453,7 +455,7 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, repo: string, f
 				}
 			});
 		} else {
-			openGitTerminal(repo, gitPath, args.join(' '), t('openExternalDirDiffTerminalName'));
+			openGitTerminal(repo, gitPath, args.join(' '), t('openExternalDirDiffTerminalName'), config.integratedTerminalShell);
 		}
 		// The tool may block until the user closes it: resolve once it has launched.
 		setTimeout(() => resolve(null), 1500);

@@ -17,9 +17,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, it, vi } from 'vitest';
+import * as vscode from 'vscode';
 import { vscodeState } from '../../support/vscodeAlias';
 import { vscodeMockOf } from '../../support/fakeVscode';
-import { getConfig } from '../../../src/extension/platform/config';
+import { takeSnapshot } from '../../../src/extension/platform/config';
 import { activate } from '../../../src/extension/main';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
@@ -64,20 +65,20 @@ describe('the mobileAdaptation host-aware default (config.ts)', () => {
 	it('is ON under Git Graph Studio while unset, and OFF under VS Code', () => {
 		delete vscodeState.settings.mobileAdaptation;
 
-		assert.equal(getConfig().mobileAdaptation, true, 'the studio host defaults the phone layout on');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, true, 'the studio host defaults the phone layout on');
 
 		stub.env.uriScheme = 'vscode';
-		assert.equal(getConfig().mobileAdaptation, false, 'VS Code keeps the marketplace default (off)');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, false, 'VS Code keeps the marketplace default (off)');
 		stub.env.uriScheme = 'ggs';
 	});
 
 	it('lets an explicitly set value win on every host', () => {
 		vscodeState.settings.mobileAdaptation = false;
-		assert.equal(getConfig().mobileAdaptation, false, 'an explicit OFF stays off under the studio host');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, false, 'an explicit OFF stays off under the studio host');
 
 		stub.env.uriScheme = 'vscode';
 		vscodeState.settings.mobileAdaptation = true;
-		assert.equal(getConfig().mobileAdaptation, true, 'an explicit ON is on under VS Code');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, true, 'an explicit ON is on under VS Code');
 
 		delete vscodeState.settings.mobileAdaptation;
 		stub.env.uriScheme = 'ggs';
@@ -109,7 +110,7 @@ describe('activation never seeds the studio default into the settings store (ext
 
 		assert.equal(seedCalls().length, 0, 'no mobileAdaptation write happens at activation');
 		assert.equal(vscodeState.settings.mobileAdaptation, undefined, 'the store is left alone (the default is expressed by the readers)');
-		assert.equal(getConfig().mobileAdaptation, true, 'the runtime answer under the studio host is still ON');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, true, 'the runtime answer under the studio host is still ON');
 		dispose();
 	});
 
@@ -121,7 +122,7 @@ describe('activation never seeds the studio default into the settings store (ext
 
 		assert.equal(seedCalls().length, 0, 'no seed write for an explicitly set value');
 		assert.equal(vscodeState.settings.mobileAdaptation, false, 'the explicit OFF is untouched');
-		assert.equal(getConfig().mobileAdaptation, false, 'the reader honours the explicit OFF');
+		assert.equal(takeSnapshot(vscode.workspace).mobileAdaptation, false, 'the reader honours the explicit OFF');
 		dispose();
 	});
 

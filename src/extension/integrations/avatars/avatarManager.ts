@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
-import { getConfig } from '../../platform/config';
+import type { ConfigProvider } from '../../platform/config';
 import type { GitBackend } from '../../git/read/gitReader';
 import { ExtensionState } from '../../platform/storage';
 import { Logger } from '../../platform/logger';
@@ -25,6 +25,7 @@ export class AvatarManager extends Disposable {
 	private readonly read: Pick<GitBackend, 'getRemoteUrl'>;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
+	private readonly config: ConfigProvider;
 	private readonly avatarStorageFolder: string;
 	private readonly avatarEventEmitter: EventEmitter<AvatarEvent>;
 
@@ -41,12 +42,15 @@ export class AvatarManager extends Disposable {
 	 * @param read The read face the remote URLs resolve through (the repository facade's).
 	 * @param extensionState The Git Graph ExtensionState instance.
 	 * @param logger The Git Graph Logger instance.
+	 * @param config The configuration service (the latest settings snapshot; the GitLab token is
+	 * read per fetch, so a setting change applies to the next request without re-registration).
 	 */
-	constructor(read: Pick<GitBackend, 'getRemoteUrl'>, extensionState: ExtensionState, logger: Logger) {
+	constructor(read: Pick<GitBackend, 'getRemoteUrl'>, extensionState: ExtensionState, logger: Logger, config: ConfigProvider) {
 		super();
 		this.read = read;
 		this.extensionState = extensionState;
 		this.logger = logger;
+		this.config = config;
 		this.avatarStorageFolder = this.extensionState.getAvatarStoragePath();
 		this.avatarEventEmitter = new EventEmitter<AvatarEvent>();
 		this.avatars = this.extensionState.getAvatarCache();
@@ -91,7 +95,7 @@ export class AvatarManager extends Disposable {
 	public fetchAvatarImage(email: string, repo: string, remote: string | null, commits: string[]) {
 		if (typeof this.avatars[email] !== 'undefined') {
 			// Avatar exists in the cache
-			let t = (new Date()).getTime();
+			const t = (new Date()).getTime();
 			if (this.avatars[email].timestamp < t - 1209600000 || (this.avatars[email].identicon && this.avatars[email].timestamp < t - 345600000)) {
 				// Refresh avatar after 14 days, or if an avatar couldn't previously be found after 4 days
 				this.queue.add(email, repo, remote, commits, false);
@@ -208,10 +212,10 @@ export class AvatarManager extends Disposable {
 	 */
 	private async fetchAvatarsInterval() {
 		if (this.queue.hasItems()) {
-			let avatarRequest = this.queue.takeItem();
+			const avatarRequest = this.queue.takeItem();
 			if (avatarRequest === null) return; // No avatar can be checked at the current time
 
-			let remoteSource = await this.getRemoteSource(avatarRequest); // Fetch the remote source of the avatar
+			const remoteSource = await this.getRemoteSource(avatarRequest); // Fetch the remote source of the avatar
 			switch (remoteSource.type) {
 				case 'github':
 					this.fetchFromGithub(avatarRequest, remoteSource.owner, remoteSource.repo);
@@ -241,7 +245,7 @@ export class AvatarManager extends Disposable {
 			// Fetch the remote repo source
 			let remoteSource: RemoteSource = { type: 'gravatar' };
 			if (avatarRequest.remote !== null) {
-				let remoteUrl = await this.read.getRemoteUrl(avatarRequest.repo, avatarRequest.remote).catch(() => null);
+				const remoteUrl = await this.read.getRemoteUrl(avatarRequest.repo, avatarRequest.remote).catch(() => null);
 				if (remoteUrl !== null) {
 					// Depending on the domain of the remote repo source, determine the type of source it is
 					let match;
@@ -264,7 +268,7 @@ export class AvatarManager extends Disposable {
 	 * @param repo The repository that the avatar is used in.
 	 */
 	private fetchFromGithub(avatarRequest: AvatarRequestItem, owner: string, repo: string) {
-		let t = (new Date()).getTime();
+		const t = (new Date()).getTime();
 		if (t < this.githubTimeout) {
 			// Defer request until after timeout
 			this.queue.addItem(avatarRequest, this.githubTimeout, false);
@@ -311,7 +315,7 @@ export class AvatarManager extends Disposable {
 						commit = null;
 					}
 					if (commit && commit.author && commit.author.avatar_url) { // Avatar url found
-						let img = await this.downloadAvatarImage(avatarRequest.email, commit.author.avatar_url + '&size=162');
+						const img = await this.downloadAvatarImage(avatarRequest.email, commit.author.avatar_url + '&size=162');
 						if (img !== null) {
 							this.saveAvatar(avatarRequest.email, img, false);
 						} else {
@@ -349,7 +353,7 @@ export class AvatarManager extends Disposable {
 	 * @param avatarRequest The avatar request to fetch.
 	 */
 	private fetchFromGitLab(avatarRequest: AvatarRequestItem) {
-		let t = (new Date()).getTime();
+		const t = (new Date()).getTime();
 		if (t < this.gitLabTimeout) {
 			// Defer request until after timeout
 			this.queue.addItem(avatarRequest, this.gitLabTimeout, false);
@@ -372,7 +376,7 @@ export class AvatarManager extends Disposable {
 		// A Personal Access Token is optional: unauthenticated requests use a lower rate limit,
 		// but no credentials are shipped with the extension
 		const headers: { [header: string]: string } = { 'User-Agent': 'git-graph-rs' };
-		const gitlabToken = getConfig().gitlabToken;
+		const gitlabToken = this.config.current.avatarsGitlabToken;
 		if (gitlabToken !== '') {
 			headers['Private-Token'] = gitlabToken;
 		}
@@ -400,7 +404,7 @@ export class AvatarManager extends Disposable {
 						users = [];
 					}
 					if (Array.isArray(users) && users.length > 0 && users[0].avatar_url) { // Avatar url found
-						let img = await this.downloadAvatarImage(avatarRequest.email, users[0].avatar_url);
+						const img = await this.downloadAvatarImage(avatarRequest.email, users[0].avatar_url);
 						if (img !== null) {
 							this.saveAvatar(avatarRequest.email, img, false);
 						} else {
@@ -474,7 +478,7 @@ export class AvatarManager extends Disposable {
 				headers: { 'User-Agent': 'git-graph-rs' },
 				agent: false, timeout: 15000
 			}, (res) => {
-				let imageBufferArray: Buffer[] = [];
+				const imageBufferArray: Buffer[] = [];
 				res.on('data', (chunk: Buffer) => { imageBufferArray.push(chunk); });
 				res.on('end', () => {
 					if (res.statusCode === 200) { // If success response, save the image to the avatar folder

@@ -124,6 +124,7 @@ function fakeHost(pushStderr: string, pushError: string | null = null) {
 	const host = {
 		context: { extensionPath: '/ext' },
 		avatarManager: {},
+		config: { current: { gerritRemote: 'origin', repositorySignCommits: false } },
 		gitRunner: gitRunner,
 		gerrit: { installHook: async () => ({ error: null, installed: true }) },
 		extensionState: {},

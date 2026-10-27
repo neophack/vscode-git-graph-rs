@@ -6,6 +6,7 @@ import type { GitResolutionHandle } from './git/executable/gitResolution';
 import type { AuxiliaryViewsPort, GitRunnerPort } from './graphView/gitRunner';
 import type { AvatarManager } from './integrations/avatars/avatarManager';
 import type { GerritDataSource } from './integrations/gerrit/gerrit';
+import type { ConfigService } from './platform/config';
 import type { Logger } from './platform/logger';
 import type { ExtensionState } from './platform/storage';
 import type { RepoManager } from './repos/repoManager';
@@ -45,6 +46,8 @@ export interface ExtensionServices {
 	readonly gerrit: GerritDataSource;
 	/** The deferred Git resolution (V1): `current()`, `ready()` and `restricted()`. */
 	readonly gitResolution: GitResolutionHandle;
+	/** The configuration service: the latest settings snapshot, following setting changes. */
+	readonly config: ConfigService;
 	/** The configuration-change event of the `git-graph-rs.*` settings. */
 	readonly onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>;
 }

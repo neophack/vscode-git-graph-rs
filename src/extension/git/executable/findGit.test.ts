@@ -50,17 +50,23 @@ describe('Git executable discovery', () => {
 
 	it('findGit prefers the last known path, then the git.path setting, then the platform search', async () => {
 		const state = (lastKnownPath: string | null) => <ExtensionState><unknown>{ getLastKnownGitPath: () => lastKnownPath };
+		// What the composition root answers via gitPathsOf (OPTIMIZATION-PLAN A4)
+		const gitPaths = (): string[] => {
+			const configured = vscodeMock.settings['git.path'] as string | string[] | undefined;
+			if (configured === undefined) return [];
+			return typeof configured === 'string' ? [configured] : configured.filter((p) => typeof p === 'string');
+		};
 
-		expect((await findGit(state('git'))).path).toBe('git');
+		expect((await findGit(state('git'), gitPaths())).path).toBe('git');
 
 		vscodeMock.settings['git.path'] = 'git';
-		expect((await findGit(state(noSuchGit))).path).toBe('git');
+		expect((await findGit(state(noSuchGit), gitPaths())).path).toBe('git');
 		vscodeMock.settings['git.path'] = ['git'];
-		expect((await findGit(state(null))).path).toBe('git');
+		expect((await findGit(state(null), gitPaths())).path).toBe('git');
 		delete vscodeMock.settings['git.path'];
 
 		// Nothing configured: the platform search must still locate the git on PATH
-		const found = await findGit(state(null));
+		const found = await findGit(state(null), gitPaths());
 		expect(found.version).toMatch(/^\d+\.\d+/);
 	});
 });

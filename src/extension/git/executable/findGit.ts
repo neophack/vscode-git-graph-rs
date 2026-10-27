@@ -5,7 +5,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getConfig } from '../../platform/config';
 import type { ExtensionState } from '../../platform/storage';
 import { t } from '../../platform/i18n';
 import { spawnOutput } from '../process/spawn';
@@ -26,9 +25,11 @@ export interface GitExecutable {
 /**
  * Find a Git executable that Git Graph can use.
  * @param extensionState The Git Graph ExtensionState instance.
+ * @param configGitPaths The Git paths configured by the `git.path` Visual Studio Code setting
+ * (answered by the caller from the configuration snapshot, OPTIMIZATION-PLAN A4).
  * @returns A Git executable.
  */
-export async function findGit(extensionState: ExtensionState) {
+export async function findGit(extensionState: ExtensionState, configGitPaths: ReadonlyArray<string>) {
 	const lastKnownPath = extensionState.getLastKnownGitPath();
 	if (lastKnownPath !== null) {
 		try {
@@ -36,7 +37,6 @@ export async function findGit(extensionState: ExtensionState) {
 		} catch (_) { }
 	}
 
-	const configGitPaths = getConfig().gitPaths;
 	if (configGitPaths.length > 0) {
 		try {
 			return await getGitExecutableFromPaths(configGitPaths);
@@ -96,11 +96,11 @@ function findSystemGitWin32(pathBase?: string) {
 }
 
 async function findGitWin32InPath() {
-	let dirs = (process.env['PATH'] || '').split(';');
+	const dirs = (process.env['PATH'] || '').split(';');
 	dirs.unshift(process.cwd());
 
 	for (let i = 0; i < dirs.length; i++) {
-		let file = path.join(dirs[i], 'git.exe');
+		const file = path.join(dirs[i], 'git.exe');
 		if (await isExecutable(file)) {
 			try {
 				return await getGitExecutable(file);
@@ -143,7 +143,7 @@ export function getGitExecutable(path: string) {
  * @param paths The paths of possible Git executables.
  * @returns The GitExecutable data.
  */
-export async function getGitExecutableFromPaths(paths: string[]): Promise<GitExecutable> {
+export async function getGitExecutableFromPaths(paths: ReadonlyArray<string>): Promise<GitExecutable> {
 	for (let i = 0; i < paths.length; i++) {
 		try {
 			return await getGitExecutable(paths[i]);

@@ -8,7 +8,8 @@ import { ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';
 import { RepoManager } from '../repos/repoManager';
 import { t } from '../platform/i18n';
-import { getConfig } from '../platform/config';
+import type { ConfigProvider } from '../platform/config';
+import { repoDropdownOrderOf } from '../platform/config';
 import { GitExecutable } from '../git/executable/findGit';
 import { getSortedRepositoryPaths } from './repo';
 import { getPathFromUri, getRepoName } from '../platform/paths';
@@ -36,6 +37,8 @@ export interface CommandHost {
 	readonly repoManager: RepoManager;
 	/** The registry of the live Git Graph view (the view-opening commands go through it). */
 	readonly panels: PanelRegistry;
+	/** The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4). */
+	readonly config: ConfigProvider;
 	/** The Git executable currently available to the extension (NULL until one is found). */
 	gitExecutable: GitExecutable | null;
 }
@@ -83,7 +86,7 @@ export async function resolveRepoFromCommandArg(host: CommandHost, arg: unknown)
 	}
 
 	const repos = host.repoManager.getRepos();
-	const repoPaths = getSortedRepositoryPaths(repos, getConfig().repoDropdownOrder);
+	const repoPaths = getSortedRepositoryPaths(repos, repoDropdownOrderOf(host.config.current));
 	if (repoPaths.length === 0) return null;
 	if (repoPaths.length === 1) return repoPaths[0];
 

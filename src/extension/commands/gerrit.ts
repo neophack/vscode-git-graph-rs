@@ -1,6 +1,5 @@
 import { t } from '../platform/i18n';
 import { extractChangeId, generateChangeId } from '../integrations/gerrit/gerritProtocol';
-import { getConfig } from '../platform/config';
 import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../platform/actions';
 import { UiPort } from '../platform/uiPort';
 import { isSafeRefName } from '../platform/git';
@@ -50,7 +49,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort 
 		return;
 	}
 
-	const remote = getConfig().gerrit.remote;
+	const remote = host.config.current.gerritRemote;
 	try {
 		// git push writes its report (with the change URL) to STDERR, not stdout — resolve
 		// from both streams, so the "Open Change" action is actually offered.
@@ -86,7 +85,7 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
 	const repo = await resolveRepoFromCommandArg(host, arg);
 	if (repo === null) return;
 
-	const result = await host.gerrit.installHook(repo, getConfig().gerrit.remote, 'commit-msg');
+	const result = await host.gerrit.installHook(repo, host.config.current.gerritRemote, 'commit-msg');
 	if (result.error !== null) {
 		showErrorMessage(t('gerritHookFailed', result.error));
 	} else if (result.installed) {
@@ -139,7 +138,7 @@ async function ensureHeadChangeId(host: CommandHost, repo: string, confirm: bool
 		}
 
 		const args = ['commit', '--amend', '-m', message.replace(/\s+$/, '') + '\n\nChange-Id: ' + changeId];
-		if (getConfig().signCommits) args.push('-S');
+		if (host.config.current.repositorySignCommits) args.push('-S');
 		const error = await host.gitRunner.runGitCommand(args, repo);
 		return { error: error, changeId: changeId, amended: error === null };
 	} catch (errorMessage) {

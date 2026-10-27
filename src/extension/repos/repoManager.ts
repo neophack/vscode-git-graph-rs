@@ -311,7 +311,7 @@ export class RepoManager extends Disposable {
 	 */
 	public registerRepo(path: string, loadRepo: boolean) {
 		return new Promise<{ root: string | null, error: string | null }>(async resolve => {
-			let root = await resolveRepoRoot(this.repo.read, path);
+			const root = await resolveRepoRoot(this.repo.read, path);
 			if (root === null) {
 				resolve({ root: null, error: 'The folder "' + path + '" is not a Git repository.' });
 			} else if (typeof this.repos[root] !== 'undefined') {
@@ -391,7 +391,8 @@ export class RepoManager extends Disposable {
 	 * @returns The path of the repository containing the file, or NULL if no known repository contains the file.
 	 */
 	public getRepoContainingFile(path: string) {
-		let repoPaths = Object.keys(this.repos), repo = null;
+		const repoPaths = Object.keys(this.repos);
+		let repo = null;
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (path.startsWith(pathWithTrailingSlash(repoPaths[i])) && (repo === null || repo.length < repoPaths[i].length)) repo = repoPaths[i];
 		}
@@ -404,7 +405,7 @@ export class RepoManager extends Disposable {
 	 * @returns An array of the paths of all known repositories contained in the specified folder.
 	 */
 	private getReposInFolder(path: string) {
-		let pathFolder = pathWithTrailingSlash(path), repoPaths = Object.keys(this.repos), reposInFolder: string[] = [];
+		const pathFolder = pathWithTrailingSlash(path), repoPaths = Object.keys(this.repos), reposInFolder: string[] = [];
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (repoPaths[i] === path || repoPaths[i].startsWith(pathFolder)) reposInFolder.push(repoPaths[i]);
 		}
@@ -423,8 +424,8 @@ export class RepoManager extends Disposable {
 		}
 
 		// Check to see if a known repository contains a symlink that resolves the repo
-		let canonicalRepo = await realpath(repo);
-		let repoPaths = Object.keys(this.repos);
+		const canonicalRepo = await realpath(repo);
+		const repoPaths = Object.keys(this.repos);
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (canonicalRepo === (await realpath(repoPaths[i]))) {
 				return repoPaths[i];
@@ -488,7 +489,7 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => At least one repository was removed, FALSE => No repositories were removed.
 	 */
 	private removeReposWithinFolder(path: string) {
-		let reposInFolder = this.getReposInFolder(path);
+		const reposInFolder = this.getReposInFolder(path);
 		for (let i = 0; i < reposInFolder.length; i++) {
 			this.removeRepo(reposInFolder[i]);
 		}
@@ -501,7 +502,7 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => Path is within a known repository, FALSE => Path isn't within a known repository.
 	 */
 	private isDirectoryWithinRepos(path: string) {
-		let repoPaths = Object.keys(this.repos);
+		const repoPaths = Object.keys(this.repos);
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (path === repoPaths[i] || path.startsWith(pathWithTrailingSlash(repoPaths[i]))) return true;
 		}
@@ -527,7 +528,8 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => At least one repository was removed or transferred, FALSE => No repositories were removed.
 	 */
 	public checkReposExist() {
-		let repoPaths = Object.keys(this.repos), changes = false;
+		const repoPaths = Object.keys(this.repos);
+		let changes = false;
 		return evalPromises(repoPaths, 3, (path) => resolveRepoRoot(this.repo.read, path)).then((results) => {
 			for (let i = 0; i < repoPaths.length; i++) {
 				if (results[i] === null) {
@@ -645,7 +647,8 @@ export class RepoManager extends Disposable {
 	 */
 	public async searchWorkspaceForRepos() {
 		this.logger.log('Searching workspace for new repos ...');
-		let rootFolders = vscode.workspace.workspaceFolders, changes = false;
+		const rootFolders = vscode.workspace.workspaceFolders;
+		let changes = false;
 		if (typeof rootFolders !== 'undefined') {
 			for (let i = 0; i < rootFolders.length; i++) {
 				if (await this.searchDirectoryForRepos(getPathFromUri(rootFolders[i].uri), this.maxDepthOfRepoSearch)) changes = true;
@@ -674,7 +677,8 @@ export class RepoManager extends Disposable {
 	 * Check the know repositories for any new submodules (and add them).
 	 */
 	private async checkReposForNewSubmodules() {
-		let repoPaths = Object.keys(this.repos), changes = false;
+		const repoPaths = Object.keys(this.repos);
+		let changes = false;
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (await this.searchRepoForSubmodules(repoPaths[i])) changes = true;
 		}
@@ -701,7 +705,7 @@ export class RepoManager extends Disposable {
 	 * Start watching each of the folders in the current workspace for changes.
 	 */
 	private startWatchingFolders() {
-		let rootFolders = vscode.workspace.workspaceFolders;
+		const rootFolders = vscode.workspace.workspaceFolders;
 		if (typeof rootFolders !== 'undefined') {
 			for (let i = 0; i < rootFolders.length; i++) {
 				this.startWatchingFolder(getPathFromUri(rootFolders[i].uri));

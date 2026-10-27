@@ -32,8 +32,17 @@ vi.mock('vscode', async () => {
 	return vscodeMockOf(state);
 });
 
+import { ConfigService } from '../../../src/extension/platform/config';
 import { CommandManager } from '../../../src/extension/commands';
-import { t } from '../../../src/extension/platform/i18n';
+import { setInterfaceLanguageSource, t } from '../../../src/extension/platform/i18n';
+
+// The localizer's language source reads the mocked settings, the stand-in for the wired
+// configuration service (OPTIMIZATION-PLAN A4). The stub stores the extension-section setting
+// without its prefix.
+setInterfaceLanguageSource(() => {
+	const value = vscode().settings['git-graph-rs.interfaceLanguage'] ?? vscode().settings.interfaceLanguage;
+	return value === 'en' || value === 'zh-cn' ? value : 'auto';
+});
 import { encodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
 import { EventEmitter } from '../../../src/shared/util/event';
 import { GitFileStatus } from '../../../src/shared/model/git';
@@ -48,6 +57,8 @@ const vscode = () => vs.stateHolder.state as unknown as {
 	window: { activeTextEditor?: unknown };
 	callsTo: (name: string) => Array<{ name: string, args: unknown[] }>;
 	resetCalls: () => void;
+	emitters: { onDidChangeConfiguration: { fire(event: unknown): void } };
+	workspace: unknown;
 };
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -127,6 +138,10 @@ function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable:
 		ready: () => Promise.resolve(current)
 	};
 	const logger = { lines: [] as Array<{ level: string, message: string }>, log(message: string) { this.lines.push({ level: 'log', message }); }, logCmd(command: string, args?: ReadonlyArray<string>) { this.lines.push({ level: 'cmd', message: command + ' ' + (args ?? []).join(' ') }); }, logError(message: string) { this.lines.push({ level: 'error', message }); }, dispose() { /* silent */ } };
+	// The configuration service over the mocked workspace (it answers from the same fake settings
+	// the production configuration read would; the composition root wires the real service,
+	// OPTIMIZATION-PLAN A4).
+	const configService = new ConfigService(vscode().workspace as never);
 	const context = { extensionPath: root, subscriptions: [] as Array<{ dispose(): void }> };
 	// The view ports the panel consumes (task 3.6/4.4): structural fakes, since these tests
 	// exercise registration and dispatch, not the panel wiring behind them.
@@ -155,6 +170,7 @@ function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable:
 		state: doubles.extensionState,
 		repos: doubles.repoManager,
 		gitResolution: gitResolution,
+		config: configService,
 		onDidChangeConfiguration: onDidChangeConfiguration.subscribe,
 		logger: logger
 	};
@@ -260,6 +276,9 @@ describe('git-graph-rs.view', () => {
 		assert.equal((vs.viewCalls[0] as unknown[])[0], null);
 
 		vscode().settings.openToTheRepoOfTheActiveTextEditorDocument = true;
+		// The held snapshot follows the setting change the way a real settings edit arrives
+		// (the configuration service re-snapshots on a section-affecting event, OPTIMIZATION-PLAN A4)
+		vscode().emitters.onDidChangeConfiguration.fire({ affectsConfiguration: () => true });
 		vscode().runCommand('git-graph-rs.view');
 		await flush();
 		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/repo' });
@@ -514,6 +533,7 @@ describe('git-graph-rs.version', () => {
 			state: doubles.extensionState,
 			repos: doubles.repoManager,
 			gitResolution: { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) },
+			config: new ConfigService(vscode().workspace as never),
 			onDidChangeConfiguration: (() => ({ dispose() { /* nothing */ } })) as never,
 			logger: { log() { /* silent */ }, logError() { /* silent */ } }
 		} as never, { open() { /* not asserted here */ } } as never);

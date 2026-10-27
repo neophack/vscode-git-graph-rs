@@ -2,8 +2,10 @@
  * The presentation helpers of src/utils/format.ts (ported from tests/utils.test.mjs): inline
  * script encoding, text truncation, the webview nonce, the extension's own version, and the
  * relative time diff (including its Chinese units when the interface language is zh-cn). The
- * interface language is resolved at call time through the faked `vscode` configuration, so a
- * setting change applies mid-test exactly as it does in the editor.
+ * interface language is resolved at call time through the faked `vscode` configuration: the
+ * localizer's language source is pointed at the fake settings map (the stand-in for the
+ * configuration service the composition root wires, OPTIMIZATION-PLAN A4), so a setting change
+ * applies mid-test exactly as it does in the editor.
  */
 
 import * as fs from 'fs';
@@ -36,6 +38,13 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 import { abbrevText, encodeJsonForInlineScript, getExtensionVersion, getNonce, getRelativeTimeDiff } from './format';
+import { setInterfaceLanguageSource } from './i18n';
+
+// The localizer follows the fake settings map (the stand-in for the wired configuration service).
+setInterfaceLanguageSource(() => {
+	const value = vscodeMock.settings['git-graph-rs.interfaceLanguage'];
+	return value === 'en' || value === 'zh-cn' ? value : 'auto';
+});
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-format-'));
 

@@ -112,7 +112,7 @@ export function searchDirectoryForRepos(directory: string, maxDepth: number, dep
 					if (err) {
 						resolve(false);
 					} else {
-						let dirs = [];
+						const dirs = [];
 						for (let i = 0; i < dirContents.length; i++) {
 							if (dirContents[i] !== '.git' && await isDirectory(directory + '/' + dirContents[i])) {
 								dirs.push(directory + '/' + dirContents[i]);
@@ -145,7 +145,8 @@ export interface SubmoduleSearchDeps {
  * @returns TRUE => At least one submodule was added, FALSE => No submodules were added.
  */
 export async function searchRepoForSubmodules(repo: string, deps: SubmoduleSearchDeps) {
-	let submodules = await deps.getSubmodules(repo), changes = false;
+	const submodules = await deps.getSubmodules(repo);
+	let changes = false;
 	for (let i = 0; i < submodules.length; i++) {
 		if (!deps.isKnownRepo(submodules[i])) {
 			if (await deps.addRepo(submodules[i])) changes = true;
@@ -166,7 +167,8 @@ export interface WorkspaceFolderInclusionInfo {
  * @returns The Workspace Folder Information.
  */
 export function getWorkspaceFolderInfoForRepoInclusionMapping(): WorkspaceFolderInclusionInfo {
-	let rootsExact: string[] = [], rootsFolder: string[] = [], workspaceFolders = vscode.workspace.workspaceFolders || [], path;
+	const rootsExact: string[] = [], rootsFolder: string[] = [], workspaceFolders = vscode.workspace.workspaceFolders || [];
+	let path;
 	for (let i = 0; i < workspaceFolders.length; i++) {
 		path = getPathFromUri(workspaceFolders[i].uri);
 		rootsExact.push(path);

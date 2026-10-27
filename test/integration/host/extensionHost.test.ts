@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, it, vi } from 'vitest';
+import type { ConfigProvider } from '../../../src/extension/platform/config';
 import { vscodeState } from '../../support/vscodeAlias';
 import { vscodeMockOf } from '../../support/fakeVscode';
 import { StatusBarItem } from '../../../src/extension/statusBar';
@@ -71,9 +72,12 @@ describe('StatusBarItem', () => {
 		const configEmitter = new EventEmitter();
 		const lines: Array<{ level: string, message: string }> = [];
 		const logger = { lines, log(message: string) { lines.push({ level: 'log', message }); }, logCmd() { /* silent */ }, logError() { /* silent */ }, dispose() { /* silent */ } };
+		// The configuration service stand-in: the current snapshot follows the fake settings the
+		// way the real service re-snapshots on a section-affecting change (OPTIMIZATION-PLAN A4).
+		const configProvider = { get current() { return { showStatusBarItem: vscodeState.settings.showStatusBarItem !== false }; } } as unknown as ConfigProvider;
 		vscodeState.statusBarItems.length = 0;
 		delete vscodeState.settings.showStatusBarItem;
-		const item = new StatusBarItem(0, repoEmitter.subscribe as never, configEmitter.subscribe as never, logger as never);
+		const item = new StatusBarItem(0, repoEmitter.subscribe as never, configEmitter.subscribe as never, configProvider, logger as never);
 		const bar = vscodeState.statusBarItems[0] as any;
 		assert.equal(bar.alignment, 1 /* StatusBarAlignment.Left */);
 		assert.equal(bar.text, 'Git Graph RS');
@@ -111,7 +115,8 @@ describe('StatusBarItem', () => {
 		const configEmitter = new EventEmitter();
 		const logger = { lines: [] as unknown[], log() { /* silent */ }, logCmd() { /* silent */ }, logError() { /* silent */ }, dispose() { /* silent */ } };
 		vscodeState.statusBarItems.length = 0;
-		new StatusBarItem(3, repoEmitter.subscribe as never, configEmitter.subscribe as never, logger as never);
+		const configProvider = { current: { showStatusBarItem: true } } as unknown as ConfigProvider;
+		new StatusBarItem(3, repoEmitter.subscribe as never, configEmitter.subscribe as never, configProvider, logger as never);
 		assert.equal((vscodeState.statusBarItems[0] as any).visible, true);
 	});
 });

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { t } from '../platform/i18n';
-import { getConfig } from '../platform/config';
+import { repoDropdownOrderOf } from '../platform/config';
 import { showErrorMessage, uiPort } from '../platform/actions';
 import { UiPort } from '../platform/uiPort';
 import { getRepoName, getPathFromStr, getPathFromUri, resolveToSymbolicPath } from '../platform/paths';
@@ -29,7 +29,7 @@ export async function view(host: CommandHost, arg: unknown) {
 			// The repo is not currently known, add it
 			loadRepo = (await host.repoManager.registerRepo(await resolveToSymbolicPath(repoPath), true)).root;
 		}
-	} else if (getConfig().openToTheRepoOfTheActiveTextEditorDocument && vscode.window.activeTextEditor) {
+	} else if (host.config.current.openToTheRepoOfTheActiveTextEditorDocument && vscode.window.activeTextEditor) {
 		// If the config setting is enabled, load the repo containing the active text editor document
 		loadRepo = host.repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
 	}
@@ -96,7 +96,7 @@ function getUrisFromCommandArg(arg: unknown): vscode.Uri[] {
  */
 export function fetch(host: CommandHost, ui: UiPort = uiPort) {
 	const repos = host.repoManager.getRepos();
-	const repoPaths = getSortedRepositoryPaths(repos, getConfig().repoDropdownOrder);
+	const repoPaths = getSortedRepositoryPaths(repos, repoDropdownOrderOf(host.config.current));
 
 	if (repoPaths.length > 1) {
 		const items: vscode.QuickPickItem[] = repoPaths.map((path) => ({
@@ -106,7 +106,7 @@ export function fetch(host: CommandHost, ui: UiPort = uiPort) {
 
 		const lastActiveRepo = host.extensionState.getLastActiveRepo();
 		if (lastActiveRepo !== null) {
-			let lastActiveRepoIndex = items.findIndex((item) => item.description === lastActiveRepo);
+			const lastActiveRepoIndex = items.findIndex((item) => item.description === lastActiveRepo);
 			if (lastActiveRepoIndex > -1) {
 				const item = items.splice(lastActiveRepoIndex, 1)[0];
 				items.unshift(item);

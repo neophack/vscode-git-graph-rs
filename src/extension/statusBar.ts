@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { t } from './platform/i18n';
-import { getConfig } from './platform/config';
+import type { ConfigProvider } from './platform/config';
 import { Logger } from './platform/logger';
 import { RepoChangeEvent } from './repos/repoManager';
 import { Disposable } from '../shared/util/disposable';
@@ -12,17 +12,22 @@ import { GgEvent } from '../shared/util/event';
 export class StatusBarItem extends Disposable {
 	private readonly logger: Logger;
 	private readonly statusBarItem: vscode.StatusBarItem;
+	private readonly config: ConfigProvider;
 	private isVisible: boolean = false;
 	private numRepos: number = 0;
 
 	/**
 	 * Creates the Git Graph Status Bar Item.
-	 * @param repoManager The Git Graph RepoManager instance.
+	 * @param initialNumRepos The number of repositories known at construction.
+	 * @param onDidChangeRepos The repository-set change event.
+	 * @param onDidChangeConfiguration The configuration-change event of the extension's settings.
+	 * @param config The configuration service (the latest settings snapshot).
 	 * @param logger The Git Graph Logger instance.
 	 */
-	constructor(initialNumRepos: number, onDidChangeRepos: GgEvent<RepoChangeEvent>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(initialNumRepos: number, onDidChangeRepos: GgEvent<RepoChangeEvent>, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, config: ConfigProvider, logger: Logger) {
 		super();
 		this.logger = logger;
+		this.config = config;
 
 		const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
 		statusBarItem.text = 'Git Graph RS';
@@ -58,7 +63,7 @@ export class StatusBarItem extends Disposable {
 	 * Show or hide the Status Bar Item according to the configured value of `git-graph-rs.showStatusBarItem`, and the number of repositories known to Git Graph.
 	 */
 	private refresh() {
-		const shouldBeVisible = getConfig().showStatusBarItem && this.numRepos > 0;
+		const shouldBeVisible = this.config.current.showStatusBarItem && this.numRepos > 0;
 		if (this.isVisible !== shouldBeVisible) {
 			if (shouldBeVisible) {
 				this.statusBarItem.show();

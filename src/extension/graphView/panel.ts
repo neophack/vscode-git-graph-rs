@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import { deliverAutomationHostMessage, deliverAutomationShimResult } from '../automation/graphViewPort';
-import { getConfig } from '../platform/config';
+import { commitOrderingOf, resolvedInterfaceLanguage, squashMessageFormatOf, tabIconColourThemeOf } from '../platform/config';
 import type { ExtensionState } from '../platform/storage';
 import { t } from '../platform/i18n';
 import { TextMessageKey } from '../../shared/i18n';
@@ -184,7 +184,7 @@ export class GitGraphView extends Disposable {
 		this.loadViewTo = options.loadViewTo;
 		this.restoredSnapshot = options.restoredSnapshot ?? null;
 
-		const config = getConfig();
+		const config = services.config.current;
 		if (options.existingPanel !== undefined) {
 			// A revived panel re-uses VS Code's Webview Panel; only the resource roots must be
 			// (re)declared before its first render - the former `restore` static set these.
@@ -200,7 +200,7 @@ export class GitGraphView extends Disposable {
 				retainContextWhenHidden: config.retainContextWhenHidden
 			});
 		}
-		this.panel.iconPath = config.tabIconColourTheme === TabIconColourTheme.Colour
+		this.panel.iconPath = tabIconColourThemeOf(config) === TabIconColourTheme.Colour
 			? this.getResourcesUri('git-graph-rs-webview-icon.svg')
 			: {
 				light: this.getResourcesUri('git-graph-rs-webview-icon-light.svg'),
@@ -209,8 +209,8 @@ export class GitGraphView extends Disposable {
 		// T1 (P1): the panel exists - the boot trace the view command began at T0 continues here
 		// (a restored or orphan-replaced panel has no T0 and opens a session trace instead).
 		mark(MARK.panelCreated);
-		this.loaderReads = createLoaderReads(this.repo);
-		this.loader = createCommitLoader(this.repo, this.git, this.logger, this.loaderReads);
+		this.loaderReads = createLoaderReads(this.repo, services.config);
+		this.loader = createCommitLoader(this.repo, this.git, this.logger, services.config, this.loaderReads);
 		this.ports = createPanelPorts({
 			repo: this.repo,
 			git: this.git,
@@ -220,6 +220,7 @@ export class GitGraphView extends Disposable {
 			repoManager: this.repoManager,
 			logger: this.logger,
 			extensionPath: this.extensionPath,
+			config: services.config,
 			pullRequests: this.pullRequests,
 			currentRepo: () => this.currentRepo
 		});
@@ -237,6 +238,7 @@ export class GitGraphView extends Disposable {
 		}, GitGraphView.BACKGROUND_POLL_INTERVAL_MS);
 		// Watch for file changes in the repository currently open in the Git Graph View
 		this.repoFileWatcher = new RepoFileWatcher(this.logger, (commitsAffected) => {
+			this.logger.log('The repo file watcher reported a change of ' + this.repoFileWatcher.getRepo() + ' (commits affected: ' + commitsAffected + ')');
 			if (commitsAffected) {
 				// A ref, HEAD or the Git config changed on disk: any cached commit data is now stale.
 				// The invalidation must not depend on visibility: a commit made while the view is a
@@ -506,7 +508,7 @@ export class GitGraphView extends Disposable {
 		const deps: ImpactRefreshDeps = {
 			reads: this.loaderReads,
 			view: this.loader,
-			getConfig: () => ({ showRemoteHeads: getConfig().showRemoteHeads }),
+			getConfig: () => ({ showRemoteHeads: this.services.config.current.repositoryShowRemoteHeads }),
 			logger: this.logger,
 			refreshIds: () => ({ loadRepoInfo: this.refreshIds.loadRepoInfo, loadCommits: this.refreshIds.loadCommits }),
 			send: (message) => this.sendMessage(message),
@@ -534,7 +536,7 @@ export class GitGraphView extends Disposable {
 
 	/** The HandlerContext one request runs with: the collaborators' ports and the send function. */
 	private buildContext(): HandlerContext {
-		const config = getConfig();
+		const snapshot = this.services.config.current;
 		return {
 			repo: this.repo,
 			git: this.git,
@@ -542,10 +544,10 @@ export class GitGraphView extends Disposable {
 			gerrit: this.ports.gerrit,
 			t: localizeWriteKey,
 			config: {
-				gerrit: { remote: config.gerrit.remote },
-				showRemoteHeads: config.showRemoteHeads,
-				squashPullMessageFormat: config.squashPullMessageFormat,
-				squashMergeMessageFormat: config.squashMergeMessageFormat
+				gerrit: { remote: snapshot.gerritRemote },
+				showRemoteHeads: snapshot.repositoryShowRemoteHeads,
+				squashPullMessageFormat: squashMessageFormatOf(snapshot.dialogPullBranchSquashMessageFormat),
+				squashMergeMessageFormat: squashMessageFormatOf(snapshot.dialogMergeSquashMessageFormat)
 			},
 			ui: this.ports.ui,
 			loader: this.loader,
@@ -573,7 +575,7 @@ export class GitGraphView extends Disposable {
 			this.pendingViewLoad = null;
 			return;
 		}
-		const config = getConfig();
+		const config = this.services.config.current;
 		const request: RequestLoadView = {
 			command: 'loadView',
 			repo: bootRepo,
@@ -581,12 +583,12 @@ export class GitGraphView extends Disposable {
 			hard: false,
 			branches: null, // Show All: the pushed first page uses the default view options
 			authors: null,
-			maxCommits: config.initialLoadCommits,
-			showTags: config.showTags,
-			showRemoteBranches: config.showRemoteBranches,
-			includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
-			onlyFollowFirstParent: config.onlyFollowFirstParent,
-			commitOrdering: config.commitOrder,
+			maxCommits: config.repositoryCommitsInitialLoad,
+			showTags: config.repositoryShowTags,
+			showRemoteBranches: config.repositoryShowRemoteBranches,
+			includeCommitsMentionedByReflogs: config.repositoryIncludeCommitsMentionedByReflogs,
+			onlyFollowFirstParent: config.repositoryOnlyFollowFirstParent,
+			commitOrdering: commitOrderingOf(config),
 			remotes: [],
 			hideRemotes: [],
 			stashes: [],
@@ -662,20 +664,21 @@ export class GitGraphView extends Disposable {
 	}
 
 	private handleConfigChanged(): void {
-		const config = getConfig();
+		const config = this.services.config.current;
+		const interfaceLanguage = resolvedInterfaceLanguage(config.interfaceLanguage, vscode.env.language);
 		// Cached commit data also depends on settings that aren't part of the cache key (e.g.
 		// showCommitsOnlyReferencedByTags, showRemoteHeads): the webview re-requests with an
 		// identical key, so drop the cache to avoid serving stale commits; the Gerrit fetch
 		// settings (remote, fetch limit) may have changed too, so drop the cached change data
 		// so it is re-derived under the new settings.
 		this.loader.configChanged();
-		this.panel.iconPath = config.tabIconColourTheme === TabIconColourTheme.Colour
+		this.panel.iconPath = tabIconColourThemeOf(config) === TabIconColourTheme.Colour
 			? this.getResourcesUri('git-graph-rs-webview-icon.svg')
 			: {
 				light: this.getResourcesUri('git-graph-rs-webview-icon-light.svg'),
 				dark: this.getResourcesUri('git-graph-rs-webview-icon-dark.svg')
 			};
-		if (config.interfaceLanguage !== this.lastSentInterfaceLanguage || !this.isGraphViewLoaded || !this.panel.visible) {
+		if (interfaceLanguage !== this.lastSentInterfaceLanguage || !this.isGraphViewLoaded || !this.panel.visible) {
 			// Regenerate the page: a language change replaces every rendered label (the one
 			// setting a live update cannot apply) - and when there is no live page to accept a
 			// runtime update (a hidden webview may have been destroyed), regenerating now costs
@@ -686,9 +689,9 @@ export class GitGraphView extends Disposable {
 			// open Commit Details View
 			this.sendMessage({
 				command: 'configChanged',
-				config: getWebviewConfig(config, this.extensionState.isAvatarStorageAvailable())
+				config: getWebviewConfig(config, vscode.env.language, this.extensionState.isAvatarStorageAvailable())
 			});
-			this.lastSentInterfaceLanguage = config.interfaceLanguage;
+			this.lastSentInterfaceLanguage = interfaceLanguage;
 		}
 	}
 
@@ -728,18 +731,17 @@ export class GitGraphView extends Disposable {
 
 	/** Update the HTML document loaded in the Webview. */
 	private update() {
-		const config = getConfig();
+		const config = this.services.config.current;
 		const repos = this.repoManager.getRepos();
 		const gitCliAvailable = this.git.hasGit();
 		this.isGraphViewLoaded = Object.keys(repos).length > 0 && canLoadGraphView(gitCliAvailable, this.extensionPath);
-		this.lastSentInterfaceLanguage = config.interfaceLanguage;
+		this.lastSentInterfaceLanguage = resolvedInterfaceLanguage(config.interfaceLanguage, vscode.env.language);
 		const loadViewTo = this.loadViewTo;
 		this.panel.webview.html = renderGraphViewHtml({
 			extensionPath: this.extensionPath,
 			cspSource: this.panel.webview.cspSource,
 			mediaUri: (file) => this.getMediaUri(file),
-			config: config,
-			avatarStorageAvailable: this.extensionState.isAvatarStorageAvailable(),
+			config: getWebviewConfig(config, vscode.env.language, this.extensionState.isAvatarStorageAvailable()),
 			lastActiveRepo: this.extensionState.getLastActiveRepo(),
 			loadViewTo: loadViewTo,
 			repos: repos,
@@ -759,7 +761,6 @@ export class GitGraphView extends Disposable {
 		// publish the new activity to the registry.
 		this.noteActivity();
 	}
-
 
 	/* ---------- URI and response helpers ---------- */
 

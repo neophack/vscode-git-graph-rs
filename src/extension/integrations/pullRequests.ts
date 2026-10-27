@@ -236,7 +236,7 @@ export function fetchJson(url: string, headers: { [name: string]: string }, time
 			// lookup or connect would otherwise leave the promise pending forever (no error, no badge).
 			// Created only after the request: if https.get threw synchronously, the timer would fire
 			// on an uninitialized `request` and crash the extension host with a ReferenceError.
-			const request = https.get({
+		const request = https.get({
 			protocol: target.protocol,
 			hostname: target.hostname,
 			port: target.port,
@@ -260,10 +260,10 @@ export function fetchJson(url: string, headers: { [name: string]: string }, time
 			}));
 			response.on('error', (error) => settle(() => reject(error)));
 		});
-			request.on('error', (error) => settle(() => reject(error)));
-			const deadline = setTimeout(() => {
-				request.destroy(new Error('request timed out'));
-			}, timeoutMs);
+		request.on('error', (error) => settle(() => reject(error)));
+		const deadline = setTimeout(() => {
+			request.destroy(new Error('request timed out'));
+		}, timeoutMs);
 	});
 }
 

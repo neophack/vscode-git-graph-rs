@@ -93,7 +93,8 @@ export class AvatarRequestQueue {
 	 * @param item The avatar request item.
 	 */
 	private insertItem(item: AvatarRequestItem) {
-		let l = 0, r = this.queue.length - 1, c, prevLength = this.queue.length;
+		const prevLength = this.queue.length;
+		let l = 0, r = this.queue.length - 1, c;
 		while (l <= r) {
 			c = l + r >> 1;
 			if (this.queue[c].checkAfter <= item.checkAfter) {

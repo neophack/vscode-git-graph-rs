@@ -4,15 +4,33 @@
  *
  * The dictionary itself is the shared string table of src/shared/i18n (one table for the host and
  * the webview, REFACTOR-PLAN task 6.3); this module only adds the host's lookup: the active
- * language follows the `git-graph-rs.interfaceLanguage` Extension Setting (the same setting that
- * drives the Git Graph View webview), and is read at call time so a configuration change applies
- * to every message shown afterwards.
+ * language follows the `git-graph-rs.interfaceLanguage` Extension Setting, read from the
+ * configuration source the composition root installs at activation (OPTIMIZATION-PLAN A4 — the
+ * setting is never re-read per message; the source answers from the held snapshot), and applied
+ * at call time so a configuration change applies to every message shown afterwards.
  */
-import { getConfig } from './config';
+import * as vscode from 'vscode';
+import { resolvedInterfaceLanguage } from './config';
 import { STRINGS_EN, STRINGS_ZH_CN, TextMessageKey } from '../../shared/i18n';
 import { substitutePlaceholders } from '../../shared/i18n';
 
 export type { MessageKey } from '../../shared/i18n';
+
+/**
+ * Where the current `interfaceLanguage` setting value comes from. Unwired (a bare unit test)
+ * it answers the manifest default `auto`, which defers to Visual Studio Code's display
+ * language — the exact pre-wiring behaviour.
+ */
+let interfaceLanguageSource: () => 'auto' | 'en' | 'zh-cn' = () => 'auto';
+
+/**
+ * Point the localizer at the configuration source (the composition root wires this to the
+ * configuration service's current snapshot at activation, OPTIMIZATION-PLAN A4).
+ * @param source Answers the current raw `git-graph-rs.interfaceLanguage` setting.
+ */
+export function setInterfaceLanguageSource(source: () => 'auto' | 'en' | 'zh-cn'): void {
+	interfaceLanguageSource = source;
+}
 
 /**
  * Is the interface language of the extension currently Chinese (Simplified)?
@@ -21,7 +39,7 @@ export type { MessageKey } from '../../shared/i18n';
  * @returns TRUE => zh-cn, FALSE => English (or anything else).
  */
 export function isZhCn(): boolean {
-	return getConfig().interfaceLanguage === 'zh-cn';
+	return resolvedInterfaceLanguage(interfaceLanguageSource(), vscode.env.language) === 'zh-cn';
 }
 
 /**

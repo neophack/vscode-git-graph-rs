@@ -22,6 +22,7 @@ const vscodeMock = vi.hoisted(() => ({
 vi.mock('vscode', () => vscodeMock);
 
 import type { ExtensionContext } from 'vscode';
+import type { ConfigProvider } from './config';
 import { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE, DEFAULT_REPO_STATE, ExtensionState, MementoLike, Storage } from './storage';
 import { STORAGE_STATE_VERSION, decodeVersionedState, encodeVersionedState } from './storageVersioned';
 import { BooleanOverride, GitGraphViewSnapshot } from '../../shared/model/webview';
@@ -50,6 +51,12 @@ class FakeMemento implements MementoLike {
 		this.store.set(key, value);
 		return Promise.resolve();
 	}
+}
+
+/** The configuration double: the manifest default the (mocked) configuration read used to answer. */
+function testConfig(): ConfigProvider {
+	// A structural stand-in: only the member the ExtensionState reads is declared.
+	return { current: { repositoryShowRemoteBranches: true } } as unknown as ConfigProvider;
 }
 
 describe('Storage', () => {
@@ -132,7 +139,7 @@ describe('ExtensionState (absorbed from src/extensionState.ts)', () => {
 		const globalStoragePath = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-storage-'));
 		const context = { globalState, workspaceState, globalStoragePath } as ContextFake;
 		const onDidChangeGitExecutable = (): { dispose(): void } => ({ dispose: () => undefined });
-		state = new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable);
+		state = new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable, testConfig());
 	});
 
 	it('answers the full default repository state for repos without stored state', () => {
@@ -171,7 +178,7 @@ describe('ExtensionState (absorbed from src/extensionState.ts)', () => {
 			globalStoragePath: fs.mkdtempSync(path.join(os.tmpdir(), 'gg-storage-'))
 		};
 		const onDidChangeGitExecutable = (): { dispose(): void } => ({ dispose: () => undefined });
-		const failingState = new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable);
+		const failingState = new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable, testConfig());
 
 		await expect(failingState.setCodeReviews({})).resolves.toBe('Visual Studio Code was unable to save the Git Graph Workspace State Memento.');
 		await expect(failingState.setGlobalViewState({ alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false })).resolves.toBe('Visual Studio Code was unable to save the Git Graph Global State Memento.');
@@ -262,7 +269,7 @@ describe('versioned user data (REFACTOR-PLAN §3.7.2)', () => {
 			globalStoragePath: fs.mkdtempSync(path.join(os.tmpdir(), 'gg-storage-'))
 		};
 		const onDidChangeGitExecutable = (): { dispose(): void } => ({ dispose: () => undefined });
-		return { global: global, workspace: workspace, state: new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable) };
+		return { global: global, workspace: workspace, state: new ExtensionState(context as unknown as ExtensionContext, onDidChangeGitExecutable, testConfig()) };
 	}
 
 	it('reads the 1.0.27 sample (pre-versioning data) through the current readers', () => {

@@ -4,7 +4,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConfig } from './config';
 import { archive as archiveOp, WriteOp } from '../git/write/ops/index';
 import { DiffSide, encodeDiffDocUri } from '../views/diffDocProvider';
 import { Clipboard } from './clipboard';
@@ -71,6 +70,23 @@ export function setScriptedUiPort(port: UiPort | null): UiPort | null {
 	const previous = scriptedUiPort;
 	scriptedUiPort = port;
 	return previous;
+}
+
+/**
+ * Where the editor group newly opened editors and diffs land in comes from: the composition
+ * root points this at the configuration service's current snapshot (OPTIMIZATION-PLAN A4 — the
+ * `openNewTabEditorGroup` setting is not re-read per operation; the source answers from the
+ * held snapshot). Unwired (a bare unit test) it answers the manifest default, the Active group.
+ */
+let defaultEditorGroupSource: () => vscode.ViewColumn = () => vscode.ViewColumn.Active;
+
+/**
+ * Install the source of the default editor group (the composition root wires this to the
+ * configuration service at activation).
+ * @param source Answers the current `git-graph-rs.openNewTabEditorGroup` as a ViewColumn.
+ */
+export function setDefaultEditorGroupSource(source: () => vscode.ViewColumn): void {
+	defaultEditorGroupSource = source;
 }
 
 /**
@@ -324,7 +340,7 @@ export async function openFile(repo: string, filePath: string, hash: string | nu
 	if (fileExists) {
 		return vscode.commands.executeCommand('vscode.open', vscode.Uri.file(newAbsoluteFilePath), {
 			preview: true,
-			viewColumn: viewColumn === null ? getConfig().openNewTabEditorGroup : viewColumn
+			viewColumn: viewColumn === null ? defaultEditorGroupSource() : viewColumn
 		}).then(
 			() => null,
 			() => t('openFileFailed', newFilePath)
@@ -359,17 +375,17 @@ export function resolveDiffFromHash(fromHash: string, toHash: string): string {
  */
 export function viewDiff(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus) {
 	if (type !== GitFileStatus.Untracked) {
-		let abbrevFromHash = abbrevCommit(fromHash), abbrevToHash = toHash !== UNCOMMITTED ? abbrevCommit(toHash) : t('diffTitlePresent'), pathComponents = newFilePath.split('/');
-		let desc = fromHash === toHash
+		const abbrevFromHash = abbrevCommit(fromHash), abbrevToHash = toHash !== UNCOMMITTED ? abbrevCommit(toHash) : t('diffTitlePresent'), pathComponents = newFilePath.split('/');
+		const desc = fromHash === toHash
 			? fromHash === UNCOMMITTED
 				? t('diffTitleUncommitted')
 				: (type === GitFileStatus.Added ? t('diffTitleAddedIn', abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedIn', abbrevToHash) : t('diffTitleChangedWithParent', abbrevFromHash, abbrevToHash))
 			: (type === GitFileStatus.Added ? t('diffTitleAddedBetween', abbrevFromHash, abbrevToHash) : type === GitFileStatus.Deleted ? t('diffTitleDeletedBetween', abbrevFromHash, abbrevToHash) : t('diffTitleChanged', abbrevFromHash, abbrevToHash));
-		let title = pathComponents[pathComponents.length - 1] + ' (' + desc + ')';
+		const title = pathComponents[pathComponents.length - 1] + ' (' + desc + ')';
 
 		return vscode.commands.executeCommand('vscode.diff', encodeDiffDocUri(repo, oldFilePath, resolveDiffFromHash(fromHash, toHash), type, DiffSide.Old), encodeDiffDocUri(repo, newFilePath, toHash, type, DiffSide.New), title, {
 			preview: true,
-			viewColumn: getConfig().openNewTabEditorGroup
+			viewColumn: defaultEditorGroupSource()
 		}).then(
 			() => null,
 			() => t('diffEditorFailed', newFilePath)
@@ -420,7 +436,7 @@ export function viewFileAtRevision(repo: string, hash: string, filePath: string)
 
 	return vscode.commands.executeCommand('vscode.open', encodeDiffDocUri(repo, filePath, hash, GitFileStatus.Modified, DiffSide.New).with({ path: title }), {
 		preview: true,
-		viewColumn: getConfig().openNewTabEditorGroup
+		viewColumn: defaultEditorGroupSource()
 	}).then(
 		() => null,
 		() => t('viewFileAtRevisionFailed', filePath, abbrevCommit(hash))

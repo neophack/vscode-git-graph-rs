@@ -5,7 +5,8 @@ import { setConfigValue, unsetConfigValue } from '../git/write/ops/config';
 import { GitConfigLocation } from '../../shared/model/git';
 import type { CommitAuthor } from '../../shared/model/webview';
 import type { ErrorInfo } from '../../shared/protocol/messages';
-import { getConfig } from '../platform/config';
+import { commitAuthorsOf } from '../platform/config';
+import type { ConfigProvider } from '../platform/config';
 import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
 
@@ -157,6 +158,8 @@ export interface GlobalSettingDeps {
 	/** The repository open in the view (the working directory of the Git invocations); NULL => no author side effects. */
 	currentRepo(): string | null;
 	readonly logger: Logger;
+	/** The configuration service (the latest settings snapshot; the previous-identity fallback read). */
+	readonly config: ConfigProvider;
 }
 
 /**
@@ -187,7 +190,7 @@ export async function saveGlobalSetting(deps: GlobalSettingDeps, setting: string
 	// foreign identity that never appeared in the list is confirmed first. The widget's
 	// rendered list is the source of truth; the host's configuration read is the fallback.
 	const previousAuthors = setting === 'commitAuthors'
-		? (Array.isArray(previousValue) ? previousValue : getConfig().commitAuthors)
+		? (Array.isArray(previousValue) ? previousValue : commitAuthorsOf(deps.config.current))
 		: [];
 	try {
 		await vscode.workspace.getConfiguration('git-graph-rs').update(setting, value, vscode.ConfigurationTarget.Global);

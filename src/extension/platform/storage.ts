@@ -9,7 +9,7 @@ import { GitExecutable } from '../git/executable/findGit';
 import { getPathFromStr } from './paths';
 import { Disposable } from '../../shared/util/disposable';
 import { GgEvent } from '../../shared/util/event';
-import { getConfig } from './config';
+import type { ConfigProvider } from './config';
 import { isStateRecord, readVersionedState, encodeVersionedState } from './storageVersioned';
 
 export { STORAGE_MIGRATIONS, STORAGE_STATE_VERSION } from './storageVersioned';
@@ -187,8 +187,9 @@ export class ExtensionState extends Disposable {
 	 * Creates the Git Graph Extension State.
 	 * @param context The context of the extension.
 	 * @param onDidChangeGitExecutable The Event emitting the Git executable for Git Graph to use.
+	 * @param config The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4).
 	 */
-	constructor(context: vscode.ExtensionContext, onDidChangeGitExecutable: GgEvent<GitExecutable | null>) {
+	constructor(context: vscode.ExtensionContext, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, private readonly config: ConfigProvider) {
 		super();
 		this.globalState = context.globalState;
 		this.workspaceState = context.workspaceState;
@@ -218,7 +219,6 @@ export class ExtensionState extends Disposable {
 		);
 	}
 
-
 	/* Known Repositories */
 
 	/**
@@ -234,7 +234,7 @@ export class ExtensionState extends Disposable {
 			outputSet[repo] = Object.assign({}, DEFAULT_REPO_STATE, repoSet[repo]);
 			if (typeof repoSet[repo].showRemoteBranchesV2 === 'undefined' && typeof repoSet[repo].showRemoteBranches !== 'undefined') {
 				if (showRemoteBranchesDefaultValue === null) {
-					showRemoteBranchesDefaultValue = getConfig().showRemoteBranches;
+					showRemoteBranchesDefaultValue = this.config.current.repositoryShowRemoteBranches;
 				}
 				if (repoSet[repo].showRemoteBranches !== showRemoteBranchesDefaultValue) {
 					outputSet[repo].showRemoteBranchesV2 = repoSet[repo].showRemoteBranches ? BooleanOverride.Enabled : BooleanOverride.Disabled;
@@ -262,7 +262,7 @@ export class ExtensionState extends Disposable {
 			this.setLastActiveRepo(newRepo);
 		}
 
-		let reviews = this.getCodeReviews();
+		const reviews = this.getCodeReviews();
 		if (typeof reviews[oldRepo] !== 'undefined') {
 			reviews[newRepo] = reviews[oldRepo];
 			delete reviews[oldRepo];
@@ -476,7 +476,7 @@ export class ExtensionState extends Disposable {
 	 * @param avatar The details of the avatar.
 	 */
 	public saveAvatar(email: string, avatar: Avatar) {
-		let avatars = this.getAvatarCache();
+		const avatars = this.getAvatarCache();
 		avatars[email] = avatar;
 		this.updateGlobalState(AVATAR_CACHE, avatars);
 	}
@@ -486,7 +486,7 @@ export class ExtensionState extends Disposable {
 	 * @param email The email address of the avatar to remove.
 	 */
 	public removeAvatarFromCache(email: string) {
-		let avatars = this.getAvatarCache();
+		const avatars = this.getAvatarCache();
 		delete avatars[email];
 		this.updateGlobalState(AVATAR_CACHE, avatars);
 	}
@@ -497,7 +497,7 @@ export class ExtensionState extends Disposable {
 	 */
 	public removeAvatarsFromCache(emails: string[]) {
 		if (emails.length === 0) return;
-		let avatars = this.getAvatarCache();
+		const avatars = this.getAvatarCache();
 		for (let i = 0; i < emails.length; i++) {
 			delete avatars[emails[i]];
 		}
@@ -536,7 +536,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The Code Review that was started.
 	 */
 	public startCodeReview(repo: string, id: string, files: string[], lastViewedFile: string | null) {
-		let reviews = this.getCodeReviews();
+		const reviews = this.getCodeReviews();
 		if (typeof reviews[repo] === 'undefined') reviews[repo] = {};
 		reviews[repo][id] = { lastActive: (new Date()).getTime(), lastViewedFile: lastViewedFile, remainingFiles: files };
 		return this.setCodeReviews(reviews).then((err) => ({
@@ -551,7 +551,7 @@ export class ExtensionState extends Disposable {
 	 * @param id The ID of the Code Review.
 	 */
 	public endCodeReview(repo: string, id: string) {
-		let reviews = this.getCodeReviews();
+		const reviews = this.getCodeReviews();
 		removeCodeReview(reviews, repo, id);
 		return this.setCodeReviews(reviews);
 	}
@@ -563,7 +563,7 @@ export class ExtensionState extends Disposable {
 	 * @returns The Code Review.
 	 */
 	public getCodeReview(repo: string, id: string) {
-		let reviews = this.getCodeReviews();
+		const reviews = this.getCodeReviews();
 		if (typeof reviews[repo] !== 'undefined' && typeof reviews[repo][id] !== 'undefined') {
 			reviews[repo][id].lastActive = (new Date()).getTime();
 			this.setCodeReviews(reviews);
@@ -605,7 +605,8 @@ export class ExtensionState extends Disposable {
 	 * Delete any Code Reviews that haven't been active during the last 90 days.
 	 */
 	public expireOldCodeReviews() {
-		let reviews = this.getCodeReviews(), change = false, expireReviewsBefore = (new Date()).getTime() - 7776000000; // 90 days x 24 hours x 60 minutes x 60 seconds x 1000 milliseconds
+		const reviews = this.getCodeReviews(), expireReviewsBefore = (new Date()).getTime() - 7776000000; // 90 days x 24 hours x 60 minutes x 60 seconds x 1000 milliseconds
+		let change = false;
 		Object.keys(reviews).forEach((repo) => {
 			Object.keys(reviews[repo]).forEach((id) => {
 				if (reviews[repo][id].lastActive < expireReviewsBefore) {

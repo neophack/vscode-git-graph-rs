@@ -5,7 +5,7 @@ import { QuickPickItemLike, UiPort } from '../platform/uiPort';
 import { getPathFromUri, getRepoName, isPathInWorkspace } from '../platform/paths';
 import { getSortedRepositoryPaths } from './repo';
 import { unableToFindGitMsg } from '../git/executable/findGit';
-import { getConfig } from '../platform/config';
+import { repoDropdownOrderOf } from '../platform/config';
 import type { CommandHost } from './context';
 
 /**
@@ -28,7 +28,7 @@ export function addGitRepository(host: CommandHost, ui: UiPort = uiPort) {
 	ui.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false }).then(uris => {
 		if (uris && uris.length > 0) {
 			// The dialog answers the port's Uri shape (a vscode.Uri in production, a fake in tests).
-			let path = getPathFromUri(uris[0] as vscode.Uri);
+			const path = getPathFromUri(uris[0] as vscode.Uri);
 			if (isPathInWorkspace(path)) {
 				host.repoManager.registerRepo(path, false).then(status => {
 					if (status.error === null) {
@@ -57,7 +57,7 @@ export function removeGitRepository(host: CommandHost, ui: UiPort = uiPort) {
 	}
 
 	const repos = host.repoManager.getRepos();
-	const items: QuickPickItemLike[] = getSortedRepositoryPaths(repos, getConfig().repoDropdownOrder).map((path) => ({
+	const items: QuickPickItemLike[] = getSortedRepositoryPaths(repos, repoDropdownOrderOf(host.config.current)).map((path) => ({
 		label: repos[path].name || getRepoName(path),
 		description: path
 	}));

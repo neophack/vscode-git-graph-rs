@@ -4,29 +4,33 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getConfig } from '../../platform/config';
 import { Terminals } from '../../platform/terminal';
 import { t } from '../../platform/i18n';
 
 /**
  * Open a new terminal, set up the Git executable, and optionally run a command.
  * @param cwd The working directory for the terminal.
+/**
+ * Open a new terminal, set up the Git executable, and optionally run a command.
+ * @param cwd The working directory for the terminal.
  * @param gitPath The path of the Git executable.
  * @param command The command to run.
  * @param name The name for the terminal.
+ * @param shellPath The configured `git-graph-rs.integratedTerminalShell` (the caller answers
+ * from the configuration snapshot, OPTIMIZATION-PLAN A4; empty means VS Code's default shell).
  */
-export function openGitTerminal(cwd: string, gitPath: string, command: string | null, name: string) {
-	let p = process.env['PATH'] || '', sep = isWindows() ? ';' : ':';
+export function openGitTerminal(cwd: string, gitPath: string, command: string | null, name: string, shellPath: string) {
+	const sep = isWindows() ? ';' : ':';
+	let p = process.env['PATH'] || '';
 	if (p !== '' && !p.endsWith(sep)) p += sep;
 	p += path.dirname(gitPath);
 
-	const shell = getConfig().integratedTerminalShell;
 	const options: { cwd: string, name: string, env: { [key: string]: string }, shellPath?: string } = {
 		cwd: cwd,
 		name: t('terminalName', name),
 		env: { 'PATH': p }
 	};
-	if (shell !== '') options.shellPath = shell;
+	if (shellPath !== '') options.shellPath = shellPath;
 
 	// The platform adapter (task 4.10, INVENTORY.md #25) creates the terminal, optionally sends
 	// the command into it and shows it - the exact flow this wrapper drove directly through
@@ -48,12 +52,12 @@ export type ShellKind = 'cmd' | 'powershell' | 'fish' | 'posix';
 
 /**
  * Identify the shell kind of the terminal that openGitTerminal creates: the configured
- * `integratedTerminalShell`, falling back to the profile default VS Code reports (only
+ * `git-graph-rs.integratedTerminalShell` (answered by the caller from the configuration
+ * snapshot, OPTIMIZATION-PLAN A4), falling back to the profile default VS Code reports (only
  * available in newer versions — otherwise the platform default is assumed).
  */
-export function detectTerminalShellKind(): ShellKind {
-	const configured = getConfig().integratedTerminalShell;
-	const shellPath = configured !== '' ? configured : String((<{ shell?: string }>(<unknown>vscode.env)).shell ?? '');
+export function detectTerminalShellKind(configuredShell: string): ShellKind {
+	const shellPath = configuredShell !== '' ? configuredShell : String((<{ shell?: string }>(<unknown>vscode.env)).shell ?? '');
 	return shellKindFromPath(shellPath);
 }
 
@@ -111,9 +115,10 @@ export function evalPromises<X, Y>(data: X[], maxParallel: number, createPromise
 		} else if (data.length === 0) {
 			resolve([]);
 		} else {
-			let results: Y[] = new Array(data.length), nextPromise = 0, rejected = false, completed = 0;
+			const results: Y[] = new Array(data.length);
+			let nextPromise = 0, rejected = false, completed = 0;
 			function startNext() {
-				let cur = nextPromise;
+				const cur = nextPromise;
 				nextPromise++;
 				createPromise(data[cur]).then(result => {
 					if (!rejected) {

@@ -108,7 +108,7 @@ export class BinaryCompareView extends Disposable {
 		const nonce = getNonce();
 		const statusColour = file.type === 'D' ? 'var(--vscode-gitDecoration-deletedResourceForeground, #b31d28)'
 			: file.type === 'A' || file.type === 'R' ? 'var(--vscode-gitDecoration-addedResourceForeground, #22863a)'
-			: 'var(--vscode-gitDecoration-modifiedResourceForeground, inherit)';
+				: 'var(--vscode-gitDecoration-modifiedResourceForeground, inherit)';
 		const letter = file.type === 'D' ? 'D' : file.type === 'A' || file.type === 'R' ? 'A' : file.type === 'U' ? 'U' : 'M';
 		const toLabel = this.toHash === UNCOMMITTED || this.toHash === '' ? t('comparePresentLabel') : abbrevCommit(this.toHash);
 		const mediaUri = (name: string) => this.panel.webview.asWebviewUri(vscode.Uri.file(path.join(this.extensionPath, 'media', name)));

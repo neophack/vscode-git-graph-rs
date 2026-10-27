@@ -3,6 +3,7 @@ import type { GitCommitData, GitRepoInfo } from '../git/read/types';
 import type { GitGraphViewSnapshot } from '../../shared/model/webview';
 import type { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
 import { setLiveGraphView } from '../automation/graphViewPort';
+import { ConfigService } from '../platform/config';
 import { PanelRegistry } from './panelRegistry';
 import type { ExtensionServices } from '../services';
 
@@ -182,6 +183,12 @@ function fakeServices(col: Collaborators): ExtensionServices {
 		auxViews: col.auxViews,
 		gerrit: {},
 		gitResolution: { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) },
+		// The configuration service over a default-answering workspace double (the mock module's
+		// shape; the test file itself must not import 'vscode' - the vscode-only-via-platform rule).
+		config: new ConfigService({
+			getConfiguration: () => ({ get: (_key: string, defaultValue?: unknown) => defaultValue }) as never,
+			onDidChangeConfiguration: () => ({ dispose: () => { } })
+		}),
 		onDidChangeConfiguration: () => ({ dispose: () => { } })
 	} as unknown as ExtensionServices;
 }

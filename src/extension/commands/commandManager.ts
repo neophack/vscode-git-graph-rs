@@ -7,7 +7,7 @@ import type { ProductionGitRepository } from '../git/gitRepository';
 import type { ExtensionServices } from '../services';
 import type { GitResolution } from '../git/executable/gitResolution';
 import { ExtensionState } from '../platform/storage';
-import { getConfig } from '../platform/config';
+import type { ConfigProvider } from '../platform/config';
 import { isZhCn, t } from '../platform/i18n';
 import { Logger } from '../platform/logger';
 import { begin, formatTrace, isEnabled, mark, MARK, onTraceRecorded, setEnabled } from '../../shared/perf/trace';
@@ -91,6 +91,7 @@ export class CommandManager extends Disposable implements CommandHost {
 	public readonly logger: Logger;
 	public readonly repoManager: RepoManager;
 	public readonly panels: PanelRegistry;
+	public readonly config: ConfigProvider;
 	private readonly gitResolution: GitResolution;
 
 	/**
@@ -121,6 +122,7 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.logger = services.logger;
 		this.repoManager = services.repos;
 		this.gitResolution = services.gitResolution;
+		this.config = services.config;
 		this.panels = panels;
 
 		// P1 tracing (OPTIMIZATION-PLAN §7 P1): gated by the same setting as the session log, and
@@ -128,9 +130,9 @@ export class CommandManager extends Disposable implements CommandHost {
 		// scripts/analyze-log.mjs aggregates into P50/P95. The ring buffer itself is read through
 		// shared/perf/trace's `traces()` (the later Diagnostics command, V5).
 		// NOTE (P1 integration): when the extension entry lands its ACTIVATION mark (see
-		// MARK.activation), it should also call setEnabled(getConfig().enableLog) BEFORE it, so
-		// the activation mark is recorded; the wiring here stays (it re-asserts the same value).
-		setEnabled(getConfig().enableLog);
+		// MARK.activation), it should also call setEnabled(config.current.enableLog) BEFORE it,
+		// so the activation mark is recorded; the wiring here stays (it re-asserts the value).
+		setEnabled(this.config.current.enableLog);
 		onTraceRecorded((trace) => this.logger.log('Trace ' + formatTrace(trace)));
 
 		// Register Extension Commands (in registry order — see registry.ts)
@@ -173,7 +175,7 @@ export class CommandManager extends Disposable implements CommandHost {
 			services.onDidChangeConfiguration((event) => {
 				if (event.affectsConfiguration('git-graph-rs.interfaceLanguage')) this.updateInterfaceLanguageContext();
 				// P1: the trace layer follows the log gate live.
-				if (event.affectsConfiguration('git-graph-rs.enableLog')) setEnabled(getConfig().enableLog);
+				if (event.affectsConfiguration('git-graph-rs.enableLog')) setEnabled(this.config.current.enableLog);
 			})
 		);
 	}

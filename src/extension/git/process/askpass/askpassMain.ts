@@ -31,7 +31,7 @@ function main(argv: string[]): void {
 		res.on('data', (d) => resData += d);
 		res.on('end', () => {
 			try {
-				let response = JSON.parse(resData);
+				const response = JSON.parse(resData);
 				fs.writeFileSync(output, response + '\n');
 			} catch (err) {
 				return fatal('Error parsing response');

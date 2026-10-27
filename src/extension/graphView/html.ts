@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { Uri } from 'vscode';
 import { describeCapabilities } from '../git/read/backendIndex';
 import { hasEngineForPlatform } from '../git/read/addonLoader';
-import { getConfig } from '../platform/config';
+import { ConfigSnapshot, cookConfig } from '../platform/config';
 import { t } from '../platform/i18n';
 import type { GitGraphViewConfig, GitGraphViewGlobalState, GitGraphViewInitialState, GitGraphViewSnapshot, GitGraphViewWorkspaceState, LoadGitGraphViewTo } from '../../shared/model/webview';
 import type { GitRepoSet } from '../../shared/model/repoState';
@@ -75,58 +75,62 @@ export function getAutomationShimScript(extensionPath: string, logger: { logErro
 
 /**
  * The webview's runtime configuration: the subset of the Extension Settings that the page runs
- * on. Embedded into the generated HTML at page load, and sent to the already-loaded page with a
- * `configChanged` message when a setting changes (see the Panel's configuration listener).
- * @param config The extension configuration.
+ * on, cooked from one configuration snapshot. Embedded into the generated HTML at page load,
+ * and sent to the already-loaded page with a `configChanged` message when a setting changes
+ * (see the Panel's configuration listener).
+ * @param config The configuration snapshot to derive from.
+ * @param hostLanguage The language Visual Studio Code itself is displayed in (the "auto"
+ * interface language resolves against it).
  * @param avatarStorageAvailable Whether avatar images can be stored (fetchAvatars degrades to off otherwise).
  */
-export function getWebviewConfig(config: ReturnType<typeof getConfig>, avatarStorageAvailable: boolean): GitGraphViewConfig {
+export function getWebviewConfig(config: ConfigSnapshot, hostLanguage: string, avatarStorageAvailable: boolean): GitGraphViewConfig {
+	const cooked = cookConfig(config, hostLanguage);
 	return {
-		commitAuthors: config.commitAuthors,
-		commitDetailsView: config.commitDetailsView,
-		commitOrdering: config.commitOrder,
-		contextMenuActionsVisibility: config.contextMenuActionsVisibility,
-		customBranchGlobPatterns: config.customBranchGlobPatterns,
-		customEmojiShortcodeMappings: config.customEmojiShortcodeMappings,
-		customPullRequestProviders: config.customPullRequestProviders,
-		dateFormat: config.dateFormat,
-		dateType: config.dateType,
-		defaultColumnVisibility: config.defaultColumnVisibility,
+		commitAuthors: cooked.commitAuthors,
+		commitDetailsView: cooked.commitDetailsView,
+		commitOrdering: cooked.commitOrder,
+		contextMenuActionsVisibility: cooked.contextMenuActionsVisibility,
+		customBranchGlobPatterns: cooked.customBranchGlobPatterns,
+		customEmojiShortcodeMappings: cooked.customEmojiShortcodeMappings,
+		customPullRequestProviders: cooked.customPullRequestProviders,
+		dateFormat: cooked.dateFormat,
+		dateType: cooked.dateType,
+		defaultColumnVisibility: cooked.defaultColumnVisibility,
+		dialogDefaults: cooked.dialogDefaults,
 		enableLog: config.enableLog,
 		stickyHeader: config.stickyHeader,
-		dialogDefaults: config.dialogDefaults,
 		enhancedAccessibility: config.enhancedAccessibility,
-		fetchAndPrune: config.fetchAndPrune,
-		fetchAndPruneTags: config.fetchAndPruneTags,
-		fetchAvatars: config.fetchAvatars && avatarStorageAvailable,
-		gerrit: config.gerrit,
-		graph: config.graph,
-		interfaceLanguage: config.interfaceLanguage,
-		interfaceLanguageSetting: config.interfaceLanguageSetting,
-		includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
-		initialLoadCommits: config.initialLoadCommits,
-		keybindings: config.keybindings,
-		loadMoreCommits: config.loadMoreCommits,
-		loadMoreCommitsAutomatically: config.loadMoreCommitsAutomatically,
+		fetchAndPrune: config.repositoryFetchAndPrune,
+		fetchAndPruneTags: config.repositoryFetchAndPruneTags,
+		fetchAvatars: config.repositoryCommitsFetchAvatars && avatarStorageAvailable,
+		gerrit: cooked.gerrit,
+		graph: cooked.graph,
+		interfaceLanguage: cooked.interfaceLanguage,
+		interfaceLanguageSetting: cooked.interfaceLanguageSetting,
+		includeCommitsMentionedByReflogs: config.repositoryIncludeCommitsMentionedByReflogs,
+		initialLoadCommits: config.repositoryCommitsInitialLoad,
+		keybindings: cooked.keybindings,
+		loadMoreCommits: config.repositoryCommitsLoadMore,
+		loadMoreCommitsAutomatically: config.repositoryCommitsLoadMoreAutomatically,
 		markdown: config.markdown,
 		mobileAdaptation: config.mobileAdaptation,
-		mute: config.muteCommits,
-		showBodyInline: config.showCommitBodyInline,
+		mute: cooked.muteCommits,
+		showBodyInline: config.repositoryCommitsShowBodyInline,
 
-		onlyFollowFirstParent: config.onlyFollowFirstParent,
-		onRepoLoad: config.onRepoLoad,
-		pullRequests: config.pullRequests,
-		referenceLabels: config.referenceLabels,
-		repoDropdownOrder: config.repoDropdownOrder,
-		showCommitBodyInline: config.showCommitBodyInline,
-		showRemoteBranches: config.showRemoteBranches,
-		showRemoteHeads: config.showRemoteHeads,
-		showStashes: config.showStashes,
-		showTags: config.showTags,
-		showUncommittedChanges: config.showUncommittedChanges,
-		showUntrackedFiles: config.showUntrackedFiles,
+		onlyFollowFirstParent: config.repositoryOnlyFollowFirstParent,
+		onRepoLoad: cooked.onRepoLoad,
+		pullRequests: { enabled: config.pullRequestsEnabled },
+		referenceLabels: cooked.referenceLabels,
+		repoDropdownOrder: cooked.repoDropdownOrder,
+		showCommitBodyInline: config.repositoryCommitsShowBodyInline,
+		showRemoteBranches: config.repositoryShowRemoteBranches,
+		showRemoteHeads: config.repositoryShowRemoteHeads,
+		showStashes: config.repositoryShowStashes,
+		showTags: config.repositoryShowTags,
+		showUncommittedChanges: config.repositoryShowUncommittedChanges,
+		showUntrackedFiles: config.repositoryShowUntrackedFiles,
 		snapshotFirstPaint: config.snapshotFirstPaint,
-		trackRemoteTags: config.trackRemoteTags
+		trackRemoteTags: config.repositoryTrackRemoteTags
 	};
 }
 
@@ -147,9 +151,8 @@ export interface GraphViewHtmlInputs {
 	readonly cspSource: string;
 	/** Map a file name under media/ to the webview URI serving it. */
 	mediaUri(file: string): Uri;
-	readonly config: ReturnType<typeof getConfig>;
-	/** Whether avatar images can be stored (see getWebviewConfig). */
-	readonly avatarStorageAvailable: boolean;
+	/** The webview's runtime configuration (see {@link getWebviewConfig}). */
+	readonly config: GitGraphViewConfig;
 	readonly lastActiveRepo: string | null;
 	/** What to load the view to (consumed by this render; NULL => open plain). */
 	readonly loadViewTo: LoadGitGraphViewTo;
@@ -185,7 +188,7 @@ export function renderGraphViewHtml(inputs: GraphViewHtmlInputs): string {
 	// the shim) also opts that page into 'unsafe-eval'. The default build stays strict.
 	const automationShimJs = getAutomationShimScript(inputs.extensionPath, inputs.logger);
 	const initialState: GitGraphViewInitialState = {
-		config: getWebviewConfig(inputs.config, inputs.avatarStorageAvailable),
+		config: inputs.config,
 		lastActiveRepo: inputs.lastActiveRepo,
 		loadViewTo: inputs.loadViewTo,
 		repos: inputs.repos,

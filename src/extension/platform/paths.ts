@@ -39,10 +39,10 @@ export function pathWithTrailingSlash(path: string) {
  * @returns TRUE => Path is in workspace, FALSE => Path isn't in workspace.
  */
 export function isPathInWorkspace(path: string) {
-	let rootsExact = [], rootsFolder = [], workspaceFolders = vscode.workspace.workspaceFolders;
+	const rootsExact = [], rootsFolder = [], workspaceFolders = vscode.workspace.workspaceFolders;
 	if (typeof workspaceFolders !== 'undefined') {
 		for (let i = 0; i < workspaceFolders.length; i++) {
-			let tmpPath = getPathFromUri(workspaceFolders[i].uri);
+			const tmpPath = getPathFromUri(workspaceFolders[i].uri);
 			rootsExact.push(tmpPath);
 			rootsFolder.push(pathWithTrailingSlash(tmpPath));
 		}
@@ -68,21 +68,21 @@ export function realpath(path: string, native: boolean = false) {
  * @returns The transformed path.
  */
 export async function resolveToSymbolicPath(path: string) {
-	let workspaceFolders = vscode.workspace.workspaceFolders;
+	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (typeof workspaceFolders !== 'undefined') {
 		for (let i = 0; i < workspaceFolders.length; i++) {
-			let rootSymPath = getPathFromUri(workspaceFolders[i].uri);
-			let rootCanonicalPath = await realpath(rootSymPath);
+			const rootSymPath = getPathFromUri(workspaceFolders[i].uri);
+			const rootCanonicalPath = await realpath(rootSymPath);
 			if (path === rootCanonicalPath) {
 				return rootSymPath;
 			} else if (path.startsWith(rootCanonicalPath + '/')) {
 				return rootSymPath + path.substring(rootCanonicalPath.length);
 			} else if (rootCanonicalPath.startsWith(path + '/')) {
 				let symPath = rootSymPath;
-				let first = symPath.indexOf('/');
+				const first = symPath.indexOf('/');
 				while (true) {
 					if (path === symPath || path === await realpath(symPath)) return symPath;
-					let next = symPath.lastIndexOf('/');
+					const next = symPath.lastIndexOf('/');
 					if (first !== next && next > -1) {
 						symPath = symPath.substring(0, next);
 					} else {

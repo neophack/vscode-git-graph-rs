@@ -90,17 +90,13 @@ describe('quoteForShell', () => {
 		expect(quoteForShell('it\'s', 'fish')).toBe('\'it\\\'s\''); // fish treats \' inside single quotes as an escaped quote
 	});
 
-	it('detects the shell kind from the configured integrated terminal shell', () => {
-		vscodeMock.settings['git-graph-rs.integratedTerminalShell'] = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-		expect(detectTerminalShellKind()).toBe('powershell');
-		vscodeMock.settings['git-graph-rs.integratedTerminalShell'] = '/usr/bin/fish';
-		expect(detectTerminalShellKind()).toBe('fish');
-		vscodeMock.settings['git-graph-rs.integratedTerminalShell'] = '/bin/zsh';
-		expect(detectTerminalShellKind()).toBe('posix');
+	it('detects the shell kind from the configured integrated terminal shell (answered by the caller)', () => {
+		expect(detectTerminalShellKind('C:\\Program Files\\PowerShell\\7\\pwsh.exe')).toBe('powershell');
+		expect(detectTerminalShellKind('/usr/bin/fish')).toBe('fish');
+		expect(detectTerminalShellKind('/bin/zsh')).toBe('posix');
 		// No shell configured: the profile default VS Code reports decides
-		delete vscodeMock.settings['git-graph-rs.integratedTerminalShell'];
 		vscodeMock.env.shell = '/bin/bash';
-		expect(detectTerminalShellKind()).toBe('posix');
+		expect(detectTerminalShellKind('')).toBe('posix');
 		vscodeMock.env.shell = '';
 	});
 });
@@ -110,7 +106,7 @@ describe('openGitTerminal', () => {
 		vscodeMock.terminals.length = 0;
 		const sep = process.platform === 'win32' ? ';' : ':';
 
-		openGitTerminal('/repo', '/opt/git/bin/git', 'rebase -i HEAD~3', 'Rebase');
+		openGitTerminal('/repo', '/opt/git/bin/git', 'rebase -i HEAD~3', 'Rebase', '');
 		const terminal = vscodeMock.terminals[0];
 		expect(terminal.options.cwd).toBe('/repo');
 		expect(terminal.options.name).toBe(t('terminalName', 'Rebase'));
@@ -121,7 +117,7 @@ describe('openGitTerminal', () => {
 
 		vscodeMock.settings['git-graph-rs.integratedTerminalShell'] = '/bin/zsh';
 		try {
-			openGitTerminal('/repo', '/opt/git/bin/git', null, 'Shell');
+			openGitTerminal('/repo', '/opt/git/bin/git', null, 'Shell', '/bin/zsh');
 		} finally {
 			delete vscodeMock.settings['git-graph-rs.integratedTerminalShell'];
 		}
