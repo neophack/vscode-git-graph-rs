@@ -1,70 +1,25 @@
 /**
  * The commit table: renders the loaded commits as rows (windowed when the list is large),
  * reconciling them with the DOM so that only rows whose own content changed are rebuilt, and
- * keeps the commit graph next to it in step.
+ * keeps the commit graph next to it in step. The rows' model (the per-render RowContext, the row
+ * seed, the formatted-text cache) is built by rowModel.ts; reconciling the rows and spacer rows
+ * with the DOM is rowPatcher.ts (the keyed patcher).
  */
 
 import { formatCompactDate, formatShortDate } from '../../common/dates';
 import { insertAfter, makeKeyboardActivatable } from '../../common/dom';
-import { html, parseHtmlRow, raw, SafeHtml, setHtml } from '../../common/html';
+import { html, parseHtmlRow, SafeHtml, setHtml } from '../../common/html';
 import { strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
 import { measureGraphRender } from './measure';
-import { TextFormatter } from '../text/textFormatter';
-import { getCommitRowHtml, RowContext } from './commitRow';
 import { TableKeyboard } from './tableKeyboard';
-
-const FORMATTED_TEXT_CACHE_LIMIT = 5000;
-
-/**
- * What one rendered row was built from (task 5.10): the render-wide inputs (a seed string) plus
- * the row's own inputs that live OUTSIDE the commit object. A row whose recorded inputs all match
- * is provably unchanged - its markup would come out identical - so it is kept without building
- * that markup at all. Reference-compared where the store swaps whole objects (the commit, the
- * Gerrit states, the pull requests), flag-compared where it mutates in place (avatars, bodies).
- */
-interface RowBuildInputs {
-	/** The render-wide seed (see CommitTable.computeRowSeed): layout, config, HEAD, formatters. */
-	readonly seed: string;
-	/** The commit object the row was built from (its identity covers message, author, refs). */
-	readonly commit: GG.GitCommit;
-	readonly muted: boolean;
-	readonly pinned: boolean;
-	/** Was an avatar rendered for the commit's author (the image itself is patched in place). */
-	readonly avatarPresent: boolean;
-	/** Was an inline body rendered (bodies arrive after the rows, changing the row's markup). */
-	readonly bodyPresent: boolean;
-	/** The Gerrit state the row's badge was built from (undefined = no badge). */
-	readonly gerritState: GG.GerritChangeState | undefined;
-	/** Was the badge actually displayed (the fetch limit may hide an existing state). */
-	readonly gerritVisible: boolean;
-	/** The pull request the row's badge was built from (undefined = no badge). */
-	readonly pullRequest: GG.PullRequestInfo | undefined;
-	/** The branch-label offset at the vertex (only used when the labels align to the graph). */
-	readonly widthAtVertex: number;
-}
+import { RowModelFactory } from './rowModel';
+import { RowPatcher } from './rowPatcher';
 
 export class CommitTable {
-	/**
-	 * The markup each rendered row was built from, minus the parts that are patched in place (its
-	 * index, its lane colour, the checked-out marker). A row is rebuilt only when this changes, so
-	 * an update that does not affect a row leaves its DOM node completely alone. Held outside the
-	 * elements themselves so the nodes stay pristine.
-	 */
-	private readonly rowSignatures = new WeakMap<HTMLElement, string>();
-	/**
-	 * The INPUTS each rendered row was built from (see RowBuildInputs): the cheap keyed-patch fast
-	 * path. While the signatures above decide "would the markup differ?" by comparing markup (which
-	 * has to be built first), the inputs decide it without building anything - pure reference and
-	 * flag comparisons - so an unchanged row costs a handful of `===` instead of a row build. When
-	 * the inputs match, the markup is guaranteed to be the same; when they don't, the signature
-	 * comparison still decides (an input can change without the markup changing, e.g. a Gerrit
-	 * state arriving with the same badge).
-	 */
-	private readonly rowInputs = new WeakMap<HTMLElement, RowBuildInputs>();
 	/** Which columns the rendered header row was built for (see renderTable). */
 	private renderedHeaderKey: string | null = null;
 	/** The markup the footer was last set to (see setFooter): unchanged content is never swapped. */
@@ -73,14 +28,10 @@ export class CommitTable {
 	private readonly keyboard = new TableKeyboard(() => this.ctx());
 	/** The element the keyboard listeners are delegated to (attached on the first render; NULL until then). */
 	private keyboardAttachedTo: HTMLElement | null = null;
-
-	/**
-	 * Cache of formatted message texts (keyed by the raw text): commit subjects repeat heavily in
-	 * large repositories (merges, reverts, chores), and the regex-heavy formatting is a major
-	 * per-row render cost. Bounded, and simply cleared when the bound is exceeded.
-	 */
-	private readonly formattedTextCache = new Map<string, SafeHtml>();
-	private formattedTextCacheSignature = '';
+	/** Builds the rows' model: the per-render RowContext, the row seed, the formatted-text cache. */
+	private readonly rowModel = new RowModelFactory(() => this.ctx());
+	/** The keyed patcher: reconciles the rows and spacer rows of a render with the DOM. */
+	private readonly rowPatcher = new RowPatcher(() => this.ctx(), this.rowModel);
 
 	constructor(private readonly ctx: () => GraphContext) { }
 
@@ -96,9 +47,9 @@ export class CommitTable {
 	/* Rendering */
 
 	/**
-	 * Render the pinned row, the table and the graph. This is the ONE render pass of the view
-	 * (task 5.10): callers reach it through the render scheduler, which merges every request made
-	 * before the next frame into a single invocation of this method.
+	 * Render the pinned row, the table and the graph. This is the ONE render pass of the view:
+	 * callers reach it through the render scheduler, which merges every request made before the
+	 * next frame into a single invocation of this method.
 	 */
 	public render() {
 		const ctx = this.ctx();
@@ -195,7 +146,7 @@ export class CommitTable {
 		// resize crosses the breakpoint
 		ctx.layout.apply(ctx.layout.decide());
 
-		const rowContext = this.createRowContext();
+		const rowContext = this.rowModel.createRowContext();
 		const colVisibility = rowContext.colVisibility;
 
 		const headerHtml = html`<tr id="tableColHeaders" role="row" aria-rowindex="1"><th id="tableHeaderGraphCol" class="tableColHeader" role="columnheader" data-col="0">${strings.columnGraph}</th><th class="tableColHeader" role="columnheader" data-col="1">${strings.columnDescription}</th>${colVisibility.date ? html`<th class="tableColHeader dateCol" role="columnheader" data-col="2">${strings.columnDate}</th>` : ''}${colVisibility.author ? html`<th class="tableColHeader authorCol" role="columnheader" data-col="3">${strings.columnAuthor}</th>` : ''}${colVisibility.commit ? html`<th class="tableColHeader commitCol" role="columnheader" data-col="4">${strings.columnCommit}</th>` : ''}</tr>`;
@@ -244,9 +195,9 @@ export class CommitTable {
 			tableBody.replaceChild(parseHtmlRow(headerHtml), headerElem);
 			this.renderedHeaderKey = headerKey;
 		}
-		this.syncSpacerRow(tableBody, true, viewport.renderedRange !== null ? from : 0);
-		this.syncCommitRows(rowContext, from, to);
-		this.syncSpacerRow(tableBody, false, viewport.renderedRange !== null ? store.commits.length - to : 0);
+		this.rowPatcher.syncSpacerRow(tableBody, true, viewport.renderedRange !== null ? from : 0);
+		this.rowPatcher.syncCommitRows(rowContext, from, to);
+		this.rowPatcher.syncSpacerRow(tableBody, false, viewport.renderedRange !== null ? store.commits.length - to : 0);
 		// The reconciliation above may have built, moved or dropped rows: re-establish the grid's
 		// single roving tab stop afterwards (it follows the focused commit's hash)
 		this.keyboard.syncRovingTabindex();
@@ -355,251 +306,6 @@ export class CommitTable {
 		// Use an attribute selector (backed by the browser's query engine) instead of scanning every
 		// commit row: with many loaded commits this lookup runs on every vertex hover / interaction
 		return this.tableElem.querySelector('tr.commit[data-id="' + id.toString() + '"]') as HTMLElement | null;
-	}
-
-	/**
-	 * Context shared by the commit row rendering: computed once per render (full or incremental)
-	 * and consumed once per rendered commit row.
-	 */
-	private createRowContext(): RowContext {
-		const ctx = this.ctx(), store = ctx.store, config = store.config;
-		const currentHash = store.commits.length > 0 && store.commits[0].hash === UNCOMMITTED ? UNCOMMITTED : store.commitHead;
-		const textFormatter = new TextFormatter(store.commits, store.getIssueLinkingConfig(), {
-			emoji: true,
-			issueLinking: true,
-			markdown: config.markdown
-		});
-		return {
-			config: config,
-			commits: store.commits,
-			commitHead: store.commitHead,
-			gitBranchHead: store.gitBranchHead,
-			narrow: ctx.layout.isTwoLineRows(),
-			colVisibility: ctx.layout.getColumnVisibility(),
-			currentHash: currentHash,
-			vertexColours: ctx.graph.getVertexColours(),
-			widthsAtVertices: config.referenceLabels.branchLabelsAlignedToGraph ? ctx.graph.getWidthsAtVertices() : [],
-			mutedCommits: ctx.graph.getMutedCommits(currentHash),
-			pinnedCommitHashes: new Set(store.getPinnedCommits().map((pinned) => pinned.hash)),
-			gerritStates: store.gerritStates,
-			// The Gerrit badges displayable under the fetch limit: computed once per render, so the
-			// rows built and the rows reconciled during the same render check the same set
-			gerritVisibleChanges: store.getGerritVisibleChanges(),
-			pullRequestsByHead: store.pullRequestsByHead,
-			avatars: store.avatars,
-			commitBodies: ctx.commitBodies.bodies,
-			textFormatter: textFormatter,
-			formatText: (text) => this.formatText(textFormatter, text)
-		};
-	}
-
-	private formatText(textFormatter: TextFormatter, text: string): SafeHtml {
-		const store = this.store;
-		// The cache is only valid for the current formatting configuration (markdown setting and
-		// the issue linking configuration): bust it when either changes
-		const signature = (store.config.markdown ? '1' : '0') + '|' + JSON.stringify(store.getIssueLinkingConfig());
-		if (signature !== this.formattedTextCacheSignature) {
-			this.formattedTextCache.clear();
-			this.formattedTextCacheSignature = signature;
-		}
-		const cached = this.formattedTextCache.get(text);
-		if (cached !== undefined) return cached;
-		const formatted = textFormatter.format(text);
-		if (this.formattedTextCache.size >= FORMATTED_TEXT_CACHE_LIMIT) {
-			this.formattedTextCache.clear();
-		}
-		this.formattedTextCache.set(text, formatted);
-		return formatted;
-	}
-
-	/**
-	 * Make the rendered commit rows match `commits[from..to)` exactly, reusing the existing DOM
-	 * node of every row that has not changed.
-	 *
-	 * This is what makes the virtual table's contract true: rows are matched by COMMIT HASH, not
-	 * by index, and re-rendered only when their own markup actually differs. A commit inserted or
-	 * removed outside the window therefore touches nothing inside it - the rows keep their very
-	 * DOM nodes, and with them the column widths the browser already laid out, the find-widget
-	 * highlights and the open Commit Details View. Only the `data-id` index label is restamped.
-	 *
-	 * The keyed-patch fast path (task 5.10): a row whose recorded build INPUTS all match is kept
-	 * without its markup ever being built - most of the rows of a scroll or refresh window - and
-	 * only rows whose inputs changed fall through to the (markup-comparing) signature check, where
-	 * an input change that does not change the markup still keeps the DOM node.
-	 */
-	private syncCommitRows(rowContext: RowContext, from: number, to: number) {
-		// Rows live inside the <tbody> (implicit or explicit), not directly under the <table>
-		const tableBody = <HTMLElement | null>(this.tableElem.querySelector('table > tbody') || this.tableElem.querySelector('table'));
-		if (tableBody === null) return;
-
-		const existing = new Map<string, HTMLElement>();
-		const existingRows = tableBody.querySelectorAll<HTMLElement>('tr.commit');
-		for (let i = 0; i < existingRows.length; i++) {
-			const hash = existingRows[i].dataset.hash;
-			if (typeof hash === 'string' && !existing.has(hash)) existing.set(hash, existingRows[i]);
-		}
-
-		// Walk the desired rows in order, keeping a cursor on the node each one should sit before
-		const headerRow = tableBody.querySelector('#tableColHeaders');
-		const topSpacer = tableBody.querySelector('#tableColHeaders + tr.virtSpacer');
-		let cursor: Node | null = (topSpacer !== null ? topSpacer : headerRow) as Node | null;
-		cursor = cursor !== null ? cursor.nextSibling : tableBody.firstChild;
-
-		const commits = rowContext.commits;
-		const seed = this.computeRowSeed(rowContext);
-		const alignedToGraph = rowContext.config.referenceLabels.branchLabelsAlignedToGraph;
-		const kept = new Set<HTMLElement>();
-		for (let i = from; i < to; i++) {
-			const commit = commits[i];
-			const hash = commit.hash;
-			let row = existing.get(hash);
-
-			if (row === undefined || !this.rowInputsMatch(row, seed, rowContext, i, commit, alignedToGraph)) {
-				const rowHtml = getCommitRowHtml(i, rowContext);
-				// Three things change without the ROW changing - its index label, its graph lane colour
-				// and whether it is the checked-out commit - and all three can be applied to an existing
-				// node in place. Keeping them out of the comparison is what lets a row survive a commit
-				// arriving above it, or HEAD moving elsewhere, as the very same DOM node.
-				const signature = rowHtml.html
-					.replace(/ data-id="\d+"/, '')
-					.replace(/ data-color="\d+"/, '')
-					.replace(/ aria-rowindex="\d+"/, '')
-					.replace(/^<tr class="commit current/, '<tr class="commit');
-
-				if (row === undefined || this.rowSignatures.get(row) !== signature) {
-					// The row's own content changed (or it was not rendered at all): build it, put it in
-					// place, and only then drop the stale node - which may be the very node `cursor`
-					// points at, so it must not be detached while the cursor still needs it.
-					const fresh = parseHtmlRow(rowHtml);
-					this.rowSignatures.set(fresh, signature);
-					tableBody.insertBefore(fresh, cursor);
-					if (row !== undefined && row.parentNode !== null) row.remove();
-					row = fresh;
-				} else {
-					// The inputs changed but the markup did not: keep the node, restamping only what is
-					// allowed to differ. Moving it is what absorbs rows inserted or removed above
-					// without rebuilding anything.
-					this.restampRow(row, i, hash, rowContext, tableBody, cursor);
-				}
-				this.saveRowInputs(row, seed, rowContext, i, commit, alignedToGraph);
-			} else {
-				// Fast path: every input matches, so the markup is what this node already shows -
-				// only the index label, lane colour and checked-out marker may need restamping
-				this.restampRow(row, i, hash, rowContext, tableBody, cursor);
-			}
-
-			// The next row goes immediately after this one, whatever just happened to the nodes
-			cursor = row.nextSibling;
-			kept.add(row);
-			existing.delete(hash);
-		}
-
-		// Whatever is left is no longer in the window (scrolled out, or the commit is gone)
-		const remainingRows = tableBody.querySelectorAll<HTMLElement>('tr.commit');
-		for (let i = 0; i < remainingRows.length; i++) {
-			if (!kept.has(remainingRows[i])) remainingRows[i].remove();
-		}
-	}
-
-	/** Restamp the parts of a kept row that are allowed to differ without the row changing. */
-	private restampRow(row: HTMLElement, i: number, hash: string, rowContext: RowContext, tableBody: HTMLElement, cursor: Node | null) {
-		if (row.dataset.id !== String(i)) row.dataset.id = String(i);
-		if (row.dataset.color !== String(rowContext.vertexColours[i])) row.dataset.color = String(rowContext.vertexColours[i]);
-		// The absolute grid row (the header row is 1, the first commit 2): like the index label
-		// above, it changes when rows arrive or leave above the window without the row changing
-		const rowIndex = String(i + 2);
-		if (row.getAttribute('aria-rowindex') !== rowIndex) row.setAttribute('aria-rowindex', rowIndex);
-		row.classList.toggle('current', hash === rowContext.currentHash);
-		// Moving an already-placed node is skipped: the move is only there to absorb rows inserted
-		// or removed above, and a needless reinsertion would still show up as a DOM mutation
-		if (row !== cursor) tableBody.insertBefore(row, cursor);
-	}
-
-	/**
-	 * The render-wide part of a row's key: everything outside the commit object itself that feeds
-	 * `getCommitRowHtml` - the layout, the column visibility, the checked-out branch and HEAD (the
-	 * active branch label and the commit dot), the date and text formatting settings, and the
-	 * reference label configuration. Computed once per render and compared as one string.
-	 */
-	private computeRowSeed(rowContext: RowContext): string {
-		const config = rowContext.config, colVisibility = rowContext.colVisibility, dateFormat = config.dateFormat;
-		return [
-			rowContext.gitBranchHead, rowContext.commitHead,
-			rowContext.narrow ? 'n' : 'w',
-			colVisibility.date ? 'd' : '', colVisibility.author ? 'a' : '', colVisibility.commit ? 'c' : '',
-			dateFormat.type + (dateFormat.iso ? 'i' : ''),
-			config.fetchAvatars ? 'f' : '', config.showBodyInline ? 'b' : '', config.markdown ? 'm' : '',
-			config.gerrit.showReviewProgress ? 'r' : '',
-			config.referenceLabels.combineLocalAndRemoteBranchLabels ? 'l' : '',
-			config.referenceLabels.tagLabelsOnRight ? 't' : '',
-			config.referenceLabels.branchLabelsAlignedToGraph ? 'g' : '',
-			// The issue linking configuration feeds the text formatter alongside the markdown flag
-			// above (the same signature that busts the formatted-text cache)
-			JSON.stringify(this.store.getIssueLinkingConfig())
-		].join('\u0003');
-	}
-
-	/** Do a rendered row's recorded build inputs match the row that index `i` wants now? */
-	private rowInputsMatch(row: HTMLElement, seed: string, rowContext: RowContext, i: number, commit: GG.GitCommit, alignedToGraph: boolean): boolean {
-		const inputs = this.rowInputs.get(row);
-		if (inputs === undefined || inputs.seed !== seed || inputs.commit !== commit) return false;
-		if (inputs.muted !== rowContext.mutedCommits[i]) return false;
-		if (inputs.pinned !== rowContext.pinnedCommitHashes.has(commit.hash)) return false;
-		if (inputs.avatarPresent !== (rowContext.avatars[commit.email] !== undefined)) return false;
-		if (inputs.bodyPresent !== (rowContext.commitBodies[commit.hash] !== undefined)) return false;
-		const gerritState = rowContext.gerritStates[commit.hash];
-		if (inputs.gerritState !== gerritState) return false;
-		if (inputs.pullRequest !== rowContext.pullRequestsByHead[commit.hash]) return false;
-		if (inputs.gerritVisible !== (gerritState !== undefined && rowContext.gerritVisibleChanges.has(gerritState.change))) return false;
-		// Only read when the labels align to the graph (the seed covers the setting itself)
-		return !alignedToGraph || inputs.widthAtVertex === rowContext.widthsAtVertices[i];
-	}
-
-	/** Record the build inputs of a row the table just built or compared. */
-	private saveRowInputs(row: HTMLElement, seed: string, rowContext: RowContext, i: number, commit: GG.GitCommit, alignedToGraph: boolean) {
-		const gerritState = rowContext.gerritStates[commit.hash];
-		this.rowInputs.set(row, {
-			seed: seed,
-			commit: commit,
-			muted: rowContext.mutedCommits[i],
-			pinned: rowContext.pinnedCommitHashes.has(commit.hash),
-			avatarPresent: rowContext.avatars[commit.email] !== undefined,
-			bodyPresent: rowContext.commitBodies[commit.hash] !== undefined,
-			gerritState: gerritState,
-			gerritVisible: gerritState !== undefined && rowContext.gerritVisibleChanges.has(gerritState.change),
-			pullRequest: rowContext.pullRequestsByHead[commit.hash],
-			widthAtVertex: alignedToGraph ? rowContext.widthsAtVertices[i] : -1
-		});
-	}
-
-	/**
-	 * Keep the spacer row that stands in for the `rows` unrendered commit rows above (`top`) or
-	 * below the window, so the scroll height - and with it the scroll bar and the "Load More
-	 * Commits" bottom detection - stays proportional to the whole commit list. The element is
-	 * created once and afterwards only resized, so the rows around it are never disturbed.
-	 */
-	private syncSpacerRow(tableBody: HTMLElement, top: boolean, rows: number) {
-		const ctx = this.ctx();
-		let spacer = <HTMLElement | null>tableBody.querySelector(top ? '#virtSpacerTop' : '#virtSpacerBottom');
-		if (ctx.viewport.renderedRange === null) {
-			// Full render: every row is in the DOM, nothing to stand in for
-			if (spacer !== null) spacer.remove();
-			return;
-		}
-		if (spacer === null) {
-			spacer = parseHtmlRow(raw('<tr id="' + (top ? 'virtSpacerTop' : 'virtSpacerBottom') + '" class="virtSpacer" aria-hidden="true"><td style="height:0;padding:0"></td></tr>'));
-			if (top) {
-				tableBody.querySelector('#tableColHeaders')!.insertAdjacentElement('afterend', spacer);
-			}
-		}
-		if (!top) tableBody.appendChild(spacer); // always the last row, whatever was appended before it
-		const td = <HTMLElement | null>spacer.querySelector('td');
-		if (td !== null) {
-			const height = Math.max(0, rows) * ctx.layout.getRowHeight() + 'px';
-			if (td.style.height !== height) td.style.height = height;
-			const colspan = String(ctx.layout.getNumColumns());
-			if (td.getAttribute('colspan') !== colspan) td.setAttribute('colspan', colspan);
-		}
 	}
 
 
