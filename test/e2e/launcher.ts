@@ -185,20 +185,40 @@ async function main(): Promise<void> {
 	log('tier=' + options.tier + ' vscode=' + options.vscodeVersion + ' backend=' + options.backend
 		+ ' lang=' + options.lang + ' -> results ' + path.relative(repoRoot, resultsDir));
 
-	const exitCode = await runTests({
-		version: options.vscodeVersion,
-		extensionDevelopmentPath: staged,
-		extensionTestsPath: path.join(e2eDir, 'out', 'entry.js'),
-		launchArgs: [
-			workspace,
-			'--disable-extensions',
-			'--window-size=1500,900',
-			'--user-data-dir=' + path.join(profileDir, 'user-data'),
-			'--extensions-dir=' + path.join(profileDir, 'extensions')
-		],
-		extensionTestsEnv: env
-	});
+	// The perf trace log (P4) rides on `git-graph-rs.enableLog`. The workspace-scope copy alone
+	// proved fragile on this launch path: the extension activates while the window is still
+	// settling (the view command triggers it), a startup configuration event then re-reads the
+	// setting while the workspace's own settings are transiently out of view, and the session's
+	// logging is switched off for good — the run's session log then holds only the four
+	// activation lines and no Trace lines at all. The USER-scope copy in the isolated profile
+	// is visible in every configuration view, so the listener's re-read keeps logging on.
+	const userSettingsDir = path.join(profileDir, 'user-data', 'User');
+	fs.mkdirSync(userSettingsDir, { recursive: true });
+	fs.writeFileSync(path.join(userSettingsDir, 'settings.json'), JSON.stringify({ 'git-graph-rs.enableLog': true }, null, '\t') + '\n');
 
+	let exitCode: number;
+	try {
+		exitCode = await runTests({
+			version: options.vscodeVersion,
+			extensionDevelopmentPath: staged,
+			extensionTestsPath: path.join(e2eDir, 'out', 'entry.js'),
+			launchArgs: [
+				workspace,
+				'--disable-extensions',
+				'--window-size=1500,900',
+				'--user-data-dir=' + path.join(profileDir, 'user-data'),
+				'--extensions-dir=' + path.join(profileDir, 'extensions')
+			],
+			extensionTestsEnv: env
+		});
+	} catch (error) {
+		// A failing test run rejects here (the entry threw); the collection and the summary must
+		// still run — a red run is exactly the one whose traces and reports matter.
+		exitCode = 1;
+		process.stderr.write('[e2e] ' + (error instanceof Error ? (error.stack ?? error.message) : String(error)) + '\n');
+	}
+
+	collectTraces(resultsDir, profileDir);
 	printSummary(resultsDir);
 	if (exitCode === 0) {
 		rmTree(profileDir); // green: nothing to keep
@@ -209,6 +229,27 @@ async function main(): Promise<void> {
 		log('--keep-open was set and the run failed; the editor window stays open until closed manually (the exit code below is the close\'s, not the run\'s)');
 	}
 	process.exitCode = exitCode;
+}
+
+/**
+ * The P4 collection (OPTIMIZATION-PLAN §7 P2): hand the run's session log to the trace
+ * collector, which parses the `Trace` lines the extension logged while enableLog was on,
+ * attributes them to the scenario windows the entry recorded (perf-windows.json), and emits
+ * per-scenario trace summaries into the results dir and the perf results history. Best effort:
+ * the collector's exit code is deliberately ignored — a missing log or a parse hiccup must
+ * never fail an E2E run. Runs BEFORE the green-run profile cleanup, while the log still exists.
+ */
+function collectTraces(resultsDir: string, profileDir: string): void {
+	const result = spawnSync(process.execPath, [
+		path.join(repoRoot, 'test', 'perf', 'collect-e2e-traces.mjs'),
+		'--windows', path.join(resultsDir, 'perf-windows.json'),
+		'--out', resultsDir,
+		'--perf-out', path.join(repoRoot, 'test', 'perf', 'results'),
+		'--profile', profileDir
+	], { cwd: repoRoot, stdio: 'inherit' });
+	if (result.status !== 0) {
+		log('trace collection did not run cleanly (exit ' + result.status + ') — the E2E result is unaffected');
+	}
 }
 
 /** Print the entry's summary (the ext host's console is not this terminal's stdout). */

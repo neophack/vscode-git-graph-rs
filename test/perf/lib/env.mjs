@@ -182,8 +182,17 @@ export function parseArguments(argv) {
 	return { flags, options, positional };
 }
 
-/** The fixture tiers of REFACTOR-PLAN §3.8.1 (S is the default; M is flag-gated and slow). */
+/**
+ * The fixture tiers of REFACTOR-PLAN §3.8.1 (S is the default; M is flag-gated and slow; L is
+ * the nightly / before-release tier — generate it with `node test/perf/fixture.mjs --tier l`
+ * ahead of time, since the 1M-commit fast-import plus the clones take tens of minutes). The
+ * tier table carries the history shape the generator models: commits, branches and tags per
+ * §3.8.1's reference-repository table. The table's worktree-file column (200 / 20 K / 100 K
+ * files) is a property of the reference ENVIRONMENTS, not of this generator: the fast-import
+ * fixture keeps a compact tree per commit, so tiers differ in history size, not checkout size.
+ */
 export const TIERS = {
 	s: { commits: 1000, branches: 20, tags: 20, mergeRate: 0.12, authors: 20, seed: 12345, firstPage: 300 },
-	m: { commits: 100000, branches: 2000, tags: 10000, mergeRate: 0.12, authors: 40, seed: 12345, firstPage: 300 }
+	m: { commits: 100000, branches: 2000, tags: 10000, mergeRate: 0.12, authors: 40, seed: 12345, firstPage: 300 },
+	l: { commits: 1000000, branches: 20000, tags: 50000, mergeRate: 0.12, authors: 40, seed: 12345, firstPage: 300 }
 };

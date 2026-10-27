@@ -12,7 +12,8 @@
 
 /* ---------------- CLI options (launcher -> entry via E2E_RUN_OPTIONS) ---------------- */
 
-export type Tier = 'smoke' | 'affected' | 'full';
+/** The tiers: the three blocking ones plus `perf` — the non-gated measurement tier (D-2). */
+export type Tier = 'smoke' | 'affected' | 'full' | 'perf';
 export type Backend = 'engine' | 'cli' | 'nogit';
 export type UiLanguage = 'en' | 'zh-cn';
 

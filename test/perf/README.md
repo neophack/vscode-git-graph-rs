@@ -25,7 +25,7 @@ npm run perf -- --compare-to test/perf/results/baseline.json    # THE GATE: fail
 Or directly:
 
 ```bash
-node test/perf/run.mjs --gate p2,p3,p5 [--samples 21] [--tier s|m] [--channel msedge|chrome|chromium]
+node test/perf/run.mjs --gate p2,p3,p5 [--samples 21] [--tier s|m|l] [--channel msedge|chrome|chromium]
 node test/perf/p2-host.mjs --samples 21 --backend engine,cli      # one gate standalone
 node test/perf/p3-webview.mjs --samples 21
 node test/perf/p5-size.mjs [--artifacts-dir <another-tree>]
@@ -33,6 +33,48 @@ node test/perf/p5-size.mjs [--artifacts-dir <another-tree>]
 
 Every run writes `test/perf/results/perf-results.json` (per-gate files plus a
 `perf-summary.md`); a failing gate exits 1.
+
+## The fixture generator (`fixture.mjs`, REFACTOR-PLAN task 0.5)
+
+The S/M/L reference repositories of §3.8.1 are generated, not committed: deterministic
+fast-import histories from a fixed per-tier seed (12345), so every machine measures the same
+repository.
+
+```bash
+node test/perf/fixture.mjs --tier s          # ~2 s:   1 K commits, 20 branches, 20 tags
+node test/perf/fixture.mjs --tier m          # minutes: 100 K commits, 2 K branches, 10 K tags
+node test/perf/fixture.mjs --tier l          # tens of minutes — generate AHEAD of the run
+node test/perf/fixture.mjs --tier s --out <dir> --force   # anywhere, rebuilt from scratch
+node test/perf/fixture.mjs --tier m --commits 50000       # ad-hoc sizes (seed stays the tier's)
+```
+
+Default output is `test/perf/fixtures/<tier>` (gitignored): `fixture/` (working clone),
+`fixture-remote.git` (the bare remote), `fixture-b/` (a second clone for the rapid-switch
+scenario). There is exactly ONE generator implementation — the automation fixture
+(`src/extension/automation/fixture.ts`) — so a pre-generated fixture is identical in shape to
+what a gate generates on the fly. The gates default to generating into the OS temp dir; point
+them at a pre-generated tier instead:
+
+```bash
+node test/perf/run.mjs --gate p2 --tier m --work-dir test/perf/fixtures/m
+```
+
+Generation is idempotent (an existing tier directory is reused unless `--force`), which is what
+makes the nightly's fixture cache hit safe.
+
+## The E2E trace collector (`collect-e2e-traces.mjs`, OPTIMIZATION-PLAN §7 P4)
+
+The E2E launcher runs this after every E2E run (its exit code is ignored — best effort). It
+parses the session log's `Trace` lines (the P1 sink's output, aggregated with the same P50/P95
+grammar `scripts/analyze-log.mjs` uses, via `lib/trace-log.mjs`), attributes every trace to the
+scenario window the E2E entry recorded, and writes:
+
+- `<e2e results dir>/traces.json` + `traces.md` — per-window and overall aggregates;
+- `test/perf/results/e2e-traces.jsonl` — one appended line per run, the P4 history.
+
+The engine → CLI fallback count rides along, so a calibration run can state which read path its
+numbers exercised. Run it by hand against an old results dir with
+`node test/perf/collect-e2e-traces.mjs --windows <dir>/perf-windows.json --out <dir> --profile <profile dir>`.
 
 ## What each gate measures
 
@@ -144,7 +186,10 @@ P5 (size) is deterministic and needs none of this.
 | `p2-host.mjs` | the P2 scenarios |
 | `p3-webview.mjs` | the P3 page, fake host bridge and measurements |
 | `p5-size.mjs` | the P5 artifact weighing |
+| `fixture.mjs` | the S/M/L fixture generator CLI (task 0.5; deterministic per tier seed) |
+| `collect-e2e-traces.mjs` | the P4 collector: an E2E run's session log → per-scenario trace summaries |
 | `lib/stats.mjs` | median / P95 / Mann-Whitney U (verified against scipy references) |
 | `lib/env.mjs` | paths, on-the-fly src loading (esbuild), results IO, CLI parsing, fixture tiers |
 | `lib/host-pipeline.mjs` | the fixture pair, backend pair, facade + CommitLoader wiring |
-| `results/` | output (gitignored): per-gate JSON, `baseline.json`, `perf-summary.md` |
+| `lib/trace-log.mjs` | the `Trace` line parser + window attribution the collector shares |
+| `results/` | output (gitignored): per-gate JSON, `baseline.json`, `perf-summary.md`, `e2e-traces.jsonl` |

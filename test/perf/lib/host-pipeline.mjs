@@ -23,7 +23,7 @@ export function loadPipeline() {
 		GitRepository: loadOut('extension/git/gitRepository.js').GitRepository,
 		CommitLoader: loadOut('extension/graphView/commitLoader.js').CommitLoader,
 		UncommittedCountStabiliser: loadOut('extension/graphView/uncommittedStabiliser.js').UncommittedCountStabiliser,
-		fixture: loadOut('extension/automation/fixture.js'
+		fixture: loadOut('extension/automation/fixture.js')
 	};
 }
 
@@ -31,10 +31,15 @@ export function loadPipeline() {
  * Ensure the fixture pair exists: the generated history (fast-import, deterministic per seed)
  * plus a second clone of its bare remote, so the rapid-switch scenario has a real second
  * repository to switch to. Idempotent — `generate` skips an existing fixture, and the second
- * clone is only made when its directory is absent.
+ * clone is only made when its directory is absent. This is the perf harness's single setup
+ * path for fixtures: `test/perf/fixture.mjs` (the task-0.5 generator CLI) calls it with an
+ * explicit tier directory, and the gates call it with their work dir — both get the identical,
+ * seed-deterministic repository.
+ *
+ * @param overrides Per-knob wins over the tier table (the generator CLI's ad-hoc sizes).
  */
-export async function ensureFixturePair(modules, tier, outDir, force = false) {
-	const tierOptions = TIERS[tier];
+export async function ensureFixturePair(modules, tier, outDir, force = false, overrides = {}) {
+	const tierOptions = { ...TIERS[tier], ...overrides };
 	const generated = await modules.fixture.generate({ outDir, ...tierOptions, force });
 	const repoB = path.join(outDir, 'fixture-b');
 	if (!existsSync(repoB)) git(outDir, 'clone', '-q', generated.remoteDir, repoB);

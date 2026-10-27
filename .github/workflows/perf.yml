@@ -15,6 +15,13 @@
 # (--enforce-budgets) until the §3.8.2 first-paint slimming brings the un-split webview entry
 # inside them — flip the flag on that line when it does.
 #
+# A nightly schedule (OPTIMIZATION-PLAN §7 P2) runs the P2 gate over the M tier — the tier too
+# slow for a PR — plus a fresh S-tier run on the same machine, recorded (not compared: runs on
+# different nights are different machine states) and archived as artifacts. The nightly is
+# NON-BLOCKING: it never gates a PR, and continue-on-error keeps a red night from marking the
+# run red — the report (artifacts + job summary) is the product, per the ADR-0007 calibration
+# flow.
+#
 # Results land in the job artifacts: the per-gate JSON, the recorded baseline, and
 # perf-summary.md (also appended to the job summary).
 
@@ -22,7 +29,16 @@ name: Performance gates
 
 on:
   pull_request:
+  schedule:
+    # 02:50 UTC nightly — the P2 S/M measurement (the non-blocking `nightly` job below).
+    - cron: '50 2 * * *'
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: 'Also run the nightly S/M P2 measurement'
+        required: false
+        default: false
+        type: boolean
 
 # Least privilege: nothing here needs write access; artifacts and the step summary do not.
 permissions:
@@ -118,5 +134,69 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: perf-results
+          path: test/perf/results/
+          if-no-files-found: error
+
+  # The nightly S/M measurement (OPTIMIZATION-PLAN §7 P2: "run S/M nightly"): the P2 host gate
+  # over the S tier and the M tier — the tier too slow for a PR — on ONE machine, back to back,
+  # recorded and archived. Non-blocking: continue-on-error, never a required check; the
+  # artifacts and the job summary are the report that ADR-0007's calibration flow reads.
+  # Fixtures are regenerated fresh each night (deterministic per seed, so still comparable
+  # across nights) — a cache would risk silently measuring a stale generator's shape.
+  nightly:
+    name: Nightly P2, S and M tiers (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.nightly == true)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache the cargo target directory
+        uses: actions/cache@v4
+        with:
+          path: cargo-target
+          key: perf-nightly-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: perf-nightly-cargo-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-zigbuild@0.24.0
+
+      - name: Install zig
+        run: pip install ziglang
+
+      - name: Build the engine addon (P2's engine backend)
+        run: |
+          npm ci
+          node scripts/build-addon.mjs --release
+
+      - name: Generate the fixtures (deterministic per seed; M takes minutes)
+        run: |
+          node test/perf/fixture.mjs --tier s --out "$RUNNER_TEMP/gg-perf-fixtures/s"
+          node test/perf/fixture.mjs --tier m --out "$RUNNER_TEMP/gg-perf-fixtures/m"
+
+      - name: Run P2 on the S tier (record)
+        run: node test/perf/run.mjs --gate p2 --tier s --samples 21 --work-dir "$RUNNER_TEMP/gg-perf-fixtures/s" --record
+
+      - name: Run P2 on the M tier (record)
+        run: node test/perf/run.mjs --gate p2 --tier m --samples 21 --work-dir "$RUNNER_TEMP/gg-perf-fixtures/m" --record
+
+      - name: Append the summary to the job report
+        if: always()
+        run: cat test/perf/results/perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-nightly-s-m
           path: test/perf/results/
           if-no-files-found: error

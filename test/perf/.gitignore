@@ -1,0 +1,3 @@
+# The generated performance fixtures (test/perf/fixture.mjs): reproducible from the fixed
+# per-tier seed, so they are never committed — delete and regenerate any time.
+fixtures/

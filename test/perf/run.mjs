@@ -257,7 +257,7 @@ function fs_exists(file) {
 
 function usage(message) {
 	console.error((message !== undefined ? message + '\n' : '') +
-		'Usage: node test/perf/run.mjs --gate p2,p3,p5 [--samples 21] [--tier s|m] [--channel msedge|chrome|chromium]\n' +
+		'Usage: node test/perf/run.mjs --gate p2,p3,p5 [--samples 21] [--tier s|m|l] [--channel msedge|chrome|chromium]\n' +
 		'       node test/perf/run.mjs --record [--gate ...]\n' +
 		'       node test/perf/run.mjs --compare-to test/perf/results/baseline.json [--gate ...] [--enforce-budgets]');
 }

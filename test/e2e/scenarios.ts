@@ -141,6 +141,22 @@ export function matchesGrep(scenario: Scenario, grep: string | null): boolean {
 	return scenario.id.indexOf(grep) !== -1 || scenario.tags.some((tag) => tag.indexOf(grep) !== -1);
 }
 
+/**
+ * The measurement tier's scenarios (OPTIMIZATION-PLAN §7 P2 / D-2): the hidden → visible
+ * restore measurement the retainContextWhenHidden default decision needs, with the setting in
+ * BOTH positions. Runs under `--tier perf` only — never in the blocking tiers, whose budgets
+ * and semantics stay as the plan wrote them. The numbers land in the scenario's detail and in
+ * the run's traces.json (each panel re-creation records its boot/session trace).
+ */
+export const PERF_SCENARIOS: readonly Scenario[] = [
+	{
+		id: 'perf/D2-restore',
+		title: 'D-2: hidden -> visible restore latency, retained vs re-created webview context',
+		tags: ['perf'],
+		when: { procedure: 'panel-hide-restore' }
+	}
+];
+
 /** The smoke tier's scenario list (the checklist + the picks), grep-filtered. */
 export function smokeScenarios(grep: string | null): readonly Scenario[] {
 	const picks = SMOKE_PICKS.map((pick) => ({

@@ -7,19 +7,21 @@
 
 import { Backend, DEFAULT_E2E_OPTIONS, E2eOptions, Tier, UiLanguage } from './types';
 
-const TIERS: readonly Tier[] = ['smoke', 'affected', 'full'];
+const TIERS: readonly Tier[] = ['smoke', 'affected', 'full', 'perf'];
 const BACKENDS: readonly Backend[] = ['engine', 'cli', 'nogit'];
 const LANGS: readonly UiLanguage[] = ['en', 'zh-cn'];
 
 const USAGE = `Usage:
-  npm run test:e2e -- [--tier smoke|affected|full] [--grep <id-or-tag-substring>]
+  npm run test:e2e -- [--tier smoke|affected|full|perf] [--grep <id-or-tag-substring>]
       [--vscode stable|insiders|<version>] [--backend engine|cli|nogit] [--lang en|zh-cn]
       [--headed] [--keep-open] [--base <ref>] [--timeout <ms>]
       [--commits <n>] [--branches <n>] [--tags <n>] [--authors <n>] [--seed <n>]
 
 Downloads (and caches in .vscode-test/) the requested VS Code, launches it isolated against the
 automation build of the extension, generates the fixture repository and runs the selected
-scenarios. Reports land in test/e2e/results/<run>/ (JUnit XML, JSON, HTML).`;
+scenarios. The perf tier is the non-gated D-2 measurement (hidden -> visible restore with and
+without retained webview context). Reports land in test/e2e/results/<run>/ (JUnit XML, JSON,
+HTML), plus the P4 trace summaries the launcher collects from the session log.`;
 
 export class OptionsError extends Error {
 	public constructor(message: string) {

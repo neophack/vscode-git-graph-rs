@@ -23,7 +23,7 @@ on:
         required: false
         default: smoke
         type: choice
-        options: [smoke, affected, full]
+        options: [smoke, affected, full, perf]
       vscode:
         description: 'VS Code version (stable / insiders / x.y.z)'
         required: false
@@ -96,6 +96,15 @@ jobs:
       - name: Run the E2E full tier
         if: github.event_name == 'schedule' || inputs.tier == 'full'
         run: xvfb-run -a npm run test:e2e -- --tier full --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+
+      # The measurement tier (OPTIMIZATION-PLAN D-2: hidden -> visible restore, retained vs
+      # re-created webview context). NON-BLOCKING by design: a measurement, not a gate. Runs
+      # nightly next to the full tier; its numbers land in the traces.json the launcher's P4
+      # collector writes into the results artifact.
+      - name: Run the E2E perf tier (D-2 measurement, non-blocking)
+        if: github.event_name == 'schedule' || inputs.tier == 'perf'
+        continue-on-error: true
+        run: xvfb-run -a npm run test:e2e -- --tier perf --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
 
       - name: Upload E2E results
         if: always()
