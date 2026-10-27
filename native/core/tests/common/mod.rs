@@ -142,9 +142,6 @@ impl TestRepo {
     /// Every commit changes the same file to distinct contents, with dates one minute apart, so
     /// the order is deterministic and matches the commit order whatever the machine's speed.
     pub fn commit_linear_history(&mut self, count: usize) {
-        use std::io::Write;
-        use std::process::Stdio;
-
         let mut stream = String::from("reset refs/heads/main\n");
         for i in 0..count {
             let message = format!("commit {i}\n");
@@ -160,6 +157,22 @@ impl TestRepo {
                 contents.len(),
             ));
         }
+        self.clock += 60 * count as i64;
+        self.run_fast_import(&stream);
+    }
+
+    /// Import a custom `git fast-import` stream: fixtures that need several lines of history
+    /// with independent dates (branch cuts, back-dated tips) spell their own stream commands.
+    pub fn import_stream(&self, build: impl FnOnce(&mut String)) {
+        let mut stream = String::new();
+        build(&mut stream);
+        self.run_fast_import(&stream);
+    }
+
+    /// Feed `stream` to one `git fast-import` run, asserting that it succeeded.
+    fn run_fast_import(&self, stream: &str) {
+        use std::io::Write;
+        use std::process::Stdio;
 
         let mut child = Command::new("git")
             .args(["fast-import", "--quiet"])
@@ -186,7 +199,6 @@ impl TestRepo {
             "`git fast-import` failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        self.clock += 60 * count as i64;
     }
 
     pub fn head(&self) -> String {

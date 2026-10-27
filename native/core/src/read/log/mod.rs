@@ -7,11 +7,16 @@
 //! author date, or by staying on the current line of history.
 //!
 //! gix's traversal offers a commit-time priority queue but no topological guarantee, so the
-//! ordering is done here instead: the traversal collects a **window** of commits, and the window is
-//! then re-ordered by a Kahn-style topological sort whose ready set is ranked according to the
-//! requested ordering. The window is a multiple of the requested page rather than the whole
-//! history, which is what makes the first screen of a million-commit repository affordable —
-//! ordering is exact within the window, and commits beyond it are not considered.
+//! ordering is done here instead. The date-ordered window is collected directly in git's shape
+//! ([`walk`]): one pass counting every reachable commit's children (git's `limit_list`), then a
+//! ready set ranked by the requested ordering ([`ordering`]'s Kahn sort), cut at the window. The
+//! count pass is what keeps the ordering correct where a naive commit-time queue goes wrong: a
+//! commit whose date is older than the history around it — an out-of-band commit under a pinned
+//! date, an imported branch — is held by its own newest line until the tips sitting on the line
+//! have been shown, exactly as `git log --date-order` shows it. The window is a multiple of the
+//! requested page rather than the whole history; the ordering is exact over the page it returns,
+//! and commits beyond it are not considered. Filtered walks (`--author`, path filters) keep the
+//! traversal-shaped search they need ([`filter`]).
 //!
 //! ## Layout
 //!

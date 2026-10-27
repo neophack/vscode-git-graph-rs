@@ -701,3 +701,68 @@ fn a_remote_branch_with_tags_in_its_path_stays_a_branch() {
     assert!(tags.contains(&"origin/v1"), "{tags:?}");
     assert!(!remotes.contains(&"origin/tags/v1"));
 }
+
+/// The out-of-band-commit shape the E2E `external/commit-appears` scenario builds: the new tip
+/// sits on top of the repository's newest line, its own committer date is far older than that
+/// line's history, and OTHER lines of the fixture (imported branches, stashes) carry commits
+/// dated between the two. git still shows the new tip on the first page, because `--date-order`
+/// is topological: the newest line's tip is *blocked* — it waits until every one of its
+/// ref-pointing children (the new commit among them) has been shown — so the walk spends the
+/// early positions on the other lines and reaches the new tip while it is still on the page. A
+/// walk that pops a strict date queue instead lets the blocked line unwind at once, buries the
+/// new tip below every newer-dated commit, and drops it from the traversal window entirely —
+/// the page then shows a HEAD that is not among its own commits.
+#[test]
+fn an_out_of_band_commit_older_than_history_stays_on_the_first_page() {
+    require_git!();
+    let repo = TestRepo::new();
+    // main: 250 commits with ascending dates (the repository's newest line, tip at the top);
+    // busy: 60 commits cut from main's root, dated BELOW main's line but ABOVE the external
+    // commit's; then two ref-pointing children of main's tip dated far in the past: the
+    // out-of-band commit on main itself, and a `blocked` branch holding the same spot.
+    // 250 + 60 commits all newer than the external one overflow the 256-commit window a
+    // 100-commit page reads, so a date-only window cannot reach it.
+    repo.import_stream(|out| {
+        out.push_str("reset refs/heads/main\n");
+        for i in 0..250 {
+            let seconds = 1_600_000_000 + 60 * i as i64;
+            let message = format!("c{i}\n");
+            out.push_str(&format!(
+                "commit refs/heads/main\nmark :{}\ncommitter T <t@t> {seconds} +0000\ndata {}\n{message}M 100644 inline a.txt\ndata 3\nhi\n",
+                i + 1,
+                message.len()
+            ));
+        }
+        // busy branches off main's root commit and grows 60 commits, still dated below main.
+        out.push_str("reset refs/heads/busy\nfrom :1\n");
+        for i in 0..60 {
+            let seconds = 1_599_000_000 + 60 * i as i64;
+            let message = format!("b{i}\n");
+            out.push_str(&format!(
+                "commit refs/heads/busy\nmark :{}\ncommitter T <t@t> {seconds} +0000\ndata {}\n{message}M 100644 inline b.txt\ndata 3\nhi\n",
+                1000 + i,
+                message.len()
+            ));
+        }
+        // The out-of-band commit on main (chains onto main's tip, mark 250), dated far in the past.
+        out.push_str("commit refs/heads/main\nmark :2000\ncommitter T <t@t> 1590000000 +0000\ndata 11\nthe commit\nM 100644 inline a.txt\ndata 4\nnew\n");
+        // A second ref-pointing child of main's tip, also old — the stash tips of the scenario.
+        out.push_str("reset refs/heads/blocked\nfrom :250\ncommit refs/heads/blocked\nmark :2001\ncommitter T <t@t> 1590000060 +0000\ndata 8\nblocked\nM 100644 inline c.txt\ndata 3\nhi\n");
+    });
+    let external = repo.rev_parse("refs/heads/main");
+
+    // git itself: the blocked tip holds main's line back, so the external commit leads well
+    // before the page's end.
+    let expected = repo.log_hashes(&["--all", "--date-order", "--max-count=100"]);
+    assert!(
+        expected.iter().any(|hash| hash == &external),
+        "the fixture must keep the external commit in git's first page, got {}",
+        expected.len()
+    );
+
+    let page = walk_all(&repo, 100, CommitOrdering::Date);
+    assert_eq!(
+        page, expected,
+        "the engine page must match git's date-order page"
+    );
+}
