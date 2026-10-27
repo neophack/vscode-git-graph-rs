@@ -22,6 +22,7 @@ import { automationAvailable, runAutomationTest } from './automation';
 import { endAllWorkspaceCodeReviews, endSpecificWorkspaceCodeReview, resumeWorkspaceCodeReview } from './codeReviews';
 import { searchCommits } from './commits';
 import { gerritFetchCommitMsgHook, gerritPushRef } from './gerrit';
+import { showDiagnostics } from './diagnostics';
 import { clearAvatarCache, openFile, version } from './misc';
 import { addGitRepository, removeGitRepository } from './repositories';
 import { amendLastCommit, resetCurrentBranchToRemote } from './sourceControl';
@@ -146,6 +147,7 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.registerCommand('git-graph-rs.endSpecificWorkspaceCodeReview', () => endSpecificWorkspaceCodeReview(this));
 		this.registerCommand('git-graph-rs.resumeWorkspaceCodeReview', () => resumeWorkspaceCodeReview(this));
 		this.registerCommand('git-graph-rs.version', () => version(this));
+		this.registerCommand('git-graph-rs.showDiagnostics', () => showDiagnostics(this));
 		this.registerCommand('git-graph-rs.searchCommits', () => searchCommits(this));
 		this.registerCommand('git-graph-rs.openFile', (arg) => openFile(this, arg));
 		if (automationAvailable()) {

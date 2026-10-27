@@ -58,6 +58,7 @@ export const COMMANDS = [
 	{ id: 'git-graph-rs.endSpecificWorkspaceCodeReview', menus: [] },
 	{ id: 'git-graph-rs.resumeWorkspaceCodeReview', menus: [] },
 	{ id: 'git-graph-rs.version', menus: [] },
+	{ id: 'git-graph-rs.showDiagnostics', menus: [] },
 	{ id: 'git-graph-rs.searchCommits', menus: [] },
 	{ id: 'git-graph-rs.openFile', menus: ['editor/title'] },
 	{ id: 'git-graph-rs.runAutomationTest', menus: [], automationBuildOnly: true },

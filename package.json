@@ -152,6 +152,11 @@
 			},
 			{
 				"category": "Git Graph RS",
+				"command": "git-graph-rs.showDiagnostics",
+				"title": "%command.git-graph-rs.showDiagnostics.title%"
+			},
+			{
+				"category": "Git Graph RS",
 				"command": "git-graph-rs.searchCommits",
 				"title": "%command.git-graph-rs.searchCommits.title%"
 			},

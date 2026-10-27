@@ -996,6 +996,7 @@ export const STRINGS_ZH_CN = {
 	versionInfo: 'Git Graph RS：{0}\nVisual Studio Code：{1}\n操作系统：{2}\nGit：{3}',
 	copyButton: '复制',
 	versionInfoError: '获取版本信息时发生意外错误。',
+	diagnosticsError: '收集诊断报告时发生意外错误。',
 	unableToOpenFile: '无法打开文件：{0}',
 	openFileMissingArgs: '无法打开文件：命令未携带必需的参数。',
 	unknownCommitSubject: '<未知提交主题>',

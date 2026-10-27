@@ -999,6 +999,7 @@ export const STRINGS_EN = {
 	versionInfo: 'Git Graph RS: {0}\nVisual Studio Code: {1}\nOS: {2}\nGit: {3}',
 	copyButton: 'Copy',
 	versionInfoError: 'An unexpected error occurred while retrieving version information.',
+	diagnosticsError: 'An unexpected error occurred while collecting the diagnostics report.',
 	unableToOpenFile: 'Unable to Open File: {0}',
 	openFileMissingArgs: 'Unable to Open File: The command was not called with the required arguments.',
 	unknownCommitSubject: '<Unknown Commit Subject>',

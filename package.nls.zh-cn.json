@@ -10,6 +10,7 @@
 	"command.git-graph-rs.removeGitRepository.title": "移除 Git 仓库...",
 	"command.git-graph-rs.resumeWorkspaceCodeReview.title": "恢复工作区中的指定代码评审...",
 	"command.git-graph-rs.version.title": "获取版本信息",
+	"command.git-graph-rs.showDiagnostics.title": "显示诊断信息",
 	"command.git-graph-rs.searchCommits.title": "在历史中搜索提交...",
 	"command.git-graph-rs.filterByFile.title": "在 Git Graph 中显示文件历史",
 	"command.git-graph-rs.openFile.title": "打开文件",
