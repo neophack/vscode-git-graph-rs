@@ -160,52 +160,52 @@ export const MENUS_VSCODE_ACTIONS: readonly AutomationAction[] = [
 		noHostTraffic: true,
 		expect: { responses: [] }
 	},
-		{
-			id: 'menu-vscode/palette-fetch',
-			title: 'Fetch from Remote(s) (command palette)',
-			group: 'menu-vscode',
-			tags: ['menu-vscode', 'command'],
-			mutable: true,
-			requires: ['remote'],
-			// The palette's Fetch command takes NO argument: with several repositories known it
-			// shows a quick pick — the dialog auto-answer takes its first item, which the command
-			// has unshifted to the front as the last active repository (the run's own) — and then
-			// loads the Git Graph view on it with runCommandOnLoad 'fetch', so the page runs the
-			// same fetch request the control-bar button does once it has loaded. The quick-pick
-			// chain is not awaited by the command handler, so the run completes on the fetch
-			// RESPONSE, not on the handler's return; the post-step barrier then waits for the view.
-			vscodeCommand: { command: 'git-graph-rs.fetch' },
-			uiAfter: [{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }],
-			expect: { responses: ['fetch'] }
-		},
-		{
-			id: 'menu-vscode/palette-clear-avatar-cache',
-			title: 'Clear Avatar Cache (command palette)',
-			group: 'menu-vscode',
-			tags: ['menu-vscode', 'command'],
-			mutable: false,
-			// The command's whole observable outcome is a fully localized notification ("Avatar
-			// cache cleared") — no language-invariant fragment exists, so its presence is pinned
-			// (expectAnyNotification). The handler does not await the notification's .then chain,
-			// so the post-step barrier gives it time to arrive before the assertion runs.
-			vscodeCommand: { command: 'git-graph-rs.clearAvatarCache' },
-			uiAfter: [{ op: 'eval', expr: '(function(){return new Promise(function(resolve){setTimeout(resolve,750);});})()' }],
-			expectAnyNotification: true,
-			noHostTraffic: true,
-			expect: { responses: [] }
-		},
-		{
-			id: 'menu-vscode/palette-version',
-			title: 'About Git Graph RS (command palette)',
-			group: 'menu-vscode',
-			tags: ['menu-vscode', 'command'],
-			mutable: false,
-			// The command raises a MODAL information message (auto-answered with its Copy button),
-			// and the modal is shown synchronously before the handler returns, so expectModal is
-			// deterministic: the command must reach its About dialog.
-			vscodeCommand: { command: 'git-graph-rs.version' },
-			expectModal: true,
-			noHostTraffic: true,
-			expect: { responses: [] }
-		}
+	{
+		id: 'menu-vscode/palette-fetch',
+		title: 'Fetch from Remote(s) (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: true,
+		requires: ['remote'],
+		// The palette's Fetch command takes NO argument: with several repositories known it
+		// shows a quick pick — the dialog auto-answer takes its first item, which the command
+		// has unshifted to the front as the last active repository (the run's own) — and then
+		// loads the Git Graph view on it with runCommandOnLoad 'fetch', so the page runs the
+		// same fetch request the control-bar button does once it has loaded. The quick-pick
+		// chain is not awaited by the command handler, so the run completes on the fetch
+		// RESPONSE, not on the handler's return; the post-step barrier then waits for the view.
+		vscodeCommand: { command: 'git-graph-rs.fetch' },
+		uiAfter: [{ op: 'waitFor', selector: 'tr.commit[data-id="0"]' }],
+		expect: { responses: ['fetch'] }
+	},
+	{
+		id: 'menu-vscode/palette-clear-avatar-cache',
+		title: 'Clear Avatar Cache (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// The command's whole observable outcome is a fully localized notification ("Avatar
+		// cache cleared") — no language-invariant fragment exists, so its presence is pinned
+		// (expectAnyNotification). The handler does not await the notification's .then chain,
+		// so the post-step barrier gives it time to arrive before the assertion runs.
+		vscodeCommand: { command: 'git-graph-rs.clearAvatarCache' },
+		uiAfter: [{ op: 'eval', expr: '(function(){return new Promise(function(resolve){setTimeout(resolve,750);});})()' }],
+		expectAnyNotification: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-version',
+		title: 'About Git Graph RS (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// The command raises a MODAL information message (auto-answered with its Copy button),
+		// and the modal is shown synchronously before the handler returns, so expectModal is
+		// deterministic: the command must reach its About dialog.
+		vscodeCommand: { command: 'git-graph-rs.version' },
+		expectModal: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	}
 ];

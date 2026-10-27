@@ -28,15 +28,34 @@ export const EXTERNAL_ACTIONS: readonly AutomationAction[] = [
 			{
 				op: 'eval',
 				expr: '(function(){var want="External automation commit";'
-					+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
+					+ 'var attr=function(k){try{return document.body.getAttribute(k)||"-";}catch(e){return "-";}};'
+					+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){n++;try{'
+					// A tick must never throw: the poll runs in a setTimeout callback, where an
+					// exception (the view element rebuilt mid-poll, a transient DOM state) would
+					// kill the re-arm below without settling the promise - and a batch whose
+					// promise never settles wedges the shim for every later batch. Every read is
+					// therefore guarded and a failed tick counts as one more empty poll.
 					+ 'var rows=document.querySelectorAll("tr.commit .description span.text");'
 					+ 'for(var i=0;i<rows.length;i++){if(rows[i].textContent.indexOf(want)!==-1)return resolve("the externally committed row rendered without any view interaction");}'
-					+ 'if(++n>160)return reject(new Error("the external commit never appeared in the view (watcher-driven refresh missing?)'
-					// The page state at the moment the wait gave up: how many rows the windowed
-					// renderer holds, where the view is scrolled, and what the first rows show —
-					// "the refresh never landed" and "it landed outside the rendered window" are
-					// different failures, and this is how to tell them apart.
-					+ ' [rows "+rows.length+", scrollTop "+document.getElementById("view").scrollTop+", refreshMessages "+(document.body.getAttribute("data-gg-refresh")||"0")+", first: "+Array.prototype.slice.call(rows,0,3).map(function(r){return r.textContent.slice(0,30);}).join(" | ")+"]"));'
+					+ '}catch(e){}'
+					+ 'if(n>160)return reject(new Error("the external commit never appeared in the view (watcher-driven refresh missing?)'
+					// The page state at the moment the wait gave up. The load lifecycle history comes
+					// FIRST (the runner truncates long messages): refreshCycles counts the refresh
+					// pushes that reached the page, applied the commit responses that were applied,
+					// and the history shows which cycle the external commit rode in on and what the
+					// machine did with it - "the push never arrived" and "the response was dropped"
+					// are different failures, and this is how to tell them apart (loadDiagnostics).
+					// lastCommits carries the LAST APPLIED response's own truth (count, head, whether
+					// the head is among its own commits, first hash): a stale-engine response applies
+					// exactly as happily as a fresh one, and only the payload can tell them apart.
+					+ ' [hist "+attr("data-gg-load-history").replace(/c:[^,]*/g,"R")'
+					+ '+"] [lastCommits "+attr("data-gg-last-commits")'
+					+ '+" [rows "+(function(){try{return document.querySelectorAll("tr.commit .description span.text").length;}catch(e){return -1;}})()'
+					+ '+", cycles "+attr("data-gg-refresh-cycles")'
+					+ '+", applied "+attr("data-gg-commits-applied")'
+					+ '+", state "+attr("data-gg-load-state").replace(/c:[^,]*/g,"R")'
+					+ '+", drops "+attr("data-gg-load-drops")'
+					+ '+", first: "+(function(){try{return Array.prototype.slice.call(document.querySelectorAll("tr.commit .description span.text"),0,3).map(function(r){return r.textContent.slice(0,30);}).join(" | ");}catch(e){return "-";}})()+"]"));'
 					+ 'setTimeout(t,125);};t();});})()'
 			}
 		],

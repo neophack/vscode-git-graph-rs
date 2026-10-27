@@ -137,13 +137,28 @@ const GIT_LOCK_BACKOFF_MS = [200, 400, 600, 800, 1200, 1600, 2000];
 /** A lock older than this outlived any live writer on a fixture repository — it is a leftover. */
 const STALE_INDEX_LOCK_AGE_MS = 60000;
 
+/**
+ * One pre-action setup command: the git arguments, plus environment overrides for the spawn.
+ * An override whose value is `undefined` REMOVES the variable — the E2E launcher pins every git
+ * date for determinism, and a setup command that must model a real user action (a terminal
+ * commit carrying the wall clock) needs the pins gone for that one spawn.
+ */
+export interface SetupGitEnv {
+	readonly [key: string]: string | undefined;
+}
+
 /** One git invocation exactly as spawned: the fixture's base args plus the caller's. */
-function gitRaw(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string }> {
+function gitRaw(args: string[], options: { cwd?: string; env?: Readonly<SetupGitEnv> } = {}): Promise<{ stdout: string }> {
+	const { env: overrides, ...rest } = options;
+	const env: { [key: string]: string | undefined } = { ...process.env, ...overrides, GIT_TERMINAL_PROMPT: '0' };
+	for (const key of Object.keys(overrides ?? {})) {
+		if (env[key] === undefined) delete env[key];
+	}
 	return execFileAsync('git', [...GIT_BASE_ARGS, ...args], {
 		timeout: GIT_TIMEOUT_MS,
 		windowsHide: true,
-		env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-		...options
+		env: env as NodeJS.ProcessEnv,
+		...rest
 	});
 }
 
@@ -201,7 +216,7 @@ async function withLockRetry<T>(step: () => Promise<T>): Promise<T> {
  * run inside the live editor session too, and each of them used to be a separate unprotected
  * exec that one background index write could abort the run with.
  */
-export async function git(args: string[], options: { cwd?: string } = {}): Promise<{ stdout: string }> {
+export async function git(args: string[], options: { cwd?: string; env?: Readonly<SetupGitEnv> } = {}): Promise<{ stdout: string }> {
 	return withLockRetry(() => gitRaw(args, options));
 }
 

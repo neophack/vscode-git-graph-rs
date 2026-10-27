@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Logger } from '../platform/logger';
 import { AutomationAction, AutomationMode, CATALOG } from './catalog';
 import { countRepoCommits, ensureSubmodule, EMPTY_REPO_FIXTURE_OPTIONS, FIXTURE_SUBMODULE_PATH, FixtureOptions, git, seedEmptyRepo } from './fixture';
+import type { SetupGitEnv } from './fixtureGit';
 import { isAutomationFixtureClone, readFixtureMarker, reseedFixtureClone } from './fixtureLifecycle';
 import { automationOpenTabs, automationTabKey, HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
@@ -123,16 +124,25 @@ const POST_ACTION_CLEANUP: ReadonlyMap<string, readonly string[][]> = new Map([
  * conflicts by construction. Checking main out first makes the actions' own semantics the
  * thing under test again ('main' is a fixture-stable fact, like the catalog's tag literals).
  */
-const PRE_ACTION_SETUP: ReadonlyMap<string, readonly string[][]> = new Map([
-	['menu-stash/apply', [['checkout', '-f', 'main']]],
-	['menu-stash/pop', [['checkout', '-f', 'main']]],
-	['menu-stash/branch-from-stash', [['checkout', '-f', 'main']]],
+const PRE_ACTION_SETUP: ReadonlyMap<string, readonly { args: readonly string[]; env?: Readonly<SetupGitEnv> }[]> = new Map([
+	['menu-stash/apply', [{ args: ['checkout', '-f', 'main'] }]],
+	['menu-stash/pop', [{ args: ['checkout', '-f', 'main'] }]],
+	['menu-stash/branch-from-stash', [{ args: ['checkout', '-f', 'main'] }]],
 	// The external-change action's precondition is a commit made OUTSIDE the view — the same way
 	// a user's terminal would make it — which the action's page steps then wait to appear on its
 	// own (the watcher-driven refresh chain; see the catalog entry). An empty commit needs no
 	// staged changes, and the inline identity keeps it working on machines with no global Git
-	// identity configured (the fixture clone seeds none).
-	['external/commit-appears', [['-c', 'user.name=Automation', '-c', 'user.email=automation@example.com', 'commit', '--allow-empty', '-m', 'External automation commit']]]
+	// identity configured (the fixture clone seeds none). The E2E launcher pins every git date
+	// for determinism, and the pins must NOT reach this commit: a terminal commit carries the
+	// wall clock, making it the newest commit in the repository — the exact shape whose
+	// watcher-driven appearance the scenario asserts. A date-pinned commit ties with the
+	// fixture's whole history instead, and the row lands outside the rendered window (observed:
+	// position 286 of 304 under an all-equal-date tie) however correctly the refresh chain
+	// works.
+	['external/commit-appears', [{
+		args: ['-c', 'user.name=Automation', '-c', 'user.email=automation@example.com', 'commit', '--allow-empty', '-m', 'External automation commit'],
+		env: { GIT_AUTHOR_DATE: undefined, GIT_COMMITTER_DATE: undefined }
+	}]]
 ]);
 
 /**
@@ -177,7 +187,7 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 		const timeoutMs = options.actionTimeoutMs ?? 30000;
 		const sameRepo = (a: string | null, b: string) =>
 			a !== null && a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
-		let repo = options.repo ?? server.status().currentRepo;
+		const repo = options.repo ?? server.status().currentRepo;
 		if (repo === null || repo === '') {
 			throw new Error('No repository is active in the Git Graph view');
 		}
@@ -284,11 +294,11 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 				}
 				const setupCommands = PRE_ACTION_SETUP.get(action.id);
 				if (setupCommands !== undefined) {
-					for (const args of setupCommands) {
+					for (const command of setupCommands) {
 						try {
-							await git(['-C', repo, ...args]);
+							await git(['-C', repo, ...command.args], { env: command.env });
 						} catch (error) {
-							options.logger.logError('[automation] pre-action setup ' + JSON.stringify(args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
+							options.logger.logError('[automation] pre-action setup ' + JSON.stringify(command.args) + ' failed: ' + (error instanceof Error ? error.message : String(error)));
 						}
 					}
 				}

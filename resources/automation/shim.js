@@ -242,6 +242,11 @@ function postToHost(message) {
 
 	/* ---------- batch execution ---------- */
 
+	/* How long a batch may run before the shim watchdog settles it as failed: far past the
+	 * longest legitimate step (a 20 s poll) and past the runner's own run timeout, so it only
+	 * ever fires for a batch that would otherwise wedge the shim forever. */
+	var BATCH_WATCHDOG_MS = 60000;
+
 	var currentRun = null;
 
 	function executeBatch(runId, steps) {
@@ -290,10 +295,21 @@ function postToHost(message) {
 			return;
 		}
 		currentRun = batch.runId;
+		// A batch whose promise never settles (an eval whose poll dies in a setTimeout callback,
+		// say) would wedge the shim forever - every later batch answers "already running" and the
+		// whole suite stalls behind it. The watchdog settles such a batch as failed and frees the
+		// shim, well past the longest legitimate step (the runner's own timeout fails the run).
+		var watchdog = setTimeout(function () {
+			if (currentRun !== batch.runId) return;
+			currentRun = null;
+			postToHost({ __ggAutomationResult: { runId: batch.runId, ok: false, results: [], error: 'the step batch did not settle within ' + BATCH_WATCHDOG_MS + ' ms (shim watchdog)' } });
+		}, BATCH_WATCHDOG_MS);
 		executeBatch(batch.runId, batch.steps || []).then(function (result) {
+			clearTimeout(watchdog);
 			currentRun = null;
 			postToHost({ __ggAutomationResult: result });
 		}, function (err) {
+			clearTimeout(watchdog);
 			currentRun = null;
 			try { window.__ggAutomation.lastError = 'batch: ' + String(err && err.stack || err); } catch (_) { }
 		});

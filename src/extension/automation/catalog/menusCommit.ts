@@ -29,13 +29,13 @@ export const MENUS_COMMIT_ACTIONS: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
 		],
-			// type: TagType.Lightweight (numeric enum: Annotated = 0, Lightweight = 1).
-			request: [{ command: 'addTag', repo: '{{repo}}', commitHash: '{{commit}}', tagName: 'automation-tag', type: 1, message: '', pushToRemote: null, pushSkipRemoteCheck: false, force: false }],
-			expect: { responses: ['addTag'] },
-			// The tag this entry names must really exist afterwards — the dialog's action label is
-			// asserted too (both interface languages).
-			verify: { kind: 'tagPresent', placeholder: 'automation-tag' }
-		},
+		// type: TagType.Lightweight (numeric enum: Annotated = 0, Lightweight = 1).
+		request: [{ command: 'addTag', repo: '{{repo}}', commitHash: '{{commit}}', tagName: 'automation-tag', type: 1, message: '', pushToRemote: null, pushSkipRemoteCheck: false, force: false }],
+		expect: { responses: ['addTag'] },
+		// The tag this entry names must really exist afterwards — the dialog's action label is
+		// asserted too (both interface languages).
+		verify: { kind: 'tagPresent', placeholder: 'automation-tag' }
+	},
 	{
 		id: 'menu-commit/checkout',
 		title: 'Checkout…',
@@ -140,10 +140,10 @@ export const MENUS_COMMIT_ACTIONS: readonly AutomationAction[] = [
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
 		],
-			request: [{ command: 'createBranch', repo: '{{repo}}', commitHash: '{{commit}}', branchName: 'automation-branch', checkout: false, force: false }],
-			expect: { responses: ['createBranch'] },
-			verify: { kind: 'branchPresent', placeholder: 'automation-branch' }
-		},
+		request: [{ command: 'createBranch', repo: '{{repo}}', commitHash: '{{commit}}', branchName: 'automation-branch', checkout: false, force: false }],
+		expect: { responses: ['createBranch'] },
+		verify: { kind: 'branchPresent', placeholder: 'automation-branch' }
+	},
 	{
 		// NOTE: no UI path. The menu item is only rendered when the repository config sets
 		// diff.tool / gui.diffTool (web/contextMenuActions.ts), the fixture seed configures

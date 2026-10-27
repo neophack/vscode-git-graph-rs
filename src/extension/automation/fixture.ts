@@ -35,6 +35,7 @@ import { countRepoCommits, fastImport, git, mkdirAll, rmFile, rmScratch, rmTree,
  * decomposition (`git`, `countRepoCommits` and `FIXTURE_SUBMODULE_PATH` are imported from here
  * across the automation module and the test harnesses). */
 export { countRepoCommits, git } from './fixtureGit';
+export type { SetupGitEnv } from './fixtureGit';
 export { FIXTURE_SUBMODULE_PATH };
 export type { FixtureOptions };
 
