@@ -35,8 +35,9 @@ import { createLoader, composeRepository, ensureFixturePair, loadPipeline, runLo
 /**
  * The real config/extensionState modules require 'vscode' for their defaults; the same
  * default-answering stub shape the jsdom webview harness uses serves them through the harness
- * loader (lib/env.mjs's loadVscodeModule). platform/config.ts builds its ViewColumn table at
- * module level and platform/storage.ts owns the persisted-state defaults.
+ * loader (lib/env.mjs's loadVscodeModule). The configuration model builds its snapshot from the
+ * schema table (platform/config/) and graphView/html.ts maps it to the exact GitGraphViewConfig
+ * the page boots on — the harness loads both, so it cannot drift from the real mapping.
  */
 async function importDefaults() {
 	const stub = {
@@ -46,9 +47,10 @@ async function importDefaults() {
 		window: { showWarningMessage: async () => undefined, showErrorMessage: async () => undefined },
 		workspace: { getConfiguration: () => ({ get: (_s, d) => d, has: () => false, inspect: () => undefined, update: () => Promise.resolve() }) }
 	};
-	const config = loadVscodeModule('extension/platform/config.ts', stub);
+	const config = loadVscodeModule('extension/platform/config/index.ts', stub);
+	const html = loadVscodeModule('extension/graphView/html.ts', stub);
 	const state = loadVscodeModule('extension/platform/storage.ts', stub);
-	return { getConfig: config.getConfig, defaults: state };
+	return { takeSnapshot: config.takeSnapshot, workspace: stub.workspace, getWebviewConfig: html.getWebviewConfig, defaults: state };
 }
 
 /** The global state the page boots on (the extension's persisted defaults). */
@@ -57,17 +59,10 @@ export async function buildGlobalState() {
 	return { ...defaults.DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE };
 }
 
-/** The initialState object the page boots on (getWebviewConfig's mapping, harness twin). */
+/** The initialState object the page boots on (the real getWebviewConfig mapping). */
 export async function buildInitialState(repoPath) {
-	const { getConfig, defaults } = await importDefaults();
-	const instance = getConfig();
-	const settings = {};
-	for (const key of Object.getOwnPropertyNames(Object.getPrototypeOf(instance))) {
-		if (key === 'constructor') continue;
-		const value = instance[key];
-		if (typeof value !== 'function') settings[key] = JSON.parse(JSON.stringify(value));
-	}
-	const config = { ...settings, commitOrdering: settings.commitOrder, mute: settings.muteCommits };
+	const { takeSnapshot, workspace, getWebviewConfig, defaults } = await importDefaults();
+	const config = { ...getWebviewConfig(takeSnapshot(workspace), 'en', true) };
 	config.fetchAvatars = false; // no network in the gate
 	config.pullRequests.enabled = false;
 	return {
