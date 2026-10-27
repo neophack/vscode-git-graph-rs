@@ -33,7 +33,6 @@ vi.mock('./addonLoader', () => ({
 		request: async () => {
 			throw new Error('the mock engine answers through the request mock');
 		},
-		requestBytes: async () => ({ ok: null, error: null }),
 		cancel: () => undefined
 	})),
 	isAddonAvailable: vi.fn(() => true),

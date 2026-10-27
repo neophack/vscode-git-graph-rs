@@ -23,15 +23,12 @@ fn tracked_sleep_job(
         peak.fetch_max(now, Ordering::SeqCst);
         std::thread::sleep(Duration::from_millis(for_ms));
         concurrent.fetch_sub(1, Ordering::SeqCst);
-        EngineOutput::Envelope(tag.to_owned())
+        tag.to_owned()
     })
 }
 
 fn envelope_of(output: Option<EngineOutput>) -> String {
-    match output {
-        Some(EngineOutput::Envelope(answer)) => answer,
-        _ => String::new(),
-    }
+    output.unwrap_or_default()
 }
 
 /// Wait out every submission of a batch, so the assertions see the run that happened, not

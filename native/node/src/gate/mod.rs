@@ -33,9 +33,9 @@ use std::time::Duration;
 use napi::bindgen_prelude::{Result, ToNapiValue, TypeName};
 use napi::{check_status, Env, Task};
 
-/// How many engine computes may run at once, across every protocol request and byte read the
-/// binding serves. Two leaves half of the default pool for the rest of the host while keeping
-/// the view's own loads (the opening load plus its follow-ups) running in parallel.
+/// How many engine computes may run at once, across every protocol request the binding serves.
+/// Two leaves half of the default pool for the rest of the host while keeping the view's own
+/// loads (the opening load plus its follow-ups) running in parallel.
 pub const MAX_CONCURRENT_COMPUTES: usize = 2;
 
 /// How long the delivery sentinel parks between condvar wakes before re-checking on its own —
@@ -44,11 +44,8 @@ pub const MAX_CONCURRENT_COMPUTES: usize = 2;
 const SENTINEL_PARK: Duration = Duration::from_millis(250);
 
 /// What one engine call answers, detached from the task that asked for it: the JSON envelope
-/// of a protocol request, or the raw result of a file-bytes read.
-pub enum EngineOutput {
-    Envelope(String),
-    Bytes(git_graph_core::Result<Option<Vec<u8>>>),
-}
+/// (`{"ok": …}` or `{"error": …}`) of a protocol request.
+pub type EngineOutput = String;
 
 /// The outcome of submitting engine work to the gate, from a task's `compute` on a libuv thread.
 pub enum Submission {
@@ -100,8 +97,8 @@ struct GateState {
     peak_concurrency: usize,
 }
 
-/// The engine-wide compute gate. One instance serves both asynchronous entry points (`request`
-/// and `requestBytes`), so the cap holds however the work arrives.
+/// The engine-wide compute gate. One instance serves the binding's asynchronous entry point
+/// (`request`; `open` delegates to it), so the cap holds however the work arrives.
 pub struct Gate {
     state: Mutex<GateState>,
     /// Workers wait here until a queued job sits behind a free compute slot.
@@ -364,10 +361,8 @@ fn worker_loop() {
 			// guard is for whatever slips past them, so a bug costs one error answer instead
 			// of the worker thread, its slot, and every promise behind it.
 			|_| {
-				EngineOutput::Envelope(
-					r#"{"error":{"kind":"internal","message":"the engine compute panicked before the protocol boundary"}}"#
-						.to_owned(),
-				)
+				r#"{"error":{"kind":"internal","message":"the engine compute panicked before the protocol boundary"}}"#
+					.to_owned()
 			},
 		);
         gate.complete(id, output);
@@ -398,10 +393,7 @@ impl Task for Delivery {
 
 /// Settle one late promise with the engine answer it was waiting for.
 fn settle(promise: LatePromise, env: &Env, output: EngineOutput) -> Result<()> {
-    match output {
-        EngineOutput::Envelope(answer) => promise.settle(env, answer),
-        EngineOutput::Bytes(result) => promise.settle(env, crate::bytes_answer(result)),
-    }
+    promise.settle(env, output)
 }
 
 /// A pending JavaScript promise and its resolver, for settling an answer that is not ready on

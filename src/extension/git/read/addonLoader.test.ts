@@ -1,5 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
-import { AddonCallOptions, cancel, NativeAddon, request } from './addonLoader';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import {
+	AddonCallOptions,
+	cancel,
+	engineDirectories,
+	enginePlatformTable,
+	hasEngineForPlatform,
+	loadAddon,
+	NativeAddon,
+	platformDirectory,
+	platformKey,
+	reportedGlibcVersion,
+	request,
+	resetAddonCache
+} from './addonLoader';
 import { GitBackendError } from './types';
 
 /**
@@ -22,7 +38,6 @@ function fakeAddon(overrides: { request?: (repo: string, requestJson: string, re
 		openCount: vi.fn(() => 1),
 		engineVersion: vi.fn(() => '1.0.27-test'),
 		request: overrides.request ?? (vi.fn(async () => '{"ok":"1.0.27-test"}') as unknown as NativeAddon['request']),
-		requestBytes: vi.fn(async () => ({ ok: null, error: null })),
 		cancel: vi.fn()
 	};
 	const load = (): NativeAddon => addon;
@@ -94,5 +109,173 @@ describe('cancellation across the adapter seam', () => {
 		// A request under a different id answers normally, after the stray cancellation.
 		await expect(request('/repo', 'engineVersion', {}, undefined, optionsOf(load, 9))).resolves.toBe('1.0.27-test');
 		expect(addon.cancel).toHaveBeenCalledTimes(1);
+	});
+});
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Platform selection (R8b): how the editor picks between the gnu, musl and armhf engines.        */
+/*                                                                                                */
+/* Detection reads the process surface only — no spawn, no filesystem probe before the loader     */
+/* runs — so the tests stub `process.platform`/`process.arch`/`process.report` directly and put   */
+/* everything back afterwards.                                                                    */
+/* ---------------------------------------------------------------------------------------------- */
+
+/** The `process` properties the stubs replaced, captured for restoration. */
+const stubbedProcess = new Map<string, PropertyDescriptor | undefined>();
+
+/** The temporary roots the load tests create (cleaned up in `afterEach`). */
+const tempRoots: string[] = [];
+
+/** Replace a `process` property for one test; `afterEach` puts the original back. */
+function stubProcess(key: 'platform' | 'arch' | 'report', value: unknown): void {
+	if (!stubbedProcess.has(key)) {
+		stubbedProcess.set(key, Object.getOwnPropertyDescriptor(process, key));
+	}
+	Object.defineProperty(process, key, { configurable: true, enumerable: true, writable: true, value });
+}
+
+/** Stub a linux runtime the way each era of the editor reports its libc. */
+function stubLinux(arch: string, report: unknown): void {
+	stubProcess('platform', 'linux');
+	stubProcess('arch', arch);
+	stubProcess('report', report);
+}
+
+afterEach(() => {
+	for (const [key, descriptor] of stubbedProcess) {
+		if (descriptor !== undefined) {
+			Object.defineProperty(process, key, descriptor);
+		} else {
+			delete (process as unknown as Record<string, unknown>)[key];
+		}
+	}
+	stubbedProcess.clear();
+	while (tempRoots.length > 0) {
+		try {
+			fs.rmSync(tempRoots.pop() as string, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+		} catch {
+			/* left for the OS temp cleaner */
+		}
+	}
+	// Tests that drove the real loader must leave its cache clean for the next one.
+	resetAddonCache();
+});
+
+describe('platform selection across the engine matrix', () => {
+	it('a reported glibc version selects the gnu engine, with musl as the fallback', () => {
+		stubLinux('x64', { header: { glibcVersion: '2.31' } });
+		expect(platformKey()).toBe('linux-x64-gnu');
+		expect(platformDirectory()).toBe('linux-x64-gnu');
+		expect(engineDirectories()).toEqual(['linux-x64-gnu', 'linux-x64-musl']);
+	});
+
+	it('a musl host (a report without a glibc version) selects the musl engine', () => {
+		stubLinux('arm64', { header: { hostname: 'alpine' } });
+		expect(platformKey()).toBe('linux-arm64-musl');
+		expect(platformDirectory()).toBe('linux-arm64-musl');
+		expect(engineDirectories()).toEqual(['linux-arm64-musl', 'linux-arm64-gnu']);
+	});
+
+	it('a runtime too old for process.report (the 1.38 floor) also prefers the musl engine', () => {
+		// Node 10.11 has no `process.report` at all: the libc cannot be named, and the
+		// libc-static musl binary is the one engine that loads on either host.
+		stubLinux('x64', undefined);
+		expect(platformKey()).toBe('linux-x64-musl');
+		expect(platformDirectory()).toBe('linux-x64-musl');
+		expect(engineDirectories()).toEqual(['linux-x64-musl', 'linux-x64-gnu']);
+	});
+
+	it('armv7 has exactly the gnueabihf engine — no musl twin exists to fall back to', () => {
+		stubLinux('arm', { header: { glibcVersion: '2.24' } });
+		expect(platformKey()).toBe('linux-armhf');
+		expect(platformDirectory()).toBe('linux-armhf');
+		expect(engineDirectories()).toEqual(['linux-armhf']);
+	});
+
+	it('an architecture no engine is built for throws the Unsupported error the fallback knows', () => {
+		stubLinux('ppc64le', { header: { glibcVersion: '2.28' } });
+		expect(() => platformDirectory()).toThrowError(GitBackendError);
+		expect(() => platformDirectory()).toThrowError(/No native engine is built for linux-ppc64le-gnu/);
+		// The candidate list itself is well-formed; both directories are simply absent.
+		expect(engineDirectories()).toEqual(['linux-ppc64le-gnu', 'linux-ppc64le-musl']);
+	});
+
+	it('non-Linux platforms keep their bare keys and their single engine', () => {
+		stubProcess('platform', 'win32');
+		stubProcess('arch', 'arm64');
+		expect(platformKey()).toBe('win32-arm64');
+		expect(platformDirectory()).toBe('win32-arm64-msvc');
+		expect(engineDirectories()).toEqual(['win32-arm64-msvc']);
+		expect(() => platformDirectory('sunos', 'x64')).toThrowError(/No native engine is built for sunos-x64/);
+	});
+
+	it('reportedGlibcVersion reads the report header structurally and never lies', () => {
+		expect(reportedGlibcVersion(undefined)).toBe(null);
+		expect(reportedGlibcVersion(null)).toBe(null);
+		expect(reportedGlibcVersion('not a report')).toBe(null);
+		expect(reportedGlibcVersion({})).toBe(null);
+		expect(reportedGlibcVersion({ header: null })).toBe(null);
+		expect(reportedGlibcVersion({ header: { glibcVersion: '' } })).toBe(null);
+		expect(reportedGlibcVersion({ header: { glibcVersion: '2.17' } })).toBe('2.17');
+	});
+
+	it('the diagnostics table lists every engine the package can carry, both libcs included', () => {
+		const table = enginePlatformTable(path.join(os.tmpdir(), 'ggr-engine-table-missing'));
+		expect(table.map((row) => row.directory)).toEqual([
+			'win32-x64-msvc',
+			'win32-arm64-msvc',
+			'linux-x64-gnu',
+			'linux-x64-musl',
+			'linux-arm64-gnu',
+			'linux-arm64-musl',
+			'linux-armhf',
+			'darwin-x64',
+			'darwin-arm64'
+		]);
+		expect(table.every((row) => row.present === false)).toBe(true);
+		const armhf = table.find((row) => row.key === 'linux-armhf');
+		expect(armhf?.arch).toBe('ARMv7');
+	});
+
+	it('a package carrying only the fallback libc still has an engine for this platform', () => {
+		// A glibc host whose VSIX carries the musl binary only: the fallback candidate is what
+		// makes this an engine platform rather than a CLI-only one.
+		stubLinux('x64', { header: { glibcVersion: '2.31' } });
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ggr-addon-'));
+		tempRoots.push(root);
+		fs.mkdirSync(path.join(root, 'native', 'linux-x64-musl'), { recursive: true });
+		fs.writeFileSync(path.join(root, 'native', 'linux-x64-musl', 'git-graph.node'), 'not a binary');
+		expect(hasEngineForPlatform(root)).toBe(true);
+	});
+
+	it('a broken primary engine falls through to the next candidate, and the failure names the primary', () => {
+		stubLinux('x64', { header: { glibcVersion: '2.31' } });
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ggr-addon-'));
+		tempRoots.push(root);
+		// Both shipped candidates exist, and neither is a loadable binary: require() fails on
+		// both, the local cargo builds are absent, and the search reports the FIRST failure —
+		// the primary engine's — rather than the fallback's.
+		for (const directory of ['linux-x64-gnu', 'linux-x64-musl']) {
+			fs.mkdirSync(path.join(root, 'native', directory), { recursive: true });
+			fs.writeFileSync(path.join(root, 'native', directory, 'git-graph.node'), 'not a binary');
+		}
+
+		let failure: unknown;
+		try {
+			loadAddon(root);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(GitBackendError);
+		expect((failure as GitBackendError).message).toContain(path.join('native', 'linux-x64-gnu'));
+
+		// The failed search is remembered: a retry neither re-probes nor flips candidates.
+		let retried: unknown;
+		try {
+			loadAddon(root);
+		} catch (error) {
+			retried = error;
+		}
+		expect(retried).toBe(failure);
 	});
 });

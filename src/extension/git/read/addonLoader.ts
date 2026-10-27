@@ -14,7 +14,7 @@ import { EngineError, EngineMethod, EngineMethods } from '../../../shared/engine
 import { GitBackendError, GitErrorKind } from './types';
 
 /**
- * The exports of `native/node/src/lib.rs`, as N-API presents them: eight functions, no more.
+ * The exports of `native/node/src/lib.rs`, as N-API presents them: seven functions, no more.
  * Everything the engine answers goes through `request`; the method table lives in the Rust
  * protocol, and its TypeScript mirror regenerates from there.
  */
@@ -26,8 +26,6 @@ export interface NativeAddon {
 	engineVersion(): string;
 	/** One `{"method", "params"}` call; resolves to the `{"ok"|"error"}` envelope as JSON text. */
 	request(repo: string, requestJson: string, requestId?: number): Promise<string>;
-	/** A file's raw bytes at a revision, or why they could not be read. */
-	requestBytes(repo: string, revision: string, filePath: string, requestId?: number): Promise<BytesAnswer>;
 	/**
 	 * Cancel the request registered under `requestId` (task 2.9): it answers the structured
 	 * `cancelled` error at its next checkpoint. Unknown and already-finished ids are no-ops, but
@@ -36,23 +34,76 @@ export interface NativeAddon {
 	cancel(requestId: number): void;
 }
 
-/** The answer of `requestBytes`: the file's bytes, or the structured failure. */
-export interface BytesAnswer {
-	ok: Buffer | null;
-	error: EngineError | null;
-}
-
 /**
- * The prebuilt engines the extension can ship, keyed by `${platform}-${arch}` of the editor.
+ * The prebuilt engines the extension can ship, keyed by the {@link platformKey} that selects
+ * them. Linux is one key per libc (`linux-x64-gnu`, `linux-x64-musl`, ...) plus the armhf
+ * engine (`linux-armhf`, gnueabihf-linked — no musl engine is built for armv7); win32 and
+ * darwin keep the bare `${platform}-${arch}` keys they always had. The directory names are
+ * what `scripts/build-addon.mjs` produces and what the CI matrix (`native-build.yml`) and the
+ * VSIX ship.
  */
-const ENGINE_PLATFORMS: Readonly<Record<string, { directory: string; os: string; arch: string }>> = {
+const ENGINE_PLATFORMS: Readonly<Record<string, { directory: string; os: string; arch: string; label?: string }>> = {
 	'win32-x64': { directory: 'win32-x64-msvc', os: 'Windows', arch: 'x64' },
 	'win32-arm64': { directory: 'win32-arm64-msvc', os: 'Windows', arch: 'ARM64' },
-	'linux-x64': { directory: 'linux-x64-gnu', os: 'Linux', arch: 'x64' },
-	'linux-arm64': { directory: 'linux-arm64-gnu', os: 'Linux', arch: 'ARM64' },
+	'linux-x64-gnu': { directory: 'linux-x64-gnu', os: 'Linux', arch: 'x64', label: 'Linux x64 (glibc)' },
+	'linux-x64-musl': { directory: 'linux-x64-musl', os: 'Linux', arch: 'x64', label: 'Linux x64 (musl)' },
+	'linux-arm64-gnu': { directory: 'linux-arm64-gnu', os: 'Linux', arch: 'ARM64', label: 'Linux ARM64 (glibc)' },
+	'linux-arm64-musl': { directory: 'linux-arm64-musl', os: 'Linux', arch: 'ARM64', label: 'Linux ARM64 (musl)' },
+	'linux-armhf': { directory: 'linux-armhf', os: 'Linux', arch: 'ARMv7', label: 'Linux ARMv7 (gnueabihf)' },
 	'darwin-x64': { directory: 'darwin-x64', os: 'macOS', arch: 'x64' },
 	'darwin-arm64': { directory: 'darwin-arm64', os: 'macOS', arch: 'ARM64' }
 };
+
+/**
+ * The glibc version the runtime reports for its own libc (`process.report`'s header), or null
+ * when the runtime cannot say. Null covers three cases at once: a Node without diagnostic
+ * reports (the VS Code 1.38 floor's Node 10.11 predates them, which offer the report from Node
+ * 12.11 on), a musl host (musl builds leave `glibcVersion` out of the report header), and
+ * every non-Linux platform, where the question does not apply. The header is read
+ * structurally because the typings of the editor floor predate the field.
+ *
+ * Purely a property read — no spawn, no filesystem access: detection must stay free on the
+ * activation path.
+ */
+export function reportedGlibcVersion(report: unknown = process.report): string | null {
+	if (typeof report !== 'object' || report === null) return null;
+	const header = (report as { header?: unknown }).header;
+	if (typeof header !== 'object' || header === null) return null;
+	const version = (header as { glibcVersion?: unknown }).glibcVersion;
+	return typeof version === 'string' && version.length > 0 ? version : null;
+}
+
+/**
+ * The engine directories that can serve this editor, best match first — the order
+ * {@link loadAddon} tries them in, which is what makes the libc choice a *fallback order*
+ * rather than a guess: when the better-matching binary is missing from the package or refuses
+ * to load, the next one still gets its chance before the `git` CLI takes over.
+ *
+ * - A reported glibc version means a glibc host: the `-gnu` engine built for it (floor 2.17,
+ *   ADR 0002) leads, and the libc-static `-musl` engine — which loads on a glibc host too —
+ *   is the fallback.
+ * - No report (the floor's old Node): musl leads. The musl builds carry their libc
+ *   statically, so the musl binary loads on a glibc host as well as a musl one — the primary
+ *   candidate is the one binary that cannot be wrong about a libc the runtime could not name.
+ *   Leading with `-gnu` instead would hand the rarest host in the matrix (a musl one) a
+ *   binary that cannot load there, for no gain on the common hosts.
+ * - `arm` (armv7): only the gnueabihf engine exists — there is no musl twin to fall back to,
+ *   so a failed load falls through to the local cargo build and then the CLI, as before.
+ */
+export function engineDirectories(
+	platform: NodeJS.Platform = process.platform,
+	arch: string = process.arch,
+	glibcVersion: string | null = reportedGlibcVersion()
+): string[] {
+	if (platform !== 'linux') {
+		const engine = ENGINE_PLATFORMS[`${platform}-${arch}`];
+		return engine === undefined ? [] : [engine.directory];
+	}
+	if (arch === 'arm') return [ENGINE_PLATFORMS['linux-armhf'].directory];
+	const preferred = glibcVersion !== null ? 'gnu' : 'musl';
+	const fallback = preferred === 'gnu' ? 'musl' : 'gnu';
+	return [`linux-${arch}-${preferred}`, `linux-${arch}-${fallback}`];
+}
 
 /** One row of the engine-platform table (diagnostics; see `enginePlatformTable`). */
 export interface EnginePlatform {
@@ -85,21 +136,22 @@ export function enginePlatformTable(
 			directory: platform.directory,
 			os: platform.os,
 			arch: platform.arch,
-			label: `${platform.os} ${platform.arch}`,
+			label: platform.label ?? `${platform.os} ${platform.arch}`,
 			present: fs.existsSync(path.join(root, 'native', platform.directory, 'git-graph.node'))
 		};
 	});
 }
 
 /**
- * The directory name of the prebuilt binary for this platform, matching what the CI matrix
- * produces and what the VSIX ships.
+ * The directory name of the prebuilt binary for this platform — the *first* entry of
+ * {@link engineDirectories}, matching what the CI matrix produces and what the VSIX ships.
  */
 export function platformDirectory(
 	platform: NodeJS.Platform = process.platform,
-	arch: string = process.arch
+	arch: string = process.arch,
+	glibcVersion: string | null = reportedGlibcVersion()
 ): string {
-	const key = `${platform}-${arch}`;
+	const key = platformKey(platform, arch, glibcVersion);
 	const engine = ENGINE_PLATFORMS[key];
 	if (engine === undefined) {
 		throw new GitBackendError('Unsupported', `No native engine is built for ${key}`);
@@ -107,19 +159,31 @@ export function platformDirectory(
 	return engine.directory;
 }
 
-/** The `${platform}-${arch}` of the editor, the key the engine directories are listed by. */
+/**
+ * The `${platform}-${arch}` of the editor, the key the engine directories are listed by —
+ * suffixed with the libc on Linux (`linux-x64-gnu`), because the two Linux builds of one
+ * architecture are different engines. It names the engine this editor would load first, so on
+ * a runtime that cannot report its libc the musl key is returned on purpose: the same
+ * preference {@link engineDirectories} orders its candidates by.
+ */
 export function platformKey(
 	platform: NodeJS.Platform = process.platform,
-	arch: string = process.arch
+	arch: string = process.arch,
+	glibcVersion: string | null = reportedGlibcVersion()
 ): string {
+	if (platform === 'linux') {
+		if (arch === 'arm') return 'linux-armhf';
+		return `linux-${arch}-${glibcVersion !== null ? 'gnu' : 'musl'}`;
+	}
 	return `${platform}-${arch}`;
 }
 
 /**
- * Is there a native engine binary for this editor — a platform a binary is built for, with the
- * binary actually present? An incomplete package (a known platform whose binary is missing, e.g.
- * a VSIX built without one of the six targets) is reported the same way as an unknown platform:
- * both simply run over the `git` CLI backend for everything.
+ * Is there a native engine binary for this editor — a platform a binary is built for, with at
+ * least one matching binary actually present (either libc twin of a Linux engine counts, as
+ * does a local cargo build)? An incomplete package (known platforms whose binaries are all
+ * missing, e.g. a VSIX built without one of the targets) is reported the same way as an
+ * unknown platform: both simply run over the `git` CLI backend for everything.
  */
 export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '..', '..', '..')): boolean {
 	try {
@@ -130,11 +194,10 @@ export function hasEngineForPlatform(root: string = path.join(__dirname, '..', '
 	return candidatePaths(root).some((candidate) => fs.existsSync(candidate));
 }
 
-/** Where the addon might be: the shipped location first, then the local build outputs. */
+/** Where the addon might be: every shipped engine that matches, then the local build outputs. */
 function candidatePaths(root: string): string[] {
-	const directory = platformDirectory();
 	return [
-		path.join(root, 'native', directory, 'git-graph.node'),
+		...engineDirectories().map((directory) => path.join(root, 'native', directory, 'git-graph.node')),
 		path.join(root, 'target', 'release', libraryName()),
 		path.join(root, 'target', 'debug', libraryName())
 	];
@@ -157,14 +220,19 @@ let loadFailure: Error | null = null;
 /**
  * Load the addon, or report why it could not be loaded.
  *
- * The failure is remembered: a missing binary will not start working on a retry, and the caller
- * (which falls back to the `git` CLI) would otherwise pay the filesystem probe on every request.
+ * The candidates of {@link engineDirectories} are tried in order, so a glibc host whose
+ * `-gnu` binary is missing from the package (or refuses to load) still gets the libc-static
+ * `-musl` one, and the local cargo builds stand in on a developer machine. The failure of the
+ * whole search is remembered: a missing binary will not start working on a retry, and the
+ * caller (which falls back to the `git` CLI) would otherwise pay the filesystem probe on
+ * every request.
  */
 export function loadAddon(root: string = path.join(__dirname, '..', '..', '..', '..')): NativeAddon {
 	if (cached !== null) return cached;
 	if (loadFailure !== null) throw loadFailure;
 
 	const candidates = candidatePaths(root);
+	let broken: GitBackendError | null = null;
 	for (const candidate of candidates) {
 		if (!fs.existsSync(candidate)) continue;
 		try {
@@ -172,17 +240,21 @@ export function loadAddon(root: string = path.join(__dirname, '..', '..', '..', 
 			cached = require(candidate) as NativeAddon;
 			return cached;
 		} catch (error) {
-			loadFailure = new GitBackendError(
+			// A binary that is present but will not load does not end the search: the next
+			// candidate may be the twin that does (the gnu/musl pair, or a local cargo build).
+			// The first candidate's failure is the diagnostic worth reporting — the primary
+			// engine is the one built for this platform, so if nothing loads, it is its
+			// failure the `git` CLI fallback should name.
+			broken ??= new GitBackendError(
 				'Unsupported',
 				`The native engine at ${candidate} could not be loaded: ${errorMessage(error)}`
 			);
-			throw loadFailure;
 		}
 	}
 
-	loadFailure = new GitBackendError(
+	loadFailure = broken ?? new GitBackendError(
 		'Unsupported',
-		`No native engine was found for ${process.platform}-${process.arch}. Looked in:\n  ${candidates.join('\n  ')}`
+		`No native engine was found for ${platformKey()}. Looked in:\n  ${candidates.join('\n  ')}`
 	);
 	throw loadFailure;
 }

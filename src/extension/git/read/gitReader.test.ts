@@ -22,7 +22,6 @@ vi.mock('./addonLoader', () => ({
 		openCount: () => 0,
 		engineVersion: () => '0.0.0',
 		request: async () => '{"ok":null}',
-		requestBytes: async () => ({ ok: null, error: null }),
 		cancel: () => undefined
 	}))
 }));
