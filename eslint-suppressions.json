@@ -35,11 +35,23 @@
     }
   },
   "src/extension/automation/fixture.ts": {
-    "max-lines": {
-      "count": 1
-    },
     "n/no-sync": {
-      "count": 20
+      "count": 11
+    }
+  },
+  "src/extension/automation/fixtureContent.ts": {
+    "n/no-sync": {
+      "count": 1
+    }
+  },
+  "src/extension/automation/fixtureGit.ts": {
+    "n/no-sync": {
+      "count": 8
+    }
+  },
+  "src/extension/automation/fixtureLifecycle.ts": {
+    "n/no-sync": {
+      "count": 7
     }
   },
   "src/extension/automation/hostBridge.ts": {
@@ -58,17 +70,11 @@
   "src/extension/automation/server.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 6
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/extension/automation/suiteRunner.ts": {
-    "max-lines": {
-      "count": 1
-    },
     "n/no-sync": {
-      "count": 9
+      "count": 2
     },
     "prefer-const": {
       "count": 1

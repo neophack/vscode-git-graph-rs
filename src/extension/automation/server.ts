@@ -1,9 +1,17 @@
 import { performance } from 'perf_hooks';
 import { Logger } from '../platform/logger';
-import { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
-import { AutomationAction, AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
+import { RequestMessage } from '../../shared/protocol/messages';
+import { AutomationMode, CATALOG, UiStep, expandTemplate, validateCatalog } from './catalog';
 import { HostBridge, ShimResult } from './hostBridge';
 import { activeScriptedUiPort } from './scriptedUiPort';
+import { verifyAction } from './actionVerify';
+import { buildContext, ContextProbes } from './runContext';
+import { ActiveRun, RunTracker } from './runTracker';
+import { ActionSample, ActionStats, RunOutcome, RunStats } from './runStats';
+
+/* The engine's value types moved to runStats.ts; re-exported so the server's import surface
+ * (and the suite runner's) stays what it was before the decomposition. */
+export type { ActionSample, ActionStats, RunOutcome };
 
 /**
  * The automation engine: the in-process half of the automation interface, driven directly by
@@ -14,10 +22,13 @@ import { activeScriptedUiPort } from './scriptedUiPort';
  * is tapped at the single exit point of GitGraphView, so a run measures exactly what a user's
  * click would measure.
  *
- * The timing-sensitive methods (run / invoke / eval) are serialised so the timing windows of
- * concurrent runs can never overlap. Exactly one tap is registered on the view for the engine's
- * lifetime; every observation (traffic, run expectations, loss-warning confirmations, query
- * payloads) flows through it.
+ * The server is the orchestration half of the engine: it routes the runner's calls (run /
+ * invoke / eval / query / stats) and walks one catalogued action from precondition checks
+ * through injection to the post-run verify. The mechanics live in their own modules —
+ * runTracker (the active-run state machine and the view tap), runContext (placeholder
+ * resolution), actionVerify (the post-run state checks) and runStats (the measurement
+ * bookkeeping). The timing-sensitive methods (run / invoke / eval) are serialised so the
+ * timing windows of concurrent runs can never overlap.
  */
 
 export interface AutomationEngineDeps {
@@ -25,23 +36,6 @@ export interface AutomationEngineDeps {
 	readonly bridge: HostBridge;
 	/** Extension version, reported for diagnostics. */
 	readonly version: string;
-}
-
-export interface ActionSample {
-	readonly totalMs: number;
-	readonly responses: readonly { readonly command: string; readonly atMs: number }[];
-}
-
-export interface ActionStats {
-	readonly id: string;
-	readonly mode: AutomationMode;
-	readonly runs: number;
-	readonly failures: number;
-	readonly minMs: number;
-	readonly p50Ms: number;
-	readonly p90Ms: number;
-	readonly maxMs: number;
-	readonly lastError: string | null;
 }
 
 const DEFAULT_RUN_TIMEOUT_MS = 30000;
@@ -58,77 +52,15 @@ function capturedNotifications(dialogs: { readonly messages: readonly string[] }
 	return [...dialogs.messages, ...fromScript];
 }
 
-/**
- * The error payload a response carries (NULL when the operation succeeded). The host answers a
- * failed operation with the SAME response command — the git error sits in `error` (single) or
- * `errors` (multi, e.g. addTag's tag-then-push pair) — so "a response arrived" alone says nothing
- * about whether the operation worked. This is what separates a passing run from a recorded one.
- */
-function errorPayloadOf(msg: ResponseMessage): string | null {
-	const single = (msg as { error?: unknown }).error;
-	if (typeof single === 'string' && single !== '') return single;
-	const multi = (msg as { errors?: unknown }).errors;
-	if (Array.isArray(multi)) {
-		const texts = multi.filter((e): e is string => typeof e === 'string' && e !== '');
-		if (texts.length > 0) return texts.join('; ');
-	}
-	return null;
-}
-
-interface ActiveRun {
-	readonly runId: number;
-	readonly mode: AutomationMode;
-	readonly t0: number;
-	/** Expected response commands still awaited. */
-	readonly pending: Set<string>;
-	/** Highest refresh id per command observed BEFORE this run started (stale-response guard). */
-	readonly baseline: ReadonlyMap<string, number>;
-	/** Refresh ids this run injected itself (request mode and invoke echo them back unchanged). */
-	readonly injectedRefreshIds: Map<string, number>;
-	/** Responses observed so far, with their arrival time relative to t0 and error payload (NULL when the operation succeeded). */
-	readonly seen: { command: string; atMs: number; error: string | null }[];
-	/** TRUE once the page-side steps have completed (UI mode only). */
-	shimComplete: boolean;
-	shimResult: ShimResult | null;
-	/** For invoke / query: the command whose payload is captured, and the payload. */
-	invokeCommand: string | null;
-	payload: unknown;
-	waiter: (() => void) | null;
-	timer: ReturnType<typeof setTimeout> | null;
-}
-
-export interface RunOutcome {
-	readonly ok: boolean;
-	readonly skipped?: boolean;
-	readonly reason?: string;
-	readonly timings?: ActionSample;
-	readonly response?: unknown;
-	readonly error?: string;
-	/** Native notifications the command raised (command mode only), captured by the dialog auto-answer. */
-	readonly notifications?: readonly string[];
-}
-
 export class AutomationServer {
 	private readonly logger: Logger;
 	private readonly bridge: HostBridge;
 	readonly version: string;
-	private readonly samples = new Map<string, number[]>();
-	private readonly failureCounts = new Map<string, number>();
-	private readonly lastErrors = new Map<string, string>();
-	private activeRun: ActiveRun | null = null;
-	private runIdSeq = 1;
+	private readonly tracker: RunTracker;
+	private readonly runStats: RunStats;
 	/** Serialises the timing-sensitive methods so their windows never overlap. */
 	private chain: Promise<unknown> = Promise.resolve();
 	private started = false;
-	/**
-	 * Highest refresh id observed per command across the engine's lifetime. The webview increments
-	 * the id of every NEW loadRepoInfo/loadCommits request, while the load pipeline's follow-up
-	 * responses (remote refs, "Uncommitted Changes") reuse the id of the request they complete —
-	 * and can arrive seconds later, during a LATER run. A response belongs to the current run only
-	 * when its id exceeds the baseline snapshot taken at the run's start (or it echoes an id the
-	 * run itself injected, which request mode and invoke pin to 0).
-	 */
-	private readonly maxRefreshIds = new Map<string, number>();
 	private offHostMessage: (() => void) | null = null;
 	private offShimResult: (() => void) | null = null;
 
@@ -136,6 +68,8 @@ export class AutomationServer {
 		this.logger = deps.logger;
 		this.bridge = deps.bridge;
 		this.version = deps.version;
+		this.tracker = new RunTracker(deps.bridge, deps.logger);
+		this.runStats = new RunStats(deps.logger);
 		const problems = validateCatalog(CATALOG);
 		for (const problem of problems) this.logger.logError('Automation catalog: ' + problem);
 		if (problems.length > 0) throw new Error('Invalid automation catalog (' + problems.length + ' problems)');
@@ -145,14 +79,14 @@ export class AutomationServer {
 	public start(): void {
 		if (this.started) return;
 		this.started = true;
-		this.offHostMessage = this.bridge.onHostMessage((msg) => this.onHostMessage(msg));
-		this.offShimResult = this.bridge.onShimResult((result) => this.onShimResult(result));
+		this.offHostMessage = this.bridge.onHostMessage((msg) => this.tracker.onHostMessage(msg));
+		this.offShimResult = this.bridge.onShimResult((result) => this.tracker.onShimResult(result));
 	}
 
 	public stop(): void {
 		if (!this.started) return;
 		this.started = false;
-		if (this.activeRun !== null) this.finishRun(new Error('Automation engine stopped'));
+		if (this.tracker.active !== null) this.tracker.forceFinish(new Error('Automation engine stopped'));
 		if (this.offHostMessage !== null) { this.offHostMessage(); this.offHostMessage = null; }
 		if (this.offShimResult !== null) { this.offShimResult(); this.offShimResult = null; }
 	}
@@ -210,120 +144,13 @@ export class AutomationServer {
 
 	/** Aggregated per-action timings and failure counts across this engine's runs. */
 	public stats(): ActionStats[] {
-		const stats: ActionStats[] = [];
-		for (const [key, samples] of this.samples) {
-			const sorted = [...samples].sort((a, b) => a - b);
-			const percentile = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-			const [id, mode] = key.split('|') as [string, AutomationMode];
-			stats.push({
-				id, mode,
-				runs: sorted.length,
-				failures: this.failureCounts.get(key) ?? 0,
-				minMs: sorted[0], p50Ms: percentile(0.5), p90Ms: percentile(0.9), maxMs: sorted[sorted.length - 1],
-				lastError: this.lastErrors.get(key) ?? null
-			});
-		}
-		return stats.sort((a, b) => a.id.localeCompare(b.id));
+		return this.runStats.report();
 	}
 
 	private enqueue<T>(task: () => Promise<T>): Promise<T> {
 		const result = this.chain.then(task, task);
 		this.chain = result.then(() => undefined, () => undefined);
 		return result;
-	}
-
-	/* ---------------- Traffic observation (the single view tap) ---------------- */
-
-	private onHostMessage(msg: ResponseMessage): void {
-		const run = this.activeRun;
-		const refreshId = (msg as { refreshId?: unknown }).refreshId;
-		if (typeof refreshId === 'number') {
-			const known = this.maxRefreshIds.get(msg.command);
-			if (known === undefined || refreshId > known) this.maxRefreshIds.set(msg.command, refreshId);
-		}
-
-		if (run !== null && msg.command === run.invokeCommand) {
-			run.payload = msg;
-		}
-
-		// Request-mode loss-warning flow: the webview would show a dialog and re-send with
-		// `confirmed`; the runner is not interactive, so confirm on its behalf.
-		if (msg.command === 'lossWarning' && run !== null && run.mode === 'request') {
-			const retry = (msg as unknown as { retry?: RequestMessage }).retry;
-			if (retry !== undefined) {
-				this.logger.log('Automation confirmed a data-loss warning for "' + retry.command + '"');
-				this.bridge.inject(retry);
-			}
-		}
-
-		if (run === null || !run.pending.has(msg.command)) return;
-		// The final "Uncommitted Changes" follow-up of a previous load cycle is identifiable by its
-		// `uncommittedCount` payload (the main response never carries it) and can arrive seconds
-		// later — never let it satisfy a run's expectation.
-		if (msg.command === 'loadCommits' && typeof (msg as { uncommittedCount?: unknown }).uncommittedCount === 'number') return;
-		// Stale-response guard: a follow-up of a PREVIOUS load cycle reuses that cycle's refresh id,
-		// which never exceeds the ids already observed when this run started. Matching by command
-		// alone let such a follow-up satisfy the run's expectation before its own responses arrived,
-		// flipping the recorded order and completing the run before the view had re-rendered.
-		if (typeof refreshId === 'number'
-			&& refreshId <= (run.baseline.get(msg.command) ?? -1)
-			&& run.injectedRefreshIds.get(msg.command) !== refreshId) return;
-		run.pending.delete(msg.command);
-		run.seen.push({ command: msg.command, atMs: this.relative(run.t0), error: errorPayloadOf(msg) });
-		if (run.pending.size === 0 && run.shimComplete) this.completeRun();
-	}
-
-	private onShimResult(result: ShimResult): void {
-		const run = this.activeRun;
-		if (run === null || run.runId !== result.runId) return;
-		run.shimComplete = true;
-		run.shimResult = result;
-		// A failed step batch is final: the responses it never triggered cannot arrive anymore,
-		// so end the run immediately with the step error instead of burning the whole timeout.
-		// A skipped batch is final too: the control this action drives is not offered in this
-		// view state, so its expected responses will not arrive either.
-		if (!result.ok || result.skipped === true || run.pending.size === 0) this.completeRun();
-	}
-
-	private relative(t0: number): number {
-		return Math.round((performance.now() - t0) * 100) / 100;
-	}
-
-	/** Resolve the active run's waiter, if any is waiting. */
-	private completeRun(): void {
-		const run = this.activeRun;
-		if (run !== null && run.waiter !== null) {
-			const waiter = run.waiter;
-			run.waiter = null;
-			waiter();
-		}
-	}
-
-	/** Force-fail the active run (engine stop). */
-	private finishRun(error: Error): void {
-		const run = this.activeRun;
-		if (run === null) return;
-		if (run.timer !== null) clearTimeout(run.timer);
-		run.timer = null;
-		run.shimComplete = true;
-		run.shimResult = { runId: run.runId, ok: false, results: [], error: error.message };
-		this.completeRun();
-	}
-
-	/** Wait until the run's expectations are met, or the timeout elapses. */
-	private waitForRun(run: ActiveRun, timeoutMs: number): Promise<'completed' | 'timeout'> {
-		if (run.pending.size === 0 && run.shimComplete) return Promise.resolve('completed');
-		return new Promise<'completed' | 'timeout'>((resolve) => {
-			run.waiter = () => {
-				if (run.timer !== null) clearTimeout(run.timer);
-				run.timer = null;
-				resolve('completed');
-			};
-			run.timer = setTimeout(() => {
-				run.waiter = null;
-				resolve('timeout');
-			}, timeoutMs);
-		});
 	}
 
 	/* ---------------- Run execution ---------------- */
@@ -343,7 +170,7 @@ export class AutomationServer {
 		this.requireView();
 
 		const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : DEFAULT_RUN_TIMEOUT_MS;
-		const context = await this.buildContext(action, params, mode);
+		const context = await buildContext(this.probes(), action, params, mode);
 
 		if (action.requires !== undefined && action.requires.includes('remote') && context.remote === '') {
 			return { ok: false, skipped: true, reason: 'requires a configured remote' };
@@ -381,15 +208,12 @@ export class AutomationServer {
 			return { ok: false, skipped: true, reason: 'requires the context file to exist in the working tree' };
 		}
 
-		const run: ActiveRun = {
-			runId: this.runIdSeq++, mode, t0: performance.now(),
-			pending: new Set(action.expect.responses),
-			baseline: new Map(this.maxRefreshIds), injectedRefreshIds: new Map(),
-			seen: [],
-			shimComplete: mode !== 'ui', shimResult: null,
-			invokeCommand: null, payload: null, waiter: null, timer: null
-		};
-		this.activeRun = run;
+		const run = this.tracker.beginRun({
+			mode,
+			pending: action.expect.responses,
+			baseline: this.tracker.baselineSnapshot(),
+			shimComplete: mode !== 'ui'
+		});
 		this.logger.log('Automation run ' + run.runId + ': ' + id + ' (' + mode + ')');
 
 		// Command mode: native dialogs and notifications the command raises are intercepted
@@ -421,7 +245,7 @@ export class AutomationServer {
 					new Promise<boolean>((resolve) => { setTimeout(() => resolve(true), timeoutMs); })
 				]);
 				if (incomplete) {
-					return this.record(action, mode, { ok: false, error: 'The command did not complete within ' + timeoutMs + ' ms' });
+					return this.runStats.record(action, mode, { ok: false, error: 'The command did not complete within ' + timeoutMs + ' ms' });
 				}
 			} else {
 				for (const template of action.request ?? []) {
@@ -434,11 +258,11 @@ export class AutomationServer {
 				}
 			}
 
-			const outcome = await this.waitForRun(run, timeoutMs);
+			const outcome = await this.tracker.waitForRun(run, timeoutMs);
 			if (run.timer !== null) { clearTimeout(run.timer); run.timer = null; }
 
 			if (outcome === 'timeout') {
-				return this.record(action, mode, {
+				return this.runStats.record(action, mode, {
 					ok: false,
 					error: 'Timed out after ' + timeoutMs + ' ms waiting for ' + [...run.pending].join(', ')
 						+ (mode === 'ui' && run.shimResult === null ? ' (page steps never completed)' : '')
@@ -446,19 +270,19 @@ export class AutomationServer {
 			}
 			const shim = run.shimResult;
 			if (shim !== null && !shim.ok) {
-				return this.record(action, mode, {
+				return this.runStats.record(action, mode, {
 					ok: false,
 					error: 'Page step ' + (shim.failedStep ?? '?') + ' failed: ' + (shim.error ?? 'unknown')
 				});
 			}
 			if (shim !== null && shim.skipped === true) {
-				return this.record(action, mode, {
+				return this.runStats.record(action, mode, {
 					ok: false, skipped: true,
 					reason: shim.skipReason ?? 'a precondition of the action is absent in the view'
 				});
 			}
 
-			const timings: ActionSample = { totalMs: this.relative(run.t0), responses: run.seen };
+			const timings: ActionSample = { totalMs: this.tracker.relative(run.t0), responses: run.seen };
 			if (mode === 'command') {
 				// Page steps the command's completion gates on (verification barriers like the
 				// first rendered row, and state restoration like clearing the file filter a
@@ -467,10 +291,10 @@ export class AutomationServer {
 				if (action.uiAfter !== undefined) {
 					const after = await this.runShimBatch(expandTemplate(action.uiAfter, context), timeoutMs);
 					if (!after.ok) {
-						return this.record(action, mode, { ok: false, timings, error: 'Post step ' + (after.failedStep ?? '?') + ' failed: ' + (after.error ?? 'unknown') });
+						return this.runStats.record(action, mode, { ok: false, timings, error: 'Post step ' + (after.failedStep ?? '?') + ' failed: ' + (after.error ?? 'unknown') });
 					}
 					if (after.skipped === true) {
-						return this.record(action, mode, { ok: false, skipped: true, reason: after.skipReason ?? 'a post-run precondition of the action is absent in the view' });
+						return this.runStats.record(action, mode, { ok: false, skipped: true, reason: after.skipReason ?? 'a post-run precondition of the action is absent in the view' });
 					}
 				}
 				if (tabsBefore !== null) {
@@ -485,7 +309,7 @@ export class AutomationServer {
 						const after = this.bridge.tabKeys();
 						if (after !== null && after.some((key) => before.indexOf(key) === -1)) break;
 						if (performance.now() > deadline) {
-							return this.record(action, mode, { ok: false, timings, error: 'expected the command to open a new editor tab' });
+							return this.runStats.record(action, mode, { ok: false, timings, error: 'expected the command to open a new editor tab' });
 						}
 						await new Promise((resolve) => setTimeout(resolve, 50));
 					}
@@ -501,15 +325,15 @@ export class AutomationServer {
 			const allowed = action.allowErrorOn ?? [];
 			const failedResponse = run.seen.find((s) => s.error !== null && !allowed.includes(s.command));
 			if (failedResponse !== undefined) {
-				return this.record(action, mode, {
+				return this.runStats.record(action, mode, {
 					ok: false, timings,
 					error: 'the host reported an error for "' + failedResponse.command + '": ' + failedResponse.error
 				});
 			}
 			if (action.verify !== undefined) {
-				const verifyError = await this.verifyAction(action, context);
+				const verifyError = await verifyAction(this.probes(), action, context);
 				if (verifyError !== null) {
-					return this.record(action, mode, { ok: false, timings, error: verifyError });
+					return this.runStats.record(action, mode, { ok: false, timings, error: verifyError });
 				}
 			}
 			if (action.expectNotifications !== undefined && dialogs !== null) {
@@ -519,7 +343,7 @@ export class AutomationServer {
 				const captured = capturedNotifications(dialogs, scriptedBaseline);
 				for (const needle of action.expectNotifications) {
 					if (!captured.some((message) => message.indexOf(needle) !== -1)) {
-						return this.record(action, mode, {
+						return this.runStats.record(action, mode, {
 							ok: false, timings,
 							error: 'expected a native notification containing "' + needle + '"; the command raised: '
 								+ (captured.length === 0 ? '(no notification)' : '"' + captured.join('" | "') + '"')
@@ -530,267 +354,27 @@ export class AutomationServer {
 			if (action.expectAnyNotification === true && dialogs !== null && capturedNotifications(dialogs, scriptedBaseline).length === 0) {
 				// The command's whole observable outcome is a (fully localized) notification: pin its
 				// presence when no language-invariant fragment exists to pin its text.
-				return this.record(action, mode, { ok: false, timings, error: 'the command raised no native notification' });
+				return this.runStats.record(action, mode, { ok: false, timings, error: 'the command raised no native notification' });
 			}
 			if (action.expectModal === true && dialogs !== null
 				&& dialogs.autoAnswered.length === 0 && (activeScriptedUiPort()?.answeredDialogCount(scriptedBaseline) ?? 0) === 0) {
 				// The command must have reached its confirmation point: a native modal the
 				// auto-answer (or the scripted port) answered (a silent no-op never got that far).
-				return this.record(action, mode, { ok: false, timings, error: 'the command raised no confirmation modal' });
+				return this.runStats.record(action, mode, { ok: false, timings, error: 'the command raised no confirmation modal' });
 			}
-			return this.record(action, mode, {
+			return this.runStats.record(action, mode, {
 				ok: true, timings,
 				notifications: dialogs !== null && capturedNotifications(dialogs, scriptedBaseline).length > 0
 					? capturedNotifications(dialogs, scriptedBaseline)
 					: undefined
 			});
 		} finally {
-			this.activeRun = null;
+			this.tracker.endRun();
 			if (dialogs !== null) {
 				for (const line of dialogs.autoAnswered) this.logger.log('Automation auto-answered a native dialog: ' + line);
 				dialogs.restore();
 			}
 		}
-	}
-
-	/** Does any path of the action reference the placeholder? */
-	private references(action: AutomationAction, name: string): boolean {
-		const needle = '{{' + name + '}}';
-		if (JSON.stringify(action.ui ?? []).indexOf(needle) !== -1
-			|| JSON.stringify(action.uiAfter ?? []).indexOf(needle) !== -1
-			|| JSON.stringify(action.request ?? []).indexOf(needle) !== -1) return true;
-		// Command-mode argument shapes build their values from the context without a template:
-		// every shape but the repository-root one carries a file, and the diff-document URI also
-		// carries a commit.
-		if (action.vscodeCommand !== undefined) {
-			const arg = action.vscodeCommand.arg;
-			if (name === 'file' && arg !== undefined && arg.kind !== 'rootUri') return true;
-			if (name === 'commit' && arg !== undefined && arg.kind === 'diffUri') return true;
-		}
-		return false;
-	}
-
-	/** Build the placeholder context for an action from live repository state. */
-	private async buildContext(action: AutomationAction, params: Record<string, unknown>, mode: AutomationMode): Promise<Record<string, string>> {
-		const state = this.bridge.viewState();
-		const repo = typeof params.repo === 'string' ? params.repo : state.currentRepo;
-		if (typeof repo !== 'string' || repo === '') throw new Error('No repository is active in the Git Graph view');
-		const context: Record<string, string> = { repo, ...stringifyParams(params) };
-		context.reposCount = String(state.repos.length);
-
-		const repoInfo = await this.queryRepoInfo(repo);
-		context.head = repoInfo.head ?? '';
-		const branches: string[] = repoInfo.branches ?? [];
-		const localBranches: string[] = branches.filter((b) => b.indexOf('remotes/') !== 0);
-		context.branch = localBranches.find((b) => b !== repoInfo.head) ?? localBranches[0] ?? '';
-		// On a detached HEAD there is no checked-out branch name; any local branch still labels
-		// a row the flows can reveal, so fall back to the first one.
-		context.branchHead = repoInfo.head ?? localBranches[0] ?? '';
-		context.branchCount = String(branches.length);
-		// ResponseLoadRepoInfo carries remote NAMES only; remote-tracking branches appear in
-		// `branches` as `remotes/<remote>/<branch>`.
-		const remotes: string[] = repoInfo.remotes ?? [];
-		context.remote = remotes[0] ?? '';
-		const remotePrefix = context.remote === '' ? '' : 'remotes/' + context.remote + '/';
-		const remoteBranchFull = remotePrefix === '' ? '' : branches.find((b) => b.indexOf(remotePrefix) === 0) ?? '';
-		context.remoteBranch = remoteBranchFull === '' ? '' : remoteBranchFull.slice(remotePrefix.length);
-		if (this.references(action, 'stash')) {
-			// UI mode right-clicks the rendered stash label, which only exists for a stash inside
-			// the loaded graph — the reflog can hold stashes far older than the loaded page (real
-			// repositories), so resolve the placeholder from the same probed page the view renders
-			// and let requires:['stash'] skip cleanly. Request mode addresses the host directly,
-			// where every recorded stash is reachable regardless of what the view loaded.
-			if (mode === 'request') {
-				context.stash = (repoInfo.stashes ?? [])[0]?.selector ?? '';
-			} else {
-				const probed = await this.queryCommits(repo, 300);
-				context.stash = probed.find((commit) => commit.stash !== null)?.stash?.selector ?? '';
-			}
-		}
-
-		if (this.references(action, 'commit') || this.references(action, 'commitParent') || this.references(action, 'file')
-			|| this.references(action, 'commitSubject')
-			|| this.references(action, 'author') || this.references(action, 'findQuery')
-			|| this.references(action, 'tag') || this.references(action, 'annotatedTag')
-			|| this.references(action, 'binaryFile') || this.references(action, 'binaryCommit') || this.references(action, 'binaryCommitParent')
-			|| this.references(action, 'imageFile') || this.references(action, 'imageCommit') || this.references(action, 'imageCommitParent')) {
-			// A deeper page when tags are in play: they often sit further down the history than
-			// the commits the other placeholders need (the fixture's first tag is ~100 deep).
-			const wantsTags = this.references(action, 'tag') || this.references(action, 'annotatedTag');
-			const commits = await this.queryCommits(repo, wantsTags ? 300 : 100);
-			const pick = commits.find((c) => c.hash !== repoInfo.head) ?? commits[0];
-			context.commit = pick?.hash ?? '';
-			context.commitParent = pick?.parents?.[0] ?? '';
-			// The subject (first line of the message) — the text the rendered row's description cell
-			// must show, so a text assertion can hold the view against the repository's own data.
-			context.commitSubject = (pick?.message ?? '').split('\n')[0].trim();
-			if (this.references(action, 'author')) context.author = pick?.author ?? '';
-
-			// A find query guaranteed to match: the first branch label of the loaded page (the
-			// newest commits render first); fall back to the checked-out branch, any branch, and
-			// finally the context commit's abbreviated hash.
-			let findQuery = '';
-			for (const commit of commits) {
-				if ((commit.heads ?? []).length > 0) { findQuery = commit.heads[0]; break; }
-			}
-			if (findQuery === '') findQuery = context.branchHead;
-			if (findQuery === '') findQuery = context.branch;
-			if (findQuery === '') findQuery = (context.commit ?? '').slice(0, 8);
-			context.findQuery = findQuery;
-
-			// Tags of the loaded graph, newest first; annotated ones are marked (GitCommitTag).
-			context.tag = '';
-			context.annotatedTag = '';
-			for (const commit of commits) {
-				for (const tag of commit.tags ?? []) {
-					if (context.tag === '') context.tag = tag.name;
-					if (context.annotatedTag === '' && tag.annotated === true) context.annotatedTag = tag.name;
-				}
-			}
-
-			if (this.references(action, 'file') && context.commit !== '') {
-				// Prefer a commit whose file change satisfies every Commit Details menu condition
-				// (a Modified, non-binary file: deletions hide "Open File", binaries hide the
-				// working-file diff); probe past empty commits before settling for any file.
-				const usable = (file: { type: string; additions: number | null; deletions: number | null; newFilePath: string }) =>
-					file.type === 'M' && (file.additions !== null || file.deletions !== null);
-				const candidates = commits.filter((c) => c.hash !== repoInfo.head).slice(0, 5);
-				if (candidates.length === 0 && commits.length > 0) candidates.push(commits[0]);
-				let fallback: { hash: string; parent: string; file: string } | null = null;
-				for (const candidate of candidates) {
-					const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
-					if (changes.length === 0) continue;
-					const good = changes.find(usable);
-					if (good !== undefined) {
-						context.commit = candidate.hash;
-						context.commitParent = candidate.parents?.[0] ?? '';
-						context.commitSubject = candidate.message.split('\n')[0].trim();
-						context.file = good.newFilePath;
-						break;
-					}
-					if (fallback === null) {
-						const anyExisting = changes.find((file: { type: string; newFilePath: string }) => file.type !== 'D') ?? changes[0];
-						fallback = { hash: candidate.hash, parent: candidate.parents?.[0] ?? '', file: anyExisting.newFilePath };
-					}
-				}
-				if (context.file === undefined && fallback !== null) {
-					context.commit = fallback.hash;
-					context.commitParent = fallback.parent;
-					context.commitSubject = (commits.find((c) => c.hash === fallback.hash)?.message ?? '').split('\n')[0].trim();
-					context.file = fallback.file;
-				}
-				context.file = context.file ?? '';
-			}
-
-			if (action.vscodeCommand !== undefined && action.vscodeCommand.arg?.kind === 'diffUri') {
-				// The `openFile` command opens the WORKING-TREE file, but the generic picker above
-				// prefers a commit ≠ HEAD whose file need not exist at HEAD (the fixture resolves
-				// to local-ahead's added-only note). Re-target to a Modified file of the loaded
-				// page that exists on disk, so the command has something real to open.
-				const candidates10 = commits.slice(0, 10);
-				if (!this.bridge.workingTreeFileExists(context)) {
-					for (const candidate of candidates10) {
-						const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
-						const existing = changes.find((file: { type: string; newFilePath: string }) =>
-							file.type === 'M' && this.bridge.workingTreeFileExists({ repo, file: file.newFilePath }));
-						if (existing === undefined) continue;
-						context.commit = candidate.hash;
-						context.commitParent = candidate.parents?.[0] ?? '';
-						context.file = existing.newFilePath;
-						break;
-					}
-				}
-			}
-
-			if (this.references(action, 'binaryFile') || this.references(action, 'binaryCommit') || this.references(action, 'binaryCommitParent')
-				|| this.references(action, 'imageFile') || this.references(action, 'imageCommit') || this.references(action, 'imageCommitParent')) {
-				// Two independent binary scenarios the fixture seeds near HEAD (fixture.mjs's
-				// specialAt commits): a plain binary file and a real decodable image, each added
-				// then modified. Separate from `file`/`commit` above (which always prefers a
-				// non-binary change) so an action can ask for either kind explicitly, to drive the
-				// binary/image compare view (binaryCompareView.ts / comparisonView.ts) instead of
-				// the text diff.
-				const isImagePath = (filePath: string) => /\.(png|jpe?g|gif|bmp|webp|ico|avif|svg)$/i.test(filePath);
-				context.binaryFile = ''; context.binaryCommit = ''; context.binaryCommitParent = '';
-				context.imageFile = ''; context.imageCommit = ''; context.imageCommitParent = '';
-				for (const candidate of commits) {
-					if (candidate.hash === repoInfo.head) continue;
-					if (context.binaryFile !== '' && context.imageFile !== '') break;
-					const changes = (await this.queryCommitDetails(repo, candidate.hash))?.fileChanges ?? [];
-					const binary = changes.find((file: { type: string; additions: number | null; deletions: number | null; newFilePath: string }) =>
-						file.type === 'M' && file.additions === null && file.deletions === null);
-					if (binary === undefined) continue;
-					if (isImagePath(binary.newFilePath)) {
-						if (context.imageFile === '') {
-							context.imageFile = binary.newFilePath;
-							context.imageCommit = candidate.hash;
-							context.imageCommitParent = candidate.parents?.[0] ?? '';
-						}
-					} else if (context.binaryFile === '') {
-						context.binaryFile = binary.newFilePath;
-						context.binaryCommit = candidate.hash;
-						context.binaryCommitParent = candidate.parents?.[0] ?? '';
-					}
-				}
-			}
-		}
-		return context;
-	}
-
-	/** Check the post-run repository state against the action's verify declaration. */
-	private async verifyAction(action: AutomationAction, context: Record<string, string>): Promise<string | null> {
-		const verify = action.verify!;
-		// A `{{name}}` reference resolves from the run context; anything else is the plain literal
-		// the action itself names (the exact branch/tag/remote a catalogued write creates).
-		let expected: string | undefined;
-		if (verify.placeholder.startsWith('{{') && verify.placeholder.endsWith('}}')) {
-			const name = verify.placeholder.slice(2, -2);
-			if (!(name in context)) return 'verify placeholder "' + name + '" was not resolved';
-			expected = context[name];
-		} else {
-			expected = verify.placeholder;
-		}
-		if (expected === undefined || expected === '') return 'verify target "' + verify.placeholder + '" did not resolve to a name';
-		const repoInfo = await this.queryRepoInfo(context.repo);
-		switch (verify.kind) {
-			case 'headIs':
-				return repoInfo.head === expected ? null : 'expected HEAD to be "' + expected + '", got "' + repoInfo.head + '"';
-			case 'headIsNot':
-				return repoInfo.head !== expected ? null : 'expected HEAD to differ from "' + expected + '"';
-			case 'headSubjectStartsWith': {
-				// The newest commit of the live graph — what a just-created commit (fixup!, squash!)
-				// must be. A literal prefix, never a placeholder: the catalog names it.
-				const newest = (await this.queryCommits(context.repo, 1))[0];
-				const subject = newest === undefined ? '' : newest.message.split('\n')[0];
-				return subject.indexOf(expected) === 0 ? null : 'expected the newest commit\'s subject to start with "' + expected + '", got "' + subject + '"';
-			}
-			case 'branchPresent':
-				return (repoInfo.branches ?? []).includes(expected) ? null : 'expected branch "' + expected + '" to exist';
-			case 'branchAbsent':
-				return !(repoInfo.branches ?? []).includes(expected) ? null : 'expected branch "' + expected + '" to be gone';
-			case 'tagPresent':
-				return (await this.liveTagNames(context.repo)).includes(expected) ? null : 'expected tag "' + expected + '" to exist';
-			case 'tagAbsent':
-				return !(await this.liveTagNames(context.repo)).includes(expected) ? null : 'expected tag "' + expected + '" to be gone';
-			case 'remotePresent':
-				return (repoInfo.remotes ?? []).includes(expected) ? null : 'expected remote "' + expected + '" to exist';
-			case 'remoteAbsent':
-				return !(repoInfo.remotes ?? []).includes(expected) ? null : 'expected remote "' + expected + '" to be gone';
-		}
-	}
-
-	/**
-	 * The tag names of the live graph (loadRepoInfo carries none). Hard-probed like every context
-	 * read — a tag a write action just created must be seen regardless of what the rendered page
-	 * has cached. Page-deep: every catalogued tag target sits inside the first 300 commits.
-	 */
-	private async liveTagNames(repo: string): Promise<string[]> {
-		const commits = await this.queryCommits(repo, 300);
-		const names: string[] = [];
-		for (const commit of commits) {
-			for (const tag of commit.tags ?? []) names.push(tag.name);
-		}
-		return names;
 	}
 
 	private async invokeRaw(params: Record<string, unknown>): Promise<RunOutcome> {
@@ -804,26 +388,25 @@ export class AutomationServer {
 		const injectedRefreshIds = new Map<string, number>();
 		const messageRefreshId = (message as { refreshId?: unknown }).refreshId;
 		if (typeof messageRefreshId === 'number') injectedRefreshIds.set(command, messageRefreshId);
-		const run: ActiveRun = {
-			runId: this.runIdSeq++, mode: 'request', t0: performance.now(),
-			pending: new Set([command]),
-			baseline: new Map(this.maxRefreshIds), injectedRefreshIds,
-			seen: [],
-			shimComplete: true, shimResult: null,
-			invokeCommand: command, payload: null, waiter: null, timer: null
-		};
-		this.activeRun = run;
+		const run = this.tracker.beginRun({
+			mode: 'request',
+			pending: [command],
+			baseline: this.tracker.baselineSnapshot(),
+			injectedRefreshIds,
+			invokeCommand: command,
+			shimComplete: true
+		});
 		try {
 			this.bridge.inject(message as unknown as RequestMessage);
-			const outcome = await this.waitForRun(run, timeoutMs);
+			const outcome = await this.tracker.waitForRun(run, timeoutMs);
 			if (outcome === 'timeout') return { ok: false, error: 'Timed out after ' + timeoutMs + ' ms waiting for "' + command + '"' };
 			return {
 				ok: true,
-				timings: { totalMs: this.relative(run.t0), responses: run.seen },
+				timings: { totalMs: this.tracker.relative(run.t0), responses: run.seen },
 				response: run.payload
 			};
 		} finally {
-			this.activeRun = null;
+			this.tracker.endRun();
 		}
 	}
 
@@ -834,17 +417,12 @@ export class AutomationServer {
 	 * step index.
 	 */
 	private runShimBatch(steps: readonly UiStep[], timeoutMs: number): Promise<ShimResult> {
-		const run: ActiveRun = {
-			runId: this.runIdSeq++, mode: 'ui', t0: performance.now(),
-			pending: new Set(), baseline: new Map(), injectedRefreshIds: new Map(),
-			seen: [],
-			shimComplete: false, shimResult: null,
-			invokeCommand: null, payload: null, waiter: null, timer: null
-		};
-		this.activeRun = run;
+		const run: ActiveRun = this.tracker.beginRun({
+			mode: 'ui', pending: [], baseline: new Map(), shimComplete: false
+		});
 		const settle = () => {
 			if (run.timer !== null) { clearTimeout(run.timer); run.timer = null; }
-			if (this.activeRun === run) this.activeRun = null;
+			if (this.tracker.active === run) this.tracker.endRun();
 		};
 		return new Promise<ShimResult>((resolve, reject) => {
 			run.waiter = () => {
@@ -921,35 +499,18 @@ export class AutomationServer {
 		return (result.response as any)?.commitDetails ?? null;
 	}
 
-	/* ---------------- Statistics ---------------- */
-
-	private record(action: AutomationAction, mode: AutomationMode, outcome: RunOutcome): RunOutcome {
-		const key = action.id + '|' + mode;
-		if (outcome.timings !== undefined) {
-			const list = this.samples.get(key) ?? [];
-			list.push(outcome.timings.totalMs);
-			this.samples.set(key, list);
-		}
-		if (!outcome.ok && !outcome.skipped) {
-			this.failureCounts.set(key, (this.failureCounts.get(key) ?? 0) + 1);
-			this.lastErrors.set(key, outcome.error ?? 'failed');
-		} else if (outcome.ok) {
-			this.lastErrors.delete(key);
-		}
-		this.logger.log('Automation ' + (outcome.ok ? 'ran' : outcome.skipped ? 'skipped' : 'FAILED') + ' ' + action.id + ' (' + mode + ')'
-			+ (outcome.timings !== undefined ? ' in ' + outcome.timings.totalMs + ' ms' : '')
-			+ (outcome.reason !== undefined ? ': ' + outcome.reason : '')
-			+ (outcome.error !== undefined ? ': ' + outcome.error : ''));
-		return outcome;
+	/**
+	 * The live-state seam the run context and the post-run verify resolve through: the same hard
+	 * pipeline probes the engine itself reads with, handed to runContext/actionVerify as plain
+	 * functions.
+	 */
+	private probes(): ContextProbes {
+		return {
+			viewState: () => this.bridge.viewState(),
+			workingTreeFileExists: (context) => this.bridge.workingTreeFileExists(context),
+			queryRepoInfo: (repo) => this.queryRepoInfo(repo),
+			queryCommits: (repo, maxCommits) => this.queryCommits(repo, maxCommits),
+			queryCommitDetails: (repo, commitHash) => this.queryCommitDetails(repo, commitHash)
+		};
 	}
-}
-
-/** Flatten run params into string placeholders (non-string values serialise as JSON). */
-function stringifyParams(params: Record<string, unknown>): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [key, value] of Object.entries(params)) {
-		if (key === 'timeoutMs' || key === 'mode' || key === 'id') continue;
-		out[key] = typeof value === 'string' ? value : JSON.stringify(value);
-	}
-	return out;
 }
