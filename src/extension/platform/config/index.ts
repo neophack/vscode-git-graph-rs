@@ -11,7 +11,6 @@
  * - `cooked.ts` — the derived (webview-model) views over a snapshot, pure functions.
  * - `service.ts` — the `ConfigService` long-lived consumers hold (`.current`, subscription
  *   managed internally).
- * - `legacy.ts` — the deprecated transitional `getConfig` shim (repos/repoManager.ts only).
  */
 
 export { CONFIG_SECTION } from './snapshot';
@@ -37,4 +36,3 @@ export {
 export type { CookedConfig } from './cooked';
 export { ConfigService } from './service';
 export type { ConfigProvider } from './service';
-export { getConfig } from './legacy';

@@ -1,38 +1,23 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { GitRunnerPort } from '../graphView/gitRunner';
 import { addRemoteTagsRefspec } from '../git/write/ops/config';
-import { t } from '../platform/i18n';
 import { ErrorInfo } from '../../shared/protocol/messages';
-import { GitRepoSet, GitRepoState } from '../../shared/model/repoState';
-import {
-	getPathFromStr,
-	getPathFromUri,
-	getRepoName,
-	pathWithTrailingSlash,
-	realpath,
-} from '../platform/paths';
-import { showErrorMessage, showInformationMessage } from '../platform/actions';
+import { GitRepoState } from '../../shared/model/repoState';
+import { getPathFromUri, realpath } from '../platform/paths';
 import { BufferedQueue } from '../../shared/util/bufferedQueue';
 import { evalPromises } from '../git/process/childProcess';
 import { Disposable, toDisposable } from '../../shared/util/disposable';
-import { EventEmitter, GgEvent } from '../../shared/util/event';
-import { getConfig } from '../platform/config';
-import { DEFAULT_REPO_STATE, ExtensionState } from '../platform/storage';
+import { GgEvent } from '../../shared/util/event';
+import { takeSnapshot } from '../platform/config';
+import type { ConfigSnapshot, WorkspaceConfigurationLike, WorkspaceLike } from '../platform/config';
+import { ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';
-import {
-	ExternalRepoConfig,
-	applyExternalConfigFile,
-	generateExternalConfigFile,
-	pinsEqual,
-	readExternalConfigFile,
-	validateExternalConfigFile,
-	writeExternalConfigFile
-} from './repoConfigFile';
+import { pinsEqual } from './repoConfigFile';
+import { RepoRegistry } from './repoRegistry';
+import { RepoSettingsStore } from './repoSettingsStore';
 import {
 	doesPathExist,
-	getWorkspaceFolderInfoForRepoInclusionMapping,
 	isDirectory,
 	listSubmodules,
 	resolveRepoRoot,
@@ -40,42 +25,27 @@ import {
 	searchRepoForSubmodules
 } from './repoDiscovery';
 
-export interface RepoChangeEvent {
-	readonly repos: GitRepoSet;
-	readonly numRepos: number;
-	readonly loadRepo: string | null;
-}
-
-/** The maximum length of the most-recently-opened list RepoManager keeps (REFACTOR-PLAN 3.8.2 D11: prewarming covers at most 3 repositories). */
-export const MAX_RECENT_REPOS = 3;
+// The pure policy helpers and the state-and-events half this facade composes (OPTIMIZATION-PLAN
+// A5): re-exported here so the repository manager's importers keep their single import path.
+export type { RepoChangeEvent } from './repoRegistry';
+export { MAX_RECENT_REPOS, bumpRecentRepos, recentReposList } from './repoRegistry';
 
 /**
- * Move `repo` to the front of a most-recently-opened list, dropping its previous entry and
- * capping the length. Pure, so the ordering policy is testable without a RepoManager.
- * @param recent The current most-recently-opened list (most recent first).
- * @param repo The repository that was just opened.
- * @param max The maximum list length to keep.
- * @returns The updated list (most recent first).
+ * One snapshot of the extension's settings, resolved against the given repository's folder when
+ * one is given (the exact scope the per-repository read needs; the settings the manager reads
+ * are window-scoped, so the scoped and unscoped values agree). Defaults come from the
+ * configuration schema table through the snapshot — nothing here defines one.
+ * @param repo An optional path of a repository (for workspace-folder-scoped resolution).
+ * @returns The configuration snapshot.
  */
-export function bumpRecentRepos(recent: ReadonlyArray<string>, repo: string, max: number): string[] {
-	return [repo, ...recent.filter((known) => known !== repo)].slice(0, Math.max(0, max));
-}
-
-/**
- * The recently-opened repositories a consumer (the PrewarmController) should see: the opens
- * recorded this session, filtered to repositories still known, with the previous session's
- * last-active repository appended until an open is recorded. Pure, so the merge policy is
- * testable without a RepoManager.
- * @param recorded The opens recorded this session (most recent first).
- * @param lastActive The last-active repository of the previous session, or NULL when there is none.
- * @param isKnown Answers whether a repository is still known (and may be prewarmed).
- * @returns The recently-opened repositories, most recent first.
- */
-export function recentReposList(recorded: ReadonlyArray<string>, lastActive: string | null, isKnown: (repo: string) => boolean): string[] {
-	const known = recorded.filter((repo) => isKnown(repo));
-	// Recorded opens are strictly more recent than the persisted one, so it joins at the end
-	if (lastActive !== null && isKnown(lastActive) && !known.includes(lastActive)) return [...known, lastActive];
-	return known;
+function configSnapshotOf(repo?: string): ConfigSnapshot {
+	let workspace: WorkspaceLike = vscode.workspace;
+	if (repo !== undefined) {
+		workspace = {
+			getConfiguration: (section?: string): WorkspaceConfigurationLike => vscode.workspace.getConfiguration(section, vscode.Uri.file(repo))
+		};
+	}
+	return takeSnapshot(workspace);
 }
 
 /**
@@ -97,31 +67,24 @@ export interface RepoManagerDeps {
 }
 
 /**
- * Detects and manages repositories in Git Graph.
+ * Detects and manages repositories in Git Graph: the facade composing the repository registry
+ * (./repoRegistry), the external configuration file store (./repoSettingsStore), repository
+ * discovery (./repoDiscovery) and the workspace folder watchers.
  */
 export class RepoManager extends Disposable {
 	private readonly repo: ProductionGitRepository;
 	private readonly git: GitRunnerPort;
-	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
+	private readonly registry: RepoRegistry;
+	private readonly settings: RepoSettingsStore;
 
-	private repos: GitRepoSet;
-	private ignoredRepos: string[];
 	private maxDepthOfRepoSearch: number;
-	// The repositories opened in the Git Graph View this session, most recent first (the
-	// PrewarmController's candidate order); the previous session's last-active repository is
-	// merged in by getRecentRepos rather than stored here
-	private recentRepos: string[] = [];
-	private readonly pinsWriteInFlight: Set<string> = new Set(); // repos whose pinned branches/commits are currently being persisted to the External Configuration File
 
 	private readonly folderWatchers: { [workspace: string]: vscode.FileSystemWatcher } = {};
 	private readonly configWatcher: vscode.FileSystemWatcher;
 
-	private readonly repoEventEmitter: EventEmitter<RepoChangeEvent>;
-
 	private readonly onWatcherCreateQueue: BufferedQueue<string>;
 	private readonly onWatcherChangeQueue: BufferedQueue<string>;
-	private readonly checkRepoConfigQueue: BufferedQueue<string>;
 
 	/**
 	 * Creates the Git Graph Repository Manager, and runs startup tasks.
@@ -131,33 +94,18 @@ export class RepoManager extends Disposable {
 		super();
 		this.repo = deps.repo;
 		this.git = deps.git;
-		this.extensionState = deps.state;
 		this.logger = deps.logger;
-		// Repository paths used to be persisted in native-separator form on Windows when they came
-		// from a backend (submodules in particular), which made them miss every forward-slash
-		// comparison; migrate them to the normalised form
-		this.repos = {};
-		const savedRepos = this.extensionState.getRepos();
-		for (const repo of Object.keys(savedRepos)) {
-			const normalised = getPathFromStr(repo);
-			if (typeof this.repos[normalised] === 'undefined') this.repos[normalised] = savedRepos[repo];
-		}
-		this.ignoredRepos = this.extensionState.getIgnoredRepos().map((repo) => getPathFromStr(repo)).filter((repo, i, repos) => repos.indexOf(repo) === i);
-		this.maxDepthOfRepoSearch = getConfig().maxDepthOfRepoSearch;
-		// Seed the recently-opened list from the previous session, so prewarming (which reads it
-		// 2 s after activation) has the most likely re-open as its first candidate
-		const lastActiveRepo = this.extensionState.getLastActiveRepo();
-		if (lastActiveRepo !== null) this.recentRepos = bumpRecentRepos(this.recentRepos, lastActiveRepo, MAX_RECENT_REPOS);
+		this.registry = new RepoRegistry({ state: deps.state, logger: deps.logger, backend: deps.repo.read });
+		this.maxDepthOfRepoSearch = configSnapshotOf().maxDepthOfRepoSearch;
+		// Wrapped (not passed as the method itself), so the vscode.window read is deferred to prompt time
+		this.settings = new RepoSettingsStore(this.registry, (message, ...items) => vscode.window.showInformationMessage(message, ...items));
 
 		this.configWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/git-graph-rs.json');
 		this.configWatcher.onDidCreate(this.onConfigWatcherCreateOrChange.bind(this));
 		this.configWatcher.onDidChange(this.onConfigWatcherCreateOrChange.bind(this));
 
-		this.repoEventEmitter = new EventEmitter<RepoChangeEvent>();
-
 		this.onWatcherCreateQueue = new BufferedQueue<string>(this.processOnWatcherCreateEvent.bind(this), this.sendRepos.bind(this));
 		this.onWatcherChangeQueue = new BufferedQueue<string>(this.processOnWatcherChangeEvent.bind(this), this.sendRepos.bind(this));
-		this.checkRepoConfigQueue = new BufferedQueue<string>(this.checkRepoForNewConfig.bind(this), this.sendRepos.bind(this));
 
 		this.startupTasks();
 
@@ -178,12 +126,12 @@ export class RepoManager extends Disposable {
 				if (e.removed.length > 0) {
 					for (let i = 0; i < e.removed.length; i++) {
 						path = getPathFromUri(e.removed[i].uri);
-						if (this.removeReposWithinFolder(path)) changes = true;
+						if (this.registry.removeReposWithinFolder(path)) changes = true;
 						this.stopWatchingFolder(path);
 					}
 				}
-				if (this.updateReposWorkspaceFolderIndex()) {
-					this.extensionState.saveRepos(this.repos);
+				if (this.registry.updateWorkspaceFolderIndex()) {
+					this.registry.persist();
 					changes = true;
 				}
 
@@ -199,8 +147,9 @@ export class RepoManager extends Disposable {
 				}
 			}),
 
-			// Dispose the Repository Event Emitter when disposed
-			this.repoEventEmitter,
+			// Dispose the registry (its event emitter) and the settings store (its config check queue)
+			this.registry,
+			this.settings,
 
 			// Dispose the configWatcher
 			this.configWatcher,
@@ -210,9 +159,6 @@ export class RepoManager extends Disposable {
 
 			// Dispose the onWatcherChangeQueue
 			this.onWatcherChangeQueue,
-
-			// Dispose the checkRepoConfigQueue,
-			this.checkRepoConfigQueue,
 
 			// Stop watching folders when disposed
 			toDisposable(() => {
@@ -228,14 +174,14 @@ export class RepoManager extends Disposable {
 	 * Get the Event that can be used to subscribe to updates when the repositories available in Git Graph change.
 	 */
 	get onDidChangeRepos() {
-		return this.repoEventEmitter.subscribe;
+		return this.registry.onDidChangeRepos;
 	}
 
 	/**
 	 * Apply the new value of `git-graph-rs.maxDepthOfRepoSearch` to the RepoManager.
 	 */
 	private maxDepthOfRepoSearchChanged() {
-		const newDepth = getConfig().maxDepthOfRepoSearch;
+		const newDepth = configSnapshotOf().maxDepthOfRepoSearch;
 		if (newDepth > this.maxDepthOfRepoSearch) {
 			this.maxDepthOfRepoSearch = newDepth;
 			this.searchWorkspaceForRepos();
@@ -248,18 +194,18 @@ export class RepoManager extends Disposable {
 	 * Run various startup tasks when Git Graph is activated.
 	 */
 	private async startupTasks() {
-		this.removeReposNotInWorkspace();
-		if (this.updateReposWorkspaceFolderIndex()) {
-			this.extensionState.saveRepos(this.repos);
+		this.registry.removeReposNotInWorkspace();
+		if (this.registry.updateWorkspaceFolderIndex()) {
+			this.registry.persist();
 		}
 		if (!await this.checkReposExist()) {
 			// On startup, ensure that sendRepo is called (even if no changes were made)
 			this.sendRepos();
 		}
-		this.checkReposForNewConfig();
+		this.settings.checkReposForNewConfig();
 		await this.checkReposForNewSubmodules();
-		await Promise.all(Object.keys(this.repos).map(repo => {
-			if (getConfig(repo).trackRemoteTags) {
+		await Promise.all(this.registry.repoPaths().map(repo => {
+			if (configSnapshotOf(repo).repositoryTrackRemoteTags) {
 				return this.trackRemoteTags(repo);
 			}
 			return Promise.resolve();
@@ -290,19 +236,7 @@ export class RepoManager extends Disposable {
 		} catch (_) { }
 	}
 
-	/**
-	 * Remove any repositories that are no longer in the current workspace.
-	 */
-	private removeReposNotInWorkspace() {
-		const workspaceFolderInfo = getWorkspaceFolderInfoForRepoInclusionMapping();
-		const rootsExact = workspaceFolderInfo.rootsExact, rootsFolder = workspaceFolderInfo.rootsFolder, repoPaths = Object.keys(this.repos);
-		for (let i = 0; i < repoPaths.length; i++) {
-			const repoPathFolder = pathWithTrailingSlash(repoPaths[i]);
-			if (rootsExact.indexOf(repoPaths[i]) === -1 && !rootsFolder.find(root => repoPaths[i].startsWith(root)) && !rootsExact.find(root => root.startsWith(repoPathFolder))) {
-				this.removeRepo(repoPaths[i]);
-			}
-		}
-	}
+	/* Repo Management */
 
 	/**
 	 * Register a new repository with Git Graph.
@@ -314,13 +248,10 @@ export class RepoManager extends Disposable {
 			const root = await resolveRepoRoot(this.repo.read, path);
 			if (root === null) {
 				resolve({ root: null, error: 'The folder "' + path + '" is not a Git repository.' });
-			} else if (typeof this.repos[root] !== 'undefined') {
+			} else if (this.registry.isKnownRepo(root)) {
 				resolve({ root: null, error: 'The folder "' + path + '" is contained within the known repository "' + root + '".' });
 			} else {
-				if (this.ignoredRepos.includes(root)) {
-					this.ignoredRepos.splice(this.ignoredRepos.indexOf(root), 1);
-					this.extensionState.setIgnoredRepos(this.ignoredRepos);
-				}
+				this.registry.forgetIgnoredRepo(root);
 				await this.addRepo(root);
 				this.sendRepos(loadRepo ? root : null);
 				resolve({ root: root, error: null });
@@ -334,10 +265,9 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => Repository was ignored, FALSE => Repository is not know to Git Graph.
 	 */
 	public ignoreRepo(repo: string) {
-		if (this.isKnownRepo(repo)) {
-			if (!this.ignoredRepos.includes(repo)) this.ignoredRepos.push(repo);
-			this.extensionState.setIgnoredRepos(this.ignoredRepos);
-			this.removeRepo(repo);
+		if (this.registry.isKnownRepo(repo)) {
+			this.registry.markRepoIgnored(repo);
+			this.registry.removeRepo(repo);
 			this.sendRepos();
 			return true;
 		} else {
@@ -345,15 +275,12 @@ export class RepoManager extends Disposable {
 		}
 	}
 
-
-	/* Repo Management */
-
 	/**
 	 * Get a set of all known repositories in the current workspace.
 	 * @returns The set of repositories.
 	 */
 	public getRepos() {
-		return Object.assign({}, this.repos);
+		return this.registry.getRepos();
 	}
 
 	/**
@@ -361,28 +288,25 @@ export class RepoManager extends Disposable {
 	 * @returns The number of repositories.
 	 */
 	public getNumRepos() {
-		return Object.keys(this.repos).length;
+		return this.registry.getNumRepos();
 	}
 
 	/**
-	 * Record that a repository was opened in the Git Graph View, making it the most-recently-opened
-	 * one. The PrewarmController (REFACTOR-PLAN task 4.9) serves its candidates in this order.
+	 * Record that a repository was opened in the Git Graph View (heads the recently-opened list;
+	 * the PrewarmController's candidate order).
 	 * @param repo The path of the repository that was opened.
 	 */
 	public recordRepoOpened(repo: string) {
-		if (!this.isKnownRepo(repo)) return;
-		this.recentRepos = bumpRecentRepos(this.recentRepos, repo, MAX_RECENT_REPOS);
+		this.registry.recordRepoOpened(repo);
 	}
 
 	/**
-	 * Get the recently-opened repositories, most recent first: the opens recorded this session,
-	 * with the previous session's last-active repository filling in until one is recorded. Only
-	 * repositories still known are listed. Pure data (no vscode), so the PrewarmController can
-	 * consume it through an injected provider.
+	 * Get the recently-opened repositories, most recent first (the registry merges this
+	 * session's opens with the previous session's last-active repository).
 	 * @returns The recently-opened repository paths.
 	 */
 	public getRecentRepos(): readonly string[] {
-		return recentReposList(this.recentRepos, this.extensionState.getLastActiveRepo(), (repo) => this.isKnownRepo(repo));
+		return this.registry.getRecentRepos();
 	}
 
 	/**
@@ -391,25 +315,7 @@ export class RepoManager extends Disposable {
 	 * @returns The path of the repository containing the file, or NULL if no known repository contains the file.
 	 */
 	public getRepoContainingFile(path: string) {
-		const repoPaths = Object.keys(this.repos);
-		let repo = null;
-		for (let i = 0; i < repoPaths.length; i++) {
-			if (path.startsWith(pathWithTrailingSlash(repoPaths[i])) && (repo === null || repo.length < repoPaths[i].length)) repo = repoPaths[i];
-		}
-		return repo;
-	}
-
-	/**
-	 * Get all known repositories that are contained in the specified folder.
-	 * @param path The path of the folder.
-	 * @returns An array of the paths of all known repositories contained in the specified folder.
-	 */
-	private getReposInFolder(path: string) {
-		const pathFolder = pathWithTrailingSlash(path), repoPaths = Object.keys(this.repos), reposInFolder: string[] = [];
-		for (let i = 0; i < repoPaths.length; i++) {
-			if (repoPaths[i] === path || repoPaths[i].startsWith(pathFolder)) reposInFolder.push(repoPaths[i]);
-		}
-		return reposInFolder;
+		return this.registry.getRepoContainingFile(path);
 	}
 
 	/**
@@ -418,14 +324,14 @@ export class RepoManager extends Disposable {
 	 * @returns The path of the known repository, or NULL if the specified repository is unknown.
 	 */
 	public async getKnownRepo(repo: string) {
-		if (this.isKnownRepo(repo)) {
+		if (this.registry.isKnownRepo(repo)) {
 			// The path is already known as a repo
 			return repo;
 		}
 
 		// Check to see if a known repository contains a symlink that resolves the repo
 		const canonicalRepo = await realpath(repo);
-		const repoPaths = Object.keys(this.repos);
+		const repoPaths = this.registry.repoPaths();
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (canonicalRepo === (await realpath(repoPaths[i]))) {
 				return repoPaths[i];
@@ -442,7 +348,7 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => Known repository, FALSE => Unknown repository.
 	 */
 	public isKnownRepo(repo: string) {
-		return typeof this.repos[repo] !== 'undefined';
+		return this.registry.isKnownRepo(repo);
 	}
 
 	/**
@@ -451,62 +357,12 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => The repository was added, FALSE => The repository is ignored and couldn't be added.
 	 */
 	private async addRepo(repo: string) {
-		if (this.ignoredRepos.includes(repo)) {
+		if (!this.registry.addRepo(repo)) {
 			return false;
-		} else {
-			this.repos[repo] = Object.assign({}, DEFAULT_REPO_STATE);
-			// Open a repository handle in the Git backend (fire-and-forget: a failure just means the
-			// backend reads this repository through the `git` CLI instead)
-			void this.repo.read.openRepository(repo).catch((error) => {
-				this.logger.log('The Git backend could not open the repository ' + repo + ': ' + (error instanceof Error ? error.message : String(error)));
-			});
-			this.updateReposWorkspaceFolderIndex(repo);
-			this.extensionState.saveRepos(this.repos);
-			this.logger.log('Added new repo: ' + repo);
-			await this.checkRepoForNewConfig(repo, true);
-			await this.searchRepoForSubmodules(repo);
-			return true;
 		}
-	}
-
-	/**
-	 * Remove a known repository from Git Graph.
-	 * @param repo The path of the repository.
-	 */
-	private removeRepo(repo: string) {
-		delete this.repos[repo];
-		this.recentRepos = this.recentRepos.filter((known) => known !== repo);
-		// Release the engine's handle of the removed repository: it would otherwise stay resident
-		// (with its pack indexes and caches) for the rest of the editor session
-		this.repo.read.closeRepository(repo);
-		this.extensionState.saveRepos(this.repos);
-		this.logger.log('Removed repo: ' + repo);
-	}
-
-	/**
-	 * Remove all repositories that are contained within the specified folder.
-	 * @param path The path of the folder.
-	 * @returns TRUE => At least one repository was removed, FALSE => No repositories were removed.
-	 */
-	private removeReposWithinFolder(path: string) {
-		const reposInFolder = this.getReposInFolder(path);
-		for (let i = 0; i < reposInFolder.length; i++) {
-			this.removeRepo(reposInFolder[i]);
-		}
-		return reposInFolder.length > 0;
-	}
-
-	/**
-	 * Checks if the specified path is within a known repository.
-	 * @param path The path to check.
-	 * @returns TRUE => Path is within a known repository, FALSE => Path isn't within a known repository.
-	 */
-	private isDirectoryWithinRepos(path: string) {
-		const repoPaths = Object.keys(this.repos);
-		for (let i = 0; i < repoPaths.length; i++) {
-			if (path === repoPaths[i] || path.startsWith(pathWithTrailingSlash(repoPaths[i]))) return true;
-		}
-		return false;
+		await this.settings.checkRepoForNewConfig(repo, true);
+		await this.searchRepoForSubmodules(repo);
+		return true;
 	}
 
 	/**
@@ -514,13 +370,7 @@ export class RepoManager extends Disposable {
 	 * @param loadRepo The optional path of a repository to load in the Git Graph View.
 	 */
 	private sendRepos(loadRepo: string | null = null) {
-		// A repo handed to the view is an open: it heads the recently-opened list
-		if (loadRepo !== null) this.recordRepoOpened(loadRepo);
-		this.repoEventEmitter.emit({
-			repos: this.getRepos(),
-			numRepos: this.getNumRepos(),
-			loadRepo: loadRepo
-		});
+		this.registry.sendRepos(loadRepo);
 	}
 
 	/**
@@ -528,15 +378,15 @@ export class RepoManager extends Disposable {
 	 * @returns TRUE => At least one repository was removed or transferred, FALSE => No repositories were removed.
 	 */
 	public checkReposExist() {
-		const repoPaths = Object.keys(this.repos);
+		const repoPaths = this.registry.repoPaths();
 		let changes = false;
 		return evalPromises(repoPaths, 3, (path) => resolveRepoRoot(this.repo.read, path)).then((results) => {
 			for (let i = 0; i < repoPaths.length; i++) {
 				if (results[i] === null) {
-					this.removeRepo(repoPaths[i]);
+					this.registry.removeRepo(repoPaths[i]);
 					changes = true;
 				} else if (repoPaths[i] !== results[i]) {
-					this.transferRepoState(repoPaths[i], results[i]!);
+					this.registry.transferRepoState(repoPaths[i], results[i]!);
 					changes = true;
 				}
 			}
@@ -549,36 +399,6 @@ export class RepoManager extends Disposable {
 	}
 
 	/**
-	 * Update each repositories workspaceFolderIndex based on the current workspace.
-	 * @param repo If provided, only update this specific repository.
-	 * @returns TRUE => At least one repository was changed, FALSE => No repositories were changed.
-	 */
-	private updateReposWorkspaceFolderIndex(repo: string | null = null) {
-		const workspaceFolderInfo = getWorkspaceFolderInfoForRepoInclusionMapping();
-		const rootsExact = workspaceFolderInfo.rootsExact, rootsFolder = workspaceFolderInfo.rootsFolder, workspaceFolders = workspaceFolderInfo.workspaceFolders;
-		const repoPaths = repo !== null && this.isKnownRepo(repo) ? [repo] : Object.keys(this.repos);
-		let changes = false, rootIndex: number, workspaceFolderIndex: number | null;
-		for (let i = 0; i < repoPaths.length; i++) {
-			rootIndex = rootsExact.indexOf(repoPaths[i]);
-			if (rootIndex === -1) {
-				// Find a workspace folder that contains the repository
-				rootIndex = rootsFolder.findIndex((root) => repoPaths[i].startsWith(root));
-			}
-			if (rootIndex === -1) {
-				// Find a workspace folder that is contained within the repository
-				const repoPathFolder = pathWithTrailingSlash(repoPaths[i]);
-				rootIndex = rootsExact.findIndex((root) => root.startsWith(repoPathFolder));
-			}
-			workspaceFolderIndex = rootIndex > -1 ? workspaceFolders[rootIndex].index : null;
-			if (this.repos[repoPaths[i]].workspaceFolderIndex !== workspaceFolderIndex) {
-				this.repos[repoPaths[i]].workspaceFolderIndex = workspaceFolderIndex;
-				changes = true;
-			}
-		}
-		return changes;
-	}
-
-	/**
 	 * Set the state of a known repository.
 	 * @param repo The repository the state belongs to.
 	 * @param state The state.
@@ -588,56 +408,14 @@ export class RepoManager extends Disposable {
 		// the workspace, or ignored, while the webview still had it loaded): assigning would
 		// silently re-add it — persisted, resurrecting an ignored/deleted repo, and writing a
 		// pin file into a path that may not exist. State for an unknown repo is dropped.
-		if (!this.isKnownRepo(repo)) return;
+		if (!this.registry.isKnownRepo(repo)) return;
 		// The state (and its pinned arrays) arrive deserialized over postMessage, so compare by value
-		const pinsChanged = !pinsEqual(this.repos[repo], state);
-		this.repos[repo] = state;
-		this.extensionState.saveRepos(this.repos);
+		const pinsChanged = !pinsEqual(this.registry.getRepoState(repo)!, state);
+		this.registry.assignRepoState(repo, state);
 		if (pinsChanged) {
-			this.writeRepoPins(repo);
+			this.settings.writeRepoPins(repo);
 		}
 	}
-
-	/**
-	 * Persist the pinned commits and branches of a repository to its External Configuration File (`.vscode/git-graph-rs.json`).
-	 * @param repo The path of the repository.
-	 */
-	private writeRepoPins(repo: string) {
-		const state = this.repos[repo];
-		if (state === undefined) {
-			return;
-		}
-		this.pinsWriteInFlight.add(repo);
-		readExternalConfigFile(repo).then((file) => {
-			if (!this.isKnownRepo(repo) || this.repos[repo] !== state) {
-				this.pinsWriteInFlight.delete(repo);
-				return;
-			}
-			const contents: ExternalRepoConfig.File = file !== null ? Object.assign({}, file) : {};
-			contents.pinnedBranches = state.pinnedBranches;
-			contents.pinnedCommits = state.pinnedCommits;
-			writeExternalConfigFile(repo, contents).catch(showErrorMessage).then(() => this.pinsWriteInFlight.delete(repo));
-		});
-	}
-
-	/**
-	 * Transfer the repository state from one known repository to another.
-	 * @param oldRepo The repository to transfer the state from.
-	 * @param newRepo The repository to transfer the state to.
-	 */
-	private transferRepoState(oldRepo: string, newRepo: string) {
-		this.repos[newRepo] = this.repos[oldRepo];
-		delete this.repos[oldRepo];
-		// The old path no longer names the repository, so its engine handle must not stay resident
-		this.repo.read.closeRepository(oldRepo);
-		this.recentRepos = this.recentRepos.map((repo) => repo === oldRepo ? newRepo : repo);
-		this.updateReposWorkspaceFolderIndex(newRepo);
-		this.extensionState.saveRepos(this.repos);
-		this.extensionState.transferRepo(oldRepo, newRepo);
-
-		this.logger.log('Transferred repo state: ' + oldRepo + ' -> ' + newRepo);
-	}
-
 
 	/* Repo Searching */
 
@@ -668,7 +446,7 @@ export class RepoManager extends Disposable {
 	private searchDirectoryForRepos(directory: string, maxDepth: number) {
 		return searchDirectoryForRepos(directory, maxDepth, {
 			repoRoot: (dir) => resolveRepoRoot(this.repo.read, dir),
-			isWithinKnownRepo: (dir) => this.isDirectoryWithinRepos(dir),
+			isWithinKnownRepo: (dir) => this.registry.isDirectoryWithinRepos(dir),
 			addRepo: (repo) => this.addRepo(repo)
 		});
 	}
@@ -677,7 +455,7 @@ export class RepoManager extends Disposable {
 	 * Check the know repositories for any new submodules (and add them).
 	 */
 	private async checkReposForNewSubmodules() {
-		const repoPaths = Object.keys(this.repos);
+		const repoPaths = this.registry.repoPaths();
 		let changes = false;
 		for (let i = 0; i < repoPaths.length; i++) {
 			if (await this.searchRepoForSubmodules(repoPaths[i])) changes = true;
@@ -693,11 +471,10 @@ export class RepoManager extends Disposable {
 	private searchRepoForSubmodules(repo: string) {
 		return searchRepoForSubmodules(repo, {
 			getSubmodules: (r) => listSubmodules(this.repo.read, r),
-			isKnownRepo: (r) => this.isKnownRepo(r),
+			isKnownRepo: (r) => this.registry.isKnownRepo(r),
 			addRepo: (r) => this.addRepo(r)
 		});
 	}
-
 
 	/* Workspace Folder Watching */
 
@@ -771,7 +548,7 @@ export class RepoManager extends Disposable {
 		let path = getPathFromUri(uri);
 		if (path.indexOf('/.git/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
-		if (this.removeReposWithinFolder(path)) this.sendRepos();
+		if (this.registry.removeReposWithinFolder(path)) this.sendRepos();
 	}
 
 	/**
@@ -795,81 +572,21 @@ export class RepoManager extends Disposable {
 	 */
 	private async processOnWatcherChangeEvent(path: string) {
 		if (!await doesPathExist(path)) {
-			if (this.removeReposWithinFolder(path)) {
+			if (this.registry.removeReposWithinFolder(path)) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-
 	/* Repository Configuration Management */
-
-	/**
-	 * Check the known repositories for new configuration files.
-	 */
-	private checkReposForNewConfig() {
-		Object.keys(this.repos).forEach((repo) => this.checkRepoConfigQueue.enqueue(repo));
-	}
-
-	/**
-	 * Check to see if the repository has a new configuration file.
-	 * @param repo The repository to check.
-	 * @param isRepoNew Is the repository new (was it just added)
-	 */
-	private async checkRepoForNewConfig(repo: string, isRepoNew: boolean = false) {
-		let changes = false;
-		try {
-			const file = await readExternalConfigFile(repo);
-			const state = this.repos[repo];
-			if (state && file !== null && !this.pinsWriteInFlight.has(repo)) {
-				// Skip importing pins while a write is in flight: the watcher event that triggered
-				// this check may be our own write, and importing the file's (older) pins would
-				// silently revert the user's pins in memory before they are written back
-				const pinnedBranches = Array.isArray(file.pinnedBranches) ? file.pinnedBranches : [];
-				const pinnedCommits = Array.isArray(file.pinnedCommits) ? file.pinnedCommits : [];
-				if (!pinsEqual(state, { pinnedBranches, pinnedCommits })) {
-					state.pinnedBranches = pinnedBranches;
-					state.pinnedCommits = pinnedCommits;
-					this.extensionState.saveRepos(this.repos);
-					changes = true;
-				}
-			}
-			if (state && file !== null && typeof file.exportedAt === 'number' && file.exportedAt > state.lastImportAt) {
-				const validationError = validateExternalConfigFile(file);
-				if (validationError === null) {
-					const yes = t('yesButton');
-					const action = isRepoNew ? yes : await vscode.window.showInformationMessage(t('newerRepoConfigDetected', state.name || getRepoName(repo)), yes, t('noButton'));
-					if (this.isKnownRepo(repo) && action) {
-						const state = this.repos[repo];
-						if (action === yes) {
-							applyExternalConfigFile(file, state);
-						}
-						state.lastImportAt = file.exportedAt;
-						this.extensionState.saveRepos(this.repos);
-						if (!isRepoNew && action === yes) {
-							showInformationMessage(t('repoConfigImported', state.name || getRepoName(repo)));
-						}
-						changes = true;
-					}
-				} else {
-					showErrorMessage(t('repoConfigInvalidValue', validationError, getPathFromStr(path.join(repo, '.vscode', 'git-graph-rs.json'))));
-				}
-			}
-		} catch (_) { }
-		return changes;
-	}
 
 	/**
 	 * Handle a file system create or change event for a configuration file.
 	 * @param uri The URI of the create or change event.
 	 */
 	private onConfigWatcherCreateOrChange(uri: vscode.Uri) {
-		const path = getPathFromUri(uri);
-		const repo = this.getRepoContainingFile(path);
-		if (repo !== null) {
-			this.checkRepoConfigQueue.enqueue(repo);
-		}
+		this.settings.onConfigWatcherCreateOrChange(getPathFromUri(uri));
 	}
 
 	/**
@@ -878,14 +595,6 @@ export class RepoManager extends Disposable {
 	 * @returns The ErrorInfo produced when performing this action.
 	 */
 	public exportRepoConfig(repo: string): Promise<ErrorInfo> {
-		const file = generateExternalConfigFile(this.repos[repo]);
-		return writeExternalConfigFile(repo, file).then((message) => {
-			showInformationMessage(message);
-			if (this.isKnownRepo(repo)) {
-				this.repos[repo].lastImportAt = file.exportedAt!;
-				this.extensionState.saveRepos(this.repos);
-			}
-			return null;
-		}, (error) => error);
+		return this.settings.exportRepoConfig(repo);
 	}
 }

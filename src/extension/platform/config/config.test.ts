@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 /**
  * The configuration model's contract tests (OPTIMIZATION-PLAN A4):
@@ -24,11 +24,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const vscodeMock = vi.hoisted(() => ({
 	env: { language: 'en', uriScheme: 'vscode' },
 	// The real ViewColumn values: cooked.ts's editor-group mapping reads them at module load.
-	ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 },
-	// The legacy shim scopes the repo-scoped read through Uri.file (like the old reader did).
-	Uri: { file: (p: string) => ({ fsPath: p }) },
-	// Assigned by the legacy-shim suite (the real module surface the shim reads through).
-	workspace: undefined as unknown
+	ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 }
 }));
 
 vi.mock('vscode', () => vscodeMock);
@@ -209,7 +205,11 @@ describe('takeSnapshot', () => {
 			'dialog.resetCurrentBranchToCommit.mode': 'Hard',
 			'gerrit.remote': 'upstream',
 			'commitDetailsView.fileView.type': 'File List',
-			'repository.onLoad.showSpecificBranches': ['main', 'dev']
+			'repository.onLoad.showSpecificBranches': ['main', 'dev'],
+			// The two settings the repository manager reads (OPTIMIZATION-PLAN A5): the dotted
+			// key maps onto the camelCase snapshot field the manager consumes
+			'maxDepthOfRepoSearch': 3,
+			'repository.trackRemoteTags': true
 		}));
 		expect(snapshot.enableLog).toBe(true);
 		expect(snapshot.graphFontSize).toBe(20);
@@ -219,6 +219,8 @@ describe('takeSnapshot', () => {
 		expect(snapshot.gerritRemote).toBe('upstream');
 		expect(snapshot.commitDetailsViewFileViewType).toBe('File List');
 		expect(snapshot.repositoryOnLoadShowSpecificBranches).toEqual(['main', 'dev']);
+		expect(snapshot.maxDepthOfRepoSearch).toBe(3);
+		expect(snapshot.repositoryTrackRemoteTags).toBe(true);
 		// Everything not overridden stays at its manifest default
 		expect(snapshot.markdown).toBe(true);
 		expect(snapshot.repositoryDropdownOrder).toBe('Workspace Full Path');
@@ -622,55 +624,5 @@ describe('ConfigService', () => {
 		workspace.setValue('enableLog', true);
 		workspace.emit(affecting(true));
 		expect(service.current.enableLog).toBe(false);
-	});
-});
-
-// --------------------------------------------------------------------------------------
-// The transitional getConfig shim (repos/repoManager.ts only)
-// --------------------------------------------------------------------------------------
-
-describe('getConfig (the transitional repoManager slice)', () => {
-	let scopes: unknown[];
-	let configurationValues: Record<string, unknown>;
-
-	beforeEach(() => {
-		scopes = [];
-		vscodeMock.env.language = 'en';
-		vscodeMock.env.uriScheme = 'vscode';
-		vscodeMock.workspace = {
-			getConfiguration: (section?: string, scope?: unknown): unknown => {
-				scopes.push(scope);
-				return {
-					get: <T>(key: string, defaultValue?: T): T | undefined => {
-						if (section !== CONFIG_SECTION) return defaultValue;
-						const value = configurationValues[key];
-						return value !== undefined ? value as T : defaultValue;
-					}
-				};
-			}
-		};
-	});
-
-	it('answers the two settings repoManager reads, unscoped and repo-scoped alike', async () => {
-		const { getConfig } = await import('./legacy');
-		configurationValues = { 'maxDepthOfRepoSearch': 3, 'repository.trackRemoteTags': true };
-
-		const unscoped = getConfig();
-		expect(unscoped.maxDepthOfRepoSearch).toBe(3);
-		expect(unscoped.trackRemoteTags).toBe(true);
-		expect(scopes).toEqual([undefined]);
-
-		const scoped = getConfig('E:/some/repo');
-		expect(scoped.maxDepthOfRepoSearch).toBe(3);
-		expect(scoped.trackRemoteTags).toBe(true);
-		expect(scopes[1]).toEqual({ fsPath: 'E:/some/repo' });
-	});
-
-	it('answers the manifest defaults when nothing is set', async () => {
-		const { getConfig } = await import('./legacy');
-		configurationValues = {};
-		const slice = getConfig();
-		expect(slice.maxDepthOfRepoSearch).toBe(0);
-		expect(slice.trackRemoteTags).toBe(false);
 	});
 });

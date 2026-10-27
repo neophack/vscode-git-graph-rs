@@ -333,7 +333,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 		// call registers and engine-opens further repositories whose memory-mapped pack files
 		// would otherwise hold the after-hook's cleanup hostage on Windows (EPERM past the whole
 		// bounded-removal budget).
-		for (const known of Object.keys(repoManager.getRepos())) repoManager['removeRepo'](known);
+		for (const known of Object.keys(repoManager.getRepos())) repoManager['registry']['removeRepo'](known);
 		try { viewReader.closeAllRepositories(); } catch { /* nothing opened yet */ }
 		for (const server of createdServers.splice(0)) server.close();
 	};
