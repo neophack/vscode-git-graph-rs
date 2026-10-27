@@ -6,6 +6,7 @@ import { ELLIPSIS, formatStr, markup, strings } from '../../common/i18n/index';
 import * as GG from '../../common/protocol';
 import { abbrevCommit, UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
+import type { Store } from '../state/store';
 import { ContextMenuTarget, ExpandedCommit, TargetType } from '../state/types';
 import { alterFileTreeFolderOpen, fileIsBinary } from './fileTree';
 
@@ -16,6 +17,12 @@ import { alterFileTreeFolderOpen, fileIsBinary } from './fileTree';
  * The listeners are registered on the caller's store (F3) and the class lookups run under the
  * caller's panel (#cdv), not the document: a re-render or a close removes them all.
  */
+/** A commit's row index, or -1 when it is not loaded. */
+function nanIfMissing(store: Store, hash: string): number {
+	const index = store.getCommitId(hash);
+	return index !== null ? index : -1;
+}
+
 export function makeFileViewInteractive(ctx: GraphContext, scope: ParentNode, listeners: ListenerGroup) {
 	const store = ctx.store, details = ctx.details;
 	const getFileElemOfEventTarget = (target: EventTarget) => <HTMLElement>(<Element>target).closest('.fileTreeFileRecord');
@@ -202,7 +209,7 @@ export function makeFileViewInteractive(ctx: GraphContext, scope: ParentNode, li
 		const target: ContextMenuTarget = {
 			type: TargetType.CommitDetailsView,
 			hash: expandedCommit.commitHash,
-			index: store.commitLookup[expandedCommit.commitHash],
+			index: nanIfMissing(store, expandedCommit.commitHash),
 			elem: fileElem
 		};
 		// "View Diff" now covers every file (as a text or a binary/image comparison); the other

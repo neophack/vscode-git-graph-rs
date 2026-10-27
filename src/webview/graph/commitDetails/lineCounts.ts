@@ -47,33 +47,36 @@ export class LineCounts {
 		if (expandedCommit === null || expandedCommit.fileChanges === null) return;
 
 		const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
-		const state = expandedCommit.lineCounts;
-		state.requested = new Set<string>();
-		state.byPath = new Map<string, number>();
-		state.chunkInFlight = false;
+		// The state is rebuilt here (the deferred-counts subsystem's own cache) and installed
+		// through the details slice - the only writer of the expandedCommit's fields.
+		const state = {
+			pending: null as Set<string> | null,
+			requested: new Set<string>(),
+			queue: [] as string[],
+			byPath: new Map<string, number>(),
+			chunkInFlight: false,
+			scrollTimer: 0
+		};
 
-		if (commitOrder.to === UNCOMMITTED) {
-			// A comparison against the working tree reports no counts by design, so there is nothing
-			// to settle and no request to make — pending stays null (counts inactive), which every
-			// scheduler and renderer treats as "no counts exist", instead of an empty set (which the
-			// schedulers would read as "counts active, nothing requested yet" and re-request per file).
-			state.pending = null;
-			state.queue = [];
-			return;
-		}
-
-		const pending = new Set<string>(), queue: string[] = [];
-		for (let i = 0; i < expandedCommit.fileChanges.length; i++) {
-			const path = expandedCommit.fileChanges[i].newFilePath;
-			// Untracked files never carry counts; the rest are pending until asked for.
-			if (expandedCommit.fileChanges[i].type !== GG.GitFileStatus.Untracked && !pending.has(path)) {
-				pending.add(path);
-				queue.push(path);
-				state.byPath.set(path, i);
+		if (commitOrder.to !== UNCOMMITTED) {
+			const pending = new Set<string>(), queue: string[] = [];
+			for (let i = 0; i < expandedCommit.fileChanges.length; i++) {
+				const path = expandedCommit.fileChanges[i].newFilePath;
+				// Untracked files never carry counts; the rest are pending until asked for.
+				if (expandedCommit.fileChanges[i].type !== GG.GitFileStatus.Untracked && !pending.has(path)) {
+					pending.add(path);
+					queue.push(path);
+					state.byPath.set(path, i);
+				}
 			}
+			state.pending = pending;
+			state.queue = queue;
 		}
-		state.pending = pending;
-		state.queue = queue;
+		// (A comparison against the working tree reports no counts by design, so there is nothing
+		// to settle and no request to make — pending stays null (counts inactive), which every
+		// scheduler and renderer treats as "no counts exist", instead of an empty set (which the
+		// schedulers would read as "counts active, nothing requested yet" and re-request per file).)
+		store.slices.details.resetLineCounts(state);
 
 		this.scheduleVisible();
 		window.setTimeout(() => this.pumpChunk(), LINE_COUNTS_CHUNK_DELAY);
@@ -117,10 +120,10 @@ export class LineCounts {
 		if (expandedCommit === null || expandedCommit.lineCounts.pending === null) return;
 
 		window.clearTimeout(expandedCommit.lineCounts.scrollTimer);
-		expandedCommit.lineCounts.scrollTimer = window.setTimeout(() => {
+		store.slices.details.setLineCountsScrollTimer(window.setTimeout(() => {
 			if (store.expandedCommit === null) return; // the view closed while debouncing
 			this.request(this.collectVisiblePendingPaths());
-		}, 120);
+		}, 120));
 	}
 
 	private collectVisiblePendingPaths(): string[] {
@@ -155,7 +158,7 @@ export class LineCounts {
 		const queue = expandedCommit.lineCounts.queue;
 		while (queue.length > 0 && expandedCommit.lineCounts.requested.has(queue[0])) queue.shift();
 		if (queue.length === 0) return;
-		expandedCommit.lineCounts.chunkInFlight = true;
+		this.ctx().store.slices.details.setLineCountsChunkInFlight(true);
 		this.request(queue.splice(0, LINE_COUNTS_CHUNK_SIZE));
 	}
 
@@ -165,10 +168,10 @@ export class LineCounts {
 	 * as it would have rendered had the counts been known from the start.
 	 */
 	public apply(msg: GG.ResponseCommitFileCounts) {
-		const expandedCommit = this.ctx().store.expandedCommit;
+		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.fileChanges === null || expandedCommit.lineCounts.pending === null) return;
 		if (expandedCommit.commitHash !== msg.commitHash || expandedCommit.compareWithHash !== msg.compareWithHash) return; // a stale reply for a view that is no longer open
-		expandedCommit.lineCounts.chunkInFlight = false;
+		ctx.store.slices.details.setLineCountsChunkInFlight(false);
 		const root = this.getRoot();
 		const filesElem = root !== null ? root.querySelector('#cdvFiles') : null;
 		for (const path in msg.counts) {

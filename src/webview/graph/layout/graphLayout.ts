@@ -204,7 +204,7 @@ export class GraphLayout {
 	private availableColours: number[] = [];
 	private commits: ReadonlyArray<GG.GitCommit> = [];
 	private commitHead: string | null = null;
-	private commitLookup: { readonly [hash: string]: number } = {};
+	private commitLookup: ReadonlyMap<string, number> = new Map<string, number>();
 
 	/**
 	 * Lay out a commit list.
@@ -214,7 +214,7 @@ export class GraphLayout {
 	 * @param onlyFollowFirstParent Only the first parent of a commit outside the list is drawn.
 	 * @param uncommittedChanges How the "Uncommitted Changes" row is drawn.
 	 */
-	public load(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, commitLookup: { readonly [hash: string]: number }, onlyFollowFirstParent: boolean, uncommittedChanges: GG.GraphUncommittedChangesStyle) {
+	public load(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, commitLookup: ReadonlyMap<string, number>, onlyFollowFirstParent: boolean, uncommittedChanges: GG.GraphUncommittedChangesStyle) {
 		this.commits = commits;
 		this.commitHead = commitHead;
 		this.commitLookup = commitLookup;
@@ -231,10 +231,11 @@ export class GraphLayout {
 		for (i = 0; i < commits.length; i++) {
 			for (j = 0; j < commits[i].parents.length; j++) {
 				const parentHash = commits[i].parents[j];
-				if (typeof commitLookup[parentHash] === 'number') {
-					// Parent is the <commitLookup[parentHash]>th vertex
-					this.vertices[i].addParent(this.vertices[commitLookup[parentHash]]);
-					this.vertices[commitLookup[parentHash]].addChild(this.vertices[i]);
+				const parentIndex = commitLookup.get(parentHash);
+				if (typeof parentIndex === 'number') {
+					// Parent is the <parentIndex>th vertex
+					this.vertices[i].addParent(this.vertices[parentIndex]);
+					this.vertices[parentIndex].addChild(this.vertices[i]);
 				} else if (!onlyFollowFirstParent || j === 0) {
 					// Parent is not one of the vertices of the graph, and the parent isn't being hidden by the onlyFollowFirstParent condition.
 					this.vertices[i].addParent(nullVertex);
@@ -248,8 +249,8 @@ export class GraphLayout {
 
 		if (commits[0].hash === UNCOMMITTED && uncommittedChanges === GG.GraphUncommittedChangesStyle.OpenCircleAtTheUncommittedChanges) {
 			this.vertices[0].setCurrent();
-		} else if (commitHead !== null && typeof commitLookup[commitHead] === 'number') {
-			this.vertices[commitLookup[commitHead]].setCurrent();
+		} else if (commitHead !== null && typeof commitLookup.get(commitHead) === 'number') {
+			this.vertices[commitLookup.get(commitHead) as number].setCurrent();
 		}
 
 		i = 0;
@@ -402,7 +403,8 @@ export class GraphLayout {
 		}
 
 		// Mute any commits that are not ancestors of the commit head if the Extension Setting is enabled, and the head commit is in the graph
-		if (mute.commitsNotAncestorsOfHead && currentHash !== null && typeof this.commitLookup[currentHash] === 'number') {
+		const headIndex = currentHash !== null ? this.commitLookup.get(currentHash) : undefined;
+		if (mute.commitsNotAncestorsOfHead && typeof headIndex === 'number') {
 			const ancestor: boolean[] = [];
 			for (let i = 0; i < this.commits.length; i++) {
 				ancestor[i] = false;
@@ -416,11 +418,12 @@ export class GraphLayout {
 				const parents = vertex.getParents();
 				for (let i = 0; i < parents.length; i++) rec(parents[i]);
 			};
-			rec(this.vertices[this.commitLookup[currentHash]]);
+			rec(this.vertices[headIndex as number]);
 
 			for (let i = 0; i < this.commits.length; i++) {
 				const stash = this.commits[i].stash;
-				if (!ancestor[i] && (stash === null || typeof this.commitLookup[stash.baseHash] !== 'number' || !ancestor[this.commitLookup[stash.baseHash]])) {
+				const stashBaseIndex = stash !== null ? this.commitLookup.get(stash.baseHash) : undefined;
+				if (!ancestor[i] && (stash === null || typeof stashBaseIndex !== 'number' || !ancestor[stashBaseIndex])) {
 					// Commit i is not an ancestor of currentHash, or a stash based on an ancestor of currentHash
 					muted[i] = true;
 				}

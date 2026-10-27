@@ -19,7 +19,7 @@ import { ControlBar } from './controlBar/controlBar';
 import { PinnedRow } from './controlBar/pinnedRow';
 import { GraphContext, ViewDom } from './context';
 import { observeLongPress, observeFastScroller } from './input/touchObservers';
-import { observeTableEvents, observeUrls } from './input/tableEvents';
+import { loadContextMenuActions, observeTableEvents, observeUrls } from './input/tableEvents';
 import { observeKeyboardEvents, observeViewScroll, observeWebviewStyleChanges, observeWindowSizeChanges } from './input/viewObservers';
 import { CommitBodies } from './loading/commitBodies';
 import { RepoLoader } from './loading/repoLoader';
@@ -114,11 +114,24 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	ctx.viewport = new Viewport(getContext);
 	ctx.table = new CommitTable(getContext);
 	ctx.columns = new ColumnLayout(getContext);
-	// The single render pass (task 5.10): store changes flow through the scheduler, which merges
-	// every request made before the frame into ONE render - a response with several changed slices
-	// of the store renders once, not once per change
-	ctx.renderScheduler = new RenderScheduler(() => ctx.table.render());
-	store.onRenderChange(() => ctx.renderScheduler.request());
+	// The single render pass (task 5.10), routed by slice (F1): store changes flow through the
+	// scheduler, which merges every request made before the frame into ONE render - a response
+	// with several changed slices of the store renders once, not once per change - and runs only
+	// the renderers subscribed to the changed slices, in the pass's order (the pinned row, the
+	// table, the graph, the graph column's auto layout). The subscriptions mirror what each step
+	// renders from: the pinned row the repositories' pinned commits and the loaded page; the table
+	// everything the rows show (commits, refs, integration badges, the open details view); the
+	// graph the commits and refs plus the open view's geometry; the auto layout what the graph
+	// just drew.
+	ctx.renderScheduler = new RenderScheduler();
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits'], render: () => ctx.pinned.render() });
+	ctx.renderScheduler.subscribe({
+		slices: ['repos', 'refs', 'commits', 'details', 'integrations'],
+		render: () => ctx.table.renderTable()
+	});
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits', 'details'], render: () => ctx.table.renderGraph() });
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits', 'details'], render: () => ctx.columns.applyGraphColumnAutoLayout() });
+	store.onRenderChange((change) => ctx.renderScheduler.request(change));
 	observeFirstPaint(store);
 	ctx.loader = new RepoLoader(getContext);
 	ctx.commitBodies = new CommitBodies(getContext);
@@ -148,7 +161,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	ctx.controls.init();
 
 	if (prevState && prevState.commitPathFilter !== null && prevState.commitPathFilter !== undefined) {
-		store.commitPathFilter = prevState.commitPathFilter;
+		store.slices.refs.setPathFilter(prevState.commitPathFilter);
 	}
 
 	// The Find widget, the Settings widget, the Reflog view, the Worktree dialog and the
@@ -263,6 +276,10 @@ window.addEventListener('load', () => {
 		// own. The handshake MUST follow the router registration above, or a fast push would arrive
 		// before anything listens for it.
 		bridge.send({ command: 'ready' });
+		// The context menus' action builders stay off the first-paint bundle but load now, while
+		// the host reads the repository, rather than on idle: a right click right after the rows
+		// appear should find them loaded and open its menu synchronously (see tableEvents).
+		void loadContextMenuActions().catch(() => undefined);
 
 		// The on-demand modules and the widgets' stylesheet chunk prefetch while the user is idle
 		// after the first paint (task 5.9): the first open of any widget, the first dialog, the

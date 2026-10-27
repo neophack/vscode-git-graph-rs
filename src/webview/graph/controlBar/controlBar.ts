@@ -157,15 +157,15 @@ export class ControlBar {
 		});
 
 		this.branchDropdown = new Dropdown(byId('branchDropdown'), false, true, strings.dropdownBranches, (values) => {
-			store.currentBranches = values;
-			store.maxCommits = store.config.initialLoadCommits;
+			store.slices.refs.setBranchSelection(values);
+			store.slices.commits.setMaxCommits(store.config.initialLoadCommits);
 			ctx.persistence.saveState();
 			ctx.loader.clearCommits();
 			ctx.loader.requestLoadRepoInfoAndCommits(true, true);
 		});
 		this.authorDropdown = new Dropdown(byId('authorDropdown'), false, true, strings.dropdownAuthors, (values) => {
-			store.currentAuthors = values;
-			store.maxCommits = store.config.initialLoadCommits;
+			store.slices.refs.setAuthorSelection(values);
+			store.slices.commits.setMaxCommits(store.config.initialLoadCommits);
 			ctx.persistence.saveState();
 			ctx.loader.clearCommits();
 			ctx.loader.requestLoadRepoInfoAndCommits(true, true);
@@ -322,8 +322,8 @@ export class ControlBar {
 			// any author is checked), and checking nothing means all authors
 			const chosen = options.filter((_option, i) => <boolean>values[i]).map((option) => option.value);
 			const authors = chosen.filter((value) => value !== SHOW_ALL_BRANCHES);
-			store.currentAuthors = authors.length > 0 ? authors : [SHOW_ALL_BRANCHES];
-			store.maxCommits = store.config.initialLoadCommits;
+			store.slices.refs.setAuthorSelection(authors.length > 0 ? authors : [SHOW_ALL_BRANCHES]);
+			store.slices.commits.setMaxCommits(store.config.initialLoadCommits);
 			ctx.persistence.saveState();
 			ctx.loader.clearCommits();
 			ctx.loader.requestLoadRepoInfoAndCommits(true, true);
@@ -360,13 +360,13 @@ export class ControlBar {
 			// Normalise the comma-separated paths: trim whitespace around each path and drop
 			// empty segments, so git receives clean pathspecs
 			const filterPath = (<string>values[0]).split(',').map((path) => path.trim()).filter((path) => path !== '').join(',');
-			store.commitPathFilter = filterPath !== '' ? filterPath : null;
+			store.slices.refs.setPathFilter(filterPath !== '' ? filterPath : null);
 			this.renderFilterButton();
 			// The filtered list is unrelated to the scrolled position in the full list
 			ctx.dom.view.scrollTop = 0;
 			ctx.loader.requestLoadRepoInfoAndCommits(true, true);
 		}, null, strings.dialogClearFilter, () => {
-			store.commitPathFilter = null;
+			store.slices.refs.setPathFilter(null);
 			this.renderFilterButton();
 			ctx.dom.view.scrollTop = 0;
 			ctx.loader.requestLoadRepoInfoAndCommits(true, true);

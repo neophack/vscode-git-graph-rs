@@ -99,8 +99,8 @@ function makeView() {
 	const globalState = { alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false };
 	const workspaceState = { findIsCaseSensitive: false, findIsRegex: false, findOpenCommitDetailsView: false };
 	const store = new Store(initialState as unknown as GG.GitGraphViewInitialState, globalState as unknown as GG.GitGraphViewGlobalState, workspaceState as unknown as GG.GitGraphViewWorkspaceState);
-	store.currentRepo = '/repo';
-	store.currentRepoLoading = false;
+	store.slices.repos.switchTo('/repo');
+	store.slices.repos.setCurrentRepoLoading(false);
 
 	const noop = () => undefined;
 	const renders = { count: 0 };
@@ -123,12 +123,21 @@ function makeView() {
 	} as unknown as GraphContext['graph'];
 	ctx.viewport = new Viewport(() => ctx as GraphContext);
 	ctx.table = new CommitTable(() => ctx as GraphContext);
-	ctx.renderScheduler = new RenderScheduler(() => {
-		renders.count++;
-		ctx.table.render();
+	// The pass main.ts composes, with the table's render counted (the assertions below count
+	// PASSES - the response's single table render - not each routed renderer).
+	ctx.renderScheduler = new RenderScheduler();
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits'], render: () => ctx.pinned.render() });
+	ctx.renderScheduler.subscribe({
+		slices: ['repos', 'refs', 'commits', 'details', 'integrations'],
+		render: () => {
+			renders.count++;
+			ctx.table.render();
+		}
 	});
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits', 'details'], render: () => ctx.graph.render(null, [], null) });
+	ctx.renderScheduler.subscribe({ slices: ['repos', 'refs', 'commits', 'details'], render: () => ctx.columns.applyGraphColumnAutoLayout() });
 	// The wiring main.ts installs: store changes coalesce into scheduler requests
-	store.onRenderChange(() => ctx.renderScheduler.request());
+	store.onRenderChange((change) => ctx.renderScheduler.request(change));
 	ctx.columns = { makeTableResizable: noop, applyGraphColumnAutoLayout: noop } as unknown as GraphContext['columns'];
 	ctx.loader = new RepoLoader(() => ctx as GraphContext);
 	ctx.commitBodies = { bodies: {}, requestForRows: noop, clear: noop } as unknown as GraphContext['commitBodies'];
@@ -196,7 +205,7 @@ describe('one response, one render pass (task 5.10)', () => {
 		vi.advanceTimersByTime(50);
 		expect(renders.count).toBe(1);
 
-		expect(ctx.store.commitLookup[ENTRIES[0].hash]).toBe(0); // the lookup was built
+		expect(ctx.store.slices.commits.lookup.get(ENTRIES[0].hash)).toBe(0); // the lookup was built
 	});
 
 	it('a pull-request response followed by a loadCommits response in the same tick still renders once', () => {

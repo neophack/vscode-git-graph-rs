@@ -28,7 +28,7 @@ export class GraphView {
 	private maxWidth: number = -1;
 	private commits: ReadonlyArray<GG.GitCommit> = [];
 	private commitHead: string | null = null;
-	private commitLookup: { readonly [hash: string]: number } = {};
+	private commitLookup: ReadonlyMap<string, number> = new Map<string, number>();
 	private expansions: RowExpansion[] = [];
 
 	private readonly contentElem: HTMLElement;
@@ -80,7 +80,7 @@ export class GraphView {
 	/* Graph Operations */
 
 	/** Lay out a new commit list. */
-	public loadCommits(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, commitLookup: { readonly [hash: string]: number }, onlyFollowFirstParent: boolean) {
+	public loadCommits(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, commitLookup: ReadonlyMap<string, number>, onlyFollowFirstParent: boolean) {
 		this.commits = commits;
 		this.commitHead = commitHead;
 		this.commitLookup = commitLookup;
@@ -340,7 +340,7 @@ export class GraphView {
 			html`<span class="graphTooltipRef">${name}${combined.map((remote) => html`<span class="graphTooltipCombinedRef">${remote}</span>`)}</span>`;
 
 		let content = html`<div class="graphTooltipTitle">${formatStr(strings.graphTooltipCommit, abbrevCommit(this.commits[id].hash))}</div>`;
-		if (this.commitHead !== null && typeof this.commitLookup[this.commitHead] === 'number') {
+		if (this.commitHead !== null && typeof this.commitLookup.get(this.commitHead) === 'number') {
 			content = html`${content}<div class="graphTooltipSection">${strings.graphTooltipThisCommitIs}${childrenIncludesHead ? '' : markup.graphTooltipNot}${markup.graphTooltipIncludedInHead}</div>`;
 		}
 		if (heads.length > 0 || remotes.length > 0) {

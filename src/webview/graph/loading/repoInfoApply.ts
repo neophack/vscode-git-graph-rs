@@ -9,7 +9,7 @@
  * `issueCommitsRequest` effect now.
  */
 
-import { arraysStrictlyEqual, SHOW_ALL_BRANCHES } from '../../common/util';
+import { SHOW_ALL_BRANCHES } from '../../common/util';
 import * as GG from '../../common/protocol';
 import { getCommitOrdering, getIncludeCommitsMentionedByReflogs, getOnRepoLoadShowCheckedOutBranch, getOnRepoLoadShowSpecificBranches, getOnlyFollowFirstParent, getShowRemoteBranches, getShowTags } from '../state/repoSettings';
 import { GraphContext } from '../context';
@@ -37,18 +37,20 @@ export class RepoInfoApplier {
 	 */
 	public apply(payload: RepoInfoPayload, trackChanges: boolean): void {
 		const ctx = this.ctx(), store = ctx.store;
-		// Changes to store.gitStashes are reflected as changes to the commits when loadCommits is run
-		store.gitStashes = payload.stashes;
+		// Changes to the stashes are reflected as changes to the commits when loadCommits is run
+		store.slices.refs.setStashes(payload.stashes);
 
-		if (!payload.isRepo || (!store.refreshState.hard && arraysStrictlyEqual(store.gitBranches, payload.branches) && store.gitBranchHead === payload.head && arraysStrictlyEqual(store.gitRemotes, payload.remotes))) {
+		if (!payload.isRepo) {
 			ctx.persistence.saveState();
 			return;
 		}
 
-		// Changes to these properties must be indicated as a repository info change
-		store.gitBranches = payload.branches;
-		store.gitBranchHead = payload.head;
-		store.gitRemotes = payload.remotes;
+		// (the slice applies only what changed - an identical payload is the seamless no-op)
+		const infoChanged = store.slices.refs.applyInfo({ branches: payload.branches, head: payload.head, remotes: payload.remotes });
+		if (!store.refreshState.hard && !infoChanged) {
+			ctx.persistence.saveState();
+			return;
+		}
 
 		// Update the state of the fetch button
 		ctx.controls.renderFetchButton();
@@ -62,9 +64,9 @@ export class RepoInfoApplier {
 			if (store.currentBranches !== null && !(store.currentBranches.length === 1 && store.currentBranches[0] === SHOW_ALL_BRANCHES)) {
 				// Filter any branches that are currently selected, but no longer exist
 				const globPatterns = store.getBranchGlobPatterns();
-				store.currentBranches = store.currentBranches.filter((branch) =>
+				store.slices.refs.setBranchSelection(store.currentBranches.filter((branch) =>
 					store.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD' || keepRemoteSelections(branch)
-				);
+				));
 			}
 		};
 
@@ -73,27 +75,28 @@ export class RepoInfoApplier {
 			// No branches are currently selected
 			const onRepoLoadShowCheckedOutBranch = getOnRepoLoadShowCheckedOutBranch(store.repoState.onRepoLoadShowCheckedOutBranch, store.config);
 			const onRepoLoadShowSpecificBranches = getOnRepoLoadShowSpecificBranches(store.repoState.onRepoLoadShowSpecificBranches, store.config);
-			store.currentBranches = [];
+			const selection: string[] = [];
 			if (onRepoLoadShowSpecificBranches.length > 0) {
 				// Show specific branches if they exist in the repository
 				const globPatterns = store.getBranchGlobPatterns();
-				store.currentBranches.push(...onRepoLoadShowSpecificBranches.filter((branch) =>
+				selection.push(...onRepoLoadShowSpecificBranches.filter((branch) =>
 					store.gitBranches.includes(branch) || globPatterns.includes(branch) || keepRemoteSelections(branch)
 				));
 			}
-			if (onRepoLoadShowCheckedOutBranch && store.gitBranchHead !== null && !store.currentBranches.includes(store.gitBranchHead)) {
+			if (onRepoLoadShowCheckedOutBranch && store.gitBranchHead !== null && !selection.includes(store.gitBranchHead)) {
 				// Show the checked-out branch, and it hasn't already been added as a specific branch
-				store.currentBranches.push(store.gitBranchHead);
+				selection.push(store.gitBranchHead);
 			}
-			if (store.currentBranches.length === 0) {
-				store.currentBranches.push(SHOW_ALL_BRANCHES);
+			if (selection.length === 0) {
+				selection.push(SHOW_ALL_BRANCHES);
 			}
+			store.slices.refs.setBranchSelection(selection);
 		}
 		filterCurrentBranches();
 
 		ctx.persistence.saveState();
 		if (store.currentAuthors === null || store.currentAuthors.length === 0) {
-			store.currentAuthors = [SHOW_ALL_BRANCHES];
+			store.slices.refs.setAuthorSelection([SHOW_ALL_BRANCHES]);
 		}
 
 		// Set up branch dropdown options
@@ -110,7 +113,7 @@ export class RepoInfoApplier {
 		// The repository info changed: note it for the cycle's commits application (its dialog
 		// refresh closes instead of updating when the ref selections moved under it — legacy
 		// `finaliseLoadRepoInfo`'s `repoInfoChanges` OR, which only ran while the cycle ran)
-		if (trackChanges) store.refreshState.repoInfoChanges = true;
+		if (trackChanges) store.slices.repos.noteRepoInfoChanges();
 	}
 
 	/**
@@ -124,16 +127,15 @@ export class RepoInfoApplier {
 	 */
 	public applyBranchList(branchOptions: ReadonlyArray<string>): boolean {
 		const ctx = this.ctx(), store = ctx.store;
-		if (arraysStrictlyEqual(store.gitBranches, branchOptions)) return false;
-		store.gitBranches = branchOptions;
+		if (!store.slices.refs.applyBranchList(branchOptions)) return false;
 		let selectionReset = false;
 		if (store.currentBranches !== null && !(store.currentBranches.length === 1 && store.currentBranches[0] === SHOW_ALL_BRANCHES)) {
 			const globPatterns = store.getBranchGlobPatterns();
-			store.currentBranches = store.currentBranches.filter((branch) =>
+			store.slices.refs.setBranchSelection(store.currentBranches.filter((branch) =>
 				store.gitBranches.includes(branch) || globPatterns.includes(branch) || branch === 'HEAD'
-			);
+			));
 			if (store.currentBranches.length === 0) {
-				store.currentBranches = [SHOW_ALL_BRANCHES];
+				store.slices.refs.setBranchSelection([SHOW_ALL_BRANCHES]);
 				selectionReset = true;
 			}
 		}

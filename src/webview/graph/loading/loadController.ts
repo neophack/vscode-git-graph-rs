@@ -19,8 +19,9 @@ import { GraphContext } from '../context';
 import type { FirstPaintSnapshot } from '../state/firstPaint';
 import { CommitPage, CommitsPayload } from './commitPage';
 import { FollowUps } from './followUps';
-import { initialLoadState, reduce } from './loadMachine';
+import { initialLoadState, reduce, stateLabel } from './loadMachine';
 import type { DropRecord, LoadEffect, LoadEvent, LoadResult, LoadState } from './loadMachine';
+import { noteCommitsApplied, noteDrop, noteLoadState } from './loadDiagnostics';
 import { LoadErrors } from './loadErrors';
 import { LoadRequests } from './loadRequests';
 import { RepoInfoApplier, RepoInfoPayload } from './repoInfoApply';
@@ -240,13 +241,13 @@ export class LoadController {
 					if (commitElem !== null) {
 						ctx.details.load(commitElem);
 					}
-					store.loadViewTo = null;
+					store.slices.repos.setLoadViewTo(null);
 				} else if (store.moreCommitsAvailable) {
 					this.deps.loadMore();
 					return; // Wait for next load
 				} else {
 					ctx.bridge.send({ command: 'showErrorMessage', message: strings.commitNotFound });
-					store.loadViewTo = null;
+					store.slices.repos.setLoadViewTo(null);
 				}
 			} else if (loadViewTo.commitDetails && (store.expandedCommit === null || store.expandedCommit.commitHash !== loadViewTo.commitDetails.commitHash || store.expandedCommit.compareWithHash !== loadViewTo.commitDetails.compareWithHash)) {
 				const commitIndex = store.getCommitId(loadViewTo.commitDetails.commitHash);
@@ -276,7 +277,7 @@ export class LoadController {
 				}
 			}
 		}
-		store.loadViewTo = null;
+		store.slices.repos.setLoadViewTo(null);
 
 		if (store.gitConfig === null || (didLoadRepoData && store.refreshState.configChanges)) {
 			this.deps.requests.requestLoadConfig();
@@ -295,8 +296,14 @@ export class LoadController {
 	private dispatch(event: LoadEvent): LoadResult {
 		const result = reduce(this.state, event);
 		this.state = result.state;
+		// The page-level diagnostic mirror (see loadDiagnostics): the machine's state, its drops
+		// and the transitions between them stay observable from a page step, not only from the
+		// devtools console.
+		const eventId = 'requestId' in event ? event.type + '#' + event.requestId : event.type;
+		noteLoadState(stateLabel(this.state), eventId);
 		this.project();
 		if (result.dropped !== null) {
+			noteDrop(result.dropped);
 			this.logDrop(result.dropped);
 			return result;
 		}
@@ -314,10 +321,12 @@ export class LoadController {
 
 	/** Mirror the machine state onto the store flags the rest of the view reads. */
 	private project(): void {
-		const store = this.ctx().store;
-		store.refreshState.inProgress = this.state.type === 'loading' || this.state.type === 'refreshing';
-		store.refreshState.snapshotRefreshing = this.state.type === 'snapshotPainted';
-		store.refreshState.requestingRepoInfo = (this.state.type === 'loading' || this.state.type === 'refreshing') && this.state.phase === 'repoInfo';
+		const state = this.state;
+		this.ctx().store.slices.repos.projectLoadState(
+			state.type === 'loading' || state.type === 'refreshing',
+			state.type === 'snapshotPainted',
+			(state.type === 'loading' || state.type === 'refreshing') && state.phase === 'repoInfo'
+		);
 	}
 
 	private logDrop(drop: DropRecord): void {
@@ -341,7 +350,7 @@ export class LoadController {
 				// response re-stamps what its request already carried; the pushed `loadView`
 				// ADOPTS its id here (legacy processLoadView:741-744), so its staged follow-ups
 				// validate while anything older drops.
-				ctx.store.refreshState.loadRepoInfoRefreshId = effect.requestId;
+				ctx.store.slices.repos.stampRepoInfoRequestId(effect.requestId);
 				if (payload !== null) {
 					// The cycle's response tracks its change note for the dialog refresh; the boot
 					// push applies with no cycle running (legacy's inProgress was false there).
@@ -356,8 +365,16 @@ export class LoadController {
 				const payload = this.commitsPayload;
 				this.commitsPayload = null;
 				// See applyRepoInfo: the accepted response's id IS the commits id of the view state.
-				ctx.store.refreshState.loadCommitsRefreshId = effect.requestId;
+				ctx.store.slices.repos.stampCommitsRequestId(effect.requestId);
 				if (payload !== null) {
+					noteCommitsApplied({
+						count: payload.commits.length,
+						head: payload.head,
+						headInList: payload.commits.some((commit) => commit.hash === payload.head),
+						headIndex: payload.commits.findIndex((commit) => commit.hash === payload.head),
+						first: payload.commits.length > 0 ? payload.commits[0].hash : null,
+						secondSubject: payload.commits.length > 1 ? (payload.commits[1].message || '').split('\n', 1)[0] : null
+					});
 					this.deps.commitPage.applyResponse(payload, !effect.followUp);
 				}
 				break;
@@ -392,7 +409,7 @@ export class LoadController {
 				// The repository vanished: legacy finaliseLoadRepoInfo closed the running action's
 				// dialog, dropped the deferred view load and asked the host to re-check the list
 				ctx.dialog.closeActionRunning();
-				ctx.store.loadViewTo = null;
+				ctx.store.slices.repos.setLoadViewTo(null);
 				ctx.bridge.send({ command: 'loadRepos', check: true });
 				break;
 		}

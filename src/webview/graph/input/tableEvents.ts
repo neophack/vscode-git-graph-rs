@@ -4,10 +4,10 @@
 import { handledEvent } from '../../common/dom';
 import { strings } from '../../common/i18n/index';
 import { checkoutBranchAction } from '../actions/dialogActions';
-import { getBranchContextMenuActions, getCommitContextMenuActions, getRemoteBranchContextMenuActions, getStashContextMenuActions, getTagContextMenuActions, getUncommittedChangesContextMenuActions } from '../actions/contextMenuActions';
 import { GraphContext } from '../context';
 import { CLASS_REF_GERRIT, showGerritReviewInfo } from '../integrations/gerrit';
 import { showPullRequestDetails } from '../integrations/pullRequests';
+import type { Store } from '../state/store';
 import { ContextMenuTarget, IndexedCommitTarget, IndexedRefTarget, TargetType } from '../state/types';
 import { isExternalUrlElem, isInternalUrlElem, isUrlElem } from '../text/textFormatter';
 import { ContextMenuActions } from '../widgets/contextMenu';
@@ -17,6 +17,37 @@ const CLASS_REF_HEAD = 'head';
 const CLASS_REF_REMOTE = 'remote';
 const CLASS_REF_STASH = 'stash';
 const CLASS_REF_TAG = 'tag';
+
+type ContextMenuActionsModule = typeof import('../actions/contextMenuActions');
+let contextMenuActionsModule: ContextMenuActionsModule | null = null;
+
+/**
+ * Load the commit and ref context menus' action builders. They are on demand - no first paint
+ * needs a context menu - and main.ts starts loading them right after the boot handshake, so the
+ * first right click normally finds them loaded.
+ */
+/** A commit's row index, or -1 when it is not loaded. */
+function indexOrSentinel(store: Store, hash: string): number {
+	const index = store.getCommitId(hash);
+	return index !== null ? index : -1;
+}
+
+export function loadContextMenuActions(): Promise<ContextMenuActionsModule> {
+	return import('../actions/contextMenuActions').then((module) => contextMenuActionsModule = module);
+}
+
+/**
+ * Run `show` with the action builders: synchronously once they have loaded (a right click then
+ * opens its menu in the same task, as it did when they were part of the entry), after the load
+ * otherwise. An import that fails leaves no menu to show.
+ */
+function withContextMenuActions(show: (module: ContextMenuActionsModule) => void) {
+	if (contextMenuActionsModule !== null) {
+		show(contextMenuActionsModule);
+	} else {
+		void loadContextMenuActions().then(show, () => undefined);
+	}
+}
 
 /**
  * Links in the view: clicking a commit hash link opens that commit's details, and the context menu
@@ -29,8 +60,8 @@ export function observeUrls(ctx: GraphContext) {
 			const value = (<HTMLElement>e.target).dataset.value!;
 			switch ((<HTMLElement>e.target).dataset.type!) {
 				case 'commit':
-					if (typeof store.commitLookup[value] === 'number' && (store.expandedCommit === null || store.expandedCommit.commitHash !== value || store.expandedCommit.compareWithHash !== null)) {
-						const elem = ctx.table.findCommitElem(store.commitLookup[value]);
+					if (store.getCommitId(value) !== null && (store.expandedCommit === null || store.expandedCommit.commitHash !== value || store.expandedCommit.compareWithHash !== null)) {
+						const elem = ctx.table.findCommitElem(store.getCommitId(value));
 						if (elem !== null) ctx.details.load(elem);
 					}
 					break;
@@ -55,11 +86,11 @@ export function observeUrls(ctx: GraphContext) {
 				target = {
 					type: TargetType.CommitDetailsView,
 					hash: store.expandedCommit.commitHash,
-					index: store.commitLookup[store.expandedCommit.commitHash],
+					index: indexOrSentinel(store, store.expandedCommit.commitHash),
 					elem: <HTMLElement>eventTarget
 				};
 				ctx.details.closeContextMenuIfOpen(store.expandedCommit);
-				store.expandedCommit.contextMenuOpen.summary = true;
+				store.slices.details.setContextMenuSummaryOpen(true);
 			} else if ((eventElem = eventTarget.closest('.commit')) !== null) {
 				// URL is in the Commits
 				const commit = store.getCommitOfElem(eventElem);
@@ -104,7 +135,7 @@ export function observeUrls(ctx: GraphContext) {
 				]
 			], false, target, e, viewElem || document.body, () => {
 				if (target.type === TargetType.CommitDetailsView && store.expandedCommit !== null) {
-					store.expandedCommit.contextMenuOpen.summary = false;
+					store.slices.details.setContextMenuSummaryOpen(false);
 				}
 			}, isInDialog ? 'dialogContextMenu' : null);
 		}
@@ -241,29 +272,32 @@ export function observeTableEvents(ctx: GraphContext) {
 				elem: <HTMLElement>eventElem.children[1]
 			};
 
-			let actions: ContextMenuActions;
-			if (eventElem.classList.contains(CLASS_REF_STASH)) {
-				actions = getStashContextMenuActions(ctx, target);
-			} else if (eventElem.classList.contains(CLASS_REF_TAG)) {
-				actions = getTagContextMenuActions(ctx, eventElem.dataset.tagtype === 'annotated', target);
-			} else {
-				let isHead = eventElem.classList.contains(CLASS_REF_HEAD);
-				const isRemoteCombinedWithHead = eventTarget.classList.contains('gitRefHeadRemote');
-				if (isHead && isRemoteCombinedWithHead) {
-					target.ref = (<HTMLElement>eventTarget).dataset.fullref!;
-					target.elem = <HTMLElement>eventTarget;
-					isHead = false;
-				}
-
-				if (isHead) {
-					actions = getBranchContextMenuActions(ctx, target);
+			const refElem = eventElem;
+			withContextMenuActions((menus) => {
+				let actions: ContextMenuActions;
+				if (refElem.classList.contains(CLASS_REF_STASH)) {
+					actions = menus.getStashContextMenuActions(ctx, target);
+				} else if (refElem.classList.contains(CLASS_REF_TAG)) {
+					actions = menus.getTagContextMenuActions(ctx, refElem.dataset.tagtype === 'annotated', target);
 				} else {
-					const remote = (isRemoteCombinedWithHead ? <HTMLElement>eventTarget : eventElem).dataset.remote!;
-					actions = getRemoteBranchContextMenuActions(ctx, remote, target);
-				}
-			}
+					let isHead = refElem.classList.contains(CLASS_REF_HEAD);
+					const isRemoteCombinedWithHead = eventTarget.classList.contains('gitRefHeadRemote');
+					if (isHead && isRemoteCombinedWithHead) {
+						target.ref = (<HTMLElement>eventTarget).dataset.fullref!;
+						target.elem = <HTMLElement>eventTarget;
+						isHead = false;
+					}
 
-			ctx.contextMenu.show(actions, false, target, <MouseEvent>e, ctx.dom.view);
+					if (isHead) {
+						actions = menus.getBranchContextMenuActions(ctx, target);
+					} else {
+						const remote = (isRemoteCombinedWithHead ? <HTMLElement>eventTarget : refElem).dataset.remote!;
+						actions = menus.getRemoteBranchContextMenuActions(ctx, remote, target);
+					}
+				}
+
+				ctx.contextMenu.show(actions, false, target, <MouseEvent>e, ctx.dom.view);
+			});
 		} else if ((eventElem = eventTarget.closest('.commit')) !== null) {
 			// .commit was right clicked
 			handledEvent(e);
@@ -277,17 +311,19 @@ export function observeTableEvents(ctx: GraphContext) {
 				elem: eventElem
 			};
 
-			let actions: ContextMenuActions;
-			if (commit.hash === UNCOMMITTED) {
-				actions = getUncommittedChangesContextMenuActions(ctx, target);
-			} else if (commit.stash !== null) {
-				target.ref = commit.stash.selector;
-				actions = getStashContextMenuActions(ctx, <IndexedRefTarget>target);
-			} else {
-				actions = getCommitContextMenuActions(ctx, target);
-			}
+			withContextMenuActions((menus) => {
+				let actions: ContextMenuActions;
+				if (commit.hash === UNCOMMITTED) {
+					actions = menus.getUncommittedChangesContextMenuActions(ctx, target);
+				} else if (commit.stash !== null) {
+					target.ref = commit.stash.selector;
+					actions = menus.getStashContextMenuActions(ctx, <IndexedRefTarget>target);
+				} else {
+					actions = menus.getCommitContextMenuActions(ctx, target);
+				}
 
-			ctx.contextMenu.show(actions, false, target, <MouseEvent>e, ctx.dom.view);
+				ctx.contextMenu.show(actions, false, target, <MouseEvent>e, ctx.dom.view);
+			});
 		}
 	});
 }

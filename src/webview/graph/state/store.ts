@@ -1,8 +1,13 @@
 /**
- * The Store (REFACTOR-PLAN task 5.4): the single source of truth of the Git Graph View's data -
- * the repositories, the current repository's refs, commits and configuration, the Extension
- * Settings, the open Commit Details View and the integration states. Components read it, and
- * change it through the controllers that own each slice; rendering caches stay in the components.
+ * The Store (REFACTOR-PLAN task 5.4, OPTIMIZATION-PLAN §6 F1): the single source of truth of the
+ * Git Graph View's data, organised into SLICES - `repos`, `refs`, `commits`, `details`, `ui`,
+ * `integrations` - each the ONLY writer of its own fields, changed from outside only through the
+ * slice's named actions. Every action emits a typed change (`{ slice, keys }`, see changes.ts)
+ * that the render scheduler collects per frame and routes to the renderers subscribed to the
+ * changed slices. The store's own surface is read-only: getters delegate to the slices, and the
+ * two legacy notification channels remain - the Extension Settings' `config` listeners, and the
+ * render-invalidation channel (`invalidateRender()` = the coalesced FULL invalidation; slices
+ * emit the precise per-slice changes).
  *
  * The Extension Settings have exactly one home, `config`: a `configChanged` message replaces it
  * (`setConfig`), and every reader - formatters included - takes the value from here, so no
@@ -12,6 +17,13 @@
 import { strings, formatStr } from '../../common/i18n/index';
 import * as GG from '../../common/protocol';
 import { SHOW_ALL_BRANCHES } from '../../common/util';
+import { StoreChange } from './changes';
+import { CommitsSlice } from './slices/commits';
+import { DetailsSlice } from './slices/details';
+import { IntegrationsSlice } from './slices/integrations';
+import { RefsSlice } from './slices/refs';
+import { ReposSlice } from './slices/repos';
+import { UiSlice } from './slices/ui';
 import { ExpandedCommit, RefreshState } from './types';
 
 /** An option of a dialog select input or a dropdown. */
@@ -20,88 +32,46 @@ export interface SelectOption {
 	readonly value: string;
 }
 
+/** A render-change listener: the change an action emitted, or NULL for a full invalidation. */
+export type RenderChangeListener = (change: StoreChange | null) => void;
+
 export class Store {
 	/* Extension Settings & environment */
 	private configValue: GG.GitGraphViewConfig;
 	private readonly configListeners: Array<(config: GG.GitGraphViewConfig, previous: GG.GitGraphViewConfig) => void> = [];
 	/**
-	 * Render invalidation listeners (REFACTOR-PLAN task 5.10): `invalidateRender()` is called when
-	 * the store changed in a way the rendered view does not reflect, and the subscriber (main.ts
-	 * wires the render scheduler) coalesces the notifications into ONE render on the next frame -
-	 * however many changes a response made.
+	 * Render-change listeners (REFACTOR-PLAN task 5.10): every slice action's change (and every
+	 * `invalidateRender()`) reaches them; the subscriber (main.ts wires the render scheduler)
+	 * coalesces the notifications into ONE render on the next frame - however many changes a
+	 * response made.
 	 */
-	private readonly renderListeners: Array<() => void> = [];
+	private readonly renderListeners: Array<RenderChangeListener> = [];
 	public readonly backend: GG.BackendReport;
 	public readonly globalViewState: GG.DeepWriteable<GG.GitGraphViewGlobalState>;
 	public readonly workspaceViewState: GG.DeepWriteable<GG.GitGraphViewWorkspaceState>;
 
-	/* Repositories */
-	public repos: GG.GitRepoSet;
-	/** The repository loaded in the view (undefined until the first one is chosen). */
-	public currentRepo!: string;
-	public currentRepoLoading: boolean = true;
-	public refreshState: RefreshState;
-	public loadViewTo: GG.LoadGitGraphViewTo = null;
-
-	/* The current repository's refs and configuration */
-	public gitBranches: ReadonlyArray<string> = [];
-	public gitBranchHead: string | null = null;
-	public gitConfig: GG.GitRepoConfig | null = null;
-	public gitRemotes: ReadonlyArray<string> = [];
-	public gitStashes: ReadonlyArray<GG.GitStash> = [];
-	public gitTags: ReadonlyArray<string> = [];
-
-	/* The loaded commits */
-	public commits: GG.GitCommit[] = [];
-	public commitHead: string | null = null;
-	public commitLookup: { [hash: string]: number } = {};
-	public onlyFollowFirstParent: boolean = false;
-	public moreCommitsAvailable: boolean = false;
-	public maxCommits: number;
-	/**
-	 * The "Uncommitted Changes" file count the view last knew about (NULL => not known yet, no
-	 * final follow-up has arrived). Kept as view state so the row can be kept rendered (and its
-	 * number updated in place) across responses whose commit list doesn't carry the row.
-	 */
-	public uncommittedCount: number | null = null;
-	/** The branch the rendered rows were built for (a change forces a re-render of the rows). */
-	public renderedGitBranchHead: string | null = null;
-	public avatars: { [email: string]: string } = {};
-
-	/* The view's selections */
-	public currentBranches: string[] | null = null;
-	public currentAuthors: string[] | null = null;
-	public commitPathFilter: string | null = null; // the path filter applied to the loaded commits (persisted with the webview state)
-	public compareSourceHash: string | null = null; // the commit selected via "Select for Compare" (persisted with the webview state)
-	public scrollTop: number = 0;
-	public expandedCommit: ExpandedCommit | null = null;
-
-	/* Integrations */
-	/** The Gerrit change states of the current repository, keyed by the head commit hash of each change. */
-	public gerritStates: { [hash: string]: GG.GerritChangeState } = {};
-	/** TRUE when the Gerrit states changed in a way the rendered rows don't reflect yet (forces a re-render). */
-	public gerritStatesDirty: boolean = false;
-	/** The pull requests of the current repository's remote, keyed by the commit each one points at. */
-	public pullRequestsByHead: { [hash: string]: GG.PullRequestInfo } = {};
+	/* The slices (each the only writer of its fields; readonly from outside) */
+	public readonly slices: {
+		readonly repos: ReposSlice;
+		readonly refs: RefsSlice;
+		readonly commits: CommitsSlice;
+		readonly details: DetailsSlice;
+		readonly ui: UiSlice;
+		readonly integrations: IntegrationsSlice;
+	};
 
 	constructor(initialState: GG.GitGraphViewInitialState, globalViewState: GG.GitGraphViewGlobalState, workspaceViewState: GG.GitGraphViewWorkspaceState) {
 		this.configValue = initialState.config;
 		this.backend = initialState.backend;
 		this.globalViewState = globalViewState;
 		this.workspaceViewState = workspaceViewState;
-		this.repos = initialState.repos;
-		this.maxCommits = initialState.config.initialLoadCommits;
-		this.refreshState = {
-			inProgress: false,
-			snapshotRefreshing: false,
-			hard: true,
-			loadRepoInfoRefreshId: initialState.loadRepoInfoRefreshId,
-			loadCommitsRefreshId: initialState.loadCommitsRefreshId,
-			loadConfigRefreshId: initialState.loadConfigRefreshId,
-			repoInfoChanges: false,
-			configChanges: false,
-			requestingRepoInfo: false,
-			requestingConfig: false
+		this.slices = {
+			repos: new ReposSlice(initialState),
+			refs: new RefsSlice(this.emitRenderChange.bind(this)),
+			commits: new CommitsSlice(initialState, this.emitRenderChange.bind(this)),
+			details: new DetailsSlice(),
+			ui: new UiSlice(),
+			integrations: new IntegrationsSlice(this.emitRenderChange.bind(this))
 		};
 	}
 
@@ -129,10 +99,10 @@ export class Store {
 	/* Render invalidation (REFACTOR-PLAN task 5.10) */
 
 	/**
-	 * Subscribe to render invalidations: the notifications the render scheduler coalesces into one
-	 * render per frame. @returns The unsubscribe function.
+	 * Subscribe to render changes: the typed change of each slice action (NULL for a full
+	 * invalidation). @returns The unsubscribe function.
 	 */
-	public onRenderChange(listener: () => void): () => void {
+	public onRenderChange(listener: RenderChangeListener): () => void {
 		this.renderListeners.push(listener);
 		return () => {
 			const index = this.renderListeners.indexOf(listener);
@@ -141,11 +111,17 @@ export class Store {
 	}
 
 	/**
-	 * Mark the rendered view stale: whatever changed, the DOM no longer reflects the store. The
-	 * subscribers merge any number of these into a single render on the next animation frame.
+	 * Mark the rendered view fully stale: whatever changed, the DOM may not reflect the store.
+	 * The subscribers merge any number of these into a single render on the next animation frame.
+	 * Slice actions do NOT call this - they emit their typed change, which routes precisely; this
+	 * is the legacy whole-view invalidation (the configuration applier, the Gerrit filter).
 	 */
 	public invalidateRender(): void {
-		for (let i = 0; i < this.renderListeners.length; i++) this.renderListeners[i]();
+		this.emitRenderChange(null);
+	}
+
+	private emitRenderChange(change: StoreChange | null): void {
+		for (let i = 0; i < this.renderListeners.length; i++) this.renderListeners[i](change);
 	}
 
 
@@ -153,51 +129,173 @@ export class Store {
 
 	/** The persisted state of the current repository. */
 	public get repoState(): GG.GitRepoState {
-		return this.repos[this.currentRepo];
+		return this.slices.repos.repos[this.slices.repos.currentRepo];
 	}
 
 	/** The Issue Linking configuration in effect: the current repository's own, else the global one. */
 	public getIssueLinkingConfig(): GG.IssueLinkingConfig | null {
-		const repoConfig = this.hasCurrentRepo() && typeof this.repos[this.currentRepo] !== 'undefined' ? this.repos[this.currentRepo].issueLinkingConfig : null;
+		const repos = this.slices.repos.repos, currentRepo = this.slices.repos.currentRepo;
+		const repoConfig = this.slices.repos.hasCurrentRepo() && typeof repos[currentRepo] !== 'undefined' ? repos[currentRepo].issueLinkingConfig : null;
 		return repoConfig !== null ? repoConfig : this.globalViewState.issueLinkingConfig;
 	}
 
 	/** The persisted state of a repository, or NULL if it is unknown. */
 	public getRepoState(repo: string): Readonly<GG.GitRepoState> | null {
-		return typeof this.repos[repo] !== 'undefined' ? this.repos[repo] : null;
+		const repos = this.slices.repos.repos;
+		return typeof repos[repo] !== 'undefined' ? repos[repo] : null;
 	}
 
 	/** Is a repository loaded (or being loaded) in the view. */
 	public hasCurrentRepo() {
-		return typeof this.currentRepo !== 'undefined';
+		return this.slices.repos.hasCurrentRepo();
 	}
 
 
-	/* Commits */
+	/* The current repository's refs and query filters (the refs slice) */
+
+	public get repos(): GG.GitRepoSet {
+		return this.slices.repos.repos;
+	}
+
+	public get currentRepo(): string {
+		return this.slices.repos.currentRepo;
+	}
+
+	public get currentRepoLoading(): boolean {
+		return this.slices.repos.currentRepoLoading;
+	}
+
+	public get refreshState(): RefreshState {
+		return this.slices.repos.refreshState;
+	}
+
+	public get loadViewTo(): GG.LoadGitGraphViewTo {
+		return this.slices.repos.loadViewTo;
+	}
+
+	public get gitBranches(): ReadonlyArray<string> {
+		return this.slices.refs.branches;
+	}
+
+	public get gitBranchHead(): string | null {
+		return this.slices.refs.head;
+	}
+
+	public get gitConfig(): GG.GitRepoConfig | null {
+		return this.slices.refs.repoConfig;
+	}
+
+	public get gitRemotes(): ReadonlyArray<string> {
+		return this.slices.refs.remotes;
+	}
+
+	public get gitStashes(): ReadonlyArray<GG.GitStash> {
+		return this.slices.refs.stashes;
+	}
+
+	public get gitTags(): ReadonlyArray<string> {
+		return this.slices.refs.tags;
+	}
+
+	public get currentBranches(): string[] | null {
+		return this.slices.refs.branchSelection;
+	}
+
+	public get currentAuthors(): string[] | null {
+		return this.slices.refs.authorSelection;
+	}
+
+	public get commitPathFilter(): string | null {
+		return this.slices.refs.pathFilter;
+	}
+
+
+	/* The loaded commits (the commits slice) */
+
+	public get commits(): GG.GitCommit[] {
+		return this.slices.commits.page;
+	}
+
+	public get commitHead(): string | null {
+		return this.slices.commits.head;
+	}
 
 	/** The index of a loaded commit, or NULL. */
 	public getCommitId(hash: string) {
-		return typeof this.commitLookup[hash] === 'number' ? this.commitLookup[hash] : null;
+		return this.slices.commits.indexOf(hash);
 	}
 
 	/** A loaded commit, or undefined. */
 	public getCommit(hash: string): GG.GitCommit | undefined {
-		return this.commits[this.commitLookup[hash]];
+		return this.slices.commits.getCommit(hash);
 	}
 
 	/** The commit a rendered row (`data-id`) stands for, or NULL. */
 	public getCommitOfElem(elem: HTMLElement) {
 		const id = parseInt(elem.dataset.id!);
-		return id < this.commits.length ? this.commits[id] : null;
+		return id < this.slices.commits.page.length ? this.slices.commits.page[id] : null;
 	}
 
 	/** Which of two loaded commits is older (`from`) and which newer (`to`). */
 	public getCommitOrder(hash1: string, hash2: string) {
-		if (this.commitLookup[hash1] > this.commitLookup[hash2]) {
-			return { from: hash1, to: hash2 };
-		} else {
-			return { from: hash2, to: hash1 };
-		}
+		return this.slices.commits.getCommitOrder(hash1, hash2);
+	}
+
+	public get onlyFollowFirstParent(): boolean {
+		return this.slices.commits.onlyFollowFirstParent;
+	}
+
+	public get moreCommitsAvailable(): boolean {
+		return this.slices.commits.moreCommitsAvailable;
+	}
+
+	public get maxCommits(): number {
+		return this.slices.commits.maxCommits;
+	}
+
+	public get uncommittedCount(): number | null {
+		return this.slices.commits.uncommittedCount;
+	}
+
+	/** The branch the rendered rows were built for (a change forces a re-render of the rows). */
+	public get renderedGitBranchHead(): string | null {
+		return this.slices.commits.renderedHead;
+	}
+
+	public get avatars(): { [email: string]: string } {
+		return this.slices.commits.avatars;
+	}
+
+
+	/* The view's selections */
+
+	public get compareSourceHash(): string | null {
+		return this.slices.ui.compareSourceHash;
+	}
+
+	public get scrollTop(): number {
+		return this.slices.ui.scrollTop;
+	}
+
+	/** The commit whose Commit Details View (or Commit Comparison) is open. */
+	public get expandedCommit(): ExpandedCommit | null {
+		return this.slices.details.expanded;
+	}
+
+
+	/* Integrations */
+
+	public get gerritStates(): { [hash: string]: GG.GerritChangeState } {
+		return this.slices.integrations.gerritStates;
+	}
+
+	/** TRUE when the Gerrit states changed in a way the rendered rows don't reflect yet (forces a re-render). */
+	public get gerritStatesDirty(): boolean {
+		return this.slices.integrations.gerritStatesDirty;
+	}
+
+	public get pullRequestsByHead(): { [hash: string]: GG.PullRequestInfo } {
+		return this.slices.integrations.pullRequestsByHead;
 	}
 
 
@@ -213,8 +311,9 @@ export class Store {
 		for (let i = 0; i < globPatterns.length; i++) {
 			options.push({ name: formatStr(strings.globPrefix, globPatterns[i].name), value: globPatterns[i].glob });
 		}
-		for (let i = 0; i < this.gitBranches.length; i++) {
-			options.push({ name: this.gitBranches[i].indexOf('remotes/') === 0 ? this.gitBranches[i].substring(8) : this.gitBranches[i], value: this.gitBranches[i] });
+		const branches = this.gitBranches;
+		for (let i = 0; i < branches.length; i++) {
+			options.push({ name: branches[i].indexOf('remotes/') === 0 ? branches[i].substring(8) : branches[i], value: branches[i] });
 		}
 		return options;
 	}
@@ -238,12 +337,14 @@ export class Store {
 
 	/** The branches selected in the branches dropdown, NULL for "Show All". */
 	public getSelectedBranchesFilter() {
-		return this.currentBranches === null || (this.currentBranches.length === 1 && this.currentBranches[0] === SHOW_ALL_BRANCHES) ? null : this.currentBranches;
+		const currentBranches = this.currentBranches;
+		return currentBranches === null || (currentBranches.length === 1 && currentBranches[0] === SHOW_ALL_BRANCHES) ? null : currentBranches;
 	}
 
 	/** The authors selected in the authors dropdown, NULL for "All Authors". */
 	public getSelectedAuthorsFilter() {
-		return this.currentAuthors === null || (this.currentAuthors.length === 1 && this.currentAuthors[0] === SHOW_ALL_BRANCHES) ? null : this.currentAuthors;
+		const currentAuthors = this.currentAuthors;
+		return currentAuthors === null || (currentAuthors.length === 1 && currentAuthors[0] === SHOW_ALL_BRANCHES) ? null : currentAuthors;
 	}
 
 	/**
@@ -311,8 +412,9 @@ export class Store {
 	public getGerritVisibleChanges(): Set<number> {
 		const limit = this.repos[this.currentRepo].gerritFetchLimit;
 		const effective = typeof limit === 'number' && Number.isInteger(limit) && limit >= 1 && limit <= 10000 ? limit : this.config.gerrit.fetchLimit;
-		const passing = Object.keys(this.gerritStates).map((hash) => this.gerritStates[hash])
-			.filter((state) => this.gerritPassesFilter(state) && typeof this.commitLookup[state.headHash] === 'number')
+		const gerritStates = this.gerritStates;
+		const passing = Object.keys(gerritStates).map((hash) => gerritStates[hash])
+			.filter((state) => this.gerritPassesFilter(state) && this.slices.commits.indexOf(state.headHash) !== null)
 			.sort((a, b) => b.change - a.change);
 		return new Set((effective > 0 ? passing.slice(0, effective) : passing).map((state) => state.change));
 	}

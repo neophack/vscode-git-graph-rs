@@ -119,7 +119,7 @@ export class PinnedRow {
 		const chip = <HTMLElement | null>target.closest('.pinnedChip');
 		if (chip === null || chip.dataset.value === undefined) return;
 		if (chip.dataset.type === 'commit') {
-			if (store.commitLookup[chip.dataset.value] === undefined) {
+			if (store.getCommitId(chip.dataset.value!) === null) {
 				if (!store.moreCommitsAvailable) {
 					ctx.dialog.showError(strings.pinnedCommitTitle, strings.pinnedCommitNotInView, null, null);
 					return;

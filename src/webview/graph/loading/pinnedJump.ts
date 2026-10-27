@@ -59,7 +59,7 @@ export class PinnedCommitJump {
 		}
 		// Jump straight to the commit: load everything up to it (plus a margin), then
 		// checkPending scrolls to it once the load completes
-		store.maxCommits = Math.max(store.maxCommits, msg.count + store.config.loadMoreCommits);
+		store.slices.commits.setMaxCommits(Math.max(store.maxCommits, msg.count + store.config.loadMoreCommits));
 		ctx.table.setFooterLoading();
 		ctx.persistence.saveState();
 		this.deps.refreshCommitsOnly();
@@ -75,7 +75,7 @@ export class PinnedCommitJump {
 		if (this.pendingScrollCommitHash === null) return;
 		if (this.countCommitsBeforePending) return; // the count response drives the jump (or reports "not found")
 		const hash = this.pendingScrollCommitHash;
-		if (store.commitLookup[hash] !== undefined) {
+		if (store.getCommitId(hash) !== null) {
 			this.pendingScrollCommitHash = null;
 			ctx.viewport.scrollToCommit(hash, true, true);
 		} else if (store.moreCommitsAvailable) {

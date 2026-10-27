@@ -4,6 +4,7 @@ import { alterClass, getVSCodeStyle, handledEvent } from '../../common/dom';
 import { modifyColourOpacity } from '../../common/util';
 import { GraphContext } from '../context';
 import { measureScroll } from '../render/measure';
+import type { Store } from '../state/store';
 
 const CSS_PROP_FONT_FAMILY = '--vscode-font-family';
 const CSS_PROP_EDITOR_FONT_FAMILY = '--vscode-editor-font-family';
@@ -136,7 +137,7 @@ export function observeViewScroll(ctx: GraphContext) {
 
 		if (timeout !== null) window.clearTimeout(timeout);
 		timeout = window.setTimeout(() => {
-			store.scrollTop = scrollTop;
+			store.slices.ui.setScrollTop(scrollTop);
 			ctx.persistence.saveState();
 			timeout = null;
 		}, 250);
@@ -177,7 +178,8 @@ export function observeKeyboardEvents(ctx: GraphContext) {
 				handledEvent(e);
 			}
 		} else if (store.expandedCommit !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-			const curHashIndex = store.commitLookup[store.expandedCommit.commitHash];
+			// (NaN reproduces the unknown-hash case of the old plain-object lookup: every comparison answers false)
+			const curHashIndex = nanIfMissing(store, store.expandedCommit.commitHash);
 			let newHashIndex = -1;
 
 			if (e.ctrlKey || e.metaKey) {
@@ -259,4 +261,10 @@ export function observeKeyboardEvents(ctx: GraphContext) {
 			}
 		}
 	});
+}
+
+/** A commit's row index, or NaN when it is not loaded (the old plain-object lookup answered undefined, whose comparisons all answer false). */
+function nanIfMissing(store: Store, hash: string): number {
+	const index = store.getCommitId(hash);
+	return index !== null ? index : Number.NaN;
 }

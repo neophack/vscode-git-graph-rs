@@ -36,9 +36,12 @@ function makeHarness(commits: GG.GitCommit[]) {
 	document.body.appendChild(table);
 
 	const workspaceViewState = { findIsCaseSensitive: false, findIsRegex: false, findOpenCommitDetailsView: false };
+	const commitLookup = new Map<string, number>();
+	commits.forEach((entry, index) => { commitLookup.set(entry.hash, index); });
 	const store = {
 		commits: commits,
-		commitLookup: {} as { [hash: string]: number },
+		// The commits slice's lookup is a Map the widget reads through getCommitId (F1)
+		getCommitId: (hash: string) => (commitLookup.has(hash) ? (commitLookup.get(hash) as number) : null),
 		workspaceViewState: workspaceViewState,
 		hasCurrentRepo: () => true,
 		config: {
@@ -46,7 +49,6 @@ function makeHarness(commits: GG.GitCommit[]) {
 			referenceLabels: { combineLocalAndRemoteBranchLabels: false }
 		}
 	};
-	commits.forEach((entry, index) => { store.commitLookup[entry.hash] = index; });
 
 	const calls = { exitWindowedRender: 0, searches: 0 };
 	const noop = () => undefined;

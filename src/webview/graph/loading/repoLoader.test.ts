@@ -5,6 +5,7 @@ import type { FirstPaintSnapshot } from '../state/firstPaint';
 import type { WebViewState } from '../state/types';
 import type { GraphContext } from '../context';
 import { RenderScheduler } from '../render/scheduler';
+import { Store } from '../state/store';
 import { RepoLoader } from './repoLoader';
 
 /**
@@ -21,7 +22,7 @@ interface SentMessage {
 }
 
 /** A GraphContext whose members are no-ops (or recording fakes where the test asserts on them). */
-function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphContext; sent: SentMessage[]; store: Record<string, unknown> } {
+function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphContext; sent: SentMessage[]; store: Store } {
 	const sent: SentMessage[] = [];
 	const repoState = {
 		pinnedBranches: [], pinnedCommits: [], cdvDivider: 0, cdvHeight: 0, columnWidths: null,
@@ -31,44 +32,8 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 		name: null, onlyFollowFirstParent: 0, onRepoLoadShowCheckedOutBranch: 0, onRepoLoadShowSpecificBranches: null,
 		pullRequestConfig: null, showRemoteBranches: true, showRemoteBranchesV2: 0, showStashes: 0, showTags: 0,
 		workspaceFolderIndex: null
-	};
-	const store: Record<string, unknown> = {
-		repos: options.repos !== undefined ? options.repos : { '/repo': { name: 'repo' } as unknown as GG.GitRepoState },
-		currentRepo: null,
-		currentRepoLoading: false,
-		loadViewTo: null,
-		maxCommits: 0,
-		gitConfig: null,
-		gitRemotes: [],
-		gitStashes: [],
-		gitTags: [],
-		gitBranches: [],
-		gitBranchHead: null,
-		currentBranches: null,
-		currentAuthors: null,
-		commitPathFilter: null,
-		compareSourceHash: null,
-		pullRequestsByHead: {},
-		expandedCommit: null,
-		commits: [],
-		commitLookup: {},
-		commitHead: null,
-		uncommittedCount: null,
-		renderedGitBranchHead: null,
-		gerritStates: {},
-		gerritStatesDirty: false,
-		moreCommitsAvailable: false,
-		onlyFollowFirstParent: false,
-		scrollTop: 0,
-		repoState: repoState,
-		hasCurrentRepo: () => false,
-		invalidateRender: () => undefined,
-		getBranchGlobPatterns: () => [] as string[],
-		getBranchOptions: () => [] as unknown[],
-		getAuthorOptions: () => [] as unknown[],
-		getSelectedBranchesFilter: () => null,
-		getSelectedAuthorsFilter: () => null,
-		getCommitId: () => null,
+	} as unknown as GG.GitRepoState;
+	const store = new Store({
 		config: {
 			repoDropdownOrder: 'alphabetical',
 			snapshotFirstPaint: true,
@@ -80,21 +45,24 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 			includeCommitsMentionedByReflogs: false,
 			onlyFollowFirstParent: false,
 			fetchAvatars: false,
+			customBranchGlobPatterns: [],
 			pullRequests: { enabled: false },
 			onRepoLoad: { scrollToHead: false, showCheckedOutBranch: false, showSpecificBranches: [] }
-		},
-		refreshState: {
-			inProgress: false, snapshotRefreshing: false, hard: false, configChanges: false, requestingRepoInfo: false,
-			repoInfoChanges: false, requestingConfig: false,
-			loadRepoInfoRefreshId: 0, loadCommitsRefreshId: 0, loadConfigRefreshId: 0
-		}
-	};
+		} as unknown as GG.GitGraphViewConfig,
+		backend: { engineVersion: null, gitCliAvailable: true, capabilities: [] },
+		repos: options.repos !== undefined ? options.repos : { '/repo': repoState },
+		loadRepoInfoRefreshId: 0,
+		loadCommitsRefreshId: 0,
+		loadConfigRefreshId: 0,
+		lastActiveRepo: null,
+		loadViewTo: null
+	} as unknown as GG.GitGraphViewInitialState, { alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false } as unknown as GG.GitGraphViewGlobalState, { findIsCaseSensitive: false, findIsRegex: false, findOpenCommitDetailsView: false } as unknown as GG.GitGraphViewWorkspaceState);
 	const noop = () => undefined;
 	const ctx = {
 		store: store,
 		// Route the scheduler's render through the (per-test stubbed) fake table, so render-count
 		// assertions observe the passes the loader asks for (task 5.10's renderSync integration).
-		renderScheduler: new RenderScheduler(() => { ctx.table.render(); }),
+		renderScheduler: new RenderScheduler(),
 		bridge: {
 			send: (message: unknown) => { sent.push(message as SentMessage); }
 		},
@@ -128,6 +96,12 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 			headerRow: { classList: { contains: () => false, add: noop, remove: noop } }
 		}
 	};
+	// The scheduler's one render pass routes by slice (F1); the fake table stands in for the
+	// whole pass, so the render-count assertions observe what the loader asks for (task 5.10).
+	ctx.renderScheduler.subscribe({
+		slices: ['repos', 'refs', 'commits', 'details', 'integrations'],
+		render: () => (ctx as { table: { render: () => void } }).table.render()
+	});
 	return { ctx: ctx as unknown as GraphContext, sent: sent, store: store };
 }
 
@@ -193,7 +167,7 @@ describe('RepoLoader open path (task 4.7)', () => {
 		const { ctx, sent } = fakeContext();
 		const loader = new RepoLoader(() => ctx);
 		// This repository pins a non-default ordering: the pushed default page does not match it.
-		(ctx.store as unknown as { repoState: { commitOrdering: GG.RepoCommitOrdering } }).repoState.commitOrdering = GG.RepoCommitOrdering.Topological;
+		ctx.store.slices.repos.updateRepoState('/repo', 'commitOrdering', GG.RepoCommitOrdering.Topological);
 		loader.start(null, '/repo', null);
 		loader.processLoadView(pushedLoadView(7));
 		const commands = sent.map((message) => message.command);
@@ -317,7 +291,7 @@ describe('first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9)', () => {
 		// equality path of the seamless update reads it) - the fake mirrors that
 		(ctx.table as unknown as { render: () => void }).render = () => {
 			renders.push(renders.length);
-			(store as unknown as { renderedGitBranchHead: string | null }).renderedGitBranchHead = (store as unknown as { gitBranchHead: string | null }).gitBranchHead;
+			store.slices.commits.markRenderedHead(store.gitBranchHead);
 		};
 		(ctx.viewport as unknown as { captureViewportAnchor: () => unknown }).captureViewportAnchor = () => {
 			const anchor = { hash: 'c1', offset: 0, atTop: true };

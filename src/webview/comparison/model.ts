@@ -23,7 +23,7 @@ export function statusLetter(file: ComparisonFileModel): string {
 export function statusColour(file: ComparisonFileModel): string {
 	return file.type === 'D' ? 'var(--vscode-gitDecoration-deletedResourceForeground, #b31d28)'
 		: file.type === 'A' || file.type === 'R' ? 'var(--vscode-gitDecoration-addedResourceForeground, #22863a)'
-		: 'var(--vscode-gitDecoration-modifiedResourceForeground, inherit)';
+			: 'var(--vscode-gitDecoration-modifiedResourceForeground, inherit)';
 }
 
 /** The path a file change is listed under (its new path, or the old one of a deletion). */

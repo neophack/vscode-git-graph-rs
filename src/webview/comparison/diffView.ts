@@ -156,8 +156,8 @@ export class DiffView {
 		const table = document.createElement('table');
 		table.className = 'diff' + (sideBySide ? '' : ' inline');
 		setHtml(table, sideBySide
-			? html`<colgroup><col style="width: 46px"><col style="width: calc(50% - 46px)"><col style="width: 46px"><col style="width: calc(50% - 46px)"></colgroup>`
-			: html`<colgroup><col style="width: 46px"><col style="width: 46px"><col></colgroup>`);
+			? html`<colgroup><col class="colLn"><col class="colCode"><col class="colLn"><col class="colCode"></colgroup>`
+			: html`<colgroup><col class="colLn"><col class="colLn"><col></colgroup>`);
 		const frag = document.createDocumentFragment();
 		const cells: SafeHtml[] = [];
 		for (const r of rows) {

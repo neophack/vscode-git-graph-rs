@@ -438,7 +438,10 @@ export class FindWidget extends Component implements FindWidgetSurface {
 			this.searchScanning = false;
 			this.searchComplete = true;
 			this.previousQuery = this.text;
-			this.previousCandidates = this.matches.map((match) => store.commitLookup[match.hash]);
+			this.previousCandidates = this.matches.map((match) => {
+				const index = store.getCommitId(match.hash);
+				return index !== null ? index : Number.NaN;
+			});
 			this.finishSearch(goToCommitHash, scrollToCommit, openDetails);
 		};
 		scanSlice(0);

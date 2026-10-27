@@ -61,20 +61,16 @@ export class CommitPage {
 		const ctx = this.ctx(), store = ctx.store;
 		ctx.closeDialogAndContextMenu();
 		// (the "refreshing" marker of a painted snapshot is the machine state's projection now)
-		store.moreCommitsAvailable = false;
 		this.deps.jump.reset();
-		store.commits = [];
-		store.commitHead = null;
-		store.commitLookup = {};
-		store.uncommittedCount = null;
-		store.renderedGitBranchHead = null;
-		store.gerritStates = {};
-		store.gerritStatesDirty = false;
+		store.slices.commits.clear();
+		store.slices.commits.setUncommittedCount(null);
+		store.slices.commits.markRenderedHead(null);
+		store.slices.integrations.resetGerritStates();
 		ctx.commitBodies.clear();
 		ctx.viewport.renderedRange = null;
 		ctx.details.close(false);
 		ctx.persistence.saveState();
-		ctx.graph.loadCommits(store.commits, store.commitHead, store.commitLookup, store.onlyFollowFirstParent);
+		ctx.graph.loadCommits(store.commits, store.commitHead, store.slices.commits.lookup, store.onlyFollowFirstParent);
 		ctx.table.clear();
 		ctx.table.setFooter(html``);
 		ctx.table.renderGraph();
@@ -96,11 +92,11 @@ export class CommitPage {
 		// Seed exactly what the pushed response reconciles against: the commits, their head and
 		// the bookkeeping the equality check reads. The repo-info half (branches, remotes,
 		// selections) stays to the push, exactly as on an ordinary boot.
-		store.currentRepoLoading = true;
-		store.gitBranchHead = typeof prevBranchHead === 'string' ? prevBranchHead : null; // the pushed repo info re-reads and confirms it
-		store.maxCommits = snapshot.maxCommits;
-		store.uncommittedCount = snapshot.uncommittedCount;
-		store.scrollTop = snapshot.scrollTop;
+		store.slices.repos.setCurrentRepoLoading(true);
+		store.slices.refs.setHead(typeof prevBranchHead === 'string' ? prevBranchHead : null); // the pushed repo info re-reads and confirms it
+		store.slices.commits.setMaxCommits(snapshot.maxCommits);
+		store.slices.commits.setUncommittedCount(snapshot.uncommittedCount);
+		store.slices.ui.setScrollTop(snapshot.scrollTop);
 		ctx.viewport.restoreScrollTop = snapshot.scrollTop;
 		this.applyPage({
 			commits: snapshot.commits.slice(),
@@ -144,12 +140,10 @@ export class CommitPage {
 			for (const state of payload.gerritStates) newStates[state.headHash] = state;
 			const changed = !gerritStatesEqual(store.gerritStates, newStates);
 			const badgesChanged = !gerritStatesEqual(store.gerritStates, newStates, false);
-			store.gerritStatesDirty = badgesChanged;
-			store.gerritStates = newStates;
+			store.slices.integrations.setGerritStates(newStates, badgesChanged, changed);
 			if (changed) refreshGerritReviewDialog(ctx.dialog, store.gerritStates, store.config.dateFormat);
 		} else if (Object.keys(store.gerritStates).length > 0) {
-			store.gerritStatesDirty = true;
-			store.gerritStates = {};
+			store.slices.integrations.clearGerritStates();
 		}
 		// The branch list of the ref scan this page was built from: the deferred view load
 		// delivers the remote-tracking entries here (they are the same scan the remote
@@ -161,7 +155,7 @@ export class CommitPage {
 		}
 		// The exact "Uncommitted Changes" count arrives with the final follow-up: record it
 		// as view state so subsequent deferred responses can keep the row rendered
-		if (typeof payload.uncommittedCount === 'number') store.uncommittedCount = payload.uncommittedCount;
+		if (typeof payload.uncommittedCount === 'number') store.slices.commits.setUncommittedCount(payload.uncommittedCount);
 		this.applyPage(payload, cycleCompleting);
 	}
 
@@ -177,7 +171,7 @@ export class CommitPage {
 		const moreAvailable = payload.moreCommitsAvailable, onlyFollowFirstParent = payload.onlyFollowFirstParent;
 		// This list of tags is just used to provide additional information in the dialogs. Tag information included in commits is used for all other purposes (e.g. rendering, context menus)
 		const tagsChanged = !arraysStrictlyEqual(store.gitTags, tags);
-		store.gitTags = tags;
+		store.slices.refs.setTags(tags);
 
 		if (payload.uncommittedPending && commits.length > 0 && commits[0].hash !== UNCOMMITTED && commitHead !== null
 			&& store.uncommittedCount !== null && store.uncommittedCount > 0) {
@@ -213,7 +207,7 @@ export class CommitPage {
 		) && store.renderedGitBranchHead === store.gitBranchHead && !store.gerritStatesDirty) {
 
 			if (store.commits[0].hash === UNCOMMITTED) {
-				store.commits[0] = commits[0];
+				store.slices.commits.patchUncommittedRow(commits[0]);
 				ctx.persistence.saveState();
 				ctx.table.renderUncommittedChanges();
 				if (store.expandedCommit !== null && store.expandedCommit.commitElem !== null) {
@@ -254,18 +248,18 @@ export class CommitPage {
 		const anchor = currentRepoLoading ? null
 			: (anchorFromPending ? viewport.pendingViewportAnchor : viewport.captureViewportAnchor());
 		viewport.pendingViewportAnchor = null; // one shot: consumed here, or dropped with its hash lookup
-		store.currentRepoLoading = false;
-		store.moreCommitsAvailable = moreAvailable;
-		store.onlyFollowFirstParent = onlyFollowFirstParent;
-		store.commits = commits;
-		store.commitHead = commitHead;
-		store.commitLookup = {};
+		store.slices.repos.setCurrentRepoLoading(false);
+		store.slices.commits.replacePage({
+			commits: commits,
+			head: commitHead,
+			moreCommitsAvailable: moreAvailable,
+			onlyFollowFirstParent: onlyFollowFirstParent
+		});
 
 		let expandedCommitVisible = false, expandedCompareWithCommitVisible = false;
 		const avatarsNeeded: { [email: string]: string[] } = {};
 		for (let i = 0; i < store.commits.length; i++) {
 			const commit = store.commits[i];
-			store.commitLookup[commit.hash] = i;
 			if (store.expandedCommit !== null) {
 				if (store.expandedCommit.commitHash === commit.hash) {
 					expandedCommitVisible = true;
@@ -288,7 +282,7 @@ export class CommitPage {
 
 		ctx.persistence.saveState();
 
-		ctx.graph.loadCommits(store.commits, store.commitHead, store.commitLookup, store.onlyFollowFirstParent);
+		ctx.graph.loadCommits(store.commits, store.commitHead, store.slices.commits.lookup, store.onlyFollowFirstParent);
 
 		// Put the scroll where the anchored commit needs it BEFORE rendering, so the window is
 		// computed at its final position and every row in it is reconciled exactly once.
@@ -299,7 +293,7 @@ export class CommitPage {
 		// below measures the rows this pass wrote, and it satisfies any render requested earlier in
 		// the same response (the scheduler's pending flag), so nothing renders twice
 		ctx.renderScheduler.renderSync();
-		store.gerritStatesDirty = false;
+		store.slices.integrations.clearGerritStatesDirty();
 		// A full render has variable row heights, so its anchor can only be measured now that the
 		// rows are on screen. Windowed rendering already landed exactly, and this is a no-op.
 		// A pre-collapse anchor additionally could not hold before the render: it was clamped away

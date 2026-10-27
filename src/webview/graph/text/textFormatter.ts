@@ -175,7 +175,8 @@ export class TextFormatter {
 
 	private formatToString(input: string) {
 		if (this.config.multiline) {
-			let html = [], lines = input.split('\n'), i, j, match;
+			const html = [], lines = input.split('\n');
+			let i, j, match;
 			for (i = 0; i < lines.length; i++) {
 				if (i > 0) {
 					html.push('<br/>');
@@ -216,7 +217,8 @@ export class TextFormatter {
 			const backTickStack: BacktickDelimiter[] = [];
 			TextFormatter.BACKTICK_REGEXP.lastIndex = 0;
 			while (match = TextFormatter.BACKTICK_REGEXP.exec(input)) {
-				let backtick = { index: match.index + match[1].length, run: match[2] }, i;
+				const backtick = { index: match.index + match[1].length, run: match[2] };
+				let i;
 				if (backTickStack.length === 0) {
 					if (match[1].length % 2 === 1) {
 						if (backtick.run.length > 1) {

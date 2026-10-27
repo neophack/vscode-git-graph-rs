@@ -59,10 +59,9 @@ export class FollowUps {
 			if (pr.headHash !== '') pullRequestsByHead[pr.headHash] = pr;
 		}
 		if (pullRequestMapsEqual(store.pullRequestsByHead, pullRequestsByHead)) return;
-		store.pullRequestsByHead = pullRequestsByHead;
-		// A store change: the invalidation channel (main.ts wires it to the render scheduler)
-		// coalesces this with any other change of the same burst into one render
-		store.invalidateRender();
+		// The slice's typed change routes to the renderers that show the badges (the table), and
+		// coalesces with any other change of the same burst into one render
+		store.slices.integrations.setPullRequests(pullRequestsByHead);
 	}
 
 
@@ -80,7 +79,7 @@ export class FollowUps {
 	/** Set the avatar of an author (an author avatar response), updating the rows already rendered. */
 	public loadAvatar(email: string, image: string): void {
 		const ctx = this.ctx();
-		ctx.store.avatars[email] = image;
+		ctx.store.slices.commits.setAvatar(email, image);
 		ctx.persistence.saveState();
 		// Scope the update to the rows of this author (attribute selector) instead of scanning
 		// every avatar element of the (potentially very large) table

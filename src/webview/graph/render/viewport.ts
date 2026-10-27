@@ -252,8 +252,8 @@ export class Viewport {
 			return;
 		}
 
-		const index = this.store.commitLookup[anchor.hash];
-		if (typeof index !== 'number') return; // the anchored commit is gone (e.g. it was rewritten)
+		const index = this.store.getCommitId(anchor.hash);
+		if (index === null) return; // the anchored commit is gone (e.g. it was rewritten)
 
 		let target: number;
 		if (this.canVirtualize()) {

@@ -189,7 +189,7 @@ export function getCommitContextMenuActions(ctx: GraphContext, target: IndexedCo
 	if (commit === undefined) return []; // The commit is no longer loaded (e.g. after a refresh)
 
 	const parentOptions = () => commit.parents.map((parentHash: string, index: number) => ({
-		name: abbrevCommit(parentHash) + (typeof store.commitLookup[parentHash] === 'number' ? ': ' + store.commits[store.commitLookup[parentHash]].message : ''),
+		name: abbrevCommit(parentHash) + (store.getCommitId(parentHash) !== null ? ': ' + store.getCommit(parentHash)!.message : ''),
 		value: (index + 1).toString()
 	}));
 
@@ -305,11 +305,11 @@ export function getCommitContextMenuActions(ctx: GraphContext, target: IndexedCo
 			// (or whose state is unknown) get no button at all - the host re-validates the
 			// local-only requirement (git branch -r --contains) before rewriting anything,
 			// so a stale graph cannot cause a published commit to be rewritten
-			visible: visibility.editMessage && commit.parents.length < 2 && !ctx.graph.commitOnRemote(store.commitLookup[hash]),
+			visible: visibility.editMessage && commit.parents.length < 2 && !ctx.graph.commitOnRemote(store.getCommitId(hash) !== null ? <number>store.getCommitId(hash) : Number.NaN),
 			onClick: () => editCommitMessageAction(ctx, target)
 		}, {
 			title: strings.menuDrop + ELLIPSIS,
-			visible: visibility.drop && ctx.graph.dropCommitPossible(store.commitLookup[hash]),
+			visible: visibility.drop && ctx.graph.dropCommitPossible(store.getCommitId(hash) !== null ? <number>store.getCommitId(hash) : Number.NaN),
 			onClick: () => {
 				ctx.dialog.showConfirmation(html`${formatStr(markup.dropCommitConfirm, abbrevCommit(hash))}${store.onlyFollowFirstParent ? markup.dropCommitFirstParentNote : ''}`, strings.yesDrop, () => {
 					ctx.actions.run({ command: 'dropCommit', repo: store.currentRepo, commitHash: hash }, strings.droppingCommit);
@@ -358,7 +358,7 @@ export function getCommitContextMenuActions(ctx: GraphContext, target: IndexedCo
 			title: strings.menuSelectForCompare,
 			visible: hash !== UNCOMMITTED,
 			onClick: () => {
-				store.compareSourceHash = hash;
+				store.slices.ui.setCompareSourceHash(hash);
 				ctx.persistence.saveState();
 			}
 		}, {

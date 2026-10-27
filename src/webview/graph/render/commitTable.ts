@@ -261,7 +261,7 @@ export class CommitTable {
 		const footerSwapped = this.setFooter(store.moreCommitsAvailable ? html`<div id="loadMoreCommitsBtn" class="roundedBtn" role="button" tabindex="0">${strings.loadMoreCommits}</div>` : html``);
 		ctx.columns.makeTableResizable();
 		ctx.widgets.find.refresh();
-		store.renderedGitBranchHead = store.gitBranchHead;
+		store.slices.commits.markRenderedHead(store.gitBranchHead);
 
 		if (store.moreCommitsAvailable && footerSwapped) {
 			// Only a freshly swapped footer needs the listener: an untouched button keeps the one
@@ -284,9 +284,7 @@ export class CommitTable {
 				details.close(false);
 				ctx.persistence.saveState();
 			} else {
-				expandedCommit.index = parseInt(commitElem.dataset.id!);
-				expandedCommit.commitElem = commitElem;
-				expandedCommit.compareWithElem = compareWithElem;
+				store.slices.details.relink(parseInt(commitElem.dataset.id!), commitElem, compareWithElem);
 				ctx.persistence.saveState();
 				if (expandedCommit.compareWithHash === null) {
 					// Commit Details View is open

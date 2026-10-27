@@ -65,8 +65,8 @@ function makeGraphView(commits: ReadonlyArray<GG.GitCommit>) {
 		findCommitElem: () => null,
 		closeDialogAndContextMenu: () => { }
 	});
-	const lookup: { [hash: string]: number } = {};
-	commits.forEach((commit, index) => { lookup[commit.hash] = index; });
+	const lookup: Map<string, number> = new Map<string, number>();
+	commits.forEach((commit, index) => { lookup.set(commit.hash, index); });
 	view.loadCommits(commits, commits.length > 0 ? commits[0].hash : null, lookup, false);
 	view.render(null, [], null);
 	return { view: view, store: store, svg: elem.querySelector<SVGElement>('svg')!, rect: elem.querySelector<SVGRectElement>('defs mask rect')! };
@@ -107,8 +107,8 @@ describe('the graph svg dimensions', () => {
 		contentElem.appendChild(elem);
 		document.body.appendChild(contentElem);
 		const commits = linearHistory(5);
-		const lookup: { [hash: string]: number } = {};
-		commits.forEach((commit, index) => { lookup[commit.hash] = index; });
+		const lookup: Map<string, number> = new Map<string, number>();
+		commits.forEach((commit, index) => { lookup.set(commit.hash, index); });
 		const view = new GraphView(store, elem, document.body, { findCommitElem: () => null, closeDialogAndContextMenu: () => { } });
 		view.loadCommits(commits, commits[0].hash, lookup, false);
 		view.render(null, [], null);

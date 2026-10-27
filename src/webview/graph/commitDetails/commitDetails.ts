@@ -153,7 +153,7 @@ export class CommitDetails extends Component {
 			expandedCommit.compareWithElem.classList.remove(CLASS_COMMIT_DETAILS_OPEN);
 		}
 		this.closeContextMenuIfOpen(expandedCommit);
-		store.expandedCommit = null;
+		store.slices.details.close();
 		if (saveAndRender) {
 			ctx.persistence.saveState();
 			if (!isDocked) {
@@ -169,7 +169,7 @@ export class CommitDetails extends Component {
 	}
 
 	private saveExpandedCommitLoading(index: number, commitHash: string, commitElem: HTMLElement, compareWithHash: string | null, compareWithElem: HTMLElement | null) {
-		this.store.expandedCommit = {
+		this.store.slices.details.open({
 			index: index,
 			commitHash: commitHash,
 			commitElem: commitElem,
@@ -200,7 +200,7 @@ export class CommitDetails extends Component {
 				summary: false,
 				fileView: -1
 			}
-		};
+		});
 		this.ctx().persistence.saveState();
 	}
 
@@ -209,20 +209,19 @@ export class CommitDetails extends Component {
 		const expandedCommit = this.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitElem === null || expandedCommit.commitHash !== commitDetails.hash || expandedCommit.compareWithHash !== null) return;
 
-		expandedCommit.commitDetails = commitDetails;
-		if (haveFilesChanged(expandedCommit.fileChanges, commitDetails.fileChanges)) {
-			expandedCommit.fileChanges = commitDetails.fileChanges;
-			expandedCommit.fileTree = fileTree;
+		const filesChanged = haveFilesChanged(expandedCommit.fileChanges, commitDetails.fileChanges);
+		this.store.slices.details.applyResponseData(filesChanged ? {
+			commitDetails: commitDetails, fileChanges: commitDetails.fileChanges, fileTree: fileTree,
+			avatar: avatar, codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
+		} : {
+			commitDetails: commitDetails, avatar: avatar, codeReview: codeReview,
+			lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
+		});
+		if (filesChanged) {
 			this.closeContextMenuIfOpen(expandedCommit);
 			this.lineCounts.initialise();
 		}
-		expandedCommit.avatar = avatar;
-		expandedCommit.codeReview = codeReview;
-		if (!refresh) {
-			expandedCommit.lastViewedFile = lastViewedFile;
-		}
 		expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
-		expandedCommit.loading = false;
 		this.ctx().persistence.saveState();
 
 		this.render(refresh);
@@ -283,19 +282,19 @@ export class CommitDetails extends Component {
 		const expandedCommit = this.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitElem === null || expandedCommit.compareWithElem === null || expandedCommit.commitHash !== commitHash || expandedCommit.compareWithHash !== compareWithHash) return;
 
-		if (haveFilesChanged(expandedCommit.fileChanges, fileChanges)) {
-			expandedCommit.fileChanges = fileChanges;
-			expandedCommit.fileTree = fileTree;
+		const filesChanged = haveFilesChanged(expandedCommit.fileChanges, fileChanges);
+		this.store.slices.details.applyResponseData(filesChanged ? {
+			fileChanges: fileChanges, fileTree: fileTree,
+			codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
+		} : {
+			codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
+		});
+		if (filesChanged) {
 			this.closeContextMenuIfOpen(expandedCommit);
 			this.lineCounts.initialise();
 		}
-		expandedCommit.codeReview = codeReview;
-		if (!refresh) {
-			expandedCommit.lastViewedFile = lastViewedFile;
-		}
 		expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
 		expandedCommit.compareWithElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
-		expandedCommit.loading = false;
 		this.ctx().persistence.saveState();
 
 		this.render(refresh);
@@ -430,7 +429,7 @@ export class CommitDetails extends Component {
 				avatar: expandedCommit.avatar,
 				textFormatter: textFormatter,
 				dateFormat: dateFormat,
-				isParentLoaded: (parent) => typeof store.commitLookup[parent] === 'number',
+				isParentLoaded: (parent) => store.getCommitId(parent) !== null,
 				renderMessageBlock: () => body !== '' || (store.config.markdown && hasMarkdown(commitDetails.body))
 					? this.renderCommitMessageBody(expandedCommit, body, textFormatter)
 					: null
@@ -440,7 +439,7 @@ export class CommitDetails extends Component {
 		const parents: Array<SafeHtml | string> = [];
 		commitDetails.parents.forEach((parent, i) => {
 			if (i > 0) parents.push(', ');
-			parents.push(typeof store.commitLookup[parent] === 'number'
+			parents.push(store.getCommitId(parent) !== null
 				? html`<span class="${CLASS_INTERNAL_URL}" data-type="commit" data-value="${parent}" tabindex="-1">${parent}</span>`
 				: parent);
 		});
@@ -453,7 +452,7 @@ export class CommitDetails extends Component {
 		const ctx = this.ctx(), store = ctx.store, layout = ctx.layout, expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitElem === null) return;
 
-		const expandedCommitLoaded = typeof store.commitLookup[expandedCommit.commitHash] === 'number';
+		const expandedCommitLoaded = store.getCommitId(expandedCommit.commitHash) !== null;
 		if (!expandedCommit.loading && !expandedCommitLoaded) return; // The commit is no longer loaded (e.g. after a refresh)
 
 		// This render replaces the panel's content: the previous render's wiring dies here (F3),
@@ -468,7 +467,7 @@ export class CommitDetails extends Component {
 		// scrolling page (summary card, "Files" header, file list)
 		const isMobile = layout.isTouchLayout();
 		const mobileActionsPossible = isMobile && !expandedCommit.loading && expandedCommit.compareWithHash === null && expandedCommitLoaded;
-		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (expandedCommitLoaded && store.commits[store.commitLookup[expandedCommit.commitHash]].parents.length > 0));
+		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (expandedCommitLoaded && store.getCommit(expandedCommit.commitHash)!.parents.length > 0));
 
 		// The file view controls: in the toolbar, or in the mobile sheet's "Files" section header
 		const fileViewBtns = html`<button type="button" id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="${strings.fileListViewTitle}" aria-label="${strings.fileListViewTitle}">${SVG_ICONS.fileList}</button><button type="button" id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="${strings.fileTreeViewTitle}" aria-label="${strings.fileTreeViewTitle}">${SVG_ICONS.fileTree}</button><button type="button" id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="${strings.collapseFoldersTitle}" aria-label="${strings.collapseFoldersTitle}">${SVG_ICONS.collapseAll}</button><button type="button" id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="${strings.expandFoldersTitle}" aria-label="${strings.expandFoldersTitle}">${SVG_ICONS.expandAll}</button>`;
@@ -505,7 +504,7 @@ export class CommitDetails extends Component {
 		// opens the commit; every later render of the same open commit explicitly disables it, so no
 		// amount of background refreshing can make the panel visibly flash again.
 		elem.style.animation = expandedCommit.entered ? 'none' : '';
-		expandedCommit.entered = true;
+		this.store.slices.details.markEntered();
 
 		let content: SafeHtml;
 		if (expandedCommit.loading) {
@@ -580,19 +579,19 @@ export class CommitDetails extends Component {
 
 			this.observeSurfaceElemScroll(this.byId('cdvSummary'), expandedCommit.scrollTop.summary, (scrollTop) => {
 				if (store.expandedCommit === null) return;
-				store.expandedCommit.scrollTop.summary = scrollTop;
+				store.slices.details.setScroll('summary', scrollTop);
 				if (store.expandedCommit.contextMenuOpen.summary) {
-					store.expandedCommit.contextMenuOpen.summary = false;
+					store.slices.details.setContextMenuSummaryOpen(false);
 					ctx.contextMenu.close();
 				}
 			}, () => ctx.persistence.saveState());
 
 			this.observeSurfaceElemScroll(this.byId(this.getFilesScrollElemId()), expandedCommit.scrollTop.fileView, (scrollTop) => {
 				if (store.expandedCommit === null) return;
-				store.expandedCommit.scrollTop.fileView = scrollTop;
+				store.slices.details.setScroll('fileView', scrollTop);
 				this.lineCounts.scheduleVisible();
 				if (store.expandedCommit.contextMenuOpen.fileView > -1) {
-					store.expandedCommit.contextMenuOpen.fileView = -1;
+					store.slices.details.setContextMenuFileView(-1);
 					ctx.contextMenu.close();
 				}
 			}, () => ctx.persistence.saveState());
@@ -659,7 +658,7 @@ export class CommitDetails extends Component {
 		if (height > windowHeight - 40) {
 			height = Math.max(windowHeight - 40, 100);
 			if (height !== repoState.cdvHeight) {
-				repoState.cdvHeight = height;
+				ctx.store.slices.repos.updateRepoState(ctx.store.currentRepo, 'cdvHeight', height);
 				ctx.persistence.saveRepoState();
 			}
 		}
@@ -692,7 +691,7 @@ export class CommitDetails extends Component {
 			if (height > windowHeight - 40) height = Math.max(windowHeight - 40, 100);
 
 			if (repoState.cdvHeight !== height) {
-				repoState.cdvHeight = height;
+				ctx.store.slices.repos.updateRepoState(ctx.store.currentRepo, 'cdvHeight', height);
 				const elem = this.byId('cdv');
 				if (elem !== null) this.setHeight(elem, isDocked);
 				if (!isDocked) ctx.table.renderGraph();
@@ -727,7 +726,7 @@ export class CommitDetails extends Component {
 			else if (percent > 0.8) percent = 0.8;
 
 			if (repoState.cdvDivider !== percent) {
-				repoState.cdvDivider = percent;
+				ctx.store.slices.repos.updateRepoState(ctx.store.currentRepo, 'cdvDivider', percent);
 				this.setDivider();
 			}
 		};
@@ -757,7 +756,7 @@ export class CommitDetails extends Component {
 	private toggleMessageMarkdown() {
 		const store = this.store, expandedCommit = store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitDetails === null || expandedCommit.commitHash === UNCOMMITTED) return;
-		expandedCommit.showMarkdown = !expandedCommit.showMarkdown;
+		this.store.slices.details.toggleMarkdown();
 		const textFormatter = this.createMessageFormatter();
 		const bodyElem = this.byId('cdvMessageBody'), toggleElem = this.byId('cdvMarkdownToggle');
 		if (bodyElem === null || toggleElem === null) return;
@@ -777,7 +776,7 @@ export class CommitDetails extends Component {
 		const ctx = this.ctx(), store = ctx.store, expandedCommit = store.expandedCommit, filesElem = this.byId('cdvFiles');
 		if (expandedCommit === null || expandedCommit.fileTree === null || expandedCommit.fileChanges === null || filesElem === null) return;
 		this.closeContextMenuIfOpen(expandedCommit);
-		store.repoState.fileViewType = type;
+		store.slices.repos.updateRepoState(store.currentRepo, 'fileViewType', type);
 		ctx.persistence.saveRepoState();
 		const commitOrder = store.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		setHtml(filesElem, generateFileViewHtml(expandedCommit.fileTree, expandedCommit.fileChanges, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, type, commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending, this.getFileViewOptions()));
@@ -873,7 +872,7 @@ export class CommitDetails extends Component {
 		if (expandedCommit === null || expandedCommit.fileTree === null || filesElem === null) return;
 
 		if (fileWasViewed) {
-			expandedCommit.lastViewedFile = filePath;
+			store.slices.details.setLastViewedFile(filePath);
 			let lastViewedElem = this.byId('cdvLastFileViewed');
 			if (lastViewedElem !== null) lastViewedElem.remove();
 			lastViewedElem = document.createElement('span');
@@ -907,7 +906,7 @@ export class CommitDetails extends Component {
 			});
 
 			if (expandedCommit.codeReview.remainingFiles.length === 0) {
-				expandedCommit.codeReview = null;
+				store.slices.details.setCodeReview(null);
 				this.renderCodeReviewBtn();
 			}
 		}
@@ -932,7 +931,7 @@ export class CommitDetails extends Component {
 		const ctx = this.ctx(), expandedCommit = ctx.store.expandedCommit, filesElem = this.byId('cdvFiles');
 		if (expandedCommit === null || expandedCommit.fileTree === null || filesElem === null) return;
 
-		expandedCommit.codeReview = codeReview;
+		ctx.store.slices.details.setCodeReview(codeReview);
 		setFileTreeReviewed(expandedCommit.fileTree, codeReview === null);
 		ctx.persistence.saveState();
 		this.renderCodeReviewBtn();

@@ -26,6 +26,7 @@ import { CommitPage } from './commitPage';
 import { ConfigApplier } from './configApply';
 import { FollowUps } from './followUps';
 import { LoadController } from './loadController';
+import { noteRefreshCycle } from './loadDiagnostics';
 import { LoadErrors } from './loadErrors';
 import { LoadRequests } from './loadRequests';
 import { PinnedCommitJump } from './pinnedJump';
@@ -95,13 +96,13 @@ export class RepoLoader {
 				: { repo: prevState.currentRepo };
 			// Restore the scroll position after the repository's commits have been rendered (the view
 			// is still empty at this point, so scrolling immediately would be clamped to 0)
-			store.scrollTop = prevState.scrollTop;
+			store.slices.ui.setScrollTop(prevState.scrollTop);
 			ctx.viewport.restoreScrollTop = prevState.scrollTop;
 		}
 
 		this.bootPushExpected = true;
 		this.loadRepos(store.repos, lastActiveRepo, loadViewTo);
-		store.refreshState.hard = false;
+		store.slices.repos.beginCycle(false, false);
 		this.awaitBootPush();
 
 		const snapshotPainted = this.paintFirstPaintSnapshot(prevState);
@@ -113,7 +114,7 @@ export class RepoLoader {
 			&& prevState.currentRepo === store.currentRepo) {
 			// Restore the "Select for Compare" selection after a webview reload, so it survives
 			// switching away from the panel and back (loadRepo clears it when the repo changes)
-			store.compareSourceHash = prevState.compareSourceHash;
+			store.slices.ui.setCompareSourceHash(prevState.compareSourceHash);
 			ctx.persistence.saveState();
 		}
 	}
@@ -156,7 +157,7 @@ export class RepoLoader {
 	 */
 	public loadRepos(repos: GG.GitRepoSet, lastActiveRepo: string | null, loadViewTo: GG.LoadGitGraphViewTo) {
 		const ctx = this.ctx(), store = ctx.store;
-		store.repos = repos;
+		store.slices.repos.setRepos(repos);
 		ctx.persistence.saveState();
 
 		let newRepo: string;
@@ -175,13 +176,13 @@ export class RepoLoader {
 
 		if (loadViewTo !== null) {
 			if (loadViewTo.repo === newRepo) {
-				store.loadViewTo = loadViewTo;
+				store.slices.repos.setLoadViewTo(loadViewTo);
 			} else {
-				store.loadViewTo = null;
+				store.slices.repos.setLoadViewTo(null);
 				ctx.bridge.send({ command: 'showErrorMessage', message: formatStr(strings.unableToLoadRepo, loadViewTo.repo) });
 			}
 		} else {
-			store.loadViewTo = null;
+			store.slices.repos.setLoadViewTo(null);
 		}
 
 		let filterChanged = false;
@@ -194,7 +195,7 @@ export class RepoLoader {
 		if (store.currentRepo !== newRepo) {			this.loadRepo(newRepo);
 			// loadRepo resets the path filter, so re-apply it before the commits are requested
 			if (loadViewTo !== null && loadViewTo.repo === newRepo && typeof loadViewTo.filterPath === 'string') {
-				store.commitPathFilter = loadViewTo.filterPath !== '' ? loadViewTo.filterPath : null;
+				store.slices.refs.setPathFilter(loadViewTo.filterPath !== '' ? loadViewTo.filterPath : null);
 				ctx.controls.renderFilterButton();
 			}
 			return true;
@@ -202,7 +203,7 @@ export class RepoLoader {
 			// The repository is already loaded, but the path filter changed: reload the commits.
 			// (Unreachable at boot — no repository is set, so the switch above always runs —
 			// and start's awaitBootPush covers the push expectation regardless.)
-			store.commitPathFilter = loadViewTo !== null && typeof loadViewTo.filterPath === 'string' && loadViewTo.filterPath !== '' ? loadViewTo.filterPath : null;
+			store.slices.refs.setPathFilter(loadViewTo !== null && typeof loadViewTo.filterPath === 'string' && loadViewTo.filterPath !== '' ? loadViewTo.filterPath : null);
 			ctx.controls.renderFilterButton();
 			ctx.dom.view.scrollTop = 0;
 			this.refresh(false);
@@ -221,26 +222,19 @@ export class RepoLoader {
 		// reload — closing it here would undo that restore before the first paint, making the
 		// persisted settings-widget state dead.
 		const switchingRepo = store.hasCurrentRepo() && store.currentRepo !== repo;
-		store.currentRepo = repo;
-		store.currentRepoLoading = true;
+		store.slices.repos.switchTo(repo);
 		// A repository switch/reload wants its own start position (the webview-reload path restores
 		// via restoreScrollTop): a pre-collapse anchor belonging to the previous repository must
 		// not leak into the first render of the new one
 		ctx.viewport.pendingViewportAnchor = null;
 		ctx.controls.syncShowRemoteBranches();
-		store.maxCommits = store.config.initialLoadCommits;
-		store.gitConfig = null;
-		store.gitRemotes = [];
-		store.gitStashes = [];
-		store.gitTags = [];
-		store.currentBranches = null;
-		store.currentAuthors = null;
-		store.commitPathFilter = null;
-		store.compareSourceHash = null;
+		store.slices.commits.setMaxCommits(store.config.initialLoadCommits);
+		store.slices.refs.reset();
+		store.slices.ui.setCompareSourceHash(null);
 		// The pull requests of the previous repository don't apply to the new one: drop them and
 		// forget which repositories were already requested, so switching back re-requests them
 		// (otherwise the badges would never come back after the switch cleared them)
-		store.pullRequestsByHead = {};
+		store.slices.integrations.resetPullRequests();
 		this.followUps.forgetAllPullRequestsRequests();
 		ctx.controls.renderFetchButton();
 		ctx.controls.renderFilterButton();
@@ -262,9 +256,7 @@ export class RepoLoader {
 		// The cycle flags the responses still read start fresh with the switch (legacy's
 		// requestLoadRepoInfoAndCommits set them at every cycle start: the hard kind, and no
 		// repo-info change note and no pending config reload carried over)
-		store.refreshState.hard = true;
-		store.refreshState.repoInfoChanges = false;
-		store.refreshState.configChanges = false;
+		store.slices.repos.beginCycle(true, false);
 		this.controller.openRepo(repo);
 	}
 
@@ -362,6 +354,9 @@ export class RepoLoader {
 	 * @param configChanges Also reload the repository's configuration.
 	 */
 	public refresh(hard: boolean, configChanges: boolean = false) {
+		// The truthful refresh counter the E2E diagnostics read (see loadDiagnostics): every
+		// cycle start — the host's `refresh` push included — is observable from a page step.
+		noteRefreshCycle();
 		this.requestLoadRepoInfoAndCommits(hard, false, configChanges);
 	}
 
@@ -369,7 +364,7 @@ export class RepoLoader {
 	public loadMoreCommits() {
 		const ctx = this.ctx(), store = ctx.store;
 		ctx.table.setFooterLoading();
-		store.maxCommits += store.config.loadMoreCommits;
+		store.slices.commits.setMaxCommits(store.maxCommits + store.config.loadMoreCommits);
 		ctx.persistence.saveState();
 		this.requestLoadRepoInfoAndCommits(false, true);
 	}
@@ -388,12 +383,9 @@ export class RepoLoader {
 		const state = this.controller.loadState;
 		const joining = state.type === 'loading' || state.type === 'refreshing';
 		if (joining) {
-			store.refreshState.hard = store.refreshState.hard || hard;
-			store.refreshState.configChanges = store.refreshState.configChanges || configChanges;
+			store.slices.repos.joinCycle(hard, configChanges);
 		} else {
-			store.refreshState.hard = hard;
-			store.refreshState.configChanges = configChanges;
-			store.refreshState.repoInfoChanges = false;
+			store.slices.repos.beginCycle(hard, configChanges);
 		}
 		this.controller.refreshRequested(store.currentRepo, hard, skipRepoInfo);
 	}

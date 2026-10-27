@@ -199,14 +199,14 @@ export class Persistence {
 	/** Save one value of a repository's state (ignored unless it is the current repository). */
 	public saveRepoStateValue<K extends keyof GG.GitRepoState>(repo: string, key: K, value: GG.GitRepoState[K]) {
 		if (repo === this.store.currentRepo) {
-			this.store.repoState[key] = value;
+			this.store.slices.repos.updateRepoState(repo, key, value);
 			this.saveRepoState();
 		}
 	}
 
 	/** Save the column widths of the commit table (the Description column is never stored). */
 	public saveColumnWidths(columnWidths: GG.ColumnWidth[]) {
-		this.store.repoState.columnWidths = [columnWidths[0], columnWidths[2], columnWidths[3], columnWidths[4]];
+		this.store.slices.repos.updateRepoState(this.store.currentRepo, 'columnWidths', [columnWidths[0], columnWidths[2], columnWidths[3], columnWidths[4]]);
 		this.saveRepoState();
 	}
 

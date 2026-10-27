@@ -112,7 +112,10 @@ body {
 #fileHeader button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
 #diffArea { flex: 1; overflow: auto; }
 table.diff { border-collapse: collapse; width: 100%; table-layout: fixed; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; line-height: 19px; }
+table.diff col.colLn { width: 46px; }
+table.diff col.colCode { width: calc(50% - 46px); }
 table.diff td { padding: 0 8px; vertical-align: top; }
+table.diff td.ln { padding: 0 4px; overflow: hidden; }
 table.diff td.code { white-space: pre-wrap; }
 /* Chromium 69 fallback (overflow-wrap:anywhere needs Chrome 80): break-word is the nearest
    safe value */

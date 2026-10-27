@@ -20,7 +20,7 @@ export class LoadErrors {
 	 */
 	public show(message: string, reason: string): void {
 		const ctx = this.ctx();
-		ctx.store.loadViewTo = null;
+		ctx.store.slices.repos.setLoadViewTo(null);
 		ctx.dialog.showError(message, reason, strings.retryAction, () => this.retry());
 	}
 

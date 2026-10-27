@@ -25,13 +25,13 @@ export class LoadRequests {
 	 * (repoLoader.ts:1065/:1073) — it retires every staged follow-up still in flight.
 	 */
 	public nextRequestId(): number {
-		return ++this.ctx().store.refreshState.loadCommitsRefreshId;
+		return this.ctx().store.slices.repos.nextCommitsRequestId();
 	}
 
 	/** Send the repo-info half of a cycle under the cycle's id (the `issueRepoInfoRequest` effect). */
 	public issueRepoInfo(requestId: number): void {
 		const ctx = this.ctx(), store = ctx.store, repoState = store.repoState;
-		store.refreshState.loadRepoInfoRefreshId = requestId;
+		store.slices.repos.stampRepoInfoRequestId(requestId);
 		ctx.bridge.send({
 			command: 'loadRepoInfo',
 			repo: store.currentRepo,
@@ -48,7 +48,7 @@ export class LoadRequests {
 	 */
 	public issueCommits(requestId: number, hard: boolean): void {
 		const ctx = this.ctx(), store = ctx.store, repoState = store.repoState;
-		store.refreshState.loadCommitsRefreshId = requestId;
+		store.slices.repos.stampCommitsRequestId(requestId);
 		ctx.bridge.send({
 			command: 'loadCommits',
 			repo: store.currentRepo,
@@ -92,8 +92,8 @@ export class LoadRequests {
 	/** Request the repository's configuration (and show the settings widget as loading). */
 	public requestLoadConfig(): void {
 		const ctx = this.ctx(), store = ctx.store;
-		store.refreshState.requestingConfig = true;
-		ctx.bridge.send({ command: 'loadConfig', repo: store.currentRepo, refreshId: ++store.refreshState.loadConfigRefreshId, remotes: store.gitRemotes });
+		const refreshId = store.slices.repos.beginConfigLoad();
+		ctx.bridge.send({ command: 'loadConfig', repo: store.currentRepo, refreshId: refreshId, remotes: store.gitRemotes });
 		ctx.widgets.settings.refresh();
 	}
 
@@ -109,9 +109,9 @@ export class LoadRequests {
 		const ctx = this.ctx(), store = ctx.store;
 		if (store.currentRepo !== msg.repo) return;
 		if (store.refreshState.loadConfigRefreshId !== msg.refreshId) return;
-		store.refreshState.requestingConfig = false;
+		store.slices.repos.endConfigLoad();
 		if (msg.config !== null) {
-			store.gitConfig = msg.config;
+			store.slices.refs.setRepoConfig(msg.config);
 			ctx.persistence.saveState();
 			ctx.details.renderExternalDiffBtn();
 		}
