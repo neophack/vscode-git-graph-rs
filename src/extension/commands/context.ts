@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { GerritDataSource } from '../integrations/gerrit/gerrit';
-import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
+import type { AuxiliaryViewsPort, GitRunnerPort } from '../graphView/gitRunner';
+import type { PanelRegistry } from '../graphView/panelRegistry';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';
@@ -14,10 +15,10 @@ import { getPathFromUri, getRepoName } from '../platform/paths';
 
 /**
  * The collaborators a command handler runs with (task 4.6): the same services the
- * `CommandManager` was constructed with, passed to the per-group handler modules so each
- * command group is a standalone unit. The Git executable is mutable: it updates through the
- * `onDidChangeGitExecutable` event the manager subscribes to, and handlers read the current
- * value at invocation time.
+ * `CommandManager` was constructed with (the composition root's frozen bag, A2), passed to the
+ * per-group handler modules so each command group is a standalone unit. The Git executable is
+ * mutable: it updates through the `onDidChangeGitExecutable` event the manager subscribes to,
+ * and handlers read the current value at invocation time.
  */
 export interface CommandHost {
 	readonly context: vscode.ExtensionContext;
@@ -28,11 +29,13 @@ export interface CommandHost {
 	readonly gitRunner: GitRunnerPort;
 	/** The Gerrit integration over the same runner (the `gerritPushRef` command's hook flow). */
 	readonly gerrit: GerritDataSource;
-	/** The auxiliary views the panel hands off to (comparison, binary compare, diff doc). */
-	readonly legacyViews: LegacyViewPort;
+	/** The auxiliary views the panel hands off to (comparison, binary compare). */
+	readonly auxViews: AuxiliaryViewsPort;
 	readonly extensionState: ExtensionState;
 	readonly logger: Logger;
 	readonly repoManager: RepoManager;
+	/** The registry of the live Git Graph view (the view-opening commands go through it). */
+	readonly panels: PanelRegistry;
 	/** The Git executable currently available to the extension (NULL until one is found). */
 	gitExecutable: GitExecutable | null;
 }

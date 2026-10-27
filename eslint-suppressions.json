@@ -245,14 +245,6 @@
       "count": 5
     }
   },
-  "src/extension/main.ts": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 6
-    },
-    "n/no-sync": {
-      "count": 1
-    }
-  },
   "src/extension/platform/actions.ts": {
     "prefer-const": {
       "count": 5

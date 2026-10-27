@@ -1,21 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AvatarManager } from '../integrations/avatars/avatarManager';
-import type { ExtensionState } from '../platform/storage';
-import type { Logger } from '../platform/logger';
 import type { GitCommitData, GitRepoInfo } from '../git/read/types';
 import type { GitGraphViewSnapshot } from '../../shared/model/webview';
 import type { RequestMessage, ResponseMessage } from '../../shared/protocol/messages';
 import { setLiveGraphView } from '../automation/graphViewPort';
+import { PanelRegistry } from './panelRegistry';
+import type { ExtensionServices } from '../services';
 
 /**
  * Panel tests with a fake 'vscode' module (REFACTOR-PLAN task 4.4's acceptance: panel
- * restoration and orphaned tabs have tests with a fake vscode): the panel lifecycle, the
- * generated HTML's CSP/nonce discipline, the orphaned-tab replacement (both the no-Tab-API
- * degradation and the in-place replacement), the message routing through the handler table,
- * and the open path of task 4.7 - the panel begins the merged loadView read at creation and
- * pushes it when the page reports `ready`, sending no loadRepoInfo/loadCommits at boot. The
- * heavier handler behaviors live in handlers/*.test.ts; the staged loading pipeline in
- * commitLoader.test.ts.
+ * restoration and orphaned tabs have tests with a fake vscode): the panel lifecycle through
+ * the composition root's PanelRegistry (A2 — the former GitGraphView statics), the generated
+ * HTML's CSP/nonce discipline, the orphaned-tab replacement (both the no-Tab-API degradation
+ * and the in-place replacement), the message routing through the handler table, and the open
+ * path of task 4.7 - the panel begins the merged loadView read at creation and pushes it when
+ * the page reports `ready`, sending no loadRepoInfo/loadCommits at boot. The heavier handler
+ * behaviors live in handlers/*.test.ts; the staged loading pipeline in commitLoader.test.ts.
  */
 
 /** The mutable state the hoisted vscode mock reads and the tests steer (plain recorders). */
@@ -97,8 +96,6 @@ vi.mock('vscode', () => ({
 	}
 }));
 
-import { GitGraphView } from './panel';
-
 /** The collaborators the panel holds, as recording fakes. */
 function fakeCollaborators() {
 	const logger = {
@@ -152,7 +149,7 @@ function fakeCollaborators() {
 		parseGerritMetas: null,
 		listChangeRefs: null
 	};
-	const legacyViews = {
+	const auxViews = {
 		openCompareTab: vi.fn(),
 		openBinaryCompare: vi.fn()
 	};
@@ -165,24 +162,39 @@ function fakeCollaborators() {
 		exportRepoConfig: vi.fn(async () => null)
 	};
 	const avatarManager = { onAvatar: vi.fn(() => ({ dispose: () => { } })) };
-	return { logger, extensionState, repo, git, legacyViews, repoManager, avatarManager };
+	return { logger, extensionState, repo, git, auxViews, repoManager, avatarManager };
 }
 
 type Collaborators = ReturnType<typeof fakeCollaborators>;
 
-/** The args the statics forward (everything but the panel object they may create or receive). */
-type StaticArgs = [string, never, never, never, ExtensionState, AvatarManager, never, Logger];
-
-function staticArgs(col: Collaborators): StaticArgs {
-	return ['/ext', col.repo, col.git, col.legacyViews, col.extensionState, col.avatarManager, col.repoManager, col.logger] as unknown as StaticArgs;
+/** The services bag the registry is built over (A2): the collaborators plus inert dummies for
+ * the members the panel and registry never touch in these tests. */
+function fakeServices(col: Collaborators): ExtensionServices {
+	return {
+		context: { extensionPath: '/ext' },
+		logger: col.logger,
+		state: col.extensionState,
+		repo: col.repo,
+		reader: {},
+		git: col.git,
+		avatars: col.avatarManager,
+		repos: col.repoManager,
+		auxViews: col.auxViews,
+		gerrit: {},
+		gitResolution: { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) },
+		onDidChangeConfiguration: () => ({ dispose: () => { } })
+	} as unknown as ExtensionServices;
 }
 
+/** The registry under test plus the live view it holds (opened with no repository target). */
 function openView(col: Collaborators) {
+	const panels = new PanelRegistry(fakeServices(col));
+	openRegistry = panels;
 	const panelsBefore = vs.state.createdPanels.length;
-	GitGraphView.createOrShow(...staticArgs(col), null);
-	const view = GitGraphView.currentPanel;
+	panels.open(null);
+	const view = panels.current();
 	expect(view).toBeDefined();
-	return { view: view!, panelIndex: panelsBefore };
+	return { panels: panels, view: view!, panelIndex: panelsBefore };
 }
 
 /** Let the dispatcher's async work settle (postMessage chains, follow-up promises). */
@@ -190,9 +202,12 @@ async function flush(times = 12): Promise<void> {
 	for (let i = 0; i < times; i++) await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+/** The registry the last `openView` created, so afterEach can tear the live view down. */
+let openRegistry: PanelRegistry | null = null;
+
 afterEach(() => {
-	GitGraphView.currentPanel?.dispose();
-	GitGraphView.currentPanel = undefined;
+	openRegistry?.current()?.dispose();
+	openRegistry = null;
 	setLiveGraphView(null);
 	vs.state.panelCalls.length = 0;
 	vs.state.createdPanels.length = 0;
@@ -229,10 +244,12 @@ describe('GitGraphView panel', () => {
 	it('restore attaches a revived panel instead of creating a new one', () => {
 		const col = fakeCollaborators();
 		const revived = vs.makePanel();
-		GitGraphView.restore(revived as never, ...staticArgs(col));
+		const panels = new PanelRegistry(fakeServices(col));
+		openRegistry = panels;
+		panels.restore(revived as never);
 		expect(vs.state.panelCalls.length).toBe(0); // no panel created: the revived one is reused
 		expect(revived.webview.options).toEqual({ enableScripts: true, localResourceRoots: [expect.objectContaining({ fsPath: expect.stringContaining('media') })] });
-		expect(GitGraphView.currentPanel).toBeDefined();
+		expect(panels.current()).toBeDefined();
 		expect(revived.webview.html).toContain('initialState');
 	});
 
@@ -241,15 +258,15 @@ describe('GitGraphView panel', () => {
 		const first = openView(col);
 		expect(first.view).toBeDefined();
 		const revived = vs.makePanel();
-		GitGraphView.restore(revived as never, ...staticArgs(col));
+		first.panels.restore(revived as never);
 		expect(revived.disposed).toBe(true);
-		expect(GitGraphView.currentPanel).toBe(first.view);
+		expect(first.panels.current()).toBe(first.view);
 	});
 
 	it('watchForOrphanedTabs degrades to a no-op without the Tab API (VS Code < 1.67)', () => {
 		const col = fakeCollaborators();
 		vs.state.tabGroups = undefined; // no Tab Groups API at all
-		const watcher = GitGraphView.watchForOrphanedTabs(...staticArgs(col));
+		const watcher = new PanelRegistry(fakeServices(col)).watchForOrphanedTabs();
 		expect(() => watcher.dispose()).not.toThrow();
 		expect(vs.state.panelCalls.length).toBe(0);
 	});
@@ -263,14 +280,16 @@ describe('GitGraphView panel', () => {
 			close: async () => { closed++; return true; },
 			onDidChangeTabs: (_listener: () => void) => ({ dispose: () => { } })
 		};
-		const watcher = GitGraphView.watchForOrphanedTabs(...staticArgs(col));
+		const panels = new PanelRegistry(fakeServices(col));
+		openRegistry = panels;
+		const watcher = panels.watchForOrphanedTabs();
 		// The debounce: a tab is judged only after the startup grace (5s), so advance past it
 		await vi.advanceTimersByTimeAsync(5100);
 		expect(vs.state.panelCalls.length).toBe(1); // the replacement, opened BEFORE the close
 		expect(closed).toBe(1);
 		// The replacement reopens on the stored snapshot: it is embedded into the fresh page
 		expect(vs.state.createdPanels[0].webview.html).toContain('REPLACEMENT-SNAPSHOT');
-		expect(GitGraphView.currentPanel).toBeDefined();
+		expect(panels.current()).toBeDefined();
 		watcher.dispose();
 	});
 

@@ -45,12 +45,7 @@ const vscodeMock = vi.hoisted(() => {
 
 vi.mock('vscode', () => vscodeMock);
 
-const created: unknown[][] = vi.hoisted(() => []);
-vi.mock('../graphView/panel', () => ({
-	GitGraphView: {
-		createOrShow: (...args: unknown[]) => { created.push(args); }
-	}
-}));
+const created: unknown[][] = [];
 
 import { t } from '../platform/i18n';
 import { ErrorInfo } from '../../shared/protocol/messages';
@@ -109,6 +104,7 @@ function fakeHost(codeReviews: { [repo: string]: { [id: string]: { lastActive: n
 	const ended: Array<[string, string]> = [];
 	const host = {
 		context: { extensionPath: '/ext' },
+		panels: { open: (loadViewTo: unknown) => { created.push([loadViewTo]); } },
 		repo: { read: { getCommitSubject: async () => 'the subject' } },
 		extensionState: {
 			getCodeReviews: () => codeReviews,
@@ -196,7 +192,7 @@ describe('resumeWorkspaceCodeReview', () => {
 		await waitFor(() => created.length > 0);
 
 		expect(created.length).toBe(1);
-		expect(created[0]![8]).toEqual({
+		expect(created[0]![0]).toEqual({
 			repo: '/repo',
 			commitDetails: { commitHash: 'bbbbbbbb', compareWithHash: 'aaaaaaaa' }
 		});

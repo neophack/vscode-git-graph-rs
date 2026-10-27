@@ -29,8 +29,13 @@ import type { ErrorInfo } from '../../shared/protocol/messages';
 import type { GitStash } from '../../shared/model/git';
 import type { PullRequestInfo } from '../../shared/model/pullRequest';
 import { GitFileStatus } from '../../shared/model/git';
-import type { LegacyViewPort } from './gitRunner';
+import type { AuxiliaryViewsPort } from './gitRunner';
 import type { GitRunnerPort } from './gitRunner';
+import type { GitProcess } from '../git/process/gitProcess';
+import { CommitComparisonView } from '../views/comparison/viewController';
+import { BinaryCompareView } from '../views/binaryCompare/viewController';
+import type { GitStreamSpawner } from '../views/binaryCompare/hexDiff';
+import type { GitBackend } from '../git/read/backendIndex';
 import { saveGlobalSetting } from './globalSettings';
 import type {
 	AvatarPort, GerritWritesPort, GlobalSettingsPort, PullRequestsPort, RefreshIdKind, ReposPort, StoragePort, UiPort,
@@ -58,8 +63,8 @@ export interface PanelPortDeps {
 	readonly repo: ProductionGitRepository;
 	/** The raw Git runner over the same GitProcess the writer runs on. */
 	readonly git: GitRunnerPort;
-	/** The two auxiliary webviews, still on the legacy DataSource (composed in extension.ts). */
-	readonly legacyViews: LegacyViewPort;
+	/** The two auxiliary webviews, composed in the composition root over the shared git layer. */
+	readonly auxViews: AuxiliaryViewsPort;
 	readonly extensionState: ExtensionState;
 	readonly avatarManager: AvatarManager;
 	readonly repoManager: RepoManager;
@@ -153,12 +158,12 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 			createPullRequest: (config, sourceOwner, sourceRepo, sourceBranch) => createPullRequest(config, sourceOwner, sourceRepo, sourceBranch),
 			setInterfaceLanguage: (language) => setInterfaceLanguage(deps.logger, language),
 			openCompareTab: (repo, fromHash, toHash, singleCommit) => {
-				deps.legacyViews.openCompareTab(deps.extensionPath, repo, fromHash, toHash, singleCommit);
+				deps.auxViews.openCompareTab(deps.extensionPath, repo, fromHash, toHash, singleCommit);
 			},
 			viewDiffBinary: (repo, fromHash, toHash, oldFilePath, newFilePath, type) => {
 				// The native Diff View can't show a binary/image file (both panes would be empty):
 				// the same standalone tab the Commit Comparison View opens for one does
-				deps.legacyViews.openBinaryCompare(deps.extensionPath, repo, resolveDiffFromHash(fromHash, toHash), toHash, {
+				deps.auxViews.openBinaryCompare(deps.extensionPath, repo, resolveDiffFromHash(fromHash, toHash), toHash, {
 					oldFilePath: oldFilePath, newFilePath: newFilePath, type: type, additions: null, deletions: null
 				});
 			},
@@ -217,6 +222,32 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 		repoConfig: repoConfig,
 		gerrit: {
 			clearLocalChanges: (repo, remote) => gerrit.clearLocalChanges(repo, remote)
+		}
+	};
+}
+
+/**
+ * The two auxiliary webviews the view opens — the Commit Comparison View and the Binary Compare
+ * view — composed over the read backend and the streaming spawner (built here over the one
+ * process adapter, the localised no-Git message of the legacy spawn kept for the hex view's
+ * error toast), so no graphView module imports the view controllers.
+ */
+export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): AuxiliaryViewsPort {
+	const gitStream: GitStreamSpawner = {
+		spawnGitStream: (args, repo) => {
+			if (process.git === null) throw new Error(unableToFindGitMsg());
+			return process.spawnStream(args, repo);
+		}
+	};
+	return {
+		openCompareTab: (extensionPath, repoPath, fromHash, toHash, singleCommit) => {
+			CommitComparisonView.open(extensionPath, reader, gitStream, repoPath, fromHash, toHash, singleCommit);
+		},
+		openBinaryCompare: (extensionPath, repoPath, fromHash, toHash, file) => {
+			BinaryCompareView.open(extensionPath, gitStream, repoPath, fromHash, toHash, {
+				oldFilePath: file.oldFilePath, newFilePath: file.newFilePath,
+				type: file.type, additions: file.additions, deletions: file.deletions
+			});
 		}
 	};
 }

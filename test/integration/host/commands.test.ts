@@ -32,11 +32,6 @@ vi.mock('vscode', async () => {
 	return vscodeMockOf(state);
 });
 
-/* GitGraphView recorder: the real panel is covered by the pipeline suites. */
-vi.mock('../../../src/extension/graphView/panel', () => ({
-	GitGraphView: { createOrShow: (...args: unknown[]) => { vs.viewCalls.push(args); } }
-}));
-
 import { CommandManager } from '../../../src/extension/commands';
 import { t } from '../../../src/extension/platform/i18n';
 import { encodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
@@ -143,11 +138,28 @@ function createManager(doubles: ReturnType<typeof createDoubles>, gitExecutable:
 		getOperationState: async () => ({ type: null, conflictedFiles: [], progress: null })
 	};
 	const gitRunner = { gitOutput: async () => '', runGitCommand: async () => null, runGitCommandWithInput: async () => null };
-	const legacyViews = { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } };
+	const auxViews = { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } };
 	// The Gerrit double rides the old DataSource-shaped fake (installHook and the git-runner
 	// surface the gerrit commands call) - task 3.6 moved it off the DataSource parameter.
 	const gerrit = doubles.dataSource;
-	const manager = new CommandManager(context as never, doubles.avatarManager, viewRepo as never, gitRunner as never, gerrit as never, legacyViews as never, doubles.extensionState as never, doubles.repoManager as never, gitResolution as never, onDidChangeConfiguration.subscribe as never, logger as never);
+	// The composition root's services bag (A2) over the doubles, and the panel registry replaced
+	// by a recorder (the real view is covered by the pipeline suites): the view-opening commands
+	// are checked for the loadViewTo they asked the registry to open with.
+	const services = {
+		context: context,
+		avatars: doubles.avatarManager,
+		repo: viewRepo,
+		git: gitRunner,
+		gerrit: gerrit,
+		auxViews: auxViews,
+		state: doubles.extensionState,
+		repos: doubles.repoManager,
+		gitResolution: gitResolution,
+		onDidChangeConfiguration: onDidChangeConfiguration.subscribe,
+		logger: logger
+	};
+	const panels = { open: (loadViewTo: unknown) => { vs.viewCalls.push([loadViewTo]); } };
+	const manager = new CommandManager(services as never, panels as never);
 	return { manager, logger, onDidChangeGitExecutable, onDidChangeConfiguration };
 }
 
@@ -225,19 +237,18 @@ describe('git-graph-rs.view', () => {
 		vscode().runCommand('git-graph-rs.view');
 		await flush();
 		assert.equal(vs.viewCalls.length, 1);
-		assert.equal((vs.viewCalls[0] as unknown[])[0], root);
-		assert.equal((vs.viewCalls[0] as unknown[])[8], null);
+		assert.equal((vs.viewCalls[0] as unknown[])[0], null);
 	});
 
 	it('loads the repository of the Source Control view argument, registering it when unknown', async () => {
 		(doubles.repoManager.repos as any)['/ws/known'] = { name: null };
 		vscode().runCommand('git-graph-rs.view', { rootUri: vscode().Uri.file('/ws/known') });
 		await flush();
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/known' });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/known' });
 
 		vscode().runCommand('git-graph-rs.view', { rootUri: vscode().Uri.file('/ws/new') });
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/new' });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/new' });
 		assert.ok((doubles.repoManager.repos as any)['/ws/new']);
 	});
 
@@ -246,12 +257,12 @@ describe('git-graph-rs.view', () => {
 		vscode().window.activeTextEditor = { document: { uri: vscode().Uri.file('/ws/repo/src/a.ts') } };
 		vscode().runCommand('git-graph-rs.view');
 		await flush();
-		assert.equal((vs.viewCalls[0] as unknown[])[8], null);
+		assert.equal((vs.viewCalls[0] as unknown[])[0], null);
 
 		vscode().settings.openToTheRepoOfTheActiveTextEditorDocument = true;
 		vscode().runCommand('git-graph-rs.view');
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/repo' });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/repo' });
 	});
 });
 
@@ -264,22 +275,22 @@ describe('git-graph-rs.filterByFile', () => {
 	it('filters by the first selected file, relative to the repository root', async () => {
 		vscode().runCommand('git-graph-rs.filterByFile', [vscode().Uri.file('/ws/repo/src/a.ts'), { resourceUri: vscode().Uri.file('/ws/repo/src/b.ts') }, { uri: vscode().Uri.file('/ws/repo/src/a.ts') }]);
 		await flush();
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/repo', filterPath: 'src/a.ts' });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/repo', filterPath: 'src/a.ts' });
 
 		vscode().runCommand('git-graph-rs.filterByFile', [vscode().Uri.file('/ws/other/b.ts'), vscode().Uri.file('/ws/repo/a.ts')]);
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/other', filterPath: 'b.ts' });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/other', filterPath: 'b.ts' });
 	});
 
 	it('uses "." for the repository root itself and falls back to the active editor', async () => {
 		vscode().runCommand('git-graph-rs.filterByFile', vscode().Uri.file('/ws/repo'));
 		await flush();
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/repo', filterPath: '.' });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/repo', filterPath: '.' });
 
 		vscode().window.activeTextEditor = { document: { uri: vscode().Uri.file('/ws/repo/x.ts') } };
 		vscode().runCommand('git-graph-rs.filterByFile', undefined);
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/repo', filterPath: 'x.ts' });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/repo', filterPath: 'x.ts' });
 	});
 
 	it('reports when no file or a file outside any repository is given', async () => {
@@ -370,12 +381,12 @@ describe('git-graph-rs.fetch', () => {
 	it('opens the view directly with zero or one repository', async () => {
 		vscode().runCommand('git-graph-rs.fetch');
 		await flush();
-		assert.equal((vs.viewCalls[0] as unknown[])[8], null);
+		assert.equal((vs.viewCalls[0] as unknown[])[0], null);
 
 		(doubles.repoManager.repos as any)['/ws/only'] = { name: null };
 		vscode().runCommand('git-graph-rs.fetch');
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/only', runCommandOnLoad: 'fetch' });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/only', runCommandOnLoad: 'fetch' });
 	});
 
 	it('asks which repository to fetch, listing the last active repository first', async () => {
@@ -386,7 +397,7 @@ describe('git-graph-rs.fetch', () => {
 		vscode().runCommand('git-graph-rs.fetch');
 		await flush();
 		assert.deepEqual((vscode().callsTo('showQuickPick')[0].args[0] as Array<{ description: string }>).map((i) => i.description), ['/ws/b', '/ws/a']);
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/b', runCommandOnLoad: 'fetch' });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/b', runCommandOnLoad: 'fetch' });
 
 		vscode().responses.showQuickPick = [new Error('closed')];
 		vscode().runCommand('git-graph-rs.fetch');
@@ -455,11 +466,11 @@ describe('code review commands', () => {
 		vscode().responses.showQuickPick = [(items: any[]) => items[0], (items: any[]) => items[1], new Error('closed')];
 		vscode().runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/repo', commitDetails: { commitHash: hashB, compareWithHash: hashA } });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/repo', commitDetails: { commitHash: hashB, compareWithHash: hashA } });
 
 		vscode().runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
-		assert.deepEqual((vs.viewCalls[1] as unknown[])[8], { repo: '/ws/repo', commitDetails: { commitHash: hashA, compareWithHash: null } });
+		assert.deepEqual((vs.viewCalls[1] as unknown[])[0], { repo: '/ws/repo', commitDetails: { commitHash: hashA, compareWithHash: null } });
 
 		vscode().runCommand('git-graph-rs.resumeWorkspaceCodeReview');
 		await flush();
@@ -493,7 +504,19 @@ describe('git-graph-rs.version', () => {
 
 		manager.dispose();
 		({ manager } = createManager(doubles));
-		const broken = new CommandManager({ extensionPath: '/nope' } as never, doubles.avatarManager, { read: {}, write: { run: async () => null } } as never, { gitOutput: async () => '' } as never, doubles.dataSource as never, { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } } as never, doubles.extensionState as never, doubles.repoManager as never, { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) } as never, (() => ({ dispose() { /* nothing */ } })) as never, { log() { /* silent */ }, logError() { /* silent */ } } as never);
+		const broken = new CommandManager({
+			context: { extensionPath: '/nope' },
+			avatars: doubles.avatarManager,
+			repo: { read: {}, write: { run: async () => null } },
+			git: { gitOutput: async () => '' },
+			gerrit: doubles.dataSource,
+			auxViews: { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } },
+			state: doubles.extensionState,
+			repos: doubles.repoManager,
+			gitResolution: { current: () => null, restricted: () => false, ready: () => Promise.resolve(null) },
+			onDidChangeConfiguration: (() => ({ dispose() { /* nothing */ } })) as never,
+			logger: { log() { /* silent */ }, logError() { /* silent */ } }
+		} as never, { open() { /* not asserted here */ } } as never);
 		vscode().runCommand('git-graph-rs.version');
 		await flush();
 		assert.equal(lastError(), t('versionInfoError' as never));
@@ -513,7 +536,7 @@ describe('git-graph-rs.searchCommits', () => {
 		const items = vscode().callsTo('showQuickPick')[0].args[0] as any[];
 		assert.equal(items[0].label, 'cccccccc');
 		assert.equal(items[0].description, 'fix it');
-		assert.deepEqual((vs.viewCalls[0] as unknown[])[8], { repo: '/ws/repo', findCommitHash: 'c'.repeat(40) });
+		assert.deepEqual((vs.viewCalls[0] as unknown[])[0], { repo: '/ws/repo', findCommitHash: 'c'.repeat(40) });
 	});
 
 	it('asks for the repository when there are several, and stops on empty input or no results', async () => {

@@ -126,7 +126,7 @@ describe('a commit made while the view is a background tab still refreshes the v
 		assert.ok(h.rows().length > 0, 'commits were rendered');
 
 		// The repository key the extension actually watches (the resolved, forward-slash path).
-		const repoKey = h.GitGraphView.currentPanel!.automationState().currentRepo;
+		const repoKey = h.panels.current()!.automationState().currentRepo;
 		assert.ok(repoKey !== null, 'the view has a current repository');
 
 		// Everything the extension pushes to the page while the tab is hidden.
@@ -206,7 +206,7 @@ describe('a change the file watcher never reports is still caught by the backgro
 		// checkForBackgroundChanges is TypeScript-`private` only (no runtime enforcement): called
 		// directly so the test does not have to wait out the real 5s poll interval. Its first call
 		// records the baseline signature only - a NULL baseline never triggers a refresh.
-		const view = h.GitGraphView.currentPanel!;
+		const view = h.panels.current()!;
 		await (view as any).checkForBackgroundChanges();
 
 		const commandsWhileHidden: string[] = [];

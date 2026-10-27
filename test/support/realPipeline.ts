@@ -1,7 +1,7 @@
 /**
  * Harness for the real-pipeline integration suites (tests/webviewRealPipelineHarness.mjs ported
  * for Vitest, REFACTOR-PLAN task 7.1): boot the REAL extension sources (the git layer +
- * RepoManager + GitGraphView, composed exactly like src/extension.ts) against a REAL throwaway
+ * RepoManager + GitGraphView, composed exactly like src/extension/main.ts) against a REAL throwaway
  * git repository and the REAL compiled webview (media/out.testbundle.js) inside jsdom, wired
  * together through the message pipeline of the editor.
  *
@@ -26,13 +26,14 @@ import { Logger } from '../../src/extension/platform/logger';
 import { ExtensionState } from '../../src/extension/platform/storage';
 import { AvatarManager } from '../../src/extension/integrations/avatars/avatarManager';
 import { RepoManager } from '../../src/extension/repos/repoManager';
-import { GitGraphView } from '../../src/extension/graphView/panel';
+import { PanelRegistry } from '../../src/extension/graphView/panelRegistry';
+import type { ExtensionServices } from '../../src/extension/services';
 import { GitProcess } from '../../src/extension/git/process/gitProcess';
 import { GitWriter } from '../../src/extension/git/write/gitWriter';
 import { GitRepository } from '../../src/extension/git/gitRepository';
 import { createBackend } from '../../src/extension/git/read/backendIndex';
 import { createGitRunner } from '../../src/extension/graphView/gitRunner';
-import type { LegacyViewPort } from '../../src/extension/graphView/gitRunner';
+import type { AuxiliaryViewsPort } from '../../src/extension/graphView/gitRunner';
 import { gerritDataSourceOver } from '../../src/extension/integrations/gerrit/gerrit';
 import { AutomationServer } from '../../src/extension/automation/server';
 import { HostBridge } from '../../src/extension/automation/hostBridge';
@@ -217,7 +218,8 @@ export interface BootedPipeline {
 	viewElem: any;
 	scrollTo: (row: number) => Promise<void>;
 	rows: () => HTMLElement[];
-	GitGraphView: typeof GitGraphView;
+	/** The live view registry (the composition root's PanelRegistry; the view itself is covered elsewhere). */
+	panels: PanelRegistry;
 	dispose: () => void;
 	sleep: typeof sleep;
 	automation: {
@@ -270,10 +272,16 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	const viewReader = createBackend({ gitPath: 'git' });
 	const viewRepo = new GitRepository(viewReader, gitWriter, runTextOf(gitProcess));
 	const gitRunner = createGitRunner(gitProcess, null, (key: string) => key);
-	const legacyViews: LegacyViewPort = { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } };
+	const auxViews: AuxiliaryViewsPort = { openCompareTab: () => { /* nothing */ }, openBinaryCompare: () => { /* nothing */ } };
 
 	const avatarManager = new AvatarManager(viewReader, extensionState, logger);
-	const repoManager = new RepoManager(viewRepo, gitRunner, extensionState, configurationEmitter.subscribe, logger);
+	const repoManager = new RepoManager({
+		repo: viewRepo,
+		git: gitRunner,
+		state: extensionState,
+		onDidChangeConfiguration: configurationEmitter.subscribe,
+		logger: logger
+	});
 
 	for (let i = 0; i < 600 && Object.keys(repoManager.getRepos()).length === 0; i++) await sleep(100);
 	if (Object.keys(repoManager.getRepos()).length === 0) throw new Error('the repository was discovered');
@@ -287,9 +295,25 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	// The deferred Git resolution (OPTIMIZATION-PLAN V1): a settled port standing in for the
 	// composition root's — current() is always the known executable, never restricted.
 	const commandGitResolution = { current: () => ({ path: 'git', version: '2.50.0' }), restricted: () => false, ready: () => Promise.resolve({ path: 'git', version: '2.50.0' }) };
-	const commandManager = new CommandManager(context as any, avatarManager, viewRepo, gitRunner, commandGerrit, legacyViews, extensionState, repoManager, commandGitResolution, configurationEmitter.subscribe, logger as any);
+	// The composition root's services bag (A2), mirrored composition-for-composition.
+	const services = {
+		context: context,
+		logger: logger,
+		state: extensionState,
+		repo: viewRepo,
+		reader: viewReader,
+		git: gitRunner,
+		avatars: avatarManager,
+		repos: repoManager,
+		auxViews: auxViews,
+		gerrit: commandGerrit,
+		gitResolution: commandGitResolution,
+		onDidChangeConfiguration: configurationEmitter.subscribe
+	} as unknown as ExtensionServices;
+	const panels = new PanelRegistry(services);
+	const commandManager = new CommandManager(services, panels);
 
-	GitGraphView.createOrShow(rootDir, viewRepo, gitRunner, legacyViews, extensionState, avatarManager, repoManager, new Logger(), null);
+	panels.open(null);
 	if (graphPanel.webview.html.length <= 0) throw new Error('the webview html was generated');
 
 	// The extension (and its AskpassManager HTTP servers) is live from here on: anything that
@@ -297,7 +321,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 	const dispose = () => {
 		commandHandlers = {};
 		commandManager.dispose();
-		if (GitGraphView.currentPanel !== undefined) GitGraphView.currentPanel.dispose();
+		if (panels.current() !== undefined) panels.current()!.dispose();
 		// Release the engine's repository handles (the inverse of what the suite asserts must stay
 		// open across requests): the harness owns this RepoManager, nobody else will close it —
 		// EVERY known repository, not just the boot one, because a runAutomationSuite({ repo })
@@ -378,7 +402,7 @@ export async function bootRealView(repo: string): Promise<BootedPipeline> {
 		await sleep(120); // let the rAF-debounced window update run
 	};
 	const rows = () => Array.from(document.querySelectorAll('#commitTable tr.commit')) as HTMLElement[];
-	return { window, document, viewElem, scrollTo, rows, GitGraphView, dispose, sleep, automation: { AutomationServer, HostBridge, suiteRunner, reportView } };
+	return { window, document, viewElem, scrollTo, rows, panels: panels, dispose, sleep, automation: { AutomationServer, HostBridge, suiteRunner, reportView } };
 }
 
 /** The facade's plain text runner (src/extension.ts runTextOf, mirrored for the harness). */

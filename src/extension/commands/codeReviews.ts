@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { GitGraphView } from '../graphView/panel';
 import { t } from '../platform/i18n';
 import { CodeReviewData, CodeReviews } from '../platform/storage';
 import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
@@ -81,7 +80,7 @@ export function resumeWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort
 	}).then((item) => {
 		if (item) {
 			const commitHashes = item.codeReviewId.split('-');
-			GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+			host.panels.open({
 				repo: item.codeReviewRepo,
 				commitDetails: {
 					commitHash: commitHashes[commitHashes.length > 1 ? 1 : 0],

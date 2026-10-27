@@ -80,8 +80,7 @@ function createHarness(options: HarnessOptions = {}) {
 		} satisfies PrewarmClock,
 		readerFactory: vi.fn(() => reader as unknown as PrewarmReader),
 		recentRepos: vi.fn(() => repos),
-		currentRepo: options.currentRepo ?? ((): string | null => null),
-		isBusy: (): boolean => busy,
+		liveView: { currentRepo: options.currentRepo ?? ((): string | null => null), isBusy: (): boolean => busy },
 		enabled: options.enabled ?? true,
 		log: (message: string) => logs.push(message)
 	};
@@ -382,8 +381,7 @@ describe('PrewarmController (fake timers, fake reader)', () => {
 			},
 			readerFactory: () => reader,
 			recentRepos: () => ['repo/a'],
-			currentRepo: () => null,
-			isBusy: () => false,
+			liveView: { currentRepo: () => null, isBusy: () => false },
 			enabled: true,
 			log: () => undefined
 		});

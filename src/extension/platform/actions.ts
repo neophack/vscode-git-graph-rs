@@ -1,6 +1,7 @@
 // Visual Studio Code command wrappers: the user-facing actions (diffs, files,
 // archives, pull requests, dialogs) shared across the extension host.
 
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
@@ -18,6 +19,8 @@ import { GitFileStatus } from '../../shared/model/git';
 import { PullRequestConfig, PullRequestProvider } from '../../shared/model/pullRequest';
 import { UNCOMMITTED, abbrevCommit } from './git';
 import { doesFileExist } from './paths';
+import { getGitExecutableFromPaths } from '../git/executable/findGit';
+import type { GitExecutable } from '../git/process/gitProcess';
 
 // The platform adapter instances of this module (task 4.10), built on first use: merely
 // importing this module never touches the vscode module surface (test fakes inject minimal
@@ -453,4 +456,75 @@ export function showInformationMessage(message: string) {
  */
 export function showErrorMessage(message: string) {
 	return adapters().notifications.showErrorMessage(message).then(() => { }, () => { });
+}
+
+let restrictedModeNoticeShown = false;
+
+/**
+ * The Restricted Mode notice (OPTIMIZATION-PLAN V2, decision D-1): shown once per session, on
+ * activation and again on every transition into an untrusted workspace. The per-session flag
+ * lives here because the notice is a native-UI presentation, not composition state.
+ * @param logger The log the notice is mirrored to.
+ */
+export function showRestrictedModeNoticeOnce(logger: { log(message: string): void }): void {
+	if (restrictedModeNoticeShown) return;
+	restrictedModeNoticeShown = true;
+	const notice = t('restrictedModeNotice');
+	void showInformationMessage(notice);
+	logger.log(notice);
+}
+
+/**
+ * The `git.path` setting changed (OPTIMIZATION-PLAN V1): re-resolve a Git executable over the
+ * configured paths, hand the result to the host's executable event, and rescan the workspace.
+ * Both outcomes are announced: the found executable with a localized "now using" notice, the
+ * failure with one naming the paths that were tried.
+ * @param paths The configured `git.path` entries.
+ * @param onResolved Called with the validated executable (the host emits it and rebuilds what
+ * follows Git).
+ * @param rescan Called after a found executable (the repository set may grow by it).
+ * @param logger The log both outcomes are mirrored to.
+ */
+export function followGitPathSetting(paths: ReadonlyArray<string>, onResolved: (executable: GitExecutable) => void, rescan: () => void, logger: { log(message: string): void; logError(message: string): void }): void {
+	getGitExecutableFromPaths([...paths]).then((gitExecutable) => {
+		onResolved(gitExecutable);
+		const msg = t('nowUsingGit', gitExecutable.path, gitExecutable.version);
+		void showInformationMessage(msg);
+		logger.log(msg);
+		rescan();
+	}, () => {
+		const msg = t('gitPathInvalid', paths.join('", "'), paths.length > 1 ? t('gitPathInvalidContain') : t('gitPathInvalidMatch'));
+		void showErrorMessage(msg);
+		logger.logError(msg);
+	});
+}
+
+/** The `version` field of the installed manifest, or "unknown" when it cannot be read. */
+function readManifestVersion(extensionPath: string): string {
+	try {
+		// eslint-disable-next-line n/no-sync -- a single read per shown notice, on the rare first-run path
+		const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8')) as { version?: unknown };
+		return typeof manifest.version === 'string' ? manifest.version : 'unknown';
+	} catch (_) {
+		return 'unknown';
+	}
+}
+
+/**
+ * Show an informational message once per extension version (OPTIMIZATION-PLAN V1): the flag is
+ * keyed by the extension version in globalState, so an update shows the message again while a
+ * plain reload does not. The "no engine for this platform" and "running without Git" notices
+ * both go through here — their information lives on in the Settings widget's backend section
+ * afterwards.
+ * @param context The extension context (its globalState holds the shown-flags).
+ * @param logger The log the notice is mirrored to.
+ * @param key The notice's key (namespaces the flag).
+ * @param message The message to show.
+ */
+export function showInformationMessageOncePerVersion(context: vscode.ExtensionContext, logger: { log(message: string): void }, key: string, message: string): void {
+	const flagKey = 'infoMessageShown:' + key + ':' + readManifestVersion(context.extensionPath);
+	if (context.globalState.get<boolean>(flagKey) === true) return;
+	void showInformationMessage(message);
+	logger.log(message);
+	void context.globalState.update(flagKey, true).then(undefined, () => undefined);
 }

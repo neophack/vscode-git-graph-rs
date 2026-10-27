@@ -1,4 +1,3 @@
-import { GitGraphView } from '../graphView/panel';
 import { t } from '../platform/i18n';
 import { showErrorMessage, showInformationMessage, uiPort } from '../platform/actions';
 import { UiPort } from '../platform/uiPort';
@@ -58,7 +57,7 @@ export async function searchCommits(host: CommandHost, ui: UiPort = uiPort) {
 			matchOnDetail: true
 		});
 		if (selected) {
-			GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, findCommitHash: selected.commitHash });
+			host.panels.open({ repo: repo, findCommitHash: selected.commitHash });
 		}
 	} catch (err) {
 		showErrorMessage(t('searchCommitsError'));

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
-import { deliverAutomationHostMessage, deliverAutomationShimResult, setLiveGraphView } from '../automation/graphViewPort';
+import { deliverAutomationHostMessage, deliverAutomationShimResult } from '../automation/graphViewPort';
 import { getConfig } from '../platform/config';
 import type { ExtensionState } from '../platform/storage';
 import { t } from '../platform/i18n';
@@ -28,11 +28,12 @@ import type { ImpactRefreshDeps } from './impactRefresh';
 import { dispatchRequest, isMutatingCommand } from './handlers/index';
 import type { HandlerContext } from './handlers/context';
 import { canLoadGraphView, getWebviewConfig, renderGraphViewHtml } from './html';
-import { watchForOrphanedTabs as watchOrphanedTabs } from './orphanedTabs';
 import { hostScheduler } from './scheduler';
-import type { LegacyViewPort, GitRunnerPort } from './gitRunner';
+import type { AuxiliaryViewsPort, GitRunnerPort } from './gitRunner';
 import { createCommitLoader, createLoaderReads, createPanelPorts, createViewPort } from './panelContext';
 import type { PanelRefreshIds } from './panelContext';
+import type { ExtensionServices } from '../services';
+import type { PanelRegistry } from './panelRegistry';
 import { BackgroundChangePoller } from './poller';
 
 /** The write-path localizer: the ports speak plain string keys, the i18n table's own keys are what they carry. */
@@ -57,20 +58,57 @@ const OP_TRACE_COMMANDS: ReadonlySet<string> = new Set(['loadCommits', 'commitDe
  * touch directly. Its repository access is the `GitRepository` facade of the new git layer
  * (task 3.6); the open path is push-based (task 4.7): the panel begins the merged loadView read
  * when the page is (re)generated and pushes the result when the page reports `ready`.
+ *
+ * The panel is a plain instance now (OPTIMIZATION-PLAN A2): it registers itself with the
+ * composition root's {@link PanelRegistry} at every lifecycle point (creation, revival,
+ * orphaned-tab replacement, disposal) and publishes its activity transitions there, instead of
+ * a static singleton field that any module could read.
  */
-export class GitGraphView extends Disposable {
-	/**
-	 * The singleton live view. Automation observes it through the injected GraphViewPort
-	 * (src/automation/graphViewPort.ts): the port's live-view reference is published at every
-	 * point this singleton panel reference changes, and the message taps live in the port
-	 * module — so this class holds no automation state of its own.
-	 */
-	public static currentPanel: GitGraphView | undefined;
 
+/** The per-instance options of one GitGraphView construction (the three lifecycle entries fold into these). */
+export interface GitGraphViewOptions {
+	/** What to load the view to. */
+	readonly loadViewTo: LoadGitGraphViewTo;
+	/** The column the view should be loaded in (or the column+focus of an orphan replacement). */
+	readonly column?: vscode.ViewColumn | { readonly viewColumn: vscode.ViewColumn; readonly preserveFocus: boolean };
+	/** A revived Webview Panel to attach to, instead of creating a new one. */
+	readonly existingPanel?: vscode.WebviewPanel;
+	/** The view state the page should reopen on (see GitGraphViewSnapshot). */
+	readonly restoredSnapshot?: GitGraphViewSnapshot | null;
+}
+
+/**
+ * The column a newly opened view loads in: the active text editor's column, or undefined when
+ * no editor is open. Lives on the panel module because it is the one vscode runtime read the
+ * registry (which must stay vscode-free) needs for `open()`.
+ */
+export function activeEditorColumn(): vscode.ViewColumn | undefined {
+	return vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined;
+}
+
+/**
+ * Register the Git Graph webview panel serializer (a window reload restoring the open Git
+ * Graph tab). The registry owns the restore; the module only owns the vscode registration —
+ * `awaitReady` is the background Git resolution (V1), so a restored panel's first render cannot
+ * mistake an unvalidated Git for "no Git".
+ */
+export function registerPanelSerializer(awaitReady: () => Promise<unknown>, restore: (panel: vscode.WebviewPanel) => void): vscode.Disposable {
+	return vscode.window.registerWebviewPanelSerializer('git-graph-rs', {
+		deserializeWebviewPanel: async (panel: vscode.WebviewPanel) => {
+			await awaitReady();
+			restore(panel);
+		}
+	});
+}
+
+export class GitGraphView extends Disposable {
+	private readonly services: ExtensionServices;
+	private readonly panels: PanelRegistry;
 	private readonly panel: vscode.WebviewPanel;
 	private readonly extensionPath: string;
 	private readonly repo: ProductionGitRepository;
 	private readonly git: GitRunnerPort;
+	private readonly auxViews: AuxiliaryViewsPort;
 	private readonly extensionState: ExtensionState;
 	private readonly repoFileWatcher: RepoFileWatcher;
 	private readonly repoManager: RepoManager;
@@ -114,103 +152,54 @@ export class GitGraphView extends Disposable {
 	private static readonly BACKGROUND_POLL_INTERVAL_MS = 5000;
 
 	/**
-	 * If a Git Graph View already exists, show and update it. Otherwise, create a Git Graph View.
-	 * @param extensionPath The absolute file path of the directory containing the extension.
-	 * @param repo The GitRepository facade of the new git layer (reads + writes + operation state).
-	 * @param git The raw Git runner over the same process the writer runs on.
-	 * @param legacyViews The auxiliary webviews still on the legacy data source (Phase 6 moves them).
-	 * @param extensionState The Git Graph ExtensionState instance.
-	 * @param avatarManager The Git Graph AvatarManager instance.
-	 * @param repoManager The Git Graph RepoManager instance.
-	 * @param logger The Git Graph Logger instance.
-	 * @param loadViewTo What to load the view to.
+	 * Whether the page has finished loading (the registry's busy signal and activity read this).
 	 */
-	public static createOrShow(extensionPath: string, repo: ProductionGitRepository, git: GitRunnerPort, legacyViews: LegacyViewPort, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo) {
-		const column = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined;
+	public get viewLoaded(): boolean {
+		return this.isGraphViewLoaded;
+	}
 
-		if (GitGraphView.currentPanel) {
-			// If Git Graph panel already exists
-			if (GitGraphView.currentPanel.isPanelVisible) {
-				// If the Git Graph panel is visible
-				if (loadViewTo !== null) {
-					GitGraphView.currentPanel.respondLoadRepos(repoManager.getRepos(), loadViewTo);
-				}
-			} else {
-				// If the Git Graph panel is not visible
-				GitGraphView.currentPanel.loadViewTo = loadViewTo;
-			}
-			GitGraphView.currentPanel.panel.reveal(column);
-		} else {
-			// If Git Graph panel doesn't already exist
-			GitGraphView.currentPanel = new GitGraphView(extensionPath, repo, git, legacyViews, extensionState, avatarManager, repoManager, logger, loadViewTo, column);
-			setLiveGraphView(GitGraphView.currentPanel);
-		}
+	/** The repository the view currently shows (NULL when none). */
+	public get shownRepo(): string | null {
+		return this.currentRepo;
 	}
 
 	/**
-	 * Re-attach a Git Graph View to a Webview Panel VS Code revives through the serializer (a
-	 * window reload restoring the open Git Graph tab). An Extension Host restart doesn't go
-	 * through here: see watchForOrphanedTabs.
-	 * @param panel The revived Webview Panel handed over by VS Code.
+	 * Creates a Git Graph View. Only the {@link PanelRegistry} constructs it — it owns the
+	 * singleton lifecycle; this constructor only assembles one instance.
+	 * @param services The extension services (the git layer and the collaborators).
+	 * @param panels The panel registry this view publishes itself to.
+	 * @param options What to load the view to, where to load it, and any revived panel/snapshot.
 	 */
-	public static restore(panel: vscode.WebviewPanel, extensionPath: string, repo: ProductionGitRepository, git: GitRunnerPort, legacyViews: LegacyViewPort, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger) {
-		if (GitGraphView.currentPanel) {
-			// A view is already open: a second one can't share the singleton state.
-			panel.dispose();
-			return;
-		}
-		panel.webview.options = {
-			enableScripts: true,
-			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
-		};
-		GitGraphView.currentPanel = new GitGraphView(extensionPath, repo, git, legacyViews, extensionState, avatarManager, repoManager, logger, null, panel.viewColumn, panel);
-		setLiveGraphView(GitGraphView.currentPanel);
-	}
-
-	/**
-	 * Replace the Git Graph tabs an Extension Host restart leaves behind (see orphanedTabs.ts,
-	 * which holds the logic): a Git Graph tab that is shown while no live view backs it gets a
-	 * fresh view opened NEXT to it and only then the dead tab closed.
-	 * @returns A disposable that stops watching.
-	 */
-	public static watchForOrphanedTabs(extensionPath: string, repo: ProductionGitRepository, git: GitRunnerPort, legacyViews: LegacyViewPort, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger): vscode.Disposable {
-		return watchOrphanedTabs({
-			liveView: () => {
-				const view = GitGraphView.currentPanel;
-				return view !== undefined ? { visible: view.panelVisible, viewColumn: view.panelViewColumn } : undefined;
-			},
-			openReplacement: (viewColumn, preserveFocus) => {
-				GitGraphView.currentPanel = new GitGraphView(extensionPath, repo, git, legacyViews, extensionState, avatarManager, repoManager, logger, null, { viewColumn: viewColumn, preserveFocus: preserveFocus }, undefined, extensionState.getViewSnapshot());
-				setLiveGraphView(GitGraphView.currentPanel);
-			},
-			logger: logger
-		});
-	}
-
-	/**
-	 * Creates a Git Graph View.
-	 * @param loadViewTo What to load the view to.
-	 * @param column The column the view should be loaded in.
-	 * @param existingPanel A revived Webview Panel to attach to, instead of creating a new one.
-	 * @param restoredSnapshot The view state the page should reopen on (see GitGraphViewSnapshot).
-	 */
-	private constructor(extensionPath: string, repo: ProductionGitRepository, git: GitRunnerPort, legacyViews: LegacyViewPort, extensionState: ExtensionState, avatarManager: AvatarManager, repoManager: RepoManager, logger: Logger, loadViewTo: LoadGitGraphViewTo, column: vscode.ViewColumn | { viewColumn: vscode.ViewColumn, preserveFocus: boolean } | undefined, existingPanel?: vscode.WebviewPanel, restoredSnapshot: GitGraphViewSnapshot | null = null) {
+	public constructor(services: ExtensionServices, panels: PanelRegistry, options: GitGraphViewOptions) {
 		super();
-		this.extensionPath = extensionPath;
-		this.repo = repo;
-		this.git = git;
-		this.extensionState = extensionState;
-		this.repoManager = repoManager;
-		this.logger = logger;
-		this.loadViewTo = loadViewTo;
-		this.restoredSnapshot = restoredSnapshot;
+		this.services = services;
+		this.panels = panels;
+		this.extensionPath = services.context.extensionPath;
+		this.repo = services.repo;
+		this.git = services.git;
+		this.auxViews = services.auxViews;
+		this.extensionState = services.state;
+		this.repoManager = services.repos;
+		this.logger = services.logger;
+		this.loadViewTo = options.loadViewTo;
+		this.restoredSnapshot = options.restoredSnapshot ?? null;
 
 		const config = getConfig();
-		this.panel = existingPanel || vscode.window.createWebviewPanel('git-graph-rs', 'Git Graph RS', column || vscode.ViewColumn.One, {
-			enableScripts: true,
-			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))],
-			retainContextWhenHidden: config.retainContextWhenHidden
-		});
+		if (options.existingPanel !== undefined) {
+			// A revived panel re-uses VS Code's Webview Panel; only the resource roots must be
+			// (re)declared before its first render - the former `restore` static set these.
+			options.existingPanel.webview.options = {
+				enableScripts: true,
+				localResourceRoots: [vscode.Uri.file(path.join(this.extensionPath, 'media'))]
+			};
+			this.panel = options.existingPanel;
+		} else {
+			this.panel = vscode.window.createWebviewPanel('git-graph-rs', 'Git Graph RS', options.column ?? vscode.ViewColumn.One, {
+				enableScripts: true,
+				localResourceRoots: [vscode.Uri.file(path.join(this.extensionPath, 'media'))],
+				retainContextWhenHidden: config.retainContextWhenHidden
+			});
+		}
 		this.panel.iconPath = config.tabIconColourTheme === TabIconColourTheme.Colour
 			? this.getResourcesUri('git-graph-rs-webview-icon.svg')
 			: {
@@ -220,17 +209,17 @@ export class GitGraphView extends Disposable {
 		// T1 (P1): the panel exists - the boot trace the view command began at T0 continues here
 		// (a restored or orphan-replaced panel has no T0 and opens a session trace instead).
 		mark(MARK.panelCreated);
-		this.loaderReads = createLoaderReads(repo);
-		this.loader = createCommitLoader(repo, git, logger, this.loaderReads);
+		this.loaderReads = createLoaderReads(this.repo);
+		this.loader = createCommitLoader(this.repo, this.git, this.logger, this.loaderReads);
 		this.ports = createPanelPorts({
-			repo: repo,
-			git: git,
-			legacyViews: legacyViews,
-			extensionState: extensionState,
-			avatarManager: avatarManager,
-			repoManager: repoManager,
-			logger: logger,
-			extensionPath: extensionPath,
+			repo: this.repo,
+			git: this.git,
+			auxViews: this.auxViews,
+			extensionState: this.extensionState,
+			avatarManager: this.services.avatars,
+			repoManager: this.repoManager,
+			logger: this.logger,
+			extensionPath: this.extensionPath,
 			pullRequests: this.pullRequests,
 			currentRepo: () => this.currentRepo
 		});
@@ -244,10 +233,10 @@ export class GitGraphView extends Disposable {
 				this.loader.invalidateCommitCache();
 				this.sendMessage({ command: 'refresh' });
 			},
-			logger: logger
+			logger: this.logger
 		}, GitGraphView.BACKGROUND_POLL_INTERVAL_MS);
 		// Watch for file changes in the repository currently open in the Git Graph View
-		this.repoFileWatcher = new RepoFileWatcher(logger, (commitsAffected) => {
+		this.repoFileWatcher = new RepoFileWatcher(this.logger, (commitsAffected) => {
 			if (commitsAffected) {
 				// A ref, HEAD or the Git config changed on disk: any cached commit data is now stale.
 				// The invalidation must not depend on visibility: a commit made while the view is a
@@ -269,12 +258,15 @@ export class GitGraphView extends Disposable {
 		});
 		this.viewPort = createViewPort({
 			loader: this.loader,
-			extensionState: extensionState,
+			extensionState: this.extensionState,
 			watcher: this.repoFileWatcher,
 			poller: this.poller,
 			refreshIds: this.refreshIds,
 			currentRepo: () => this.currentRepo,
-			setCurrentRepo: (repoPath) => { this.currentRepo = repoPath; },
+			setCurrentRepo: (repoPath) => {
+				this.currentRepo = repoPath;
+				this.noteActivity();
+			},
 			pushViewLoad: () => { void this.pushViewLoad(); }
 		});
 
@@ -282,7 +274,7 @@ export class GitGraphView extends Disposable {
 			// The write-path impact collection (task 4.8): the GitWriter reports the effects of
 			// every op that ran while a request was being dispatched — the per-op truth the
 			// impact refresh prefers over the protocol's per-command table.
-			repo.write.onRepositoryChanged((repoPath, effects) => {
+			this.repo.write.onRepositoryChanged((repoPath, effects) => {
 				if (this.dispatchDepth === 0) return; // a write outside a dispatched request: the repo file watcher reports it
 				const observed = this.observedEffects.get(repoPath);
 				if (observed === undefined) this.observedEffects.set(repoPath, new Set(effects));
@@ -291,8 +283,8 @@ export class GitGraphView extends Disposable {
 
 			// Dispose Git Graph View resources when disposed
 			toDisposable(() => {
-				GitGraphView.currentPanel = undefined;
-				setLiveGraphView(null);
+				// The registry drops the view (and the automation port's live reference with it)
+				this.panels.detach(this);
 				this.repoFileWatcher.stop();
 				this.poller.stop();
 				this.loader.dispose();
@@ -315,7 +307,7 @@ export class GitGraphView extends Disposable {
 			}),
 
 			// Subscribe to events triggered when a repository is added or deleted from Git Graph
-			repoManager.onDidChangeRepos((event) => {
+			this.repoManager.onDidChangeRepos((event) => {
 				if (!this.panel.visible) {
 					// Only the latest event matters (each carries the full repo set): keep it for
 					// the handlePanelShown replay on the next show.
@@ -326,7 +318,7 @@ export class GitGraphView extends Disposable {
 			}),
 
 			// Subscribe to events triggered when an avatar is available
-			this.avatarManagerOnAvatar(avatarManager),
+			this.avatarManagerOnAvatar(this.services.avatars),
 
 			// Respond to messages sent from the Webview
 			this.panel.webview.onDidReceiveMessage((msg) => this.onDidReceiveWebviewMessage(msg)),
@@ -348,7 +340,7 @@ export class GitGraphView extends Disposable {
 		// receives pushed once it reports `ready`)
 		this.update();
 
-		this.logger.log('Created Git Graph View' + (loadViewTo !== null ? ' (active repo: ' + loadViewTo.repo + ')' : ''));
+		this.logger.log('Created Git Graph View' + (options.loadViewTo !== null ? ' (active repo: ' + options.loadViewTo.repo + ')' : ''));
 	}
 
 	/** Subscribe to the avatar manager's completion events (a one-liner for the constructor's disposable list). */
@@ -356,6 +348,21 @@ export class GitGraphView extends Disposable {
 		return avatarManager.onAvatar((event) => {
 			this.sendMessage({ command: 'fetchAvatar', email: event.email, image: event.image });
 		});
+	}
+
+	/** Publish the view's activity to the registry (the page loaded, or the shown repository changed). */
+	private noteActivity(): void {
+		this.panels.noteActivity(this);
+	}
+
+	/** Reveal the panel in an editor group (the registry's `open` on an already-live view). */
+	public reveal(column: vscode.ViewColumn | undefined): void {
+		this.panel.reveal(column);
+	}
+
+	/** Stash a "load view to" request for the view's next render (the registry's `open` on a hidden view). */
+	public stashLoadViewTo(loadViewTo: LoadGitGraphViewTo): void {
+		this.loadViewTo = loadViewTo;
 	}
 
 	/**
@@ -748,13 +755,16 @@ export class GitGraphView extends Disposable {
 		// The open path (task 4.7): begin the merged read for the repository this page boots on,
 		// so it is (nearly) complete by the time the page reports `ready` and gets pushed.
 		this.beginViewLoad(this.computeBootRepo(loadViewTo));
+		// The page's loaded state (and, through the pushed read, the shown repository) changed:
+		// publish the new activity to the registry.
+		this.noteActivity();
 	}
 
 
 	/* ---------- URI and response helpers ---------- */
 
-	/** Send the known repositories to the front-end. */
-	private respondLoadRepos(repos: GitRepoSet, loadViewTo: LoadGitGraphViewTo) {
+	/** Send the known repositories to the front-end (the registry's `open` on a visible view). */
+	public respondLoadRepos(repos: GitRepoSet, loadViewTo: LoadGitGraphViewTo) {
 		this.sendMessage({
 			command: 'loadRepos',
 			repos: repos,

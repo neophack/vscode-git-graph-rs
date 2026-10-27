@@ -79,6 +79,24 @@ export function recentReposList(recorded: ReadonlyArray<string>, lastActive: str
 }
 
 /**
+ * The collaborators the RepoManager is constructed with: the service's explicit dependency
+ * list (OPTIMIZATION-PLAN A2). The manager is a member of the composition root's frozen
+ * services bag, so it is built before the freeze with this record instead of the bag itself.
+ */
+export interface RepoManagerDeps {
+	/** The repository facade: repository roots and submodules are read through it, the tag-tracking refspecs are written through it. */
+	readonly repo: ProductionGitRepository;
+	/** The raw runner the tag-tracking preflight reads through. */
+	readonly git: GitRunnerPort;
+	/** The Git Graph ExtensionState instance. */
+	readonly state: ExtensionState;
+	/** The configuration-change event the max-repo-search-depth setting is re-read on. */
+	readonly onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>;
+	/** The Git Graph Logger instance. */
+	readonly logger: Logger;
+}
+
+/**
  * Detects and manages repositories in Git Graph.
  */
 export class RepoManager extends Disposable {
@@ -107,32 +125,28 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Creates the Git Graph Repository Manager, and runs startup tasks.
-	 * @param repo The repository facade: repository roots and submodules are read through it, the
-	 *              tag-tracking refspecs are written through it (REFACTOR-PLAN task 3.6).
-	 * @param git The raw runner the tag-tracking preflight reads through.
-	 * @param extensionState The Git Graph ExtensionState instance.
-	 * @param logger The Git Graph Logger instance.
+	 * @param deps The service's collaborators (see {@link RepoManagerDeps}).
 	 */
-	constructor(repo: ProductionGitRepository, git: GitRunnerPort, extensionState: ExtensionState, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(deps: RepoManagerDeps) {
 		super();
-		this.repo = repo;
-		this.git = git;
-		this.extensionState = extensionState;
-		this.logger = logger;
+		this.repo = deps.repo;
+		this.git = deps.git;
+		this.extensionState = deps.state;
+		this.logger = deps.logger;
 		// Repository paths used to be persisted in native-separator form on Windows when they came
 		// from a backend (submodules in particular), which made them miss every forward-slash
 		// comparison; migrate them to the normalised form
 		this.repos = {};
-		const savedRepos = extensionState.getRepos();
+		const savedRepos = this.extensionState.getRepos();
 		for (const repo of Object.keys(savedRepos)) {
 			const normalised = getPathFromStr(repo);
 			if (typeof this.repos[normalised] === 'undefined') this.repos[normalised] = savedRepos[repo];
 		}
-		this.ignoredRepos = extensionState.getIgnoredRepos().map((repo) => getPathFromStr(repo)).filter((repo, i, repos) => repos.indexOf(repo) === i);
+		this.ignoredRepos = this.extensionState.getIgnoredRepos().map((repo) => getPathFromStr(repo)).filter((repo, i, repos) => repos.indexOf(repo) === i);
 		this.maxDepthOfRepoSearch = getConfig().maxDepthOfRepoSearch;
 		// Seed the recently-opened list from the previous session, so prewarming (which reads it
 		// 2 s after activation) has the most likely re-open as its first candidate
-		const lastActiveRepo = extensionState.getLastActiveRepo();
+		const lastActiveRepo = this.extensionState.getLastActiveRepo();
 		if (lastActiveRepo !== null) this.recentRepos = bumpRecentRepos(this.recentRepos, lastActiveRepo, MAX_RECENT_REPOS);
 
 		this.configWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/git-graph-rs.json');
@@ -179,7 +193,7 @@ export class RepoManager extends Disposable {
 			}),
 
 			// Monitor changes to the maxDepthOfRepoSearch Extension Setting, and trigger a new search if needed
-			onDidChangeConfiguration((event) => {
+			deps.onDidChangeConfiguration((event) => {
 				if (event.affectsConfiguration('git-graph-rs.maxDepthOfRepoSearch')) {
 					this.maxDepthOfRepoSearchChanged();
 				}

@@ -13,6 +13,7 @@
  */
 
 import type { GitBackend } from './read/gitReader';
+import type { GitProcess } from './process/gitProcess';
 
 import { GitOperationState } from '../../shared/model/git';
 import { detectOperationState, fsOperationStateEnv, RepoTextRunner } from './operationState';
@@ -40,6 +41,23 @@ export type { RepoTextRunner } from './operationState';
  * substituting a narrow `GitReaderLike` fake.
  */
 export type ProductionGitRepository = GitRepository<GitBackend>;
+
+/**
+ * The facade's text runner over the composition root's `GitProcess` (main.ts passes it at
+ * construction): one Git read resolving its stdout, rejecting with the combined
+ * stderr+stdout message when it fails — the exact rejection shape the legacy `DataSource`
+ * spawns produced.
+ */
+export function repoTextRunnerOf(process: GitProcess): RepoTextRunner {
+	return (argv, repo) => process.run(argv, { cwd: repo }).then((result) => {
+		if (result.code !== 0) {
+			const lines = (result.stderr + result.stdout.toString('utf8')).split(/\r\n|\r|\n/);
+			lines.pop();
+			throw lines.join('\n');
+		}
+		return result.stdout.toString('utf8');
+	});
+}
 
 export class GitRepository<R extends GitReaderLike = GitReaderLike> {
 	constructor(

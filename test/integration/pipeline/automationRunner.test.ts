@@ -64,7 +64,7 @@ beforeAll(async () => {
 	await seedRepo(fixtureDir);
 	boot = await bootRealView(fixtureDir);
 	for (let i = 0; i < 100; i++) {
-		if (boot!.GitGraphView.currentPanel!.automationState().currentRepo) break;
+		if (boot!.panels.current()!.automationState().currentRepo) break;
 		await boot!.sleep(100);
 	}
 }, 600000);
@@ -107,7 +107,7 @@ describe('the in-process automation suite runner', () => {
 			onProgress: (p: unknown) => progress.push(p)
 		} as never);
 
-		const currentRepo = boot!.GitGraphView.currentPanel!.automationState().currentRepo;
+		const currentRepo = boot!.panels.current()!.automationState().currentRepo;
 		assert.equal(report.repo, currentRepo);
 		assert.equal(report.fixture, true);
 		assert.equal(report.writeSuiteIncluded, true);

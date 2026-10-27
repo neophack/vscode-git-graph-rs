@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { GerritDataSource } from '../integrations/gerrit/gerrit';
-import type { GitRunnerPort, LegacyViewPort } from '../graphView/gitRunner';
+import type { AuxiliaryViewsPort, GitRunnerPort } from '../graphView/gitRunner';
+import type { PanelRegistry } from '../graphView/panelRegistry';
 import type { ProductionGitRepository } from '../git/gitRepository';
+import type { ExtensionServices } from '../services';
 import type { GitResolution } from '../git/executable/gitResolution';
 import { ExtensionState } from '../platform/storage';
 import { getConfig } from '../platform/config';
@@ -11,7 +13,6 @@ import { Logger } from '../platform/logger';
 import { begin, formatTrace, isEnabled, mark, MARK, onTraceRecorded, setEnabled } from '../../shared/perf/trace';
 import { RepoManager } from '../repos/repoManager';
 import { Disposable } from '../../shared/util/disposable';
-import { GgEvent } from '../../shared/util/event';
 import { GitExecutable } from '../git/executable/findGit';
 import { showInformationMessage } from '../platform/actions';
 import { VsCodeVersionRequirement, doesVersionMeetRequirement } from '../platform/git';
@@ -85,10 +86,11 @@ export class CommandManager extends Disposable implements CommandHost {
 	public readonly repo: ProductionGitRepository;
 	public readonly gerrit: GerritDataSource;
 	public readonly gitRunner: GitRunnerPort;
-	public readonly legacyViews: LegacyViewPort;
+	public readonly auxViews: AuxiliaryViewsPort;
 	public readonly extensionState: ExtensionState;
 	public readonly logger: Logger;
 	public readonly repoManager: RepoManager;
+	public readonly panels: PanelRegistry;
 	private readonly gitResolution: GitResolution;
 
 	/**
@@ -102,32 +104,24 @@ export class CommandManager extends Disposable implements CommandHost {
 
 	/**
 	 * Creates the Git Graph Command Manager.
-	 * @param extensionPath The absolute file path of the directory containing the extension.
-	 * @param avatarManager The Git Graph AvatarManager instance.
-	 * @param repo The GitRepository facade the commands read and write through.
-	 * @param gitRunner The view's raw git runner (editor-script flows the ops do not model).
-	 * @param gerrit The Gerrit integration over the same runner.
-	 * @param legacyViews The auxiliary views the panel hands off to.
-	 * @param extensionState The Git Graph ExtensionState instance.
-	 * @param repoManager The Git Graph RepoManager instance.
-	 * @param gitResolution The deferred Git resolution (OPTIMIZATION-PLAN V1): `current()` is the
-	 * executable the handlers see, `ready()` is what Git-dependent commands await, and
-	 * `restricted()` refuses the Git-running commands in Restricted Mode.
-	 * @param onDidChangeConfiguration The Event emitting Visual Studio Code Configuration Change Events.
-	 * @param logger The Git Graph Logger instance.
+	 * @param services The extension services (the composition root's frozen bag, OPTIMIZATION-PLAN
+	 * A2): every collaborator the handlers run with.
+	 * @param panels The registry of the live Git Graph view (the view-opening commands open
+	 * through it).
 	 */
-	constructor(context: vscode.ExtensionContext, avatarManager: AvatarManager, repo: ProductionGitRepository, gitRunner: GitRunnerPort, gerrit: GerritDataSource, legacyViews: LegacyViewPort, extensionState: ExtensionState, repoManager: RepoManager, gitResolution: GitResolution, onDidChangeConfiguration: GgEvent<vscode.ConfigurationChangeEvent>, logger: Logger) {
+	constructor(services: ExtensionServices, panels: PanelRegistry) {
 		super();
-		this.context = context;
-		this.avatarManager = avatarManager;
-		this.repo = repo;
-		this.gerrit = gerrit;
-		this.gitRunner = gitRunner;
-		this.legacyViews = legacyViews;
-		this.extensionState = extensionState;
-		this.logger = logger;
-		this.repoManager = repoManager;
-		this.gitResolution = gitResolution;
+		this.context = services.context;
+		this.avatarManager = services.avatars;
+		this.repo = services.repo;
+		this.gerrit = services.gerrit;
+		this.gitRunner = services.git;
+		this.auxViews = services.auxViews;
+		this.extensionState = services.state;
+		this.logger = services.logger;
+		this.repoManager = services.repos;
+		this.gitResolution = services.gitResolution;
+		this.panels = panels;
 
 		// P1 tracing (OPTIMIZATION-PLAN §7 P1): gated by the same setting as the session log, and
 		// every recorded trace is written to that log in the one-line shape
@@ -176,7 +170,7 @@ export class CommandManager extends Disposable implements CommandHost {
 		}
 		this.updateInterfaceLanguageContext();
 		this.registerDisposable(
-			onDidChangeConfiguration((event) => {
+			services.onDidChangeConfiguration((event) => {
 				if (event.affectsConfiguration('git-graph-rs.interfaceLanguage')) this.updateInterfaceLanguageContext();
 				// P1: the trace layer follows the log gate live.
 				if (event.affectsConfiguration('git-graph-rs.enableLog')) setEnabled(getConfig().enableLog);

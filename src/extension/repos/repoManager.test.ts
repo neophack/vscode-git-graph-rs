@@ -86,13 +86,13 @@ function createRepoManager(options: HarnessOptions = {}) {
 	};
 	const git = { gitOutput: () => Promise.reject(new Error('no git')) } as unknown as GitRunnerPort;
 	const onDidChangeConfiguration = (() => ({ dispose: () => undefined })) as unknown as GgEvent<ConfigurationChangeEvent>;
-	const manager = new RepoManager(
-		repo as unknown as ProductionGitRepository,
-		git,
-		extensionState as unknown as ExtensionState,
-		onDidChangeConfiguration,
-		{ log: () => undefined } as unknown as Logger
-	);
+	const manager = new RepoManager({
+		repo: repo as unknown as ProductionGitRepository,
+		git: git,
+		state: extensionState as unknown as ExtensionState,
+		onDidChangeConfiguration: onDidChangeConfiguration,
+		logger: { log: () => undefined } as unknown as Logger
+	});
 	return { manager, knownRepos };
 }
 

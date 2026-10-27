@@ -1,6 +1,5 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { GitGraphView } from '../graphView/panel';
 import { t } from '../platform/i18n';
 import { getConfig } from '../platform/config';
 import { showErrorMessage, uiPort } from '../platform/actions';
@@ -35,7 +34,7 @@ export async function view(host: CommandHost, arg: unknown) {
 		loadRepo = host.repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
 	}
 
-	GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, loadRepo !== null ? { repo: loadRepo } : null);
+	host.panels.open(loadRepo !== null ? { repo: loadRepo } : null);
 }
 
 /**
@@ -63,7 +62,7 @@ export async function filterByFile(host: CommandHost, arg: unknown) {
 	let filterPath = getPathFromStr(path.relative(repo, getPathFromUri(uris[0])));
 	if (filterPath === '') filterPath = '.';
 
-	GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, { repo: repo, filterPath: filterPath });
+	host.panels.open({ repo: repo, filterPath: filterPath });
 }
 
 /**
@@ -119,7 +118,7 @@ export function fetch(host: CommandHost, ui: UiPort = uiPort) {
 			canPickMany: false
 		}).then((item) => {
 			if (item && item.description) {
-				GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+				host.panels.open({
 					repo: item.description,
 					runCommandOnLoad: 'fetch'
 				});
@@ -128,11 +127,11 @@ export function fetch(host: CommandHost, ui: UiPort = uiPort) {
 			showErrorMessage(t('unexpectedErrorInCommand', 'Fetch from Remote(s)'));
 		});
 	} else if (repoPaths.length === 1) {
-		GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, {
+		host.panels.open({
 			repo: repoPaths[0],
 			runCommandOnLoad: 'fetch'
 		});
 	} else {
-		GitGraphView.createOrShow(host.context.extensionPath, host.repo, host.gitRunner, host.legacyViews, host.extensionState, host.avatarManager, host.repoManager, host.logger, null);
+		host.panels.open(null);
 	}
 }

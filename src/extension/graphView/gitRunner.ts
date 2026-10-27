@@ -109,11 +109,11 @@ export interface GitRunnerParseMetas {
 }
 
 /**
- * The two auxiliary webviews the view opens (their controllers move in Phase 6): the port is
- * composed in extension.ts over the shared git layer, so no graphView module imports the
- * controllers.
+ * The two auxiliary webviews the view opens (the Commit Comparison View and the Binary Compare
+ * view): the port is composed in the composition root (main.ts) over the shared git layer, so
+ * no graphView module imports the view controllers.
  */
-export interface LegacyViewPort {
+export interface AuxiliaryViewsPort {
 	openCompareTab(extensionPath: string, repo: string, fromHash: string, toHash: string, singleCommit: boolean): void;
 	openBinaryCompare(extensionPath: string, repo: string, fromHash: string, toHash: string, file: {
 		readonly oldFilePath: string;
