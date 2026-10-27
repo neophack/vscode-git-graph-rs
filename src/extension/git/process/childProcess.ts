@@ -1,7 +1,7 @@
-// Child-process helpers: bounded-parallelism promise evaluation, spawned-output
-// resolution, and the integrated git terminal.
+// View-side process helpers: bounded-parallelism promise evaluation, shell quoting and
+// detection, and the integrated git terminal. The spawned-output resolution that used to live
+// here moved to `spawn.ts` (OPTIMIZATION-PLAN A3: one process seam).
 
-import * as cp from 'child_process';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from '../../platform/config';
@@ -132,40 +132,3 @@ export function evalPromises<X, Y>(data: X[], maxParallel: number, createPromise
 	});
 }
 
-/**
- * Resolve the output of a spawned child process.
- * @param cmd The Child Process.
- * @returns Promise that resolves to [{code, error}, stdout, stderr]
- */
-export function resolveSpawnOutput(cmd: cp.ChildProcess) {
-	return Promise.all([
-		new Promise<{ code: number, error: Error | null }>((resolve) => {
-			// status promise
-			let resolved = false;
-			cmd.on('error', (error: Error) => {
-				if (resolved) return;
-				resolve({ code: -1, error: error });
-				resolved = true;
-			});
-			cmd.on('exit', (code: number | undefined) => {
-				if (resolved) return;
-				resolve({ code: code ?? -1, error: null });
-				resolved = true;
-			});
-		}),
-		new Promise<Buffer>((resolve) => {
-			// stdout promise
-			if (cmd.stdout === null) return resolve(Buffer.alloc(0));
-			let buffers: Buffer[] = [];
-			cmd.stdout.on('data', (b: Buffer) => { buffers.push(b); });
-			cmd.stdout.on('close', () => resolve(Buffer.concat(buffers)));
-		}),
-		new Promise<string>((resolve) => {
-			// stderr promise
-			if (cmd.stderr === null) return resolve('');
-			let stderr = '';
-			cmd.stderr.on('data', (d: Buffer | string) => { stderr += d; });
-			cmd.stderr.on('close', () => resolve(stderr));
-		})
-	]);
-}

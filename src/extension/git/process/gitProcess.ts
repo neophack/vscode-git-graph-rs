@@ -1,8 +1,11 @@
 /**
  * The single process adapter of `extension/git/**`: the one place a `git` child process is
- * started. Both the write layer (`write/gitWriter.ts`) and the guard reads (`write/lossGuard.ts`)
- * come through here, so environment assembly (askpass injection), cancellation, output limits and
- * the error shape are decided once.
+ * started. Both the write layer (`write/gitWriter.ts`), the guard reads (`write/lossGuard.ts`)
+ * and the CLI read backend (`read/cli/process.ts`) come through its three verbs — `run`
+ * (buffered, with `maxBuffer` and an `AbortLike`), `collect` (the stdout as raw bytes) and
+ * `stream` (a `Readable` plus an exit promise; `spawnStream` is its view-layer name) — so
+ * environment assembly (askpass injection), cancellation, output limits, `windowsHide` and the
+ * error shape are decided once.
  *
  * Behaviour parity with the legacy `DataSource` spawns (`src/dataSource.ts`): the executable is
  * spawned as `spawn(gitPath, args, { cwd, env })` with `env = Object.assign({}, process.env,
@@ -34,10 +37,61 @@ export interface AbortLike {
 export interface SpawnedGit {
 	stdout: NodeJS.ReadableStream;
 	stderr: NodeJS.ReadableStream;
-	stdin: { end(data?: string): void };
+	stdin: {
+		end(data?: string): void;
+		/** The stdin write may fail (EPIPE) after the child exited; the adapter ignores it. */
+		on?(type: 'error', listener: (error: Error) => void): unknown;
+	};
 	kill(): void;
 	on(event: 'error', listener: (error: Error) => void): unknown;
 	on(event: 'close', listener: (code: number | null) => void): unknown;
+}
+
+/** The outcome of a streamed child: how it ended, and what it wrote to stderr while alive. */
+export interface StreamExit {
+	/** The exit code; -1 when the child failed to spawn or was killed before it closed. */
+	readonly code: number;
+	/** The spawn failure, when the child could not be started at all. */
+	readonly error: Error | null;
+	/** Everything the child wrote to stderr up to the point it ended. */
+	readonly stderr: string;
+}
+
+/**
+ * A spawned child reduced to the surface the streaming consumers need: the two output streams,
+ * an exit that never rejects (a stream a consumer stopped listening to cannot crash the host
+ * with an unhandled rejection), and the kill switch its owner calls on dispose.
+ */
+export interface SpawnedStream {
+	readonly stdout: NodeJS.ReadableStream | null;
+	readonly stderr: NodeJS.ReadableStream | null;
+	/** Settles once the child closes (or fails to spawn). Never rejects. */
+	readonly exit: Promise<StreamExit>;
+	kill(): void;
+}
+
+/** Reduce a spawned child to the {@link SpawnedStream} surface (the stderr text is accumulated here). */
+function spawnedToStream(child: SpawnedGit): SpawnedStream {
+	return {
+		stdout: child.stdout,
+		stderr: child.stderr,
+		exit: new Promise<StreamExit>((resolve) => {
+			let stderr = '';
+			let spawnError: Error | null = null;
+			child.stderr.on('data', (chunk: Buffer | string) => {
+				stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+			});
+			child.on('error', (error: Error) => {
+				spawnError = error;
+			});
+			child.on('close', (code: number | null) => {
+				resolve({ code: spawnError !== null || code === null ? -1 : code, error: spawnError, stderr: stderr });
+			});
+		}),
+		kill: () => {
+			child.kill();
+		}
+	};
 }
 
 /** The spawn function the adapter uses; `child_process.spawn` by default, a fake in tests. */
@@ -91,18 +145,43 @@ export class GitProcess {
 	}
 
 	/**
-	 * Spawn Git for a streaming read: unlike {@link run}, the caller consumes the child's stdout
-	 * directly and destroys the process when done (the hex comparison's chunked blob reads).
-	 * The environment is assembled exactly like a `run` spawn (askpass included); with no Git
-	 * executable the no-Git error is thrown for the caller to surface.
+	 * The `stream` verb: spawn Git and hand the caller its stdout as a `Readable` plus an exit
+	 * promise, for the consumers that must consume the bytes as they arrive (the hex
+	 * comparison's chunked blob reads). The environment is assembled exactly like a `run` spawn
+	 * (askpass included); with no Git executable the no-Git error is thrown for the caller to
+	 * surface. Nothing here bounds the output: the caller decides when it has read enough and
+	 * kills the child.
 	 */
-	spawnStream(args: ReadonlyArray<string>, cwd: string): cp.ChildProcess {
+	stream(args: ReadonlyArray<string>, cwd: string): SpawnedStream {
 		const git = this.executable();
 		if (git === null) throw new GitError('noGit', 'No Git executable was found');
 		const env: { [name: string]: string } = Object.assign({}, process.env, this.askpass());
-		// The spawn function's structural return type is the slice every consumer of this class
-		// needs; the streaming consumers use the full ChildProcess surface.
-		return this.spawnFn(git.path, args, { cwd: cwd, env: env, windowsHide: true }) as unknown as cp.ChildProcess;
+		return spawnedToStream(this.spawnFn(git.path, args, { cwd: cwd, env: env, windowsHide: true }));
+	}
+
+	/**
+	 * Spawn Git for a streaming read, the entry the composition root wires into the views'
+	 * `GitStreamSpawner` port (same behaviour as {@link stream}; kept under its historical name
+	 * so the wiring does not move with this refactor).
+	 */
+	spawnStream(args: ReadonlyArray<string>, cwd: string): SpawnedStream {
+		return this.stream(args, cwd);
+	}
+
+	/**
+	 * The `collect` verb: run Git and resolve its stdout as raw bytes — the buffered {@link run}
+	 * for callers that consume BINARY output (the `--textconv` contents read). The stdout only
+	 * resolves on exit code 0; a failing run rejects with the failure text a failed `run` would
+	 * report (stderr, else stdout, else the exit code), and the process-condition failures
+	 * (no Git, cancelled, over the output limit, spawn failure) reject exactly as `run` does.
+	 */
+	async collect(args: ReadonlyArray<string>, options: RunOptions): Promise<Buffer> {
+		const result = await this.run(args, options);
+		if (result.code !== 0) {
+			const text = (result.stderr || result.stdout.toString('utf8') || `git exited with code ${result.code}`).trim();
+			throw new GitError('git', text, text);
+		}
+		return result.stdout;
 	}
 
 	/**
@@ -177,7 +256,11 @@ export class GitProcess {
 			});
 
 			// stdin is always closed (with the input when there is one), exactly like the legacy
-			// spawns: a Git command waiting on an editor or an unclosed stdin must not hang.
+			// spawns: a Git command waiting on an editor or an unclosed stdin must not hang. The
+			// write may still fail (EPIPE) when the command exits before consuming its input —
+			// the batched object checks read their answer from the exit — so that error is
+			// ignored (an unhandled stream 'error' would take the host down).
+			child.stdin.on?.('error', () => { /* EPIPE: the command already answered */ });
 			if (options.input !== undefined) child.stdin.end(options.input);
 			else child.stdin.end();
 		});

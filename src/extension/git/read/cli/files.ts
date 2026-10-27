@@ -4,42 +4,26 @@
  * working tree, the submodule roots, and the repository-root lookup.
  */
 
-import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
 import {
-	GitBackendError,
 	GitCommitFile,
 	GitCommitSummary,
 	GitFileStatus,
 	GitHistoryMatch
 } from '../types';
-import { GitCli, MAX_BUFFER } from './process';
+import { GitCli } from './process';
 import { diffSectionNewPath } from './parse/diffHeader';
 
 /**
  * The contents of one file at one revision, via `git show --textconv` — the same command the
  * original extension used. A NUL byte in the first 8000 bytes marks the file as binary, and the
- * contents are then omitted.
+ * contents are then omitted. The raw bytes come through {@link GitCli.collect} (the process
+ * adapter's `collect` verb, OPTIMIZATION-PLAN A3), so the run never re-decodes binary content.
  */
 export async function getCommitFile(cli: GitCli, repo: string, hash: string, file: string): Promise<GitCommitFile> {
-	const stdout = await new Promise<Buffer>((resolve, reject) => {
-		execFile(
-			cli.gitPath,
-			['show', '--textconv', `${hash}:${file}`],
-			{ cwd: repo, maxBuffer: MAX_BUFFER, encoding: 'buffer' },
-			(error, stdout, stderr) => {
-				if (error) {
-					const text = (stderr || stdout || error.message).toString().trim();
-					const kind = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'Unsupported' : 'Git';
-					reject(new GitBackendError(kind, text));
-				} else {
-					resolve(stdout);
-				}
-			}
-		);
-	});
+	const stdout = await cli.collect(['show', '--textconv', `${hash}:${file}`], repo);
 	const binary = stdout.subarray(0, 8000).includes(0);
 	return {
 		contents: binary ? null : stdout.toString('utf8'),

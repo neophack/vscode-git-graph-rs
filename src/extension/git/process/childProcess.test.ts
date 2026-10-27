@@ -1,12 +1,11 @@
 /**
- * The child-process helpers of src/utils/childProcess.ts (ported from tests/utils.test.mjs):
- * bounded-parallelism promise evaluation, spawned-output resolution, shell quoting and
- * detection, and the integrated Git terminal. The `vscode` module is faked with a recording
- * stub so the terminal the wrapper opens can be inspected.
+ * The view-side process helpers (ported from tests/utils.test.mjs): bounded-parallelism promise
+ * evaluation, shell quoting and detection, and the integrated Git terminal. The `vscode` module
+ * is faked with a recording stub so the terminal the wrapper opens can be inspected. (The
+ * spawned-output resolution that used to be covered here moved to `spawn.test.ts` with its
+ * implementation, OPTIMIZATION-PLAN A3.)
  */
 
-import { ChildProcess } from 'child_process';
-import { EventEmitter } from 'events';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -47,7 +46,7 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 import { t } from '../../platform/i18n';
-import { detectTerminalShellKind, evalPromises, openGitTerminal, quoteForShell, resolveSpawnOutput } from './childProcess';
+import { detectTerminalShellKind, evalPromises, openGitTerminal, quoteForShell } from './childProcess';
 
 describe('evalPromises', () => {
 	it('resolves an empty and a single-element input', async () => {
@@ -76,46 +75,6 @@ describe('evalPromises', () => {
 		})).rejects.toEqual(undefined);
 		expect(await evalPromises([1, 2, 3], 0, async (v) => v)).toEqual([1, 2, 3]);
 		expect(await evalPromises([1, 2], Infinity, async (v) => v)).toEqual([1, 2]);
-	});
-});
-
-describe('resolveSpawnOutput', () => {
-	/** A ChildProcess double: a plain event emitter trio, cast into the Node shape. */
-	function fakeProcess() {
-		const proc = new EventEmitter() as EventEmitter & { stdout: EventEmitter, stderr: EventEmitter };
-		const stdout = new EventEmitter();
-		const stderr = new EventEmitter();
-		proc.stdout = stdout;
-		proc.stderr = stderr;
-		return { proc: proc as unknown as ChildProcess, stdout: stdout, stderr: stderr };
-	}
-
-	it('collects the exit code, stdout and stderr', async () => {
-		const { proc, stdout, stderr } = fakeProcess();
-		const pending = resolveSpawnOutput(proc);
-		stdout.emit('data', Buffer.from('out'));
-		stdout.emit('data', Buffer.from('put'));
-		stderr.emit('data', 'warn');
-		proc.emit('exit', 0);
-		proc.emit('error', new Error('ignored after exit'));
-		stdout.emit('close');
-		stderr.emit('close');
-		const [status, out, err] = await pending;
-		expect(status).toEqual({ code: 0, error: null });
-		expect(out.toString()).toBe('output');
-		expect(err).toBe('warn');
-	});
-
-	it('reports a spawn error with code -1', async () => {
-		const { proc, stdout, stderr } = fakeProcess();
-		const pending = resolveSpawnOutput(proc);
-		const error = new Error('ENOENT');
-		proc.emit('error', error);
-		proc.emit('exit', 1);
-		stdout.emit('close');
-		stderr.emit('close');
-		const [status] = await pending;
-		expect(status).toEqual({ code: -1, error: error });
 	});
 });
 

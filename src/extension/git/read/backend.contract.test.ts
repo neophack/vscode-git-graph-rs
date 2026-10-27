@@ -203,10 +203,16 @@ describe('createBackend serves the parity reads through the fallback', () => {
 });
 
 describe('the CLI adapter honours cancellation on the log walk', () => {
-	/** A spawn whose child hangs forever until killed, recording the kill. */
+	/**
+	 * A spawn whose child hangs forever until killed, recording the kill. Every spawn but the
+	 * log walk answers with an immediate empty success: since the A3 reroute put ALL of the CLI
+	 * adapter's runs on the one injected spawn function (they used to share the real `execFile`
+	 * path), the pre-walk reads (stash list, refs, status) must resolve for the walk to be
+	 * reached at all.
+	 */
 	function hangingSpawn(): { spawn: GitSpawnFn; killed: () => boolean } {
 		let killed = false;
-		const spawn: GitSpawnFn = () => {
+		const spawn: GitSpawnFn = (_command, args) => {
 			const child = Object.assign(new EventEmitter(), {
 				stdout: new EventEmitter(),
 				stderr: new EventEmitter(),
@@ -215,6 +221,11 @@ describe('the CLI adapter honours cancellation on the log walk', () => {
 					killed = true;
 				}
 			});
+			// Only the log walk hangs: its argv is the one carrying the bare `log` subcommand
+			// (the reads run with `status`/`stash`/`for-each-ref` behind the adapter's pins).
+			if (!args.includes('log')) {
+				Promise.resolve().then(() => child.emit('close', 0));
+			}
 			return child as unknown as ReturnType<GitSpawnFn>;
 		};
 		return { spawn, killed: () => killed };

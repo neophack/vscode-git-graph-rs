@@ -3,13 +3,12 @@
 // original code is "Copyright (c) 2015 - present Microsoft Corporation", MIT
 // licensed (see ./licenses/LICENSE_MICROSOFT in the repository root).
 
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from '../../platform/config';
 import type { ExtensionState } from '../../platform/storage';
 import { t } from '../../platform/i18n';
-import { resolveSpawnOutput } from '../process/childProcess';
+import { spawnOutput } from '../process/spawn';
 
 /**
  * Get the localised "unable to find a Git executable" message.
@@ -59,24 +58,21 @@ export async function findGit(extensionState: ExtensionState) {
  * @returns A Git executable.
  */
 function findGitOnDarwin() {
-	return new Promise<GitExecutable>((resolve, reject) => {
-		cp.exec('which git', (err, stdout) => {
-			if (err) return reject();
+	// The two probes are plain executables, so they spawn directly (the legacy `cp.exec` shell
+	// invocation added nothing but quoting risk); the generic spawn owns windowsHide.
+	return spawnOutput('which', ['git']).then((which) => {
+		if (which.code !== 0) return Promise.reject();
 
-			const path = stdout.trim();
-			if (path !== '/usr/bin/git') {
-				getGitExecutable(path).then((exec) => resolve(exec), () => reject());
-			} else {
-				// must check if XCode is installed
-				cp.exec('xcode-select -p', (err: any) => {
-					if (err && err.code === 2) {
-						// git is not installed, and launching /usr/bin/git will prompt the user to install it
-						reject();
-					} else {
-						getGitExecutable(path).then((exec) => resolve(exec), () => reject());
-					}
-				});
-			}
+		const path = which.stdout.toString().trim();
+		if (path !== '/usr/bin/git') {
+			return getGitExecutable(path).then((exec) => exec, () => Promise.reject());
+		}
+		// must check if XCode is installed
+		return spawnOutput('xcode-select', ['-p']).then((xcode) => {
+			// xcode-select exits 2 when the developer tools are missing: launching /usr/bin/git
+			// would prompt the user to install them, so the search gives up here.
+			if (xcode.code === 2) return Promise.reject();
+			return getGitExecutable(path).then((exec) => exec, () => Promise.reject());
 		});
 	});
 }
@@ -133,14 +129,12 @@ function isExecutable(path: string) {
  * @returns The GitExecutable data.
  */
 export function getGitExecutable(path: string) {
-	return new Promise<GitExecutable>((resolve, reject) => {
-		resolveSpawnOutput(cp.spawn(path, ['--version'])).then((values) => {
-			if (values[0].code === 0) {
-				resolve({ path: path, version: values[1].toString().trim().replace(/^git version /, '') });
-			} else {
-				reject();
-			}
-		});
+	// The version probe runs through the process seam's generic spawn (OPTIMIZATION-PLAN A3):
+	// unlike the direct `cp.spawn` it replaces it carries `windowsHide: true`, so probing a
+	// candidate on PATH cannot flash a console window.
+	return spawnOutput(path, ['--version']).then((output) => {
+		if (output.code !== 0 || output.error !== null) return Promise.reject();
+		return { path: path, version: output.stdout.toString().trim().replace(/^git version /, '') };
 	});
 }
 

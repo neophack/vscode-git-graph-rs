@@ -135,6 +135,32 @@ module.exports = {
 			}
 		},
 		{
+			// OPTIMIZATION-PLAN §3 A3: child_process is started in exactly one
+			// place — src/extension/git/process/** (the GitProcess verbs in
+			// gitProcess.ts and the generic non-Git spawn in spawn.ts) — so
+			// windowsHide, the askpass environment, cancellation, output caps
+			// and the error shape are decided once. The automation tooling keeps
+			// its own spawns (it is dev-only and drives whole VS Code
+			// instances). Colocated unit tests are exempt like the other rules
+			// (they mock child_process to fake the seam).
+			name: 'child-process-only-in-process',
+			comment: 'A3: child_process only in src/extension/git/process/** and src/extension/automation/**',
+			severity: 'error',
+			from: {
+				path: '^src/',
+				pathNot: [
+					'^src/extension/git/process/',
+					'^src/extension/automation/',
+					'\\.test\\.ts$'
+				]
+			},
+			// Node core modules resolve to their bare name ("child_process";
+			// the node: prefixed form is covered for callers that use it).
+			to: {
+				path: '^(node:)?child_process$'
+			}
+		},
+		{
 			// §3.6 row 5: extension/platform/** is the only vscode entry point.
 			// Exceptions the plan grants: views/, commands/, and
 			// graphView/panel.ts may use vscode UI types directly — and since A1

@@ -1,5 +1,4 @@
 import { MUTATING_COMMANDS } from '../../../shared/protocol/graphView';
-import { checkUnsafeGitArgs } from '../../git/write/argSafety';
 import { UNCOMMITTED } from '../../git/read/types';
 import type { Handler } from './context';
 
@@ -67,7 +66,9 @@ export const openExternalDirDiff: Handler<'openExternalDirDiff'> = {
 	async handle(msg, ctx) {
 		// The hashes are interpolated into a shell command sent to the integrated terminal when
 		// the external diff tool is not GUI based, so they must be validated against injection.
-		const unsafe = checkUnsafeGitArgs(ctx.t,
+		// The gate is the write layer's own (OPTIMIZATION-PLAN A3): the handler does not import
+		// argSafety, it asks the git layer the other checks go through.
+		const unsafe = ctx.repo.write.checkArgs(
 			['fromHash', msg.fromHash === UNCOMMITTED ? null : msg.fromHash, 'hash'],
 			['toHash', msg.toHash === UNCOMMITTED ? null : msg.toHash, 'hash']);
 		if (unsafe !== null) {

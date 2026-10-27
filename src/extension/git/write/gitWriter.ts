@@ -14,7 +14,7 @@ import type { AbortLike } from '../process/gitProcess';
 import { GitProcess, RunResult } from '../process/gitProcess';
 import { toGitError } from '../process/errors';
 import { checkUnsafeGitArgs, Localize } from './argSafety';
-import { REFUSAL_I18N_KEYS, WriteEffect, WriteOp } from './ops/op';
+import { ArgCheck, REFUSAL_I18N_KEYS, WriteEffect, WriteOp } from './ops/op';
 
 /**
  * The write-path policies, a structural subset of the future `ConfigSnapshot`: a plain object
@@ -52,6 +52,17 @@ export class GitWriter {
 	onRepositoryChanged(listener: RepositoryChangedListener): { dispose(): void } {
 		this.listeners.push(listener);
 		return { dispose: () => { this.listeners.splice(this.listeners.indexOf(listener), 1); } };
+	}
+
+	/**
+	 * Argument-injection validation for values the view must check OUTSIDE a full write op —
+	 * the external dir-diff's hashes are interpolated into the integrated terminal's command
+	 * line, so they must pass the same gate the ops pass in {@link run} (OPTIMIZATION-PLAN A3:
+	 * the handler layer asks the git layer here instead of importing `argSafety` itself).
+	 * @returns The localised error message when a value is unsafe, otherwise NULL.
+	 */
+	checkArgs(...checks: ReadonlyArray<ArgCheck>): string | null {
+		return checkUnsafeGitArgs(this.t, ...checks);
 	}
 
 	/**

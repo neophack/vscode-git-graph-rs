@@ -126,12 +126,6 @@
     }
   },
   "src/extension/git/executable/findGit.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1
-    },
     "prefer-const": {
       "count": 2
     }
@@ -146,7 +140,7 @@
   },
   "src/extension/git/process/childProcess.ts": {
     "prefer-const": {
-      "count": 4
+      "count": 3
     }
   },
   "src/extension/git/read/addonLoader.ts": {

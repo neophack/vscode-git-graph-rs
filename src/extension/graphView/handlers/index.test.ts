@@ -97,6 +97,13 @@ class RecordingContext implements HandlerContext {
 			const result = repoOverrides.hasOwnProperty('write') ? repoOverrides['write'] : null;
 			return Promise.resolve(typeof result === 'function' ? result(repo, op) : result);
 		};
+		// The arg-injection gate the handlers reach the write layer through (A3): the fake
+		// accepts every value unless the test scripts a rejection message.
+		writeHolder['checkArgs'] = (...checks: unknown[]) => {
+			calls.push({ port: 'repo', method: 'write.checkArgs', args: checks });
+			const result = repoOverrides.hasOwnProperty('checkArgs') ? repoOverrides['checkArgs'] : null;
+			return result;
+		};
 		writeHolder['policies'] = { signCommits: false, signTags: false };
 		const repoHolder: { [method: string]: unknown } = {
 			read: read,
@@ -459,6 +466,22 @@ describe('graphView handler table', () => {
 		await dispatchRequest(fixture('fetch'), ctx2);
 		expect(ctx2.sent).toEqual([{ command: 'fetch', error: 'network down' }]);
 		expect(ctx2.calls.find((call) => call.port === 'loader' && call.method === 'markGerritStale')).toBeUndefined();
+	});
+
+	it('validates the external dir-diff hashes through the write layer (A3), not in the handler', async () => {
+		// The write layer's gate rejects: the response carries its message and the ui port is
+		// never reached (no terminal, no diff tool launch).
+		const ctx = new RecordingContext({ checkArgs: 'the refusal message' });
+		await dispatchRequest(fixture('openExternalDirDiff'), ctx);
+		expect(ctx.sent).toEqual([{ command: 'openExternalDirDiff', error: 'the refusal message' }]);
+		expect(ctx.calls.find((call) => call.method === 'write.checkArgs')).toBeDefined();
+		expect(ctx.calls.find((call) => call.port === 'ui' && call.method === 'openExternalDirDiff')).toBeUndefined();
+
+		// The gate accepts: the request passes through to the ui port.
+		const happy = new RecordingContext();
+		await dispatchRequest(fixture('openExternalDirDiff'), happy);
+		expect(happy.sent).toEqual([{ command: 'openExternalDirDiff', error: null }]);
+		expect(happy.calls.find((call) => call.port === 'ui' && call.method === 'openExternalDirDiff')).toBeDefined();
 	});
 
 	it('clears the local Gerrit change refs through the gerrit port when disabling the integration', async () => {

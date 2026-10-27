@@ -1,5 +1,6 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
+
+import type { SpawnedStream } from '../../git/process/gitProcess';
 
 /**
  * The chunked byte sources of the hex comparison: one side of a compared pair, read as
@@ -19,9 +20,13 @@ const CHUNK_CACHE_LIMIT = 96;
  *  forward is served from the cache instead of a fresh `git cat-file` pass. */
 const BLOB_PREFETCH_CHUNKS = 16;
 
-/** Anything that can spawn Git for streaming reads; `DataSource` satisfies this. */
+/**
+ * Anything that can spawn Git for streaming reads; the composition root builds it over the
+ * process adapter's `stream` verb (OPTIMIZATION-PLAN A3), so the windowsHide policy, the askpass
+ * environment and the no-Git error are the adapter's, not this module's.
+ */
 export interface GitStreamSpawner {
-	spawnGitStream(args: string[], repo: string): cp.ChildProcess;
+	spawnGitStream(args: string[], repo: string): SpawnedStream;
 }
 
 /** One side of the comparison: a blob at a revision, a file in the working tree, or nothing. */
@@ -66,7 +71,7 @@ export class SideSource {
 	private readonly chunks = new Map<number, Buffer>();
 	private queue: Promise<void> = Promise.resolve();
 	private fd: number | null = null;
-	private readonly liveChildren = new Set<cp.ChildProcess>();
+	private readonly liveChildren = new Set<SpawnedStream>();
 
 	public constructor(private readonly git: GitStreamSpawner, private readonly repo: string, public readonly spec: SideSpec) {}
 
@@ -98,30 +103,29 @@ export class SideSource {
 		if (this.spec.kind === 'file') return statSize(this.spec.absPath);
 		const rev = this.spec.rev;
 		return new Promise<number | null>((resolve, reject) => {
-			let settled = false;
-			let child: cp.ChildProcess;
+			let child: SpawnedStream;
 			try {
 				child = this.git.spawnGitStream(['cat-file', '-s', rev], this.repo);
 			} catch (err) {
 				reject(err);
 				return;
 			}
-			let stdout = '', stderr = '';
-			child.stdout!.on('data', (d: Buffer) => { stdout += d.toString(); });
-			child.stderr!.on('data', (d: Buffer) => { stderr += d.toString(); });
-			child.on('error', (err) => {
-				if (!settled) { settled = true; reject(err); }
-			});
-			child.on('close', (code) => {
-				if (settled) return;
-				settled = true;
-				if (code === 0) {
+			let stdout = '';
+			child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+			// The exit never rejects (the adapter guarantees that): a spawn failure surfaces as
+			// the error of the outcome, exactly like the child 'error' event did before.
+			void child.exit.then((exit) => {
+				if (exit.error !== null) {
+					reject(exit.error);
+					return;
+				}
+				if (exit.code === 0) {
 					const size = parseInt(stdout.trim(), 10);
-					Number.isFinite(size) ? resolve(size) : reject(new Error(stderr || stdout));
-				} else if (/does not exist|bad revision|Not a valid object|ambiguous argument/.test(stderr)) {
+					Number.isFinite(size) ? resolve(size) : reject(new Error(exit.stderr || stdout));
+				} else if (/does not exist|bad revision|Not a valid object|ambiguous argument/.test(exit.stderr)) {
 					resolve(null);
 				} else {
-					reject(new Error(stderr || `git cat-file -s exited with code ${code}`));
+					reject(new Error(exit.stderr || `git cat-file -s exited with code ${exit.code}`));
 				}
 			});
 		});
@@ -206,7 +210,7 @@ export class SideSource {
 		while (captureFrom <= last && this.chunks.has(captureFrom)) captureFrom++;
 		const captureTo = Math.min(this.lastChunk, last + BLOB_PREFETCH_CHUNKS);
 		return new Promise<void>((resolve, reject) => {
-			let child: cp.ChildProcess;
+			let child: SpawnedStream;
 			try {
 				child = this.git.spawnGitStream(['cat-file', 'blob', rev], this.repo);
 			} catch (err) {
@@ -214,7 +218,7 @@ export class SideSource {
 				return;
 			}
 			this.liveChildren.add(child);
-			let settled = false, captured = false, stderr = '';
+			let settled = false, captured = false;
 			const finish = (err: Error | null) => {
 				if (settled) return;
 				settled = true;
@@ -222,13 +226,18 @@ export class SideSource {
 				try { child.kill(); } catch { /* already gone */ }
 				err !== null ? reject(err) : resolve();
 			};
-			child.stderr!.on('data', (d: Buffer) => { stderr += d.toString(); });
-			child.on('error', (err) => finish(err));
-			child.on('close', (code) => {
-				if (code === 0 || captured) {
+			// The exit (child 'close', with the stderr text accumulated by the adapter) decides
+			// the outcome unless the capture below finished early; a spawn failure carries the
+			// error the child 'error' event used to deliver.
+			void child.exit.then((exit) => {
+				if (exit.error !== null) {
+					finish(exit.error);
+					return;
+				}
+				if (exit.code === 0 || captured) {
 					finish(null);
 				} else {
-					finish(new Error(stderr.trim() || `git cat-file blob exited with code ${code}`));
+					finish(new Error(exit.stderr.trim() || `git cat-file blob exited with code ${exit.code}`));
 				}
 			});
 			const stdout = child.stdout;
@@ -286,7 +295,7 @@ export class SideSource {
 		}
 		const rev = this.spec.kind === 'blob' ? this.spec.rev : '';
 		const read = () => new Promise<Buffer>((resolve, reject) => {
-			let child: cp.ChildProcess;
+			let child: SpawnedStream;
 			try {
 				child = this.git.spawnGitStream(['cat-file', 'blob', rev], this.repo);
 			} catch (err) {
@@ -295,18 +304,16 @@ export class SideSource {
 			}
 			this.liveChildren.add(child);
 			const parts: Buffer[] = [];
-			let stderr = '';
-			if (child.stderr !== null) child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-			child.on('error', (err) => {
+			void child.exit.then((exit) => {
 				this.liveChildren.delete(child);
-				reject(err);
+				if (exit.error !== null) {
+					reject(exit.error);
+					return;
+				}
+				if (exit.code === 0) resolve(Buffer.concat(parts));
+				else reject(new Error(exit.stderr.trim() || `git cat-file blob exited with code ${exit.code}`));
 			});
-			if (child.stdout !== null) child.stdout.on('data', (d: Buffer) => { parts.push(d); });
-			child.on('close', (code) => {
-				this.liveChildren.delete(child);
-				if (code === 0) resolve(Buffer.concat(parts));
-				else reject(new Error(stderr.trim() || `git cat-file blob exited with code ${code}`));
-			});
+			child.stdout?.on('data', (d: Buffer) => { parts.push(d); });
 		});
 		const queued = this.queue.then(read, read);
 		this.queue = queued.then(() => undefined, () => undefined);

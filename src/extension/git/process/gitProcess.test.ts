@@ -86,6 +86,16 @@ function runWith(script: Parameters<typeof FakeChild.spawnScript>[0], options: P
 	};
 }
 
+/** The {@link runWith} harness for `collect`. */
+function collectWith(script: Parameters<typeof FakeChild.spawnScript>[0], options: Partial<RunOptions> = {}) {
+	const fake = FakeChild.spawnScript(script);
+	const process = new GitProcess(() => GIT, fake.spawn);
+	return {
+		child: fake.child,
+		promise: process.collect(['status'], { cwd: '/repo', ...options })
+	};
+}
+
 describe('GitProcess.run', () => {
 	it('collects stdout, stderr and the exit code', async () => {
 		const { promise } = runWith({
@@ -211,6 +221,97 @@ describe('GitProcess.run', () => {
 		const { promise } = runWith({ stdout: [bytes] });
 		const result = await promise;
 		expect(Buffer.compare(result.stdout, bytes)).toBe(0);
+	});
+});
+
+describe('GitProcess.collect', () => {
+	it('resolves the stdout bytes when the run succeeds', async () => {
+		const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+		const { promise } = collectWith({ stdout: [bytes], code: 0 });
+		await expect(promise).resolves.toEqual(bytes);
+	});
+
+	it('rejects with the stderr text on a non-zero exit', async () => {
+		const { promise } = collectWith({ stdout: [Buffer.from('partial')], stderr: [Buffer.from('fatal: bad object')], code: 128 });
+		await expect(promise).rejects.toMatchObject({ kind: 'git', message: 'fatal: bad object', stderr: 'fatal: bad object' });
+	});
+
+	it('falls back to stdout and then the exit code for the failure text', async () => {
+		const { promise } = collectWith({ stdout: [Buffer.from('the stdout text')], code: 3 });
+		await expect(promise).rejects.toMatchObject({ kind: 'git', message: 'the stdout text' });
+
+		const empty = collectWith({ code: 7 });
+		await expect(empty.promise).rejects.toMatchObject({ kind: 'git', message: 'git exited with code 7' });
+	});
+
+	it('keeps the process-condition failures of run (no executable found)', async () => {
+		const runner = new GitProcess(() => null);
+		await expect(runner.collect(['status'], { cwd: '/repo' })).rejects.toMatchObject({ kind: 'noGit' });
+	});
+});
+
+describe('GitProcess.stream', () => {
+	it('hands out the child streams and an exit promise carrying the code and the stderr text', async () => {
+		const fake = FakeChild.spawnScript({
+			stdout: [Buffer.from('chunk one')],
+			stderr: [Buffer.from('a warning')],
+			code: 0
+		});
+		const spawned = new GitProcess(() => GIT, fake.spawn).stream(['cat-file', 'blob', 'a:bin'], '/repo');
+		// The stdout is the child's own stream: the caller consumes it directly.
+		expect(spawned.stdout).toBe(fake.child.stdout);
+		expect(spawned.stderr).toBe(fake.child.stderr);
+		await expect(spawned.exit).resolves.toEqual({ code: 0, error: null, stderr: 'a warning' });
+	});
+
+	it('reports a spawn failure on the exit promise with code -1 (never rejects)', async () => {
+		const error = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+		const fake = FakeChild.spawnScript({ error: error });
+		const spawned = new GitProcess(() => GIT, fake.spawn).stream(['version'], '/repo');
+		// The close (after the spawn failure) arrives once the error event has been recorded.
+		setTimeout(() => fake.child.emit('close', 1), 5);
+		await expect(spawned.exit).resolves.toEqual({ code: -1, error: error, stderr: '' });
+	});
+
+	it('maps a killed child (null close code) to exit code -1', async () => {
+		const fake = FakeChild.spawnScript({});
+		const spawned = new GitProcess(() => GIT, fake.spawn).stream(['log'], '/repo');
+		fake.child.emit('close', null);
+		await expect(spawned.exit).resolves.toMatchObject({ code: -1, error: null });
+	});
+
+	it('kill terminates the child', async () => {
+		const fake = FakeChild.spawnScript({ delay: 60 });
+		const spawned = new GitProcess(() => GIT, fake.spawn).stream(['log'], '/repo');
+		spawned.kill();
+		expect(fake.child.killed).toBe(true);
+	});
+
+	it('throws the no-Git error when no executable was found', () => {
+		const runner = new GitProcess(() => null);
+		expect(() => runner.stream(['log'], '/repo')).toThrow();
+		try {
+			runner.spawnStream(['log'], '/repo');
+			throw new Error('expected spawnStream to throw');
+		} catch (error) {
+			expect(error).toMatchObject({ kind: 'noGit' });
+		}
+	});
+
+	it('spawns with windowsHide and the askpass environment, like run', async () => {
+		const environments: Array<{ [name: string]: string }> = [];
+		const hides: boolean[] = [];
+		const fake = FakeChild.spawnScript({ stdout: [Buffer.from('x')] });
+		const spawn: GitSpawnFn = (command, args, options) => {
+			environments.push(options.env);
+			hides.push(options.windowsHide);
+			return fake.spawn(command, args, options);
+		};
+		const askpass = () => ({ GIT_ASKPASS: '/dist/askpass.sh' });
+		const spawned = new GitProcess(() => GIT, spawn, askpass).spawnStream(['cat-file', 'blob', 'a'], '/repo');
+		expect(hides).toEqual([true]);
+		expect(environments[0].GIT_ASKPASS).toBe('/dist/askpass.sh');
+		await expect(spawned.exit).resolves.toMatchObject({ code: 0 });
 	});
 });
 

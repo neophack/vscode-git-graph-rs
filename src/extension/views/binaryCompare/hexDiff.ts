@@ -1,7 +1,7 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitFileChange, GitFileStatus } from '../../../shared/model/git';
+import type { SpawnedStream } from '../../git/process/gitProcess';
 import { BlockSource, CHUNK_SIZE, destroyStream, EMPTY_BUFFER, GitStreamSpawner, SideSource, SideSpec } from './hexDiffSources';
 
 /**
@@ -89,7 +89,7 @@ export class HexDiffSession {
 	private initialised = false;
 	private scanStarted = false;
 	private disposed = false;
-	private readonly scanChildren = new Set<cp.ChildProcess>();
+	private readonly scanChildren = new Set<SpawnedStream>();
 
 	/** Set by the view; called once the background scan has produced the final section layout. */
 	public onSections: ((sections: HexSection[] | null, error: string | null) => void) | null = null;
