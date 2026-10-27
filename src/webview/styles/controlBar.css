@@ -7,7 +7,7 @@
  */
 #headerRow{
 	position:relative;
-	background-color: var(--gg-background, var(--vscode-editor-background));
+	background-color: var(--gg-background);
 }
 #headerRow.sticky {
 	position:sticky;
@@ -23,7 +23,7 @@
 	top:0;
 	white-space:nowrap;
 	padding:4px 174px 4px 0;
-	background-color: var(--gg-background, var(--vscode-editor-background));
+	background-color: var(--gg-background);
 	border-bottom:1px solid rgba(128,128,128,0.5);
 	line-height:32px;
 	text-align:center;
@@ -77,11 +77,11 @@
 /* Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 #currentBtn:focus, #findBtn:focus, #filterBtn:focus, #statisticsBtn:focus, #terminalBtn:focus, #settingsBtn:focus, #fetchBtn:focus, #refreshBtn:focus{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:2px;
 }
 #currentBtn:focus-visible, #findBtn:focus-visible, #filterBtn:focus-visible, #statisticsBtn:focus-visible, #terminalBtn:focus-visible, #settingsBtn:focus-visible, #fetchBtn:focus-visible, #refreshBtn:focus-visible{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:2px;
 }
 #currentBtn{
@@ -114,9 +114,9 @@
 }
 #currentBtn svg, #findBtn svg, #filterBtn svg, #statisticsBtn svg, #terminalBtn svg, #settingsBtn svg, #fetchBtn svg, #refreshBtn svg{
 	position:absolute;
-	fill:var(--gg-foreground, var(--vscode-editor-foreground));
+	fill:var(--gg-foreground);
 	opacity:0.8;
-	stroke:var(--gg-foreground, var(--vscode-editor-foreground));
+	stroke:var(--gg-foreground);
 	stroke-opacity:0.5;
 	stroke-width:0;
 }
@@ -138,7 +138,7 @@
 }
 #filterBtn.active svg{
 	opacity:1;
-	fill:var(--vscode-textLink-foreground, var(--gg-foreground, var(--vscode-editor-foreground)));
+	fill:var(--vscode-textLink-foreground, var(--gg-foreground));
 }
 #refreshBtn svg{
 	left:2px;
@@ -193,12 +193,7 @@
  * The bar always sticks to the top: flat and solid, separated from the list by a hairline only.
  * The capsules' leading icons and chevrons are shared with the tablet toolbar (body.touchMode). */
 
-body.mobileMode #headerRow{
-	position:sticky;
-	top:0;
-	z-index:12;
-	background-color:var(--m-bg);
-}
+
 body.mobileMode #controls{
 	display:flex;
 	align-items:center;
@@ -213,7 +208,6 @@ body.mobileMode #controls{
 	border-bottom:0.5px solid var(--m-sep);
 	line-height:normal;
 	text-align:left;
-	white-space:nowrap;
 	font-weight:normal;
 }
 /* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
@@ -262,7 +256,7 @@ body.mobileMode #controls .dropdownCurrentValue{
 	font-size:15px;
 	font-weight:600;
 	letter-spacing:-0.01em;
-	transition:background-color 120ms var(--gg-ease, ease-out);
+	transition:background-color 120ms var(--gg-ease);
 }
 body.mobileMode #controls .dropdownCurrentValue:active{
 	background-color:var(--m-pressed);
@@ -294,7 +288,7 @@ body.touchMode #controls .dropdownCurrentValue::after, body.touchMode #controls 
 	background-color:var(--m-fg-2);
 	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
 	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
-	transition:transform 160ms var(--gg-ease, ease-out);
+	transition:transform 160ms var(--gg-ease);
 }
 body.mobileMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
 	border-radius:calc(var(--m-capsule) / 2);
@@ -366,10 +360,7 @@ body.mobileMode #controlBtns > #filterBtn.active{
 	color:var(--m-fg);
 	cursor:pointer;
 }
-body.mobileMode #controlBtns > div:active{
-	background-color:var(--m-pressed);
-	transform:none;
-}
+
 body.mobileMode #controlBtns svg{
 	position:static;
 	width:19px !important;
@@ -377,10 +368,7 @@ body.mobileMode #controlBtns svg{
 	fill:var(--m-fg);
 	opacity:0.9;
 }
-body.mobileMode #controlBtns > #filterBtn.active svg{
-	fill:var(--m-accent);
-	opacity:1;
-}
+
 body.mobileMode #refreshBtn.refreshing svg{
 	width:15px !important;
 }
@@ -447,7 +435,7 @@ body.touchMode .contextMenu .mobileMenuSwitch{
 	margin-left:12px;
 	border-radius:13px;
 	background-color:var(--m-fill);
-	transition:background-color 160ms var(--gg-ease, ease-out);
+	transition:background-color 160ms var(--gg-ease);
 }
 body.touchMode .contextMenu .mobileMenuSwitch::after{
 	content:"";
@@ -459,7 +447,7 @@ body.touchMode .contextMenu .mobileMenuSwitch::after{
 	border-radius:50%;
 	background-color:#fff;
 	box-shadow:0 1px 3px rgba(0,0,0,0.3);
-	transition:transform 160ms var(--gg-ease, ease-out);
+	transition:transform 160ms var(--gg-ease);
 }
 body.touchMode .contextMenu .mobileMenuSwitch.on{
 	background-color:var(--m-add);
@@ -482,5 +470,303 @@ body.touchMode .contextMenu .mobileMenuSwitch.on::after{
 	}
 	body.mobileMode #controlBtns > div{
 		width:40px !important;
+	}
+}
+/* ===== Tablet layout: the toolbar (merged from styles/tablet/toolbar.css, OPTIMIZATION-PLAN §6 F6) =====
+ * One 48px row: [repo ▾] [branch ▾] [author ▾] (Remote) .................. (⌖)(⌕)(⏚)(▤)(>_)(⚙)(⤓)(⟳)
+ * The phone keeps only the essentials in its app bar; a tablet has the width for every control,
+ * so nothing moves into an overflow sheet. Left: the filters as capsules (the phone's capsule
+ * language at tablet density - leading icon, chevron, no border). Right: the actions as round
+ * icon buttons in one flex row (the wide layout positions them absolutely). Flat and solid,
+ * separated from the list by a hairline. */
+
+/* The app bar of both touch layouts sticks to the top */
+body.mobileMode #headerRow, body.tabletMode #headerRow{
+	position:sticky;
+	top:0;
+	z-index:12;
+	background-color:var(--m-bg);
+}
+body.tabletMode #controls{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	box-sizing:border-box;
+	min-height:var(--m-bar);
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:4px 8px 4px 12px;
+	padding:4px max(8px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+	border-bottom:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	line-height:normal;
+	text-align:left;
+	font-weight:normal;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap) */
+@supports not (appearance: none) {
+	body.tabletMode #controls > * + * { margin-left: 8px; }
+}
+body.tabletMode.vscode-high-contrast #controls{
+	border-bottom-color:var(--m-sep);
+}
+
+/* The filters */
+body.tabletMode #repoControl, body.tabletMode #branchControl, body.tabletMode #authorControl{
+	display:flex;
+	align-items:center;
+	flex:0 1 auto;
+	min-width:0;
+	margin:0;
+}
+body.tabletMode #controls.singleRepo #repoControl,
+body.tabletMode #repoControlLabel, body.tabletMode #branchControlLabel, body.tabletMode #authorControlLabel{
+	display:none;
+}
+/* The branch filter is as wide as its text, up to a cap: the spare room stays with the chip and
+   the actions instead of being swallowed by one capsule */
+body.tabletMode #branchControl{
+	flex:0 1 auto;
+	min-width:140px;
+	max-width:220px;
+}
+body.tabletMode #repoDropdown, body.tabletMode #branchDropdown, body.tabletMode #authorDropdown{
+	flex:1 1 auto;
+	min-width:0;
+	margin:0;
+}
+/* A floor per filter, so a shrinking row clips the capsule text instead of collapsing the capsule
+   onto its neighbours; the actions (#controlBtns) never shrink */
+body.tabletMode #repoControl{
+	min-width:120px;
+}
+body.tabletMode #authorControl{
+	min-width:104px;
+}
+/* The compact toolbar, as on the phone: while the side pane is open (and in a narrow window) the
+   author filter, the Remote chip and every action but Find / Refresh move into the ⋯ overflow
+   menu (controlBar.ts showMobileOverflowMenu), which triggers the hidden buttons. An active path
+   filter keeps its button in the bar as the indicator. */
+body.tabletMode.sidePaneOpen #authorControl, body.tabletMode.sidePaneOpen #showRemoteBranchesControl,
+body.tabletMode.sidePaneOpen #controls #controlBtns > div,
+body.tabletMode.sidePaneOpen #controls.fetchSupported #controlBtns > #fetchBtn{
+	display:none;
+}
+body.tabletMode.sidePaneOpen #controls #controlBtns > #findBtn,
+body.tabletMode.sidePaneOpen #controls #controlBtns > #refreshBtn,
+body.tabletMode.sidePaneOpen #controls #controlBtns > #mobileMoreBtn,
+body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
+	display:flex;
+}
+body.tabletMode #mobileMoreBtn svg{
+	width:16px !important;
+	height:16px !important;
+}
+body.tabletMode #controls .dropdownCurrentValue{
+	position:relative;
+	/* dropdown.ts pins an inline pixel width (the widest menu entry), which a flex item cannot
+	   shrink below: follow the dropdown's own flex width instead, as the phone capsule does */
+	width:100% !important;
+	min-width:0;
+	/* over the narrow window caps (9vw / 12vw / 16vw) of controlBar.css and responsive.css */
+	max-width:none !important;
+	height:var(--m-capsule);
+	line-height:var(--m-capsule);
+	box-sizing:border-box;
+	padding:0 28px 0 32px;
+	border:none;
+	border-radius:calc(var(--m-capsule) / 2);
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:13px;
+	font-weight:600;
+	letter-spacing:-0.005em;
+	transition:background-color 120ms var(--gg-ease);
+}
+body.tabletMode #controls .dropdownCurrentValue:active, body.tabletMode #controls .dropdown.dropdownOpen .dropdownCurrentValue{
+	border-radius:calc(var(--m-capsule) / 2);
+	background-color:var(--m-pressed);
+}
+/* The shared capsule icons (mobile/appBar.css), inset for the tablet's tighter capsule */
+body.tabletMode #controls .dropdownCurrentValue::before{
+	left:12px;
+}
+body.tabletMode #controls .dropdownCurrentValue::after, body.tabletMode #controls .dropdown.dropdownOpen .dropdownCurrentValue::after{
+	right:10px;
+}
+/* The author filter's leading icon: a person */
+body.tabletMode #authorDropdown .dropdownCurrentValue::before{
+	-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 1.5c-2.7 0-5.5 1.35-5.5 3.25V14h11v-1.25C13.5 10.85 10.7 9.5 8 9.5z'/%3E%3C/svg%3E") center/contain no-repeat;
+	mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 1.5c-2.7 0-5.5 1.35-5.5 3.25V14h11v-1.25C13.5 10.85 10.7 9.5 8 9.5z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+/* "Show Remote Branches": a filter chip, filled with the accent while on. The checkbox stays the
+   control (hidden); the chip is its label text, so the :checked state styles it without script. */
+body.tabletMode #showRemoteBranchesControl{
+	position:relative;
+	flex:none;
+	display:inline-flex;
+	align-items:center;
+	margin:0;
+}
+body.tabletMode #showRemoteBranchesControl > .customCheckbox{
+	display:none;
+}
+body.tabletMode #showRemoteBranchesCheckbox{
+	position:absolute;
+	opacity:0;
+	pointer-events:none;
+}
+body.tabletMode #showRemoteBranchesLabel{
+	display:inline-block;
+	height:var(--m-capsule);
+	line-height:var(--m-capsule);
+	padding:0 14px;
+	border-radius:calc(var(--m-capsule) / 2);
+	white-space:nowrap;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:13px;
+	font-weight:600;
+	transition:background-color 120ms var(--gg-ease), color 120ms var(--gg-ease);
+}
+body.tabletMode #showRemoteBranchesControl:active #showRemoteBranchesLabel{
+	background-color:var(--m-pressed);
+}
+body.tabletMode #showRemoteBranchesCheckbox:checked ~ #showRemoteBranchesLabel{
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+
+/* The actions: round icon buttons in one capsule of the filters' height and fill, right-aligned */
+body.tabletMode #controlBtns{
+	flex:none;
+	display:flex;
+	align-items:center;
+	height:var(--m-capsule);
+	margin-left:auto;
+	border-radius:calc(var(--m-capsule) / 2);
+	background-color:var(--m-fill);
+}
+/* Two ids, to out-rank controlBar.css's "#controls.fetchSupported #currentBtn{right:…}" offsets */
+body.tabletMode #controls #controlBtns > div{
+	position:relative;
+	top:auto;
+	right:auto;
+	flex:none;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	width:var(--m-capsule);
+	height:var(--m-capsule);
+	margin:0;
+	border-radius:50%;
+	color:var(--m-fg);
+	cursor:pointer;
+}
+/* controlBar.css shows the fetch button with "#controls.fetchSupported #fetchBtn": mirror it, and
+   keep the phone's ⋯ overflow button hidden (both over the button rule above) */
+body.tabletMode #controls #controlBtns > #fetchBtn, body.tabletMode #controls #controlBtns > #mobileMoreBtn{
+	display:none;
+}
+body.tabletMode #controls.fetchSupported #controlBtns > #fetchBtn{
+	display:flex;
+}
+body.mobileMode #controlBtns > div:active, body.tabletMode #controlBtns > div:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.tabletMode #controlBtns svg{
+	position:static;
+	width:15px !important;
+	height:15px !important;
+	fill:var(--m-fg);
+	stroke-width:0 !important;
+	opacity:0.85;
+}
+body.tabletMode #controlBtns > div:active svg{
+	opacity:1;
+}
+body.tabletMode #controlBtns > #filterBtn.active{
+	background-color:var(--t-selected);
+}
+body.mobileMode #controlBtns > #filterBtn.active svg, body.tabletMode #controlBtns > #filterBtn.active svg{
+	fill:var(--m-accent);
+	opacity:1;
+}
+body.tabletMode #refreshBtn svg{
+	width:14px !important;
+	height:14px !important;
+}
+body.tabletMode #refreshBtn.refreshing svg{
+	width:11px !important;
+}
+
+/* The pinned commits row: chips at touch size */
+body.tabletMode #pinnedControls{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:6px 12px;
+	padding:6px max(12px, env(safe-area-inset-right)) 6px max(12px, env(safe-area-inset-left));
+	border-bottom:0.5px solid var(--m-sep);
+}
+body.tabletMode .pinnedChip{
+	margin:0 3px;
+	padding:3px 10px;
+	font-size:12px;
+	line-height:20px;
+	border-radius:13px;
+}
+
+/* Last in the file: equal-specificity rules above (the actions' display) must lose to it. Below
+   this width the full toolbar (three filters, the Remote chip and eight actions, about 870px at
+   its floors) no longer fits without clipping the capsules' text. */
+@media screen and (max-width: 920px){
+	body.tabletMode #authorControl, body.tabletMode #showRemoteBranchesControl,
+	body.tabletMode #controls #controlBtns > div,
+	body.tabletMode #controls.fetchSupported #controlBtns > #fetchBtn{
+		display:none;
+	}
+	body.tabletMode #controls #controlBtns > #findBtn,
+	body.tabletMode #controls #controlBtns > #refreshBtn,
+	body.tabletMode #controls #controlBtns > #mobileMoreBtn,
+	body.tabletMode #controls #controlBtns > #filterBtn.active{
+		display:flex;
+	}
+}
+
+/* The side pane open in a window this narrow leaves the list well under 480px (the pane takes at
+   least 320px): the toolbar tightens to the phone's floors so the capsules keep readable text
+   beside the actions */
+@media screen and (max-width: 760px){
+	body.tabletMode.sidePaneOpen #controls{
+		gap:4px;
+		padding-left:8px;
+		padding-left:max(8px, env(safe-area-inset-left));
+		padding-right:8px;
+		padding-right:max(8px, env(safe-area-inset-right));
+	}
+	body.tabletMode.sidePaneOpen #repoControl{
+		min-width:56px;
+	}
+	body.tabletMode.sidePaneOpen #branchControl{
+		min-width:72px;
+	}
+	body.tabletMode.sidePaneOpen #controls .dropdownCurrentValue{
+		padding-left:12px;
+		padding-right:26px;
+	}
+	body.tabletMode.sidePaneOpen #controls .dropdownCurrentValue::before{
+		display:none;
+	}
+	body.tabletMode.sidePaneOpen #controls #controlBtns > #findBtn,
+	body.tabletMode.sidePaneOpen #controls #controlBtns > #refreshBtn,
+	body.tabletMode.sidePaneOpen #controls #controlBtns > #mobileMoreBtn,
+	body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
+		width:28px;
+		height:28px;
+		margin:0;
+	}
+	body.tabletMode.sidePaneOpen #controlBtns{
+		padding:0 2px;
 	}
 }

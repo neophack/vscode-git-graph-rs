@@ -183,3 +183,53 @@ body.mobileMode .contextMenu li.contextMenuDivider{
 	box-shadow:inset 0 0.5px 0 var(--m-sep);
 	opacity:1;
 }
+
+/* ===== Tablet layout: context menus (merged from styles/tablet/overlays.css, OPTIMIZATION-PLAN §6 F6) =====
+ * Context menus open where the finger (or pointer) is, as anchored popovers: ContextMenu.show
+ * frames them by the whole page in the tablet layout, so a menu opened from the side pane stays
+ * beside it. Flat: one soft shadow and a hairline lift the menu off the content - no borders,
+ * no gradients. */
+
+/* Context menus */
+body.tabletMode .contextMenu{
+	min-width:220px;
+	padding:6px;
+	border-radius:12px;
+	background-color:var(--m-sheet);
+	box-shadow:0 8px 28px rgba(0,0,0,0.22), 0 0 0 0.5px var(--m-sep);
+	color:var(--m-fg);
+	font-size:13px;
+	z-index:45;
+}
+body.tabletMode.vscode-high-contrast .contextMenu{
+	box-shadow:none;
+	outline:1px solid var(--m-sep);
+}
+body.tabletMode .contextMenu li.contextMenuItem{
+	display:flex;
+	align-items:center;
+	min-height:36px;
+	box-sizing:border-box;
+	padding:0 12px;
+	border-radius:8px;
+	line-height:18px;
+}
+body.tabletMode .contextMenu li.contextMenuItem:hover{
+	background-color:transparent;
+	color:inherit;
+}
+body.tabletMode .contextMenu li.contextMenuItem:active{
+	background-color:var(--vscode-menu-selectionBackground, var(--m-pressed));
+	color:var(--vscode-menu-selectionForeground, var(--m-fg));
+}
+body.tabletMode .contextMenu li.contextMenuDivider{
+	margin:6px 4px;
+	border-top:0.5px solid var(--m-sep);
+	opacity:1;
+}
+body.tabletMode .contextMenu.checked li.contextMenuItem{
+	padding-left:34px;
+}
+body.tabletMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
+	left:12px;
+}

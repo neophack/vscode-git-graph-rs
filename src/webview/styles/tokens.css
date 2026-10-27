@@ -1,14 +1,18 @@
 /* Design tokens (OPTIMIZATION-PLAN §6 F6): the one sheet that maps VS Code's theme variables
  * (--vscode-*) onto this view's semantic tokens. Component stylesheets consume the --gg-* names
- * so a theme variable is remapped in exactly one place. The migration of the component sheets to
- * these tokens is deliberately incremental - the most-repeated reads moved first; comparison.css
- * and binaryCompare.css (the standalone page sheets, which do not import this file) and the
- * tablet refinements under styles/tablet/ still read theme variables directly.
+ * so a theme variable is remapped in exactly one place. The migration is deliberately
+ * incremental - the most-repeated reads moved first. The standalone page sheets (comparison.css,
+ * binaryCompare.css) import this file and use the shared tokens; their page-specific reads (the
+ * diff editor, the hex grid, the form controls) still read theme variables directly, because
+ * tokenizing them would put dozens of page-only tokens into the graph view's first-paint sheet.
  *
  * The literal fallbacks (the VS Code Dark+ palette) keep every surface solid in an environment
  * that injects none of the theme variables (e.g. the standalone browser repro page): without
  * them var() is invalid at computed-value time and the sheets render fully transparent. */
 
+/* The dialog-only elevations and durations (--gg-shadow-1/3, --gg-dur-modal) and the ggFadeIn
+ * keyframes they and the commit details view use live in dialog.css / commitDetails.css: no
+ * first-paint rule consumes them, so the critical sheet does not carry them. */
 :root{
 	/* Motion & elevation (Ant-Design-Pro inspired): animations only use transform/opacity so
 	 * they run on the compositor. */
@@ -16,10 +20,7 @@
 	--gg-ease-in-out:cubic-bezier(0.645, 0.045, 0.355, 1);
 	--gg-dur-fast:120ms;
 	--gg-dur-base:180ms;
-	--gg-dur-modal:220ms;
-	--gg-shadow-1:0 1px 4px 1px var(--vscode-widget-shadow);
 	--gg-shadow-2:0 3px 10px 2px var(--vscode-widget-shadow);
-	--gg-shadow-3:0 0 30px 5px var(--vscode-widget-shadow);
 
 	/* Surfaces & text */
 	--gg-background:var(--vscode-editor-background, #1e1e1e);
@@ -36,10 +37,11 @@
 	--gg-menu-selected-foreground:var(--vscode-menu-selectionForeground, var(--vscode-menu-foreground, #cccccc));
 }
 
-/* Touch layouts (phone and tablet), merged from the former styles/mobile/base.css: the tokens
- * both layouts share, scoped under body.touchMode (see base.css for how the classes are set).
- * The phone-only rules live in the component sheets under body.mobileMode, the tablet-only
- * refinements (which override a few of these values under body.tabletMode) in styles/tablet/. */
+/* Touch layouts (phone and tablet): the tokens both layouts share, scoped under body.touchMode
+ * (see base.css for how the classes are set). The phone-only rules live in the component sheets
+ * under body.mobileMode, the tablet-only refinements under body.tabletMode - each in a
+ * clearly-marked section at the end of its component sheet (OPTIMIZATION-PLAN §6 F6 merged the
+ * former styles/mobile/ and styles/tablet/ directories into them). */
 body.touchMode{
 	--m-fg:var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
 	--m-fg-2:var(--vscode-descriptionForeground, rgba(128,128,128,0.9));
@@ -48,7 +50,7 @@ body.touchMode{
 	--m-fill:rgba(128,128,128,0.14);
 	--m-pressed:rgba(128,128,128,0.2);
 	--m-sep:rgba(128,128,128,0.24);
-	--m-accent:var(--vscode-textLink-foreground, var(--vscode-focusBorder, #3794ff));
+	--m-accent:var(--gg-accent);
 	--m-accent-fill:var(--vscode-button-background, #0e639c);
 	--m-accent-on:var(--vscode-button-foreground, #fff);
 	--m-add:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
@@ -75,9 +77,25 @@ body.touchMode.vscode-high-contrast{
 	--m-sep:var(--vscode-contrastBorder, rgba(128,128,128,0.6));
 }
 
-@keyframes ggFadeIn{
-	from{ opacity:0; transform:translateY(-4px); }
-	to{ opacity:1; transform:none; }
+/* The tablet's refinements of the shared touch tokens (merged from the former
+ * styles/tablet/base.css): a tablet has the room of a desktop and the finger of a phone, so the
+ * bar, targets and capsules slim down and the selected row wears a quieter wash than the phone's.
+ * Declared after the body.touchMode blocks of equal specificity so its overrides win. */
+body.tabletMode{
+	--m-bar:38px;
+	--m-target:36px;
+	--m-capsule:28px;
+	--m-radius:10px;
+	/* The selected row's wash: the accent at low strength (a neutral fill without color-mix) */
+	--t-selected:rgba(128,128,128,0.18);
+	--t-selected-pressed:rgba(128,128,128,0.26);
+	--t-header:var(--gg-background);
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.tabletMode{
+		--t-selected:color-mix(in srgb, var(--m-accent-fill) 22%, transparent);
+		--t-selected-pressed:color-mix(in srgb, var(--m-accent-fill) 32%, transparent);
+	}
 }
 
 @media (prefers-reduced-motion: reduce){

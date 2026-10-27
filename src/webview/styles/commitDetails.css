@@ -3,6 +3,13 @@
 #cdv.inline{
 	vertical-align:top;
 }
+/* ggFadeIn lives here too (also defined in dialog.css): this sheet rides the same on-demand
+ * chunk, but keeps its copy so the animation survives any future chunk split. */
+@keyframes ggFadeIn{
+	from{ opacity:0; transform:translateY(-4px); }
+	to{ opacity:1; transform:none; }
+}
+
 #cdv.inline, #cdv.docked{
 	animation:ggFadeIn var(--gg-dur-base) var(--gg-ease);
 	/* Render containment (task 5.10): the panel's (re)rendering stays inside it */
@@ -356,7 +363,7 @@
  *
  * Only the first rules below are the phone's (where the sheet sits: full screen); everything after
  * them is the content both layouts share (body.touchMode). The tablet places the same content in
- * its side pane (styles/tablet/commitDetails.css) and tightens its type for the denser screen. */
+ * its side pane (the tablet section at the end of this sheet) and tightens its type for the denser screen. */
 
 body.mobileMode #view{
 	bottom:0 !important;
@@ -813,4 +820,84 @@ body.touchMode #cdvFiles .fileTreeFolderIcon{
 		font-size:18px;
 		line-height:23px;
 	}
+}
+
+/* ===== Tablet layout: the commit details side pane (merged from styles/tablet/commitDetails.css, OPTIMIZATION-PLAN §6 F6) =====
+ * The canonical list-detail split of a tablet (iPadOS Mail, Material 3 list-detail): the details
+ * open beside the list, full height, at --gg-pane-width (set by layoutMode.ts from the window
+ * width), and the list narrows by exactly that width (base.css) so neither covers the
+ * other. The content is the phone sheet's (mobile/commitDetails.css, body.touchMode): a title bar
+ * over one scrolling page - summary card, "Files" header, file list - here at tablet density.
+ * The docked panel's inline height is overridden; nothing is resizable (the width follows the
+ * window), so the resize handle and the summary/files divider are hidden by the shared rules. */
+
+body.tabletMode #cdv.docked{
+	top:0;
+	right:0;
+	bottom:0;
+	left:auto;
+	width:var(--gg-pane-width, 380px);
+	height:auto !important;
+	z-index:20;
+	display:flex;
+	flex-direction:column;
+	box-sizing:border-box;
+	border-top:none;
+	border-left:0.5px solid var(--m-sep);
+	background-color:var(--m-bg);
+	color:var(--m-fg);
+	font-size:13px;
+	line-height:20px;
+	padding-bottom:env(safe-area-inset-bottom);
+	animation:ggTabletPaneIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ggTabletPaneIn{
+	from{ opacity:0.5; transform:translateX(24px); }
+	to{ opacity:1; transform:none; }
+}
+body.tabletMode.vscode-high-contrast #cdv.docked{
+	border-left:1px solid var(--m-sep);
+}
+
+/* Title bar: (✕) the commit ......... (review)(external diff)(⋯) */
+body.tabletMode #cdvControls{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:6px 6px;
+	padding:6px max(6px, env(safe-area-inset-right)) 6px 6px;
+	padding-top:6px;
+}
+body.tabletMode #cdvMobileTitle{
+	font-size:13px;
+}
+body.tabletMode .cdvControlBtn svg{
+	width:16px;
+	height:16px;
+}
+
+/* The summary card, tightened */
+body.tabletMode #cdvSummary{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:14px 16px 6px;
+	padding:14px max(16px, env(safe-area-inset-right)) 6px 16px;
+}
+body.tabletMode .cdvmTitle{
+	font-size:15px;
+	line-height:20px;
+}
+body.tabletMode .cdvmByline{
+	margin-top:10px;
+}
+body.tabletMode #cdvLoading{
+	padding:36px 16px;
+}
+
+/* The file list: 36px rows (the tablet's --m-target), 13px names */
+body.tabletMode #cdvFiles .fileTreeFileRecord, body.tabletMode #cdvFiles .fileTreeFolder, body.tabletMode #cdvFiles .fileTreeRepo{
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:0 16px;
+	padding:0 max(16px, env(safe-area-inset-right)) 0 16px;
+	line-height:18px;
+}
+body.tabletMode #cdvFiles .gitFileName{
+	font-size:13px;
 }

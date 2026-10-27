@@ -24,7 +24,7 @@ body #view{
 	left:0;
 	right:0;
 	bottom:0;
-	background-color:var(--gg-background, var(--vscode-editor-background));
+	background-color:var(--gg-background);
 	overflow-x:hidden;
 	overflow-y:auto;
 	/* The view manages its own scroll position across re-renders (anchoring the commit that sits
@@ -80,11 +80,11 @@ code{
    Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the focus outline on 69. */
 .gg-helpTooltip:focus{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:1px;
 }
 .gg-helpTooltip:focus-visible{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:1px;
 }
 .gg-helpTooltipPopup{
@@ -97,9 +97,9 @@ code{
 	padding:4px 7px;
 	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));
 	border-radius:3px;
-	background-color:var(--vscode-editorWidget-background, var(--gg-menu-background, var(--vscode-menu-background)));
-	color:var(--vscode-editorWidget-foreground, var(--gg-menu-foreground, var(--vscode-menu-foreground)));
-	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
+	background-color:var(--vscode-editorWidget-background, var(--gg-menu-background));
+	color:var(--vscode-editorWidget-foreground, var(--gg-menu-foreground));
+	box-shadow:var(--gg-shadow-2);
 	font-size:12px;
 	line-height:16px;
 	white-space:pre-wrap;
@@ -111,10 +111,10 @@ code{
  * view to a touch layout, decided per render by render/layoutMode.ts: <body> carries .mobileMode
  * while the view is at most 600px wide, .tabletMode above that, and .touchMode with either. The
  * tokens both layouts share sit in tokens.css (body.touchMode); the phone-only rules live in the
- * component sheets under body.mobileMode (a clearly-marked section at the end of each), the
- * tablet-only rules (styles/tablet/) under body.tabletMode, which load last and so refine the
- * shared touch rules. With the setting off none of the classes is set and the wide layout is
- * untouched - the few unscoped rules below only hide the touch-only elements there. */
+ * component sheets under body.mobileMode and the tablet-only rules under body.tabletMode - each a
+ * clearly-marked section at the end of its component sheet. With the setting off none of the
+ * classes is set and the wide layout is untouched - the few unscoped rules below only hide the
+ * touch-only elements there. */
 
 /* Mobile-only elements, hidden in the wide layout */
 #mobileMoreBtn, #fastScroller, #cdvFilesHeader, #cdvMobileTitle{
@@ -138,4 +138,36 @@ body.mobileMode .gg-helpTooltipPopup{
 	max-width:calc(100vw - 24px);
 	font-size:14px;
 	line-height:20px;
+}
+
+/* ===== Tablet layout: the view (merged from styles/tablet/base.css, OPTIMIZATION-PLAN §6 F6) =====
+ * The tablet visual language is flat and compact, after iPadOS, Material 3 large-screen and Meta's
+ * tablet apps: one solid surface, no shadows on resting content, hairline separators instead of
+ * borders, capsule controls, a 48px toolbar, 40px single-line rows that keep every column, and the
+ * canonical list-detail split - the commit details open in a side pane beside the list instead of
+ * covering it. Pressed states replace hover, and edges respect the safe area insets.
+ *
+ * The list-detail split: while the side pane is open the list gives up exactly the pane's width
+ * (--gg-pane-width, set by layoutMode.ts from the window width), so both stay fully visible.
+ * Nothing is ever reserved below the list. The list snaps to its new width (no transition): the
+ * graph column's auto layout measures it right after the switch, and only the pane itself animates
+ * in. A slim scroll indicator, as the platforms draw it: no track, a rounded thumb. */
+body.tabletMode #view{
+	bottom:0 !important;
+}
+body.tabletMode.sidePaneOpen #view{
+	right:var(--gg-pane-width);
+}
+body.tabletMode #view::-webkit-scrollbar{
+	width:8px;
+	height:8px;
+}
+body.tabletMode #view::-webkit-scrollbar-track{
+	background:transparent;
+}
+body.tabletMode #view::-webkit-scrollbar-thumb{
+	border:2px solid transparent;
+	border-radius:4px;
+	background-clip:padding-box;
+	background-color:var(--m-sep);
 }

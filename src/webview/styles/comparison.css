@@ -6,7 +6,11 @@
  * Baseline is Chromium 69 (VS Code 1.38): every feature newer than it carries a fallback
  * declaration immediately before the modern one, which stays as progressive enhancement. Flex
  * `gap` (Chrome 84) sites are moved as authored, matching the established practice of the other
- * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css). */
+ * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css).
+ *
+ * The shared semantic tokens (tokens.css) ride in through binaryCompare.css (OPTIMIZATION-PLAN
+ * §6 F6); reads with no --gg-* token (the diff editor tints, the sidebar tree, the form controls)
+ * still read theme variables directly - see tokens.css. */
 
 @import "./binaryCompare.css";
 
@@ -22,9 +26,9 @@ body {
 	overflow: hidden;
 	box-sizing: border-box;
 }
-#header { padding: 2px 0px 2px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; }
+#header { padding: 2px 0px 2px; border-bottom: 1px solid var(--gg-border); flex-shrink: 0; }
 #commitCards { display: flex; align-items: stretch; gap: 0; margin-bottom: 0px; }
-.commitCard { flex: 1; min-width: 0; background: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.06)); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128,128,128,0.35))); border-radius: 4px; padding: 10px 10px; transition: background-color 0.1s ease; }
+.commitCard { flex: 1; min-width: 0; background: var(--vscode-textBlockQuote-background, rgba(128,128,128,0.06)); border: 1px solid var(--vscode-widget-border, var(--gg-border)); border-radius: 4px; padding: 10px 10px; transition: background-color 0.1s ease; }
 .commitCard[data-role="base"] { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
 .commitCard[data-role="compare"] { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
 .commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
@@ -56,13 +60,13 @@ body {
 .compareDivider .count:empty { display: none; }
 #body { display: flex; flex: 1; min-height: 0; }
 #sidebar { width: 280px; flex-shrink: 0; overflow: auto; padding: 6px 0; --indent-guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128,128,128,0.3)); }
-#sidebarResizer { flex-shrink: 0; width: 4px; margin-left: -2px; position: relative; z-index: 1; cursor: col-resize; border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); }
+#sidebarResizer { flex-shrink: 0; width: 4px; margin-left: -2px; position: relative; z-index: 1; cursor: col-resize; border-right: 1px solid var(--gg-border); }
 #sidebarResizer:hover, #sidebarResizer.resizing { border-right-color: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder)); }
 #sidebar h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.7; margin: 4px 12px; }
 #sidebar h2 .additions { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }
 #sidebar h2 .deletions { color: var(--vscode-gitDecoration-deletedResourceForeground, #b31d28); }
 .treeRow { display: flex; align-items: center; padding: 3px 12px 3px 8px; cursor: pointer; white-space: nowrap; user-select: none; }
-.treeRow:hover { background: var(--vscode-list-hoverBackground); }
+.treeRow:hover { background: var(--gg-row-hover); }
 .treeRow.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 .treeRow .arrow { width: 14px; text-align: center; flex-shrink: 0; opacity: 0.8; }
 .treeRow .name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -73,7 +77,7 @@ body {
 .counts.pending { opacity: 0.6; }
 .letter { width: 13px; margin-right: 5px; text-align: center; font-weight: 600; flex-shrink: 0; }
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; gap: 8px; }
+#fileHeader { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--gg-border); flex-shrink: 0; gap: 8px; }
 /* chrome69: margin fallback for flex gap (see the .firstLine rule) */
 @supports not (appearance: none) {
 	#fileHeader > * + * { margin-left: 8px; }
@@ -117,7 +121,7 @@ table.diff td.code { overflow-wrap: break-word; word-break: break-all; }
 /* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rule above is the Chromium 69 twin */
 table.diff td.code { overflow-wrap: anywhere; word-break: break-all; }
 td.ln { width: 46px; text-align: right; color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); user-select: none; border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25)); background: rgba(128,128,128,0.06); }
-tr.ctx td.code { background: var(--vscode-editor-background); }
+tr.ctx td.code { background: var(--gg-background); }
 /* A pure addition/deletion tints the whole line; a modified (paired) row tints its old side
    like a deletion and its new side like an addition, the same two-tier convention (line tint +
    a stronger tint on the exact changed text, via the "mark" rule below) VS Code's own diff

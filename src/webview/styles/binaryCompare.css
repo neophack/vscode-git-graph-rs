@@ -7,7 +7,15 @@
  * Baseline is Chromium 69 (VS Code 1.38): every feature newer than it carries a fallback
  * declaration immediately before the modern one, which stays as progressive enhancement. Flex
  * `gap` (Chrome 84) sites are moved as authored, matching the established practice of the other
- * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css). */
+ * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css).
+ *
+ * The shared semantic tokens (tokens.css) are imported so the sheet consumes the --gg-* names
+ * like the other component sheets (OPTIMIZATION-PLAN §6 F6); comparison.css imports this file
+ * and inherits the same tokens. Reads with no --gg-* token (the diff editor, the hex grid, the
+ * form controls) still read theme variables directly - tokenizing them would put page-only
+ * tokens into the graph view's first-paint sheet (see tokens.css). */
+
+@import './tokens.css';
 
 /* The standalone page's chrome: a slim header naming the file and the two revisions. */
 body.binaryComparePage {
@@ -25,7 +33,7 @@ body.binaryComparePage #header {
 	align-items: center;
 	gap: 8px;
 	padding: 8px 16px;
-	border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
+	border-bottom: 1px solid var(--gg-border);
 	flex-shrink: 0;
 }
 /* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84). The appearance probe is a
@@ -64,7 +72,7 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
    draws, so the comparison reads like the viewer it sits next to. */
 #diffArea.hexMode { overflow: hidden; display: flex; }
 #hexWrap { --hcols: 10ch; flex: 1; display: flex; flex-direction: column; min-width: 0; }
-#hexToolbar, #imgToolbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; font-size: 12px; }
+#hexToolbar, #imgToolbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--gg-border); flex-shrink: 0; font-size: 12px; }
 /* chrome69: margin fallback for flex gap (see the #header rule) */
 @supports not (appearance: none) {
 	#hexToolbar > * + *, #imgToolbar > * + * { margin-left: 8px; }
@@ -76,19 +84,19 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
 /* The ruler and the rows share one font: the ch-based grid tracks only line up when
    both measure the same monospace glyph. */
-#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: var(--vscode-editor-font-size, 13px); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+#hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: var(--vscode-editor-font-size, 13px); color: var(--gg-foreground); background: var(--gg-background); }
 #hexInner { display: inline-block; min-width: 100%; }
 /* The sticky head: each pane's caption (which side, how many bytes) over the column
    ruler — one hex digit above every byte column and again above the ASCII pane, so a
    character reads back to its byte. */
-#hexHead { position: sticky; top: 0; z-index: 2; background: var(--vscode-editor-background); border-bottom: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+#hexHead { position: sticky; top: 0; z-index: 2; background: var(--gg-background); border-bottom: 1px solid var(--vscode-editorIndentGuide-background, var(--gg-border)); user-select: none; }
 #hexCaps { display: flex; font-size: 12px; color: var(--vscode-descriptionForeground, rgba(128,128,128,0.9)); }
 .hcap { flex: 1 1 50%; min-width: 0; display: flex; justify-content: space-between; gap: 2ch; padding: 4px 12px 2px; white-space: nowrap; overflow: hidden; }
 /* chrome69: margin fallback for flex gap (see the #header rule) */
 @supports not (appearance: none) {
 	.hcap > * + * { margin-left: 2ch; }
 }
-.hcap:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+.hcap:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--gg-border)); }
 .hcap .hxSize { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
 #hexRuler { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); }
 #hexSpacer { position: relative; }
@@ -99,13 +107,13 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 /* Chromium 69 fallback (color-mix() needs Chrome 111): a neutral translucent wash */
 .hrow.hxOdd { background: rgba(128,128,128,0.06); }
 /* stylelint-disable-next-line no-duplicate-selectors -- fallback pair: the rgba rule above is the Chromium 69 twin */
-.hrow.hxOdd { background: color-mix(in srgb, var(--vscode-editor-foreground, #ccc) 6%, transparent); }
+.hrow.hxOdd { background: color-mix(in srgb, var(--gg-foreground) 6%, transparent); }
 /* Each side is a grid over the template the script builds (offset | bytes | gutter |
    ASCII), sized in ch so the ruler's digits sit exactly over their byte columns. A rule
    down the middle keeps the sides apart the way the offset and gutter rules do. */
 .hside { display: grid; grid-template-columns: var(--hcols); flex: 1 1 50%; min-width: 0; padding: 0 12px; user-select: none; }
-.hside:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
-.hoff { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); padding-right: 1ch; border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); user-select: none; }
+.hside:first-child { border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--gg-border)); }
+.hoff { color: var(--vscode-editorLineNumber-foreground, rgba(128,128,128,0.7)); padding-right: 1ch; border-right: 1px solid var(--vscode-editorIndentGuide-background, var(--gg-border)); user-select: none; }
 .hb, .ha { text-align: center; }
 /* .hbg is the dedicated 1ch track hexColsTemplate opens between byte groups - a blank
    spacer, styled by nothing here. It keeps the group gap a single gap between two
@@ -113,7 +121,7 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
    that byte in the middle of its own widened column, splitting the gap into two
    smaller, unevenly-sized ones straddling the byte instead). */
 /* The gutter's rule sits in its middle, 1.5ch clear of the last byte and the first char. */
-.hg { border-left: 1px solid var(--vscode-editorIndentGuide-background, var(--vscode-panel-border, rgba(128,128,128,0.35))); margin-left: 1.5ch; }
+.hg { border-left: 1px solid var(--vscode-editorIndentGuide-background, var(--gg-border)); margin-left: 1.5ch; }
 /* A differing byte reads as a tinted cell on both sides — the diff editor's removed red
    on the old side and its added green on the new — over the hex and ASCII cell alike. */
 /* Chromium 69 fallback (color-mix() needs Chrome 111): the theme colours at a fixed translucency */
@@ -136,12 +144,12 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 .hxCopyStatus { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
 /* The right-click menu: a minimal VS Code-styled popup, since this page has none of the
    main Git Graph view's bundled menu component. */
-#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border, rgba(128,128,128,0.35))); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
+#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--gg-border)); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
 .hexMenuItem { padding: 4px 14px; cursor: pointer; white-space: nowrap; }
 .hexMenuItem:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
 .hexMenuItem.disabled { opacity: 0.45; cursor: default; }
 .hexMenuItem.disabled:hover { background: none; }
-.hexMenuSep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-panel-border, rgba(128,128,128,0.35))); }
+.hexMenuSep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--gg-border)); }
 
 /* Image comparison view: old picture | pixel difference | new picture */
 #diffArea.imgMode { overflow: hidden; display: flex; }
@@ -171,8 +179,8 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 @supports not (appearance: none) {
 	#imgRow > * + * { margin-left: 14px; }
 }
-.imgPane { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); border-radius: 4px; overflow: hidden; background: var(--vscode-editor-background); flex-shrink: 0; }
-.imgCaption { font-size: 11px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); opacity: 0.85; white-space: nowrap; }
+.imgPane { border: 1px solid var(--gg-border); border-radius: 4px; overflow: hidden; background: var(--gg-background); flex-shrink: 0; }
+.imgCaption { font-size: 11px; padding: 3px 8px; border-bottom: 1px solid var(--gg-border); opacity: 0.85; white-space: nowrap; }
 .imgHolder { padding: 8px; }
 .imgHolder img, .imgHolder canvas { display: block; }
 #imgRow.zoomed img, #imgRow.zoomed canvas { image-rendering: pixelated; }

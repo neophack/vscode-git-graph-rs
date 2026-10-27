@@ -14,7 +14,7 @@
 
 .gitRef.pr .gg-status.open{ color:var(--vscode-charts-green, #2da44e); }
 .gitRef.pr .gg-status.merged{ color:var(--vscode-charts-purple, #a371f7); }
-.gitRef.pr .gg-status.abandoned{ color:var(--gg-rejected, #bb4b4b); }
+.gitRef.pr .gg-status.abandoned{ color:var(--gg-rejected); }
 .gitRef.pr .gg-status.wip{ color:var(--vscode-descriptionForeground, #888); }
 
 .pr-dialog .gg-pill.open{ color:var(--vscode-charts-green, #2da44e); border-color:var(--vscode-charts-green, #2da44e); }
@@ -33,7 +33,7 @@
 /* The remaining states of the dialog's status pill, coloured like the badge's status chip
    (without these, draft and closed requests would show an uncoloured neutral pill) */
 .pr-dialog .gg-pill.wip{ color:var(--vscode-descriptionForeground, #888); border-color:var(--vscode-descriptionForeground, #888); }
-.pr-dialog .gg-pill.abandoned{ color:var(--gg-rejected, #bb4b4b); border-color:var(--gg-rejected, #bb4b4b); }
+.pr-dialog .gg-pill.abandoned{ color:var(--gg-rejected); border-color:var(--gg-rejected); }
 .pr-dialog .pr-body{
 	white-space:pre-wrap;
 	font-size:12px;

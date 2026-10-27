@@ -19,11 +19,11 @@
    Chromium 69 fallback (:focus-visible needs Chrome 86, and an unknown pseudo-class drops the
    whole rule): a :focus-only duplicate keeps the outline on 69. */
 #commitTable tr.commit:focus{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:-1px;
 }
 #commitTable tr.commit:focus-visible{
-	outline:1px solid var(--gg-focus-border, var(--vscode-focusBorder));
+	outline:1px solid var(--gg-focus-border);
 	outline-offset:-1px;
 }
 #commitTable table{
@@ -133,7 +133,7 @@
 	position: sticky;
 	top: inherit;
 	z-index: 11;
-	background-color: var(--gg-background, var(--vscode-editor-background));
+	background-color: var(--gg-background);
 }
 .resizeCol{
 	position:absolute;
@@ -170,70 +170,8 @@ table { border-collapse: collapse; }
  * height. The column header row is collapsed to nothing rather than hidden: its graph cell still
  * sets the graph column's width. */
 
-body.mobileMode #tableColHeaders > th{
-	height:0;
-	padding-top:0 !important;
-	padding-bottom:0 !important;
-	border:none;
-	box-shadow:none;
-	font-size:0;
-	line-height:0;
-	visibility:hidden;
-}
-body.mobileMode .commit > td, body.mobileMode #tableColHeaders > th{
-	border-right:none;
-}
-body.mobileMode #commitTable tr.commit td{
-	height:var(--git-graph-rowHeight);
-	box-sizing:border-box;
-	padding:0;
-	line-height:normal;
-	vertical-align:middle;
-}
-body.mobileMode #commitTable tr.commit td:nth-child(2){
-	/* Chromium 69 fallback (min()/max() need Chrome 79) */
-	padding:0 14px 0 4px;
-	padding:0 max(14px, env(safe-area-inset-right)) 0 4px;
-	box-shadow:inset 0 -0.5px 0 var(--m-sep);
-}
-body.mobileMode #commitTable tr.commit:active td{
-	background-color:var(--m-pressed);
-}
-body.mobileMode #commitTable tr.commit span.description{
-	align-items:baseline;
-	gap:8px;
-	height:20px;
-	line-height:20px;
-}
-/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
-   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap -
-   hidden items make no gap slot on modern and carry no margins here either) */
-@supports not (appearance: none) {
-	body.mobileMode #commitTable tr.commit span.description > * + * { margin-left: 8px; }
-}
 body.mobileMode #commitTable tr.commit span.description .text{
-	flex:1 1 auto;
-	min-width:0;
 	font-size:15px;
-	font-weight:500;
-	letter-spacing:-0.01em;
-	color:var(--m-fg);
-}
-body.mobileMode #commitTable tr.commit.current span.description .text{
-	font-weight:700;
-}
-body.mobileMode #commitTable tr.commit.mute span.description .text, body.mobileMode #commitTable tr.commit.mute .mobileMeta{
-	opacity:0.55;
-}
-body.mobileMode #commitTable tr.commit span.description .commitbody{
-	display:none;
-}
-body.mobileMode #commitTable .commitHeadDot{
-	align-self:center;
-	margin:0 -2px 0 0;
-}
-body.mobileMode #commitTable .pinnedBadge{
-	font-size:12px;
 }
 .mobileMetaDate{
 	flex:none;
@@ -266,12 +204,6 @@ body.mobileMode #commitTable .pinnedBadge{
 	gap:4px;
 	overflow:hidden;
 }
-/* chrome69: margin fallback for flex gap (see the span.description rule); carries the #commitTable
-   id because the .gitRef margin reset (body.mobileMode #commitTable .gitRef) outranks a plain
-   class chain and would otherwise zero the fallback's margin-left */
-@supports not (appearance: none) {
-	body.mobileMode #commitTable .mobileRefs > .gitRef + .gitRef { margin-left: 4px; }
-}
 .mobileMetaAuthor{
 	flex:0 1 auto;
 	min-width:24px;
@@ -287,85 +219,6 @@ body.mobileMode #commitTable .pinnedBadge{
 	letter-spacing:0;
 	opacity:0.8;
 }
-/* A tap opens the commit details sheet, which offers the commit's changes */
-body.mobileMode #commitTable .openChangesBtn{
-	display:none !important;
-}
-
-/* Ref chips: flat, tinted with the commit's lane colour */
-body.mobileMode #commitTable .gitRef{
-	--m-ref:var(--git-graph-color, var(--m-accent));
-	display:inline-flex;
-	align-items:center;
-	flex:0 1 auto;
-	/* a floor, so a crowded meta line ellipsizes the name instead of squeezing the chip to its icon */
-	min-width:48px;
-	max-width:100%;
-	height:18px;
-	margin:0;
-	border:none;
-	border-radius:5px;
-	background-color:var(--m-fill);
-	color:var(--m-fg);
-	font-size:11px;
-	font-weight:600;
-	line-height:18px;
-	vertical-align:middle;
-}
-@supports (color:color-mix(in srgb, red, blue)){
-	body.mobileMode #commitTable .gitRef{
-		background-color:color-mix(in srgb, var(--m-ref) 20%, transparent);
-		color:color-mix(in srgb, var(--m-ref) 72%, var(--m-fg));
-	}
-	body.mobileMode #commitTable .gitRef.remote{
-		background-color:transparent;
-		box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--m-ref) 45%, transparent);
-	}
-}
-body.mobileMode #commitTable .gitRef.active{
-	background-color:var(--m-ref);
-	color:var(--m-bg);
-}
-body.mobileMode #commitTable .gitRef.tag, body.mobileMode #commitTable .gitRef.stash{
-	background-color:var(--m-fill);
-	color:var(--m-fg-2);
-}
-body.mobileMode #commitTable .gitRef > svg{
-	flex:none;
-	width:10px;
-	height:10px;
-	padding:0 0 0 5px;
-	background:none;
-	fill:currentColor;
-	vertical-align:middle;
-}
-body.mobileMode #commitTable .gitRefName{
-	min-width:0;
-	height:18px;
-	line-height:18px;
-	padding:0 6px 0 3px;
-	overflow:hidden;
-	text-overflow:ellipsis;
-	white-space:nowrap;
-}
-body.mobileMode #commitTable .gitRef.active .gitRefName{
-	font-weight:700;
-}
-body.mobileMode #commitTable .gitRefHeadRemote{
-	flex:none;
-	height:18px;
-	line-height:18px;
-	padding:0 6px 0 5px;
-	border-left:1px solid currentColor;
-	border-left-color:rgba(128,128,128,0.4);
-	font-style:normal;
-	font-weight:500;
-	opacity:0.8;
-}
-body.mobileMode #commitTable .gitRef .gitRefName:hover, body.mobileMode #commitTable .gitRef .gitRefHeadRemote:hover{
-	background-color:transparent;
-}
-
 /* The graph: slightly heavier lines and dots for a small, dense screen */
 body.mobileMode #commitGraph path.line{
 	stroke-width:2.25;
@@ -504,4 +357,349 @@ body.mobileMode #fastScroller.dragging #fastScrollerBubble{
 	line-height:16px;
 	color:var(--m-fg-2);
 	font-variant-numeric:tabular-nums;
+}
+
+/* ===== Tablet layout: the commit list (merged from styles/tablet/commitList.css and
+ * styles/tablet/compactRows.css, OPTIMIZATION-PLAN §6 F6) =====
+ * 40px single-line rows: [graph] subject ..... [refs] date author hash. A tablet keeps every
+ * column on one line at touch height (layoutMode.ts TABLET_ROW_HEIGHT, uniform as windowed
+ * rendering requires). Flat: no column rules, one hairline per row drawn as an inset shadow (it
+ * takes no height) and kept off the graph cell so the branch lines run unbroken; secondary
+ * columns in the secondary colour; the open commit carries an accent wash rather than a grey bar.
+ * Pressed and selected states replace hover: a finger has no hover, and a pointer on a tablet
+ * (trackpad, stylus) still reads the same flat wash. */
+
+/* Column headers: a quiet label row, not a grid */
+body.tabletMode #commitTable th{
+	height:22px;
+	box-sizing:border-box;
+	padding:0 12px;
+	border-bottom:none;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+	background-color:var(--t-header);
+	color:var(--m-fg-2);
+	font-size:11px;
+	font-weight:600;
+	letter-spacing:0.04em;
+	line-height:22px;
+	/* the base header centres its label, while the cells below it are left-aligned */
+	text-align:left;
+	text-transform:uppercase;
+}
+body.tabletMode .commit > td, body.tabletMode #tableColHeaders > th{
+	border-right:none;
+}
+
+/* Rows */
+body.tabletMode #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	line-height:var(--git-graph-rowHeight);
+	vertical-align:middle;
+	padding:0 12px;
+	font-size:13px;
+}
+body.tabletMode #commitTable tr.commit td:first-child{
+	padding:0 4px;
+}
+body.tabletMode #commitTable tr.commit td + td{
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.tabletMode #commitTable tr.commit td.dateCol, body.tabletMode #commitTable tr.commit td.authorCol, body.tabletMode #commitTable tr.commit td.text:not(.dateCol):not(.authorCol){
+	color:var(--m-fg-2);
+	font-variant-numeric:tabular-nums;
+}
+body.tabletMode #commitTable tr.commit td.text:not(.dateCol):not(.authorCol){
+	font-family:var(--m-mono);
+	font-size:12px;
+}
+body.tabletMode #commitTable tr.commit span.description{
+	align-items:center;
+	height:var(--git-graph-rowHeight);
+}
+/* The subject takes the room the refs leave and never collapses below a readable stub: the base
+   rule only ellipsizes it, while its ref labels (flex-shrink:0) could squeeze it to nothing in a
+   narrow description column (the side pane open). The refs give way first: they shrink and
+   ellipsize instead. */
+body.tabletMode #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:96px;
+	font-size:14px;
+	font-weight:500;
+	letter-spacing:-0.005em;
+	color:var(--m-fg);
+}
+body.tabletMode #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.tabletMode #commitTable .commitHeadDot{
+	margin-top:0;
+	align-self:center;
+}
+body.tabletMode #commitTable tr.commit:hover{
+	background-color:transparent;
+}
+body.tabletMode #commitTable tr.commit:active, body.tabletMode #commitTable tr.commit.contextMenuActive, body.tabletMode #commitTable tr.commit.dialogActive, body.tabletMode #commitTable tr.commit.graphVertexActive{
+	background-color:var(--m-pressed);
+}
+body.tabletMode #commitTable tr.commit.commitDetailsOpen, body.tabletMode #commitTable tr.commit.commitDetailsOpen:hover{
+	background-color:var(--t-selected);
+}
+body.tabletMode #commitTable tr.commit.commitDetailsOpen:active, body.tabletMode #commitTable tr.commit.commitDetailsOpen.contextMenuActive, body.tabletMode #commitTable tr.commit.commitDetailsOpen.dialogActive{
+	background-color:var(--t-selected-pressed);
+}
+
+/* Ref labels: flat tinted pills - the ref's graph colour marks it, no outline */
+body.tabletMode .gitRef{
+	height:22px;
+	line-height:22px;
+	margin-top:0;
+	margin-right:6px;
+	vertical-align:middle;
+	border:none;
+	border-radius:6px;
+	background-color:var(--m-fill);
+}
+body.tabletMode .gitRef > svg{
+	padding:4px 3px 4px 5px;
+	background-color:transparent;
+	fill:var(--git-graph-color);
+}
+body.tabletMode .gitRefName, body.tabletMode .gitRefHeadRemote{
+	height:22px;
+	line-height:22px;
+	padding:0 7px 0 2px;
+}
+body.tabletMode .gitRefHeadRemote{
+	padding-left:7px;
+	border-left:0.5px solid var(--m-sep);
+}
+body.tabletMode .gitRef.active{
+	box-shadow:inset 0 0 0 1px var(--git-graph-color);
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef{
+	display:inline-flex;
+	align-items:center;
+	align-self:center;
+	flex-shrink:1;
+	/* a floor, so a long subject beside several refs ellipsizes the names instead of cutting a
+	   chip down to its icon */
+	min-width:76px;
+	max-width:45%;
+	overflow:hidden;
+	white-space:nowrap;
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefName{
+	min-width:0;
+	max-width:100%;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.tabletMode #commitTable tr.commit span.description .gitRef > svg{
+	flex:none;
+}
+/* The avatar sits on the author text's line, not at the top of the 40px cell */
+body.tabletMode #commitTable .commit .avatar > img{
+	margin-top:0;
+	vertical-align:middle;
+}
+
+/* The footer's "Load More Commits": a flat capsule (merged from styles/tablet/base.css) */
+body.tabletMode #loadMoreCommitsBtn{
+	width:auto;
+	display:table;
+	height:36px;
+	margin:14px auto 18px;
+	padding:0 20px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	line-height:36px;
+	font-size:13px;
+	font-weight:600;
+}
+body.tabletMode #loadMoreCommitsBtn:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+
+/* ---------- The two-line commit rows: the phone, and the tablet with the side pane open ----------
+ * The phone folds every row into two lines; the tablet does so only while the side pane is open
+ * (layoutMode.ts isTwoLineRows, rendered with the .mobileMeta line): subject + compact date, then
+ * refs, author and hash in small type. The rules below are shared by both modes - the grouped
+ * selectors list the phone (body.mobileMode) and the tablet side pane (body.tabletMode.
+ * sidePaneOpen, out-ranking the single-line tablet rules by its extra class); the differences
+ * (the subject's size) follow as their own rules. The unscoped .mobileMeta* rules serve both. */
+
+body.mobileMode #tableColHeaders > th, body.tabletMode.sidePaneOpen #tableColHeaders > th{
+	height:0;
+	padding-top:0 !important;
+	padding-bottom:0 !important;
+	border:none;
+	box-shadow:none;
+	font-size:0;
+	line-height:0;
+	visibility:hidden;
+}
+body.mobileMode .commit > td, body.mobileMode #tableColHeaders > th,
+body.tabletMode .commit > td, body.tabletMode #tableColHeaders > th,
+body.tabletMode.sidePaneOpen .commit > td, body.tabletMode.sidePaneOpen #tableColHeaders > th{
+	border-right:none;
+}
+body.mobileMode #commitTable tr.commit td, body.tabletMode.sidePaneOpen #commitTable tr.commit td{
+	height:var(--git-graph-rowHeight);
+	box-sizing:border-box;
+	padding:0;
+	line-height:normal;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable tr.commit td:nth-child(2), body.tabletMode.sidePaneOpen #commitTable tr.commit td:nth-child(2){
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding:0 14px 0 4px;
+	padding:0 max(14px, env(safe-area-inset-right)) 0 4px;
+	box-shadow:inset 0 -0.5px 0 var(--m-sep);
+}
+body.mobileMode #commitTable tr.commit:active td, body.tabletMode.sidePaneOpen #commitTable tr.commit:active td{
+	background-color:var(--m-pressed);
+}
+body.mobileMode #commitTable tr.commit span.description, body.tabletMode.sidePaneOpen #commitTable tr.commit span.description{
+	align-items:baseline;
+	gap:8px;
+	height:20px;
+	line-height:20px;
+}
+/* chrome69: margin fallback for flex gap (flex `gap` needs Chrome 84; the appearance probe only
+   parses from Chrome 84, so these margins apply only below it, composing exactly like the gap -
+   hidden items make no gap slot on modern and carry no margins here either) */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable tr.commit span.description > * + *, body.tabletMode.sidePaneOpen #commitTable tr.commit span.description > * + * { margin-left: 8px; }
+}
+/* (no floor on the subject: the second line carries the rest) - the phone's subject is a step
+   larger than the tablet's */
+body.mobileMode #commitTable tr.commit span.description .text, body.tabletMode.sidePaneOpen #commitTable tr.commit span.description .text{
+	flex:1 1 auto;
+	min-width:0;
+	font-weight:500;
+	letter-spacing:-0.01em;
+	color:var(--m-fg);
+}
+body.tabletMode.sidePaneOpen #commitTable tr.commit span.description .text{
+	/* the phone's subject (15px) is a step larger; its rule stays in the phone section above,
+	   ahead of the @media (min-width:428px) refinement of the same selector */
+	font-size:14px;
+}
+body.mobileMode #commitTable tr.commit.current span.description .text,
+body.tabletMode #commitTable tr.commit.current span.description .text,
+body.tabletMode.sidePaneOpen #commitTable tr.commit.current span.description .text{
+	font-weight:700;
+}
+body.mobileMode #commitTable tr.commit.mute span.description .text, body.mobileMode #commitTable tr.commit.mute .mobileMeta,
+body.tabletMode.sidePaneOpen #commitTable tr.commit.mute span.description .text, body.tabletMode.sidePaneOpen #commitTable tr.commit.mute .mobileMeta{
+	opacity:0.55;
+}
+body.mobileMode #commitTable tr.commit span.description .commitbody, body.tabletMode.sidePaneOpen #commitTable tr.commit span.description .commitbody{
+	display:none;
+}
+body.mobileMode #commitTable .commitHeadDot, body.tabletMode.sidePaneOpen #commitTable .commitHeadDot{
+	align-self:center;
+	margin:0 -2px 0 0;
+}
+body.mobileMode #commitTable .pinnedBadge, body.tabletMode.sidePaneOpen #commitTable .pinnedBadge{
+	font-size:12px;
+}
+/* chrome69: margin fallback for flex gap (see the span.description rule); carries the #commitTable
+   id because the .gitRef margin reset (the grouped .gitRef rule below) outranks a plain class
+   chain and would otherwise zero the fallback's margin-left */
+@supports not (appearance: none) {
+	body.mobileMode #commitTable .mobileRefs > .gitRef + .gitRef, body.tabletMode.sidePaneOpen #commitTable .mobileRefs > .gitRef + .gitRef { margin-left: 4px; }
+}
+/* A tap opens the commit details sheet, which offers the commit's changes */
+body.mobileMode #commitTable .openChangesBtn, body.tabletMode.sidePaneOpen #commitTable .openChangesBtn{
+	display:none !important;
+}
+
+/* Ref chips: flat, tinted with the commit's lane colour */
+body.mobileMode #commitTable .gitRef, body.tabletMode.sidePaneOpen #commitTable .gitRef{
+	--m-ref:var(--git-graph-color, var(--m-accent));
+	display:inline-flex;
+	align-items:center;
+	flex:0 1 auto;
+	/* a floor, so a crowded meta line ellipsizes the name instead of squeezing the chip to its icon */
+	min-width:48px;
+	max-width:100%;
+	height:18px;
+	margin:0;
+	border:none;
+	border-radius:5px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:11px;
+	font-weight:600;
+	line-height:18px;
+	vertical-align:middle;
+}
+@supports (color:color-mix(in srgb, red, blue)){
+	body.mobileMode #commitTable .gitRef, body.tabletMode.sidePaneOpen #commitTable .gitRef{
+		background-color:color-mix(in srgb, var(--m-ref) 20%, transparent);
+		color:color-mix(in srgb, var(--m-ref) 72%, var(--m-fg));
+	}
+	body.mobileMode #commitTable .gitRef.remote, body.tabletMode.sidePaneOpen #commitTable .gitRef.remote{
+		background-color:transparent;
+		box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--m-ref) 45%, transparent);
+	}
+}
+body.mobileMode #commitTable .gitRef.active, body.tabletMode.sidePaneOpen #commitTable .gitRef.active{
+	background-color:var(--m-ref);
+	color:var(--m-bg);
+}
+body.mobileMode #commitTable .gitRef.tag, body.mobileMode #commitTable .gitRef.stash,
+body.tabletMode.sidePaneOpen #commitTable .gitRef.tag, body.tabletMode.sidePaneOpen #commitTable .gitRef.stash{
+	background-color:var(--m-fill);
+	color:var(--m-fg-2);
+}
+body.mobileMode #commitTable .gitRef > svg, body.tabletMode.sidePaneOpen #commitTable .gitRef > svg{
+	flex:none;
+	width:10px;
+	height:10px;
+	padding:0 0 0 5px;
+	background:none;
+	fill:currentColor;
+	vertical-align:middle;
+}
+body.mobileMode #commitTable .gitRefName, body.tabletMode.sidePaneOpen #commitTable .gitRefName{
+	min-width:0;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 3px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+body.mobileMode #commitTable .gitRef.active .gitRefName, body.tabletMode.sidePaneOpen #commitTable .gitRef.active .gitRefName{
+	font-weight:700;
+}
+body.mobileMode #commitTable .gitRefHeadRemote, body.tabletMode.sidePaneOpen #commitTable .gitRefHeadRemote{
+	flex:none;
+	height:18px;
+	line-height:18px;
+	padding:0 6px 0 5px;
+	border-left:1px solid currentColor;
+	border-left-color:rgba(128,128,128,0.4);
+	font-style:normal;
+	font-weight:500;
+	opacity:0.8;
+}
+body.mobileMode #commitTable .gitRef .gitRefName:hover, body.mobileMode #commitTable .gitRef .gitRefHeadRemote:hover,
+body.tabletMode.sidePaneOpen #commitTable .gitRef .gitRefName:hover, body.tabletMode.sidePaneOpen #commitTable .gitRef .gitRefHeadRemote:hover{
+	background-color:transparent;
+}
+/* Tablet-only tidy-ups of the two-line rows: the graph cell keeps no inset padding (the mode's
+   single-line rules set one) and the row hairlines go - the pane's edge draws the line. */
+body.tabletMode.sidePaneOpen #commitTable tr.commit td:first-child{
+	padding:0;
+}
+body.tabletMode.sidePaneOpen #commitTable tr.commit td + td{
+	box-shadow:none;
 }

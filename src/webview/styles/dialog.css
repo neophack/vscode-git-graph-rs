@@ -11,15 +11,28 @@
 	font-size:13px;
 	line-height:17px;
 	z-index:41;
-	box-shadow:var(--gg-shadow-3, 0 0 30px 5px var(--vscode-widget-shadow));
-	animation:dialogEnter var(--gg-dur-modal, 220ms) var(--gg-ease, cubic-bezier(0.215, 0.61, 0.355, 1));
+	box-shadow:var(--gg-shadow-3);
+	animation:dialogEnter var(--gg-dur-modal) var(--gg-ease);
 }
+/* Dialog-only tokens (moved from tokens.css: no first-paint rule consumes them - see there).
+ * The dialogs' keyframed enter rides the same motion tokens; the keyframes below serve the
+ * dialog and the commit details view (commitDetails.css carries its own copy). */
+:root{
+	--gg-shadow-1:0 1px 4px 1px var(--vscode-widget-shadow);
+	--gg-shadow-3:0 0 30px 5px var(--vscode-widget-shadow);
+	--gg-dur-modal:220ms;
+}
+@keyframes ggFadeIn{
+	from{ opacity:0; transform:translateY(-4px); }
+	to{ opacity:1; transform:none; }
+}
+
 @keyframes dialogEnter{
 	from{ opacity:0; transform:translateX(-50%) translateY(8px) scale(0.96); }
 	to{ opacity:1; transform:translateX(-50%); }
 }
 .dialog.closing{
-	animation:dialogExit calc(var(--gg-dur-modal, 220ms) * 0.8) var(--gg-ease-in-out, ease) forwards;
+	animation:dialogExit calc(var(--gg-dur-modal) * 0.8) var(--gg-ease-in-out) forwards;
 	pointer-events:none;
 }
 @keyframes dialogExit{
@@ -338,8 +351,8 @@ body.vscode-high-contrast .dialog{
 	z-index:42;
 	text-align:left;
 	overflow-y:auto;
-	box-shadow:var(--gg-shadow-1, 0 1px 4px 1px var(--vscode-widget-shadow));
-	animation:ggFadeIn var(--gg-dur-fast, 120ms) var(--gg-ease, ease-out);
+	box-shadow:var(--gg-shadow-1);
+	animation:ggFadeIn var(--gg-dur-fast) var(--gg-ease);
 }
 
 .customSelectOption{
@@ -467,4 +480,88 @@ body.mobileMode .customSelectCurrent{
 body.mobileMode .customSelectOption{
 	min-height:var(--m-target);
 	line-height:var(--m-target);
+}
+
+/* ===== Tablet layout: dialogs (merged from styles/tablet/overlays.css, OPTIMIZATION-PLAN §6 F6) =====
+ * Dialogs are form sheets: a centred card at tablet density, flat filled fields, capsule
+ * buttons. One soft shadow and a hairline lift the card off the content - no borders, no
+ * gradients. */
+
+/* Dialogs */
+body.tabletMode .dialog{
+	max-width:calc(100vw - 48px);
+	max-height:calc(100vh - 48px);
+	overflow-y:auto;
+	box-sizing:border-box;
+	border:none;
+	border-radius:14px;
+	background-color:var(--m-sheet);
+	box-shadow:0 16px 48px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
+	color:var(--m-fg);
+	font-size:14px;
+	line-height:20px;
+}
+body.tabletMode.vscode-high-contrast .dialog{
+	box-shadow:none;
+	border:1px solid var(--m-sep);
+}
+body.tabletMode .dialogContent{
+	padding:20px 20px 16px;
+	font-size:14px;
+	line-height:20px;
+}
+body.tabletMode .dialogContent > table.dialogForm td{
+	padding-top:10px;
+}
+body.tabletMode .dialogContent > table.dialogForm input[type=text], body.tabletMode .dialogContent > table.dialogForm textarea{
+	min-height:36px;
+	padding:8px 12px;
+	border:none;
+	border-radius:10px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:16px;
+	line-height:20px;
+}
+body.tabletMode .dialogContent > table.dialogForm input[type=text]:focus, body.tabletMode .dialogContent > table.dialogForm textarea:focus{
+	box-shadow:0 0 0 1px var(--vscode-focusBorder);
+}
+body.tabletMode .dialog .roundedBtn{
+	min-width:88px;
+	height:36px;
+	box-sizing:border-box;
+	margin:16px 4px 0;
+	padding:0 18px;
+	border:none;
+	border-radius:18px;
+	background-color:var(--m-fill);
+	color:var(--m-fg);
+	font-size:14px;
+	font-weight:600;
+	line-height:36px;
+}
+body.tabletMode .dialog .roundedBtn:active{
+	background-color:var(--m-pressed);
+	transform:none;
+}
+body.tabletMode .dialog #dialogAction{
+	border:none;
+	box-shadow:none;
+	background-color:var(--m-accent-fill);
+	color:var(--m-accent-on);
+}
+body.tabletMode .dialog #dialogAction:hover{
+	background-color:var(--m-accent-fill);
+}
+body.tabletMode .dialog.noInput #dialogAction, body.tabletMode .dialog.inputInvalid #dialogAction{
+	opacity:0.45;
+}
+body.tabletMode #dialogCloseIcon{
+	top:8px;
+	right:8px;
+	width:30px;
+	height:30px;
+	border-radius:50%;
+	background-color:var(--m-fill);
+	opacity:1;
 }
