@@ -10,6 +10,7 @@
 
 import { GraphContext } from '../context';
 import { ViewportAnchor } from '../state/types';
+import { measureBoundingClientRect, measureClientSize, measureOffsetHeight, measureOffsetTop } from './measure';
 
 const VIRTUAL_ROW_BUFFER = 10;
 /** The velocity lead's cap, in rows (~2 viewports at the default row height). */
@@ -72,7 +73,7 @@ export class Viewport {
 		if (!(ctx.layout.getRowHeight() > 0)) return false; // no uniform row height available
 		if (ctx.store.expandedCommit !== null) return false;
 		if (ctx.widgets.find.isSearching()) return false;
-		if (this.viewElem.clientHeight <= 0) return false; // unmeasured (e.g. hidden view): keep a full render
+		if (measureClientSize(this.viewElem).height <= 0) return false; // unmeasured (e.g. hidden view): keep a full render
 		return true;
 	}
 
@@ -86,7 +87,7 @@ export class Viewport {
 	public computeVisibleRange() {
 		const rowHeight = this.ctx().layout.getRowHeight(), numCommits = this.store.commits.length;
 		let start = Math.max(0, Math.floor((this.viewElem.scrollTop - this.getRowTop(0)) / rowHeight) - VIRTUAL_ROW_BUFFER);
-		const count = Math.ceil(this.viewElem.clientHeight / rowHeight) + 1 + 2 * VIRTUAL_ROW_BUFFER;
+		const count = Math.ceil(measureClientSize(this.viewElem).height / rowHeight) + 1 + 2 * VIRTUAL_ROW_BUFFER;
 		let end = Math.min(numCommits, start + count);
 		const lead = this.getScrollLeadRows();
 		if (lead > 0) {
@@ -137,7 +138,7 @@ export class Viewport {
 		if (this.renderedRange === null || !this.canVirtualize()) return false;
 		const base = this.getRowTop(0), rowHeight = this.ctx().layout.getRowHeight();
 		const firstVisible = Math.floor((this.viewElem.scrollTop - base) / rowHeight);
-		const lastVisible = Math.ceil((this.viewElem.scrollTop + this.viewElem.clientHeight - base) / rowHeight);
+		const lastVisible = Math.ceil((this.viewElem.scrollTop + measureClientSize(this.viewElem).height - base) / rowHeight);
 		return firstVisible < this.renderedRange.start || lastVisible > this.renderedRange.end;
 	}
 
@@ -146,8 +147,8 @@ export class Viewport {
 	 */
 	public getHeaderHeight() {
 		const dom = this.ctx().dom;
-		return dom.controls.clientHeight
-			+ (dom.pinnedControls !== null && dom.pinnedControls.style.display !== 'none' ? dom.pinnedControls.clientHeight : 0);
+		return measureClientSize(dom.controls).height
+			+ (dom.pinnedControls !== null && dom.pinnedControls.style.display !== 'none' ? measureClientSize(dom.pinnedControls).height : 0);
 	}
 
 	/**
@@ -160,7 +161,7 @@ export class Viewport {
 	public getRowTop(index: number) {
 		const colHeadersElem = this.ctx().dom.table.querySelector<HTMLElement>('#tableColHeaders'), rowHeight = this.ctx().layout.getRowHeight();
 		return this.getHeaderHeight()
-			+ (colHeadersElem !== null ? colHeadersElem.offsetHeight : rowHeight)
+			+ (colHeadersElem !== null ? measureOffsetHeight(colHeadersElem) : rowHeight)
 			+ index * rowHeight;
 	}
 
@@ -186,7 +187,7 @@ export class Viewport {
 	 */
 	public captureViewportAnchor(): ViewportAnchor | null {
 		const commits = this.store.commits, layout = this.ctx().layout;
-		if (this.viewElem.clientHeight <= 0 || commits.length === 0) return null;
+		if (measureClientSize(this.viewElem).height <= 0 || commits.length === 0) return null;
 		const atTop = this.viewElem.scrollTop <= 0;
 
 		if (this.canVirtualize()) {
@@ -200,10 +201,10 @@ export class Viewport {
 
 		// Full render: rows may have any height (an open Commit Details View), so the topmost
 		// visible row has to be found by measuring
-		const viewTop = this.viewElem.getBoundingClientRect().top;
+		const viewTop = measureBoundingClientRect(this.viewElem).top;
 		const rows = this.ctx().dom.table.querySelectorAll<HTMLElement>('tr.commit');
 		for (let i = 0; i < rows.length; i++) {
-			const rect = rows[i].getBoundingClientRect();
+			const rect = measureBoundingClientRect(rows[i]);
 			if (rect.bottom > viewTop + 1) { // the first row intersecting the viewport
 				const index = parseInt(rows[i].dataset.id!);
 				if (isNaN(index) || index < 0 || index >= commits.length) return null;
@@ -267,7 +268,7 @@ export class Viewport {
 			// once the DOM already shows the new list.
 			const elem = this.ctx().table.findCommitElem(index);
 			if (elem === null) return;
-			target = this.viewElem.scrollTop + (elem.getBoundingClientRect().top - this.viewElem.getBoundingClientRect().top) + anchor.offset;
+			target = this.viewElem.scrollTop + (measureBoundingClientRect(elem).top - measureBoundingClientRect(this.viewElem).top) + anchor.offset;
 		}
 
 		this.viewElem.scrollTop = Math.max(0, Math.round(target));
@@ -374,8 +375,8 @@ export class Viewport {
 			// Windowed rendering: the row's position derives from its index (uniform row heights),
 			// then the window is re-rendered around the new scroll position so the row exists
 			const elemTop = this.getRowTop(id);
-			if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
-				this.viewElem.scroll(0, Math.max(0, elemTop + 12 - this.viewElem.clientHeight / 2));
+			if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - measureClientSize(this.viewElem).height > this.viewElem.scrollTop) {
+				this.viewElem.scroll(0, Math.max(0, elemTop + 12 - measureClientSize(this.viewElem).height / 2));
 			}
 			this.updateVirtualWindow();
 			const virtualElem = table.findCommitElem(id);
@@ -391,9 +392,9 @@ export class Viewport {
 		const elem = table.findCommitElem(id);
 		if (elem === null) return;
 
-		const elemTop = this.getHeaderHeight() + elem.offsetTop;
-		if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
-			this.viewElem.scroll(0, this.getHeaderHeight() + elem.offsetTop + 12 - this.viewElem.clientHeight / 2);
+		const elemTop = this.getHeaderHeight() + measureOffsetTop(elem);
+		if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - measureClientSize(this.viewElem).height > this.viewElem.scrollTop) {
+			this.viewElem.scroll(0, this.getHeaderHeight() + measureOffsetTop(elem) + 12 - measureClientSize(this.viewElem).height / 2);
 		}
 
 		if (flash && !elem.classList.contains('flash')) {

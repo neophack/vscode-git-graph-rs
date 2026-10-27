@@ -5,6 +5,7 @@ import { SVG_ICONS } from '../../common/icons';
 import { formatCommaSeparatedList } from '../../common/util';
 import { SelectOption } from '../state/store';
 import { Component } from '../component';
+import { measureBoundingClientRect, measureClientSize, measureOffsetTop } from '../render/measure';
 
 /** The data of a select input of a dialog. */
 export type CustomSelectData = {
@@ -226,11 +227,11 @@ export class CustomSelect extends Component {
 					this.optionsElem.remove();
 				}
 				this.optionsElem = document.createElement('div');
-				const currentElemRect = this.currentElem.getBoundingClientRect(), dialogElemRect = this.dialogElem.getBoundingClientRect();
+				const currentElemRect = measureBoundingClientRect(this.currentElem), dialogElemRect = measureBoundingClientRect(this.dialogElem);
 				this.optionsElem.style.top = (currentElemRect.top - dialogElemRect.top + currentElemRect.height - 2) + 'px';
 				this.optionsElem.style.left = (currentElemRect.left - dialogElemRect.left - 1) + 'px';
 				this.optionsElem.style.width = currentElemRect.width + 'px';
-				this.optionsElem.style.maxHeight = Math.max(document.body.clientHeight - currentElemRect.top - currentElemRect.height - 2, 50) + 'px';
+				this.optionsElem.style.maxHeight = Math.max(measureClientSize(document.body).height - currentElemRect.top - currentElemRect.height - 2, 50) + 'px';
 				this.optionsElem.className = 'customSelectOptions' + (this.data.multiple ? ' multiple' : '');
 				this.optionsElem.setAttribute('role', 'listbox');
 				if (this.data.multiple) this.optionsElem.setAttribute('aria-multiselectable', 'true');
@@ -300,8 +301,8 @@ export class CustomSelect extends Component {
 	private scrollOptionIntoView(index: number) {
 		const elem = this.getOptionElem(index);
 		if (this.optionsElem !== null && elem !== null) {
-			const elemOffsetTop = elem.offsetTop, elemHeight = elem.clientHeight;
-			const optionsScrollTop = this.optionsElem.scrollTop, optionsHeight = this.optionsElem.clientHeight;
+			const elemOffsetTop = measureOffsetTop(elem), elemHeight = measureClientSize(elem).height;
+			const optionsScrollTop = this.optionsElem.scrollTop, optionsHeight = measureClientSize(this.optionsElem).height;
 			if (elemOffsetTop < optionsScrollTop) {
 				this.optionsElem.scroll(0, elemOffsetTop);
 			} else if (elemOffsetTop + elemHeight > optionsScrollTop + optionsHeight) {

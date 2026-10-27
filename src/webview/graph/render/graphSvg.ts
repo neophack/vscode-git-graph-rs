@@ -13,6 +13,7 @@ import { GraphLayout, Vertex } from '../layout/graphLayout';
 import { getBranchLabels } from '../layout/refLabels';
 import { Store } from '../state/store';
 import { ExpandedCommit } from '../state/types';
+import { measureBoundingClientRect, measureClientSize } from './measure';
 
 const CLASS_GRAPH_VERTEX_ACTIVE = 'graphVertexActive';
 
@@ -300,8 +301,8 @@ export class GraphView {
 		if (id < this.commits.length && this.commits[id].hash !== UNCOMMITTED) { // Only show tooltip for commits (not the uncommitted changes)
 			this.tooltipTimeout = window.setTimeout(() => {
 				this.tooltipTimeout = null;
-				const vertexScreenY = vertexElem.getBoundingClientRect().top + 4; // Get center of the circle
-				if (vertexScreenY >= 5 && vertexScreenY <= this.viewElem.clientHeight - 5) {
+				const vertexScreenY = measureBoundingClientRect(vertexElem).top + 4; // Get center of the circle
+				if (vertexScreenY >= 5 && vertexScreenY <= measureClientSize(this.viewElem).height - 5) {
 					// Vertex is completely visible on the screen (not partially off)
 					this.tooltipVertex = vertexElem;
 					this.deps.closeDialogAndContextMenu();
@@ -371,7 +372,7 @@ export class GraphView {
 		tooltipContent.setAttribute('id', 'graphTooltipContent');
 		tooltipContent.style.borderColor = colour;
 		setHtml(tooltipContent, content);
-		tooltipContent.style.maxWidth = Math.min(this.contentElem.getBoundingClientRect().width - pixel.x - 35, 600) + 'px'; // Tooltip Offset [23px] + Tooltip Border [2 * 2px] + Right Page Margin [8px] = 35px
+		tooltipContent.style.maxWidth = Math.min(measureBoundingClientRect(this.contentElem).width - pixel.x - 35, 600) + 'px'; // Tooltip Offset [23px] + Tooltip Border [2 * 2px] + Right Page Margin [8px] = 35px
 		shadow.setAttribute('id', 'graphTooltipShadow');
 		anchor.appendChild(shadow);
 		anchor.appendChild(pointer);
@@ -381,11 +382,11 @@ export class GraphView {
 		this.contentElem.appendChild(anchor);
 		this.tooltipElem = anchor;
 
-		const tooltipRect = tooltipContent.getBoundingClientRect();
+		const tooltipRect = measureBoundingClientRect(tooltipContent);
 		let relativeOffset = -tooltipRect.height / 2; // Center the tooltip vertically on the vertex
-		if (vertexScreenY + relativeOffset + tooltipRect.height > this.viewElem.clientHeight - 4) {
+		if (vertexScreenY + relativeOffset + tooltipRect.height > measureClientSize(this.viewElem).height - 4) {
 			// Not enough height below the vertex to fit the vertex, shift it up.
-			relativeOffset = (this.viewElem.clientHeight - vertexScreenY - 4) - tooltipRect.height;
+			relativeOffset = (measureClientSize(this.viewElem).height - vertexScreenY - 4) - tooltipRect.height;
 		}
 		if (vertexScreenY + relativeOffset < 4) {
 			// Not enough height above the vertex to fit the tooltip, shift it down.

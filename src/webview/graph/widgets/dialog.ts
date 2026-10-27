@@ -13,6 +13,7 @@ import { DialogInput, DialogInputType, DialogInputValue } from './dialogInputs';
 export { DialogInputType } from './dialogInputs';
 export type { DialogCheckboxInput, DialogInput, DialogInputValue, DialogRadioInput, DialogSelectInput, DialogTextRefInput, DialogTextInput, DialogTextareaInput } from './dialogInputs';
 import { Component } from '../component';
+import { measureClientSize } from '../render/measure';
 import { SelectOption } from '../state/store';
 import { CommitTarget, DialogTarget, RefTarget, TargetType } from '../state/types';
 import { CustomSelect } from './customSelect';
@@ -418,8 +419,8 @@ export class Dialog extends Component {
 		this.previouslyFocused = previouslyFocused instanceof HTMLElement && previouslyFocused !== document.body ? previouslyFocused : null;
 		document.body.appendChild(dialog);
 
-		const docHeight = document.body.clientHeight;
-		let dialogHeight = dialog.clientHeight + 2;
+		const docHeight = measureClientSize(document.body).height;
+		let dialogHeight = measureClientSize(dialog).height + 2;
 		if (type !== DialogType.Form && dialogHeight > 0.8 * docHeight) {
 			dialogContent.style.height = Math.round(0.8 * docHeight - 22) + 'px';
 			dialogHeight = Math.round(0.8 * docHeight);

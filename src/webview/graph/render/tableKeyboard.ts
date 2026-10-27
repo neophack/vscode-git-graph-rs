@@ -25,6 +25,7 @@
 
 import { handledEvent } from '../../common/dom';
 import { GraphContext } from '../context';
+import { measureBoundingClientRect, measureClientSize } from '../render/measure';
 
 /** The rows of the grid: one per commit (the header row and the window spacers are not rows of it). */
 const ROW_SELECTOR = 'tr.commit';
@@ -153,12 +154,12 @@ export class TableKeyboard {
 		const ctx = this.ctx();
 		const rowHeight = ctx.layout.getRowHeight();
 		if (!(rowHeight > 0)) return 1;
-		return Math.max(1, Math.floor(ctx.dom.view.clientHeight / rowHeight) - 1);
+		return Math.max(1, Math.floor(measureClientSize(ctx.dom.view).height / rowHeight) - 1);
 	}
 
 	/** Open the focused row's context menu where the row sits on screen (the right-click path). */
 	private openRowContextMenu(row: HTMLElement) {
-		const rect = row.getBoundingClientRect();
+		const rect = measureBoundingClientRect(row);
 		row.dispatchEvent(new MouseEvent('contextmenu', {
 			bubbles: true,
 			cancelable: true,

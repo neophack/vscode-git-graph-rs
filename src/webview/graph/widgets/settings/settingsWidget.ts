@@ -6,6 +6,7 @@ import { injectOnDemandStyles } from '../../../common/onDemandStyles';
 import * as GG from '../../../common/protocol';
 import { Component } from '../../component';
 import { GraphContext } from '../../context';
+import { measureClientSize } from '../../render/measure';
 import { SettingsWidgetState } from '../../state/types';
 import { SettingsWidgetSurface } from '../surfaces';
 import { maybeSeedCommitAuthors } from './commitAuthors';
@@ -223,6 +224,6 @@ export class SettingsWidget extends Component implements SettingsWidgetSurface, 
 		alterClass(this.widgetElem, CLASS_LOADING, this.loading);
 		setHtml(this.loadingElem, this.loading ? html`<span>${SVG_ICONS.loading}${strings.loading}</span>` : html``);
 		this.widgetElem.scrollTop = this.scrollTop;
-		this.loadingElem.style.top = (this.scrollTop + (this.widgetElem.clientHeight / 2) - 12) + 'px';
+		this.loadingElem.style.top = (this.scrollTop + (measureClientSize(this.widgetElem).height / 2) - 12) + 'px';
 	}
 }

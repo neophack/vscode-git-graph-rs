@@ -27,6 +27,7 @@ import { ColumnLayout } from './render/columns';
 import { CommitTable } from './render/commitTable';
 import { GraphView } from './render/graphSvg';
 import { LayoutMode } from './render/layoutMode';
+import { measureClientSize } from './render/measure';
 import { RenderScheduler, scheduleFrame } from './render/scheduler';
 import { Viewport } from './render/viewport';
 import { createResponseRouter } from './responses';
@@ -182,7 +183,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	});
 	// The first-paint snapshot's capture reads the rendered row height and the viewport's height
 	// for its visible-window check (task 5.9; read at capture time, so layout changes apply)
-	ctx.persistence.setViewMetrics(() => ({ rowHeight: ctx.layout.getRowHeight(), viewHeight: dom.view.clientHeight }));
+	ctx.persistence.setViewMetrics(() => ({ rowHeight: ctx.layout.getRowHeight(), viewHeight: measureClientSize(dom.view).height }));
 
 	const config = store.config;
 	alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, config.referenceLabels.branchLabelsAlignedToGraph);

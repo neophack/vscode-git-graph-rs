@@ -4,6 +4,7 @@ import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
 import { formatCommaSeparatedList } from '../../common/util';
 import { Component } from '../component';
+import { measureBoundingClientRect, measureClientSize } from '../render/measure';
 
 export interface DropdownOption {
 	readonly name: string;
@@ -300,11 +301,11 @@ export class Dropdown extends Component {
 		this.menuElem.style.cssText = 'opacity:0; display:block;';
 		// Width must be at least 138px for the filter element.
 		// Don't need to add 12px if showing (info icons or multi checkboxes) and the scrollbar isn't needed. The scrollbar isn't needed if: menuElem height + filter input (25px) < 297px
-		const menuElemRect = this.menuElem.getBoundingClientRect();
+		const menuElemRect = measureBoundingClientRect(this.menuElem);
 		this.currentValueElem.style.width = Math.max(Math.ceil(menuElemRect.width) + ((this.showInfo || this.multipleAllowed) && menuElemRect.height < 272 ? 0 : 12), 138) + 'px';
 		// Max height for the dropdown is [filter (31px) + 9.5 * dropdown item (28px) = 297px], clamped
 		// so the menu never extends beyond the bottom of the view on short windows
-		const maxMenuHeight = Math.max(Math.min(297, document.body.clientHeight - this.elem.getBoundingClientRect().bottom - 4), 90);
+		const maxMenuHeight = Math.max(Math.min(297, measureClientSize(document.body).height - measureBoundingClientRect(this.elem).bottom - 4), 90);
 		this.menuElem.style.cssText = 'right:0; overflow-y:auto; max-height:' + maxMenuHeight + 'px;';
 		if (this.dropdownVisible) this.filter();
 	}

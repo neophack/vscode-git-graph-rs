@@ -2,6 +2,7 @@
    drag) and the divider between the summary and the file list (draggable between 20% and 80%). */
 
 import { GraphContext } from '../context';
+import { measureBoundingClientRect } from '../render/measure';
 import { PanelSurface } from './panelSurface';
 
 /** The element with the given id under the panel's scope, or NULL (the shell's scoped lookup). */
@@ -104,7 +105,7 @@ export function makeDividerDraggable(ctx: GraphContext, surface: PanelSurface, g
 		const contentElem = byId(getScope(), 'cdvContent');
 		if (contentElem === null) return;
 
-		const bounds = contentElem.getBoundingClientRect();
+		const bounds = measureBoundingClientRect(contentElem);
 		minX = bounds.left;
 		width = bounds.width;
 		ctx.eventOverlay.create('colResize', processDraggingCdvDivider, stopDraggingCdvDivider);

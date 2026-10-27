@@ -12,6 +12,7 @@
 import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, CLASS_TOUCH_MODE } from '../../common/dom';
 import * as GG from '../../common/protocol';
 import { Store } from '../state/store';
+import { measureClientSize } from './measure';
 
 /** The wide (desktop) layout, or one of the two touch layouts of the `mobileAdaptation` setting. */
 export type LayoutKind = 'wide' | 'phone' | 'tablet';
@@ -190,7 +191,7 @@ export class LayoutMode {
 
 	/** The width the view would have without the side pane: the window the layout is chosen for. */
 	private getWindowWidth() {
-		const viewWidth = this.viewElem.clientWidth;
-		return viewWidth > 0 ? viewWidth + this.sidePaneWidth : document.documentElement.clientWidth;
+		const viewWidth = measureClientSize(this.viewElem).width;
+		return viewWidth > 0 ? viewWidth + this.sidePaneWidth : measureClientSize(document.documentElement).width;
 	}
 }

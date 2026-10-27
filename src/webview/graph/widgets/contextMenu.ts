@@ -4,6 +4,7 @@ import { SVG_ICONS } from '../../common/icons';
 import { ensureWidgetStyles } from '../../common/onDemandStyles';
 import * as GG from '../../common/protocol';
 import { Component } from '../component';
+import { measureBoundingClientRect } from '../render/measure';
 import { ContextMenuTarget, TargetType } from '../state/types';
 
 export const CLASS_CONTEXT_MENU_ACTIVE = 'contextMenuActive';
@@ -107,7 +108,7 @@ export class ContextMenu extends Component {
 		// is often opened from. Its position is set by the stylesheet there, so the frame-relative
 		// maths below is moot.
 		(document.body.classList.contains(CLASS_MOBILE_MODE) ? document.body : frameElem).appendChild(menu);
-		const menuBounds = menu.getBoundingClientRect(), frameBounds = frameElem.getBoundingClientRect();
+		const menuBounds = measureBoundingClientRect(menu), frameBounds = measureBoundingClientRect(frameElem);
 		const relativeX = event.pageX + menuBounds.width < frameBounds.right
 			? -2 // context menu fits to the right
 			: event.pageX - menuBounds.width > frameBounds.left

@@ -5,6 +5,7 @@ import { formatDayDate } from '../../common/dates';
 import { formatStr, strings } from '../../common/i18n/index';
 import { GraphContext } from '../context';
 import { UNCOMMITTED } from '../../common/util';
+import { measureBoundingClientRect, measureScroll } from '../render/measure';
 
 /**
  * Touch screens have no right click: in the phone and tablet layouts a long press - one finger held
@@ -94,12 +95,17 @@ export function observeFastScroller(ctx: GraphContext) {
 	const thumb = <HTMLElement>scroller.lastChild, bubble = <HTMLElement>scroller.firstChild;
 	let hideTimer: number | null = null, dragging = false, grabOffset = 0;
 
-	const enabled = () => ctx.layout.isMobileLayout() && viewElem.scrollHeight > MIN_PAGES * viewElem.clientHeight;
+	const enabled = () => {
+		if (!ctx.layout.isMobileLayout()) return false;
+		const scroll = measureScroll(viewElem);
+		return scroll.contentHeight > MIN_PAGES * scroll.viewHeight;
+	};
 	// The track runs from below the app bar to the bottom of the view
 	const track = () => {
 		const headerHeight = ctx.viewport.getHeaderHeight();
-		const top = viewElem.getBoundingClientRect().top + headerHeight + EDGE_GAP;
-		return { top: top, length: Math.max(1, viewElem.clientHeight - headerHeight - THUMB_HEIGHT - 2 * EDGE_GAP), max: Math.max(1, viewElem.scrollHeight - viewElem.clientHeight) };
+		const top = measureBoundingClientRect(viewElem).top + headerHeight + EDGE_GAP;
+		const scroll = measureScroll(viewElem);
+		return { top: top, length: Math.max(1, scroll.viewHeight - headerHeight - THUMB_HEIGHT - 2 * EDGE_GAP), max: Math.max(1, scroll.contentHeight - scroll.viewHeight) };
 	};
 	const place = () => {
 		const t = track();
@@ -137,7 +143,7 @@ export function observeFastScroller(ctx: GraphContext) {
 		e.preventDefault();
 		e.stopPropagation();
 		dragging = true;
-		grabOffset = e.clientY - thumb.getBoundingClientRect().top;
+		grabOffset = e.clientY - measureBoundingClientRect(thumb).top;
 		if (thumb.setPointerCapture) thumb.setPointerCapture(e.pointerId);
 		scroller.classList.add('dragging');
 		updateBubble();

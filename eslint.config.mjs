@@ -77,6 +77,32 @@ const NATIVE_UI_SELECTOR_ENTRY = {
 	message: NATIVE_UI_MESSAGE
 };
 
+// The geometry reads that force a synchronous layout (OPTIMIZATION-PLAN §6 F4 / REFACTOR-PLAN
+// §3.8.5 "avoid forced layout"): reading any of these between DOM writes forces the whole table
+// to lay out again, so they belong in render/measure.ts, batched before the frame's writes.
+// Both selectors are plain property/method accesses - no-restricted-properties cannot express
+// "any receiver", hence no-restricted-syntax. Two deliberate gaps, mirroring the layer (c)
+// precedent of literal `['prop']` access not being matched:
+//   - scrollTop/scrollLeft reads are left out: they share their name with the sanctioned
+//     scroll-position WRITES, and a member-expression selector cannot tell `el.scrollTop` the
+//     read from `el.scrollTop = x` the write. Their batching stays measure.ts's job by review
+//     (measureScroll), not by lint.
+//   - element['offsetWidth']-style computed access is not matched; the webview never writes it.
+const LAYOUT_READ_PROPERTY_SELECTOR = "MemberExpression[computed=false][property.type='Identifier'][property.name=/^(offsetHeight|offsetWidth|offsetLeft|offsetTop|offsetParent|clientHeight|clientWidth|clientLeft|clientTop|scrollHeight|scrollWidth)$/]";
+
+const LAYOUT_READ_METHOD_SELECTOR = "CallExpression[callee.type='MemberExpression'][callee.computed=false][callee.property.type='Identifier'][callee.property.name=/^(getBoundingClientRect|getClientRects)$/]";
+
+const LAYOUT_READ_MESSAGE = "Layout read outside render/measure.ts: read geometry through a measure helper (src/webview/graph/render/measure.ts) so reads stay batched before the frame's writes (REFACTOR-PLAN §3.8.5, OPTIMIZATION-PLAN §6 F4).";
+
+const LAYOUT_READ_PROPERTY_SELECTOR_ENTRY = {
+	selector: LAYOUT_READ_PROPERTY_SELECTOR,
+	message: LAYOUT_READ_MESSAGE
+};
+const LAYOUT_READ_METHOD_SELECTOR_ENTRY = {
+	selector: LAYOUT_READ_METHOD_SELECTOR,
+	message: LAYOUT_READ_MESSAGE
+};
+
 // Node core modules the webview must never import (§3.6: "webview/** → webview/**, shared/**; node:*, vscode forbidden").
 // One anchored regex (not `group`: gitignore-style group patterns would also match
 // relative specifiers like '../../common/util').
@@ -284,6 +310,30 @@ export default tseslint.config(
 		ignores: [...PLATFORM_TS, ...VIEWS_TS],
 		rules: {
 			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY]
+		}
+	},
+
+	// ---- (b3) layout reads through render/measure.ts (OPTIMIZATION-PLAN §6 F4) ----
+	// REFACTOR-PLAN §3.8.5: a geometry read interleaved with DOM writes forces a synchronous
+	// layout, so the webview's layout reads live in src/webview/graph/render/measure.ts, batched
+	// before the frame's writes. This rule holds that discipline: the forcing properties and rect
+	// methods (see the selector constants above) are error everywhere in the webview except
+	// measure.ts itself. Colocated *.test.ts are out of scope (jsdom boxes all measure 0; the
+	// tests are not shipped). Deliberately left behind the rule, via eslint-suppressions.json:
+	//   - src/webview/comparison/** and src/webview/binaryCompare/** - the standalone pages,
+	//     which are separate bundles from the graph view and must not depend on its render
+	//     modules (the same boundary F3's DOM-ownership sweep left them behind);
+	//   - src/webview/common/helpTooltip.ts - common/ sits below graph/ in the layering (graph
+	//     imports common, never the other way round), so routing its two tooltip-positioning
+	//     reads through graph/render/measure.ts would invert the dependency direction.
+	// After (d) deliberately, like (d) after (c): this block re-declares the whole
+	// no-restricted-syntax value for the webview file set, so the `as any` probe and native-UI
+	// selectors ride along byte-identically.
+	{
+		files: WEBVIEW_TS,
+		ignores: ['src/webview/graph/render/measure.ts', 'src/**/*.test.ts'],
+		rules: {
+			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY, LAYOUT_READ_PROPERTY_SELECTOR_ENTRY, LAYOUT_READ_METHOD_SELECTOR_ENTRY]
 		}
 	},
 

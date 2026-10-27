@@ -9,6 +9,7 @@ import { setHtml } from '../../common/html';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
+import { measureBoundingClientRect } from '../render/measure';
 import { patchFileRowCounts } from './fileTree';
 import { getMobileFilesStatHtml } from './mobileSummary';
 
@@ -136,12 +137,12 @@ export class LineCounts {
 		if (filesElem === null || scrollElem === null) return [];
 		// The viewport is the file list's scroll container: #cdvFiles itself, or in the mobile sheet
 		// #cdvContent (#cdvFiles is unclipped there, so its own rect would count every file as visible)
-		const visible = scrollElem.getBoundingClientRect();
+		const visible = measureBoundingClientRect(scrollElem);
 		const paths: string[] = [];
 		const records = filesElem.getElementsByClassName('fileTreeFileRecord');
 		for (let i = 0; i < records.length; i++) {
 			const record = <HTMLElement>records[i];
-			const rect = record.getBoundingClientRect();
+			const rect = measureBoundingClientRect(record);
 			// A zero-height row sits inside a closed folder; a row outside the buffered viewport will
 			// be settled by a later batch.
 			if (rect.height === 0 || rect.bottom < visible.top - LINE_COUNTS_VIEWPORT_BUFFER || rect.top > visible.bottom + LINE_COUNTS_VIEWPORT_BUFFER) continue;

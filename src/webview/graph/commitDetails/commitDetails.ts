@@ -21,6 +21,7 @@ import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { Component } from '../component';
 import { GraphContext } from '../context';
+import { measureBoundingClientRect, measureClientSize, measureOffsetTop } from '../render/measure';
 import { ExpandedCommit, FileTreeFolder } from '../state/types';
 import { renderExternalDiffBtn, startCodeReview, updateFileState, wireCodeReviewBtn, wireExternalDiffBtn } from './codeReviewPane';
 import { makeFileViewInteractive } from './fileActions';
@@ -453,28 +454,28 @@ export class CommitDetails extends Component {
 		if (!refresh) {
 			const viewElem = ctx.dom.view, headerHeight = ctx.viewport.getHeaderHeight();
 			if (isDocked) {
-				const elemTop = headerHeight + expandedCommit.commitElem.offsetTop;
+				const elemTop = headerHeight + measureOffsetTop(expandedCommit.commitElem);
 				if (elemTop - 8 < viewElem.scrollTop) {
 					// Commit is above what is visible on screen
 					viewElem.scroll(0, elemTop - 8);
-				} else if (elemTop - viewElem.clientHeight + 32 > viewElem.scrollTop) {
+				} else if (elemTop - measureClientSize(viewElem).height + 32 > viewElem.scrollTop) {
 					// Commit is below what is visible on screen
-					viewElem.scroll(0, elemTop - viewElem.clientHeight + 32);
+					viewElem.scroll(0, elemTop - measureClientSize(viewElem).height + 32);
 				}
 			} else {
-				const elemTop = headerHeight + elem.offsetTop, cdvHeight = store.repoState.cdvHeight;
+				const elemTop = headerHeight + measureOffsetTop(elem), cdvHeight = store.repoState.cdvHeight;
 				if (store.config.commitDetailsView.autoCenter) {
 					// Center Commit Detail View setting is enabled
 					// elemTop - commit height [24px] + (commit details view height + commit height [24px]) / 2 - (view height) / 2
-					viewElem.scroll(0, elemTop - 12 + (cdvHeight - viewElem.clientHeight) / 2);
+					viewElem.scroll(0, elemTop - 12 + (cdvHeight - measureClientSize(viewElem).height) / 2);
 				} else if (elemTop - 32 < viewElem.scrollTop) {
 					// Commit Detail View is opening above what is visible on screen
 					// elemTop - commit height [24px] - desired gap from top [8px] < view scroll offset
 					viewElem.scroll(0, elemTop - 32);
-				} else if (elemTop + cdvHeight - viewElem.clientHeight + 8 > viewElem.scrollTop) {
+				} else if (elemTop + cdvHeight - measureClientSize(viewElem).height + 8 > viewElem.scrollTop) {
 					// Commit Detail View is opening below what is visible on screen
 					// elemTop + commit details view height + desired gap from bottom [8px] - view height > view scroll offset
-					viewElem.scroll(0, elemTop + cdvHeight - viewElem.clientHeight + 8);
+					viewElem.scroll(0, elemTop + cdvHeight - measureClientSize(viewElem).height + 8);
 				}
 			}
 		}
@@ -493,7 +494,7 @@ export class CommitDetails extends Component {
 				e.stopPropagation();
 				const commitElem = store.expandedCommit !== null ? store.expandedCommit.commitElem : null;
 				if (commitElem === null || !commitElem.isConnected) return;
-				const rect = mobileActionsBtn.getBoundingClientRect();
+				const rect = measureBoundingClientRect(mobileActionsBtn);
 				commitElem.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
 			});
 		}

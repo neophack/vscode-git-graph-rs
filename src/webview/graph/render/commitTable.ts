@@ -14,7 +14,7 @@ import { SVG_ICONS } from '../../common/icons';
 import * as GG from '../../common/protocol';
 import { UNCOMMITTED } from '../../common/util';
 import { GraphContext } from '../context';
-import { measureGraphRender } from './measure';
+import { measureClientSize, measureGraphRender } from './measure';
 import { TableKeyboard } from './tableKeyboard';
 import { RowModelFactory } from './rowModel';
 import { RowPatcher } from './rowPatcher';
@@ -159,7 +159,7 @@ export class CommitTable {
 		// nudge the view up on every re-render while the user is scrolled to the very bottom.
 		const viewElem = ctx.dom.view;
 		if (viewport.canVirtualize() && viewport.computeVisibleRange().start >= store.commits.length) {
-			const maxScroll = Math.max(0, viewport.getHeaderHeight() + store.commits.length * ctx.layout.getRowHeight() - viewElem.clientHeight);
+			const maxScroll = Math.max(0, viewport.getHeaderHeight() + store.commits.length * ctx.layout.getRowHeight() - measureClientSize(viewElem).height);
 			if (viewElem.scrollTop > maxScroll) viewElem.scrollTop = maxScroll;
 		}
 		viewport.renderedRange = viewport.canVirtualize() ? viewport.computeVisibleRange() : null;

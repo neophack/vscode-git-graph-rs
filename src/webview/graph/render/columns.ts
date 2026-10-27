@@ -9,7 +9,7 @@ import { html, insertHtml } from '../../common/html';
 import { strings } from '../../common/i18n/index';
 import * as GG from '../../common/protocol';
 import { GraphContext } from '../context';
-import { measureGraphColumn } from './measure';
+import { measureClientSize, measureGraphColumn } from './measure';
 import { getCommitOrdering } from '../state/repoSettings';
 import { COLUMN_AUTO, COLUMN_HIDDEN } from './layoutMode';
 
@@ -159,7 +159,7 @@ export class ColumnLayout {
 						// frozen width was cut off at the column boundary.
 						for (let i = 0; i < cols.length; i++) {
 							const curCol = parseInt(cols[i].dataset.col!);
-							if (curCol !== 1) columnWidths[curCol] = cols[i].clientWidth - COLUMN_LEFT_RIGHT_PADDING;
+							if (curCol !== 1) columnWidths[curCol] = measureClientSize(cols[i]).width - COLUMN_LEFT_RIGHT_PADDING;
 						}
 						makeTableFixedLayout();
 					}
@@ -167,12 +167,12 @@ export class ColumnLayout {
 
 				if (col === 0) {
 					if (columnWidths[0] + mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = -columnWidths[0] + COLUMN_MIN_WIDTH;
-					if (cols[1].clientWidth - COLUMN_LEFT_RIGHT_PADDING - mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = cols[1].clientWidth - COLUMN_LEFT_RIGHT_PADDING - COLUMN_MIN_WIDTH;
+					if (measureClientSize(cols[1]).width - COLUMN_LEFT_RIGHT_PADDING - mouseDeltaX < COLUMN_MIN_WIDTH) mouseDeltaX = measureClientSize(cols[1]).width - COLUMN_LEFT_RIGHT_PADDING - COLUMN_MIN_WIDTH;
 					columnWidths[0] += mouseDeltaX;
 					cols[0].style.width = columnWidths[0] + 'px';
 					ctx.graph.limitMaxWidth(columnWidths[0] + COLUMN_LEFT_RIGHT_PADDING);
 				} else {
-					const colWidth = col !== 1 ? columnWidths[col] : cols[1].clientWidth - COLUMN_LEFT_RIGHT_PADDING;
+					const colWidth = col !== 1 ? columnWidths[col] : measureClientSize(cols[1]).width - COLUMN_LEFT_RIGHT_PADDING;
 
 					// The right neighbour is the next VISIBLE column: when every column to the right
 					// is hidden, the scan must stop at the end of the table — running past it made
