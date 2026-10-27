@@ -17,12 +17,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, vi } from 'vitest';
 import { vscodeState } from '../../support/vscodeAlias';
+import { GitProcess } from '../../../src/extension/git/process/gitProcess';
 import { createHexSession, flatSections, respondCopyToClipboard, respondHexInfo, respondHexRows, wireHexSession } from '../../../src/extension/views/binaryCompare/binaryCompare';
 import { t } from '../../../src/extension/platform/i18n';
 import { UNCOMMITTED } from '../../../src/extension/platform/git';
@@ -46,9 +47,11 @@ describe('the flattened section layout', () => {
 
 /* ---------- The host-side hex responders ---------- */
 
+// The session consumes the A3 process adapter's SpawnedStream shape ({stdout, stderr, exit,
+// kill}), so the fake binds the real GitProcess: the injectable spawn runs plain `git`.
 const gitSpawner = {
 	spawnGitStream(args: string[], repo: string) {
-		return spawn('git', args, { cwd: repo });
+		return new GitProcess(() => ({ path: 'git', version: 'git' })).spawnStream(args, repo);
 	}
 };
 

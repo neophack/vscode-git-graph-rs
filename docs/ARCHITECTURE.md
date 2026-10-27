@@ -175,29 +175,33 @@ their subtrees finish moving.
 
 ## 9. What is still transitional (the honest list)
 
-- The E2E full tier, the release-tier environment matrix and the C3–C6 container legs are CI
-  machinery that runs only in GitHub Actions; their workflows mirror verified local commands
-  and expect first-run iteration. The musl/armhf binaries ship, but `addonLoader.ts` cannot
-  select them yet (libc/armv7 detection) and the alpine/centos smoke is still open (R8b).
+- The E2E full tier, the release-tier environment matrix and the remaining container legs are
+  CI machinery that runs only in GitHub Actions; their workflows mirror verified local
+  commands and expect first-run iteration. The alpine/centos container smoke is in place
+  (R8b) but has not executed in a real CI run yet.
 - Gerrit/PR row badges still ride the first-paint entry (moving them needs an async badge
   path); ADR-0005 records the recalibrated first-paint closure budget. The first-paint
-  critical-JS budget is at 360/360 KB since the load state machine ships in the entry.
+  critical-JS budget is at 360/360 KB since the load state machine ships in the entry, and
+  the automation build prints 367 KB — the production P5 is the referee.
+- `external/commit-appears`, an E2E smoke scenario, fails deterministically: the
+  watcher-driven refresh never reaches a view whose repository is not the workspace folder
+  (`refreshMessages 0` on VS Code 1.143). Found by the P2 harness; fixing it is the next
+  wave's first item.
 
 Open items of [OPTIMIZATION-PLAN.md](OPTIMIZATION-PLAN.md). Remove each line in the PR that
 lands it.
 
-- `GitGraphView.currentPanel` is still a static service locator, and the composition root wires
-  9–12 positional collaborators by hand (A2).
-- Five production files outside `git/process/` (plus two automation files) import
-  `child_process`, and `checkUnsafeGitArgs` is called from 19 sites in 6 files (A3).
+- The remaining wide constructors are the view controllers (`views/binaryCompare/hexDiff.ts`
+  9, `views/comparison/viewController.ts` 8, `views/binaryCompare/viewController.ts` 7),
+  built via their own `open` factories rather than the composition root (A2 leftover).
 - Two configuration readers coexist: `takeSnapshot()` and the legacy `getConfig()` (A4).
-- 13 TypeScript production files exceed 600 lines (the Rust backlog is empty); the
+- 10 TypeScript production files exceed 600 lines (the Rust backlog is empty); the
   `max-lines` suppressions and `scripts/dev/check-file-size.mjs` list them (A5).
 - 323 comments still reference plan task numbers or deleted code (A7).
-- The webview store is ~30 public mutable fields with no change sets (F1), DOM ownership and
-  listener teardown are undisciplined (F3), and layout reads bypass `render/measure.ts` (F4).
-- `retainContextWhenHidden` still defaults to `true`; the D-2 decision waits for P3/P4 data.
-- The timing markers exist but no budget is calibrated yet (P2), and the host bundle has not
-  been re-split on measured evidence (P3).
+- The webview store is ~30 public mutable fields with no change sets (F1), and layout reads
+  bypass `render/measure.ts` (F4).
+- Budgets are calibrated for the S tier only (ADR-0007); the M/L tiers, the in-editor T0–T5
+  sums and the CI-Linux numbers are pending (P2), and the host bundle has not been re-split
+  on measured evidence (P3).
 - `noUncheckedIndexedAccess` is off: enabling it reports 332 host and 886 webview errors
   (decision D-6).

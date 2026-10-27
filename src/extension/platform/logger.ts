@@ -56,6 +56,9 @@ export class Logger extends Disposable {
 	private channel: OutputChannelLike | null = null;
 	/** TRUE in the host-wired mode (vscode channel + enable gate + file mirroring). */
 	private readonly hostWired: boolean;
+	/** The path the mirror is configured to write (host-wired mode), independent of its health. */
+	private readonly configuredLogFile: string | null;
+	/** The live mirror target: null while disabled or after a failed setup (see setEnabled). */
 	private logFile: string | null;
 	private logFileBytes: number = 0;
 	private enabled: boolean = false;
@@ -74,6 +77,7 @@ export class Logger extends Disposable {
 		super();
 		if (factoryArg.length > 0) {
 			this.hostWired = false;
+			this.configuredLogFile = null;
 			this.logFile = null;
 			const factory = factoryArg[0] ?? null;
 			const createOutputChannel = factory?.createOutputChannel;
@@ -86,6 +90,7 @@ export class Logger extends Disposable {
 			}
 		} else {
 			this.hostWired = true;
+			this.configuredLogFile = nameOrLogFilePath ?? null;
 			this.logFile = nameOrLogFilePath ?? null;
 			const channel = vscode.window.createOutputChannel(CHANNEL_NAME);
 			this.channel = channel;
@@ -102,8 +107,15 @@ export class Logger extends Disposable {
 	 * Output Channel alone.
 	 */
 	public setEnabled(enabled: boolean): void {
-		if (enabled === this.enabled) return;
+		if (enabled === this.enabled && !(enabled && this.logFile === null && this.configuredLogFile !== null)) return;
 		this.enabled = enabled;
+		if (enabled && this.configuredLogFile !== null && this.logFile === null) {
+			// First setup, or recovery: a previous setup lost the mirror (a transient failure such
+			// as an antivirus lock, not only a read-only location), and an enable that does not
+			// change the flag must still rebuild it - the equal-value guard would otherwise pin
+			// the session to channel-only forever.
+			this.logFile = this.configuredLogFile;
+		}
 		if (enabled && this.logFile !== null) {
 			this.logFileBytes = 0;
 			const file = this.logFile;

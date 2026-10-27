@@ -17,12 +17,10 @@ import { cancelScheduledFrame, scheduleFrame } from '../render/scheduler';
 import { FindWidgetState } from '../state/types';
 import { FindWidgetSurface } from './surfaces';
 import findWidgetCss from '../../styles/findWidget.css';
-import tabletFindWidgetCss from '../../styles/tablet/findWidget.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(findWidgetCss);
-injectOnDemandStyles(tabletFindWidgetCss);
 
 const CLASS_FIND_CURRENT_COMMIT = 'findCurrentCommit';
 const CLASS_FIND_MATCH = 'findMatch';

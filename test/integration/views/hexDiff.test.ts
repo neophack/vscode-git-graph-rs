@@ -11,11 +11,12 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, vi } from 'vitest';
+import { GitProcess } from '../../../src/extension/git/process/gitProcess';
 import { HexDiffSession } from '../../../src/extension/views/binaryCompare/hexDiff';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
@@ -23,9 +24,11 @@ vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 const CHUNK = 64 * 1024;
 
 /** The spawner HexDiffSession needs: the git layer implements this over its own Git executable. */
+// The session consumes the A3 process adapter's SpawnedStream shape ({stdout, stderr, exit,
+// kill}), so the fake binds the real GitProcess: the injectable spawn runs plain `git`.
 const gitSpawner = {
 	spawnGitStream(args: string[], repo: string) {
-		return spawn('git', args, { cwd: repo });
+		return new GitProcess(() => ({ path: 'git', version: 'git' })).spawnStream(args, repo);
 	}
 };
 

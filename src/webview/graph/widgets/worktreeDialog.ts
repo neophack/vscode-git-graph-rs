@@ -17,12 +17,10 @@ import { GraphContext } from '../context';
 import { DialogInputType } from './dialog';
 import { WorktreeDialogSurface } from './surfaces';
 import worktreeCss from '../../styles/worktreeDialog.css';
-import tabletPanelsCss from '../../styles/tablet/panels.css';
 
 // This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(worktreeCss);
-injectOnDemandStyles(tabletPanelsCss);
 
 export class WorktreeDialog extends Component implements WorktreeDialogSurface {
 	private readonly widgetElem: HTMLElement;

@@ -1,5 +1,0 @@
-/* Stub (OPTIMIZATION-PLAN §6 F6): the tablet panel rules live in the tablet section at the end of
- * each panel's sheet (settingsWidget.css, reflogView.css, statisticsView.css, worktreeDialog.css),
- * split per widget so each on-demand chunk carries only its own. This file remains only for the
- * text imports in those widget modules - injecting this comment is a no-op; remove the imports and
- * this file together. */

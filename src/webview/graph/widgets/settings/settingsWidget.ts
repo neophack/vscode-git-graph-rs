@@ -14,12 +14,10 @@ import { SettingsWidgetSurface } from '../surfaces';
 import { showIssueLinkingDialog, showPullRequestIntegrationDialog1 } from './integrationDialogs';
 import { checkbox, dateFormatSettingValue, numberRow, renderBackendSection, selectRow } from './settingsHtml';
 import settingsCss from '../../../styles/settingsWidget.css';
-import tabletPanelsCss from '../../../styles/tablet/panels.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheets ride the chunk as text (the
-// sheet carries its own phone-layout section; the tablet sheet follows it)
+// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text (the
+// sheet carries its own phone-layout and tablet-layout sections)
 injectOnDemandStyles(settingsCss);
-injectOnDemandStyles(tabletPanelsCss);
 
 /**
  * The Settings Widget: an overlay with the Repository Settings (the persisted state of the

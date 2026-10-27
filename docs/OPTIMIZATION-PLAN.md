@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | M0 complete; wave 1 (§12) landed R1–R4, R8, V1, V2, V4, S2, F6, F7 and the F2 groundwork; wave 2 (§12) landed A1, A6, R5, R6, R7, P1, the F2 wiring, F5, V3's test gates, S5 and the `build:ts` removal. D-1 and D-4 taken per the recommendations; D-2 still open (needs P3/P4 data) |
+| Status | M0 complete; waves 1–3 (§12) landed R1–R8, V1–V4, S2–S7, G1–G5, D, F2–F7, A1–A3, the automation rows of A5, P1–P2 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore) |
 
 ---
 
@@ -838,3 +838,77 @@ Found, not fixed:
 
 - `requestBytes`'s zero host callers (above), the overlay panels' dialog semantics, the
   control-bar dropdowns' focus return, and the E2E smoke re-run — all queued for wave 3.
+
+### Wave 3: M1 ∥ M2 ∥ M3 ∥ M4 groundwork (branch `task/m0-gates`, 2026-10-27)
+
+Seven parallel agents over disjoint file domains; integrated and landed as seven workstream
+commits. Landed: **A2, A3, the automation rows of A5, P2, F3, the F6 close-out, the R8b
+close-outs (libc/armhf engine selection, the C3 container smoke) and the R5 leftover
+(`requestBytes` deleted)**. Decision taken: **D-2** — `retainContextWhenHidden` stays `true`
+(ADR-0007 measured a 52 ms restore with a retained page against 227 ms without; the 150 ms
+bar for flipping is not met). Every gate green: `npm run check`, the full test suite, and the
+size gate — the Windows `.node` ratchets down again to 5,661,184 B with `request_bytes` gone.
+
+Measured while doing it, correcting this plan:
+
+- **A3's rule lands with zero exceptions**: after the `run`/`collect`/`stream` verbs absorbed
+  the CLI read path, commit files, findGit's probes and the hex-diff streams, no production
+  file outside `git/process/**` and `automation/**` imports `child_process`. The
+  characterization tests caught two deliberate deltas: probe spawns now carry
+  `windowsHide: true` (killing a Windows console flash), and ENOENT messages are uniform.
+- **F3's burn-down**: `document.*` DOM queries in the webview went from ~140 to 27 (8
+  sanctioned in main.ts, 19 suppressed — the standalone compare pages and the frozen loading
+  modules), enforced by a `no-restricted-properties` rule. 73 raw `addEventListener` calls on
+  converted widgets now run through listener stores, and the page's components dispose on
+  reset.
+- **F6's close-out brings the first-paint CSS back under budget**: 65,233 → 61,216 B
+  (unreachable fallback vars, unified two-line row rules, dialog-only tokens moved to their
+  consumers). The theme audit shows a 0.0000% pixel diff on the tokenized compare pages
+  across all four themes.
+- **ADR-0007 lands a partial calibration**: S tier, engine path — open-hard 116 ms,
+  open-cached 95, load-more 19, expand-details 0.8, refs 3.6, HEAD 16 — every §3.8.1 budget
+  confirmed as written, only-tighten from here. The CLI fallback's latencies are recorded but
+  deliberately not a relaxation basis. M/L and the in-editor T0–T5 sums remain pending (the
+  nightly owns them).
+- **R8b's selection order**: the musl builds carry their libc statically, so when the runtime
+  cannot name its libc the musl binary is the primary candidate — it loads everywhere;
+  leading with gnu would hand the rarest host a binary that cannot load there.
+
+Deviations from the text above:
+
+- **A2**: `main.ts` is 199 lines and every composition-root-constructed class takes ≤ 4
+  parameters, but the three view controllers keep 7–9-parameter `open` factories (they are
+  not composition-root-built). The `automation/graphViewPort` module-level singleton remains
+  by design.
+- **F6**: full tokenization of the compare pages would have re-inflated the first-paint
+  sheet; page-specific `--vscode-*` reads stay, documented as the second exception in
+  tokens.css. `styles/tablet/` is deleted, the two sheets the widget TS imported as text
+  included.
+- **F3**: delegated `data-action` events landed only where per-item listeners piled up
+  (context menu items, custom-select options); the compare webviews keep their document
+  queries behind suppressions.
+- **P2**: the calibration used the pipeline half of the P2 gate — the collector found a real
+  defect in the log mirror on the way (below), so the in-editor trace sums are pending on it.
+- **A5**: `cleanupActionSurfaces` gained an explicit `currentTerminals` getter parameter to
+  keep the vscode seam inside the already-baselined suiteRunner.
+
+Found, not fixed (wave 4's queue):
+
+- **`external/commit-appears` fails deterministically in the E2E smoke** (22 passed / 1
+  failed / 2 skipped on VS Code 1.143.1): the watcher-driven refresh never reaches a view
+  whose repository is not the workspace folder — `refreshMessages 0`, rows stale. Reproduced
+  on the wave-2 tree too; the smoke had not run between the F2 wiring and the P2 harness.
+  Suspects: `vscode.workspace.createFileSystemWatcher` delivering nothing for
+  out-of-workspace `RelativePattern`s on current VS Code, or a mute window that never
+  resumes. Fixing it is wave 4's first item.
+- **The session logger's mirror died once in the E2E profile** (~100 ms after activation):
+  a failed truncate nulled `logFile` while `enabled` stayed true, and the equal-value guard
+  in `setEnabled` pinned the session to channel-only forever. **Fixed in this wave** — any
+  enable now rebuilds the mirror when the configured path lost its live file — with a
+  recovery regression test.
+- The automation build prints 367 KB of first-paint critical JS against the 360 KB budget;
+  the production P5 is the referee (the automation bundle has always been the fatter
+  variant).
+- The theme-audit references for the `out` pages are stale; regenerate with
+  `theme-audit --update-reference` (F6's close-out verified the current outputs
+  pixel-identical).

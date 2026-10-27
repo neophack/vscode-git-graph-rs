@@ -216,6 +216,25 @@ describe('Logger (host-wired mode, absorbed from src/logger.ts)', () => {
 		expect(channel.lines.some((line) => line.indexOf('still on the channel') > -1)).toBe(true);
 	});
 
+	it('recovers the file mirror after a transient setup failure, without an enable-flag change', async () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
+		const logFile = path.join(directory, 'git-graph-rs.log');
+		// A directory squatting on the file path makes the first setup fail: the mirror degrades
+		// (in production this shape is a transient failure such as an antivirus lock).
+		fs.mkdirSync(logFile);
+		const logger = new Logger(logFile);
+
+		logger.setEnabled(true);
+		await vi.waitFor(() => expect(logger.getLogFile()).toBeNull());
+
+		// Recovery: re-enabling with an unchanged flag must still rebuild the mirror - the
+		// equal-value guard must not pin the session to channel-only forever.
+		fs.rmdirSync(logFile);
+		logger.setEnabled(true);
+		logger.log('recovered session');
+		await vi.waitFor(() => expect(fs.readFileSync(logFile, 'utf8')).toContain('recovered session'));
+	});
+
 	it('formats spawned commands through logCmd', () => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gg-logger-'));
 		const logger = new Logger(path.join(directory, 'git-graph-rs.log'));
