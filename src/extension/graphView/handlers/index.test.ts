@@ -504,10 +504,9 @@ describe('graphView handler table', () => {
 	});
 
 	it("derives every handler's mutates flag from the protocol table", () => {
-		// The one-off comparison against the old REPO_MUTATING_COMMANDS set (42 commands, both
-		// directions equal) ran during the task 4.4 cutover and passed; per the acceptance
-		// criteria it was then deleted. This keeps the table-internal consistency: every
-		// handler's flag is exactly the protocol's MUTATING_COMMANDS entry for its command.
+		// The handlers derive their flags from the protocol's MUTATING_COMMANDS table; this
+		// checks the table-internal consistency: every handler's flag is exactly the
+		// protocol's MUTATING_COMMANDS entry for its command.
 		for (const command of REQUEST_COMMANDS) {
 			const handler = (HANDLER_TABLE as { [command: string]: { mutates: boolean } })[command];
 			expect(handler.mutates, command).toBe(MUTATING_COMMANDS[command]);

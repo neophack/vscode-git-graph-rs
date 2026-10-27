@@ -34,19 +34,15 @@ export interface AskpassResponder {
 	end(body?: string): void;
 }
 
-// The native input port of the askpass responder (task 4.10, INVENTORY.md #21). This module
-// cannot import the shared uiPort of src/utils/actions.ts: the DataSource (which constructs
-// this manager) sits in that module graph, which would make an import cycle. So the window is
-// captured on first use here (merely importing this module never touches the vscode module
-// surface, keeping minimal test vscode mocks usable); when
-// src/extension/platform/uiPort.ts ships its production implementation, this binding is
-// replaced by the wiring-injected port and nothing else changes.
+// The native input port of the askpass responder (INVENTORY.md #21). The port TYPES come from
+// the shared uiPort (src/extension/platform/uiPort.ts); the production binding is captured on
+// first use here rather than injected, because merely importing this module must never touch
+// the vscode module surface (keeping minimal test vscode mocks usable).
 let askpassUi: Pick<UiPort, 'showInputBox'> | null = null;
 
 function nativeInput(): Pick<UiPort, 'showInputBox'> {
 	if (askpassUi === null) {
-		// The captured window (call-time property lookups) is this port's single native seam,
-		// the same binding style as the interim UiPort of src/utils/actions.ts.
+		// The captured window (call-time property lookups) is this port's single native seam.
 		const window = vscode.window;
 		askpassUi = {
 			showInputBox(options?: InputBoxOptionsLike): Promise<string | undefined> {

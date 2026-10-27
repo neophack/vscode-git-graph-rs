@@ -1,6 +1,5 @@
 /**
- * Tag write operations, ported from `DataSource`'s "Git Action Methods - Tags"
- * (`src/dataSource.ts`).
+ * Tag write operations: pure `WriteOp` builders.
  */
 
 import { TagType } from '../../../../shared/model/webview';
@@ -37,7 +36,7 @@ export interface DeleteTagParams {
 	/** The remote to delete the tag on, or null to only delete it locally. */
 	readonly deleteOnRemote: string | null;
 	/** Every other remote of the repository (a preflight read), whose remote-tracking tag refs
-	 * the legacy deletion also cleans up. */
+	 * the deletion also cleans up. */
 	readonly otherRemotes: ReadonlyArray<string>;
 }
 
@@ -77,13 +76,13 @@ export interface PushTagParams {
 }
 
 /**
- * Push a tag to one or more remotes. The steps stop at the first failure, like the legacy loop.
- * The legacy `pushTag` preflight — checking the commit is on each remote before pushing
+ * Push a tag to one or more remotes; the steps stop at the first failure. The preflight —
+ * checking the commit is on each remote before pushing
  * (`getRemotesContainingCommit`) — is a read the caller performs; the pure op is only the pushes.
  */
 export function pushTag(params: PushTagParams): WriteOp {
-	// The legacy code validated every remote itself and answered one fixed message for a bad one;
-	// here each remote is an ordinary ref check (the arg-safety message names it instead).
+	// Each remote is validated as an ordinary ref check; the arg-safety error message names
+	// the offending remote.
 	const checks: ReadonlyArray<ArgCheck> = [
 		['tagName', params.tagName, 'ref'],
 		['commitHash', params.commitHash, 'hash'],

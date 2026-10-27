@@ -1,10 +1,10 @@
 /**
- * The presentation helpers of src/utils/format.ts (ported from tests/utils.test.mjs): inline
+ * The presentation helpers of src/extension/platform/format.ts: inline
  * script encoding, text truncation, the webview nonce, the extension's own version, and the
  * relative time diff (including its Chinese units when the interface language is zh-cn). The
  * interface language is resolved at call time through the faked `vscode` configuration: the
  * localizer's language source is pointed at the fake settings map (the stand-in for the
- * configuration service the composition root wires, OPTIMIZATION-PLAN A4), so a setting change
+ * configuration service the composition root wires), so a setting change
  * applies mid-test exactly as it does in the editor.
  */
 

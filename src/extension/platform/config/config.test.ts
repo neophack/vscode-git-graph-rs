@@ -3,7 +3,7 @@ import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
 /**
- * The configuration model's contract tests (OPTIMIZATION-PLAN A4):
+ * The configuration model's contract tests:
  *
  * - the schema table is the ONE checked-in mirror of package.json#contributes.configuration, and
  *   the parity tests are anchored to the manifest itself, in BOTH directions: a newly
@@ -206,7 +206,7 @@ describe('takeSnapshot', () => {
 			'gerrit.remote': 'upstream',
 			'commitDetailsView.fileView.type': 'File List',
 			'repository.onLoad.showSpecificBranches': ['main', 'dev'],
-			// The two settings the repository manager reads (OPTIMIZATION-PLAN A5): the dotted
+			// The two settings the repository manager reads: the dotted
 			// key maps onto the camelCase snapshot field the manager consumes
 			'maxDepthOfRepoSearch': 3,
 			'repository.trackRemoteTags': true
@@ -227,13 +227,13 @@ describe('takeSnapshot', () => {
 	});
 
 	it('defaults prewarming on, and passes an explicit git-graph-rs.prewarm value through', () => {
-		// The switch only changes speed, never functionality (REFACTOR-PLAN 3.8.2 D11)
+		// The switch only changes speed, never functionality
 		expect(takeSnapshot(new FakeWorkspace()).prewarm).toBe(true);
 		expect(takeSnapshot(new FakeWorkspace({ 'prewarm': false })).prewarm).toBe(false);
 		expect(takeSnapshot(new FakeWorkspace({ 'prewarm': true })).prewarm).toBe(true);
 	});
 
-	it('defaults mobileAdaptation per host: ON under Git Graph Studio while unset, OFF under VS Code (OPTIMIZATION-PLAN V1)', () => {
+	it('defaults mobileAdaptation per host: ON under Git Graph Studio while unset, OFF under VS Code', () => {
 		// The studio default lives in the snapshot reader itself (no settings write at activation),
 		// so the manifest-default parity above stays the VS Code answer and only the studio host flips.
 		vscodeMock.env.uriScheme = 'ggs';

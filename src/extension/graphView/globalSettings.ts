@@ -11,11 +11,10 @@ import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
 
 /**
- * The global (User) settings the graph view's Settings Widget may write (REFACTOR-PLAN task 4.4),
- * extracted from src/gitGraphView.ts together with the save flow and the global-author side
- * effects of 'commitAuthors'. The pure decision functions stay exported (the legacy
- * tests/commitAuthors.test.mjs exercises them through the re-export shim). Task 4.5 moves this
- * module's surface behind platform/config.
+ * The global (User) settings the graph view's Settings Widget may write, together with the
+ * save flow and the global-author side effects of 'commitAuthors'. The pure decision functions
+ * stay exported for their unit tests (globalSettings.test.ts); the read side (the settings
+ * snapshot, the parsed `commitAuthors` value) lives in platform/config.
  */
 
 /**

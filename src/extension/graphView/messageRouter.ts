@@ -20,15 +20,14 @@ import type { GitRunnerPort } from './gitRunner';
 import type { PanelPorts, PanelRefreshIds } from './panelContext';
 
 /**
- * The MessageRouter of the Git Graph view (OPTIMIZATION-PLAN A5, extracted from GitGraphView):
- * everything one inbound webview message passes through — the pre-dispatch routing of the two
+ * The MessageRouter of the Git Graph view: everything one inbound webview message passes through — the pre-dispatch routing of the two
  * non-request page messages (automation shim results, the P1 trace report), the inbound
  * validation and dispatch through the exhaustive handler table (handlers/index.ts's
  * dispatchRequest rejects unknown `command`s; an unknown `repo` path reaches the genuine
  * handler, whose write chain refuses or fails it — the guarantee the fuzz suite pins), the
  * RepoFileWatcher mute window around a dispatch, the write-effect collection the GitWriter
  * reports into while a request runs, and the ONE impact-based refresh that follows a mutating
- * command (task 4.8). The panel (panel.ts) owns the webview panel this routes for.
+ * command. The panel (panel.ts) owns the webview panel this routes for.
  */
 
 /** The write-path localizer: the ports speak plain string keys, the i18n table's own keys are what they carry. */
@@ -37,8 +36,7 @@ function localizeWriteKey(key: string, ...params: Array<string | number>): strin
 }
 
 /**
- * The dispatched requests the P1 op spans measure (OPTIMIZATION-PLAN §7 P1, the "if cheap" row):
- * load-more (`loadCommits`), expand-details (`commitDetails`), and the refs/HEAD repo-info op
+ * The dispatched requests the P1 op spans measure: load-more (`loadCommits`), expand-details (`commitDetails`), and the refs/HEAD repo-info op
  * (`loadRepoInfo`). Every other dispatched request starts no span.
  */
 const OP_TRACE_COMMANDS: ReadonlySet<string> = new Set(['loadCommits', 'commitDetails', 'loadRepoInfo']);
@@ -57,7 +55,7 @@ export interface MessageRouterDeps {
 	readonly viewPort: ViewPort;
 	/** The staged commit loader (the context's `loader` port). */
 	readonly loader: CommitLoader;
-	/** The loader's reads port, shared with the write-path impact refresh (task 4.8). */
+	/** The loader's reads port, shared with the write-path impact refresh. */
 	readonly loaderReads: CommitDataPort;
 	/** The refresh ids the staged requests record and the regenerated page embeds. */
 	readonly refreshIds: PanelRefreshIds;
@@ -95,7 +93,7 @@ export interface MessageRouter {
  */
 export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	/**
-	 * The write effects the GitWriter reported while a request is being dispatched (task 4.8):
+	 * The write effects the GitWriter reported while a request is being dispatched:
 	 * the per-op truth the impact refresh prefers over the protocol's per-command table. Keyed by
 	 * repository, cleared as each dispatched request's finally block consumes it.
 	 */
@@ -104,7 +102,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	let dispatchDepth = 0;
 
 	/**
-	 * The write-path impact collection (task 4.8): the GitWriter reports the effects of
+	 * The write-path impact collection: the GitWriter reports the effects of
 	 * every op that ran while a request was being dispatched — the per-op truth the
 	 * impact refresh prefers over the protocol's per-command table.
 	 */
@@ -144,7 +142,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	};
 
 	/**
-	 * The `config`-class partial update (task 4.8): drop the cached repository configuration and
+	 * The `config`-class partial update: drop the cached repository configuration and
 	 * push one fresh `loadConfig` response under the refresh id the view last used — never a
 	 * rejection: a failed read is logged and simply not pushed (the settings widget keeps its
 	 * previous data, exactly as an unrequested failed load would).
@@ -160,10 +158,10 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	};
 
 	/**
-	 * Push the impact-based refresh of one completed write (task 4.8): the effects the GitWriter
+	 * Push the impact-based refresh of one completed write: the effects the GitWriter
 	 * reported for the dispatched repository — the per-op truth, e.g. a plain `createBranch` is
 	 * `refs` only — or, when none arrived, the protocol's per-command fallback. The impact
-	 * refresh itself (impactRefresh.ts) picks the minimal partial update per §3.8.3.
+	 * refresh itself (impactRefresh.ts) picks the minimal partial update per effect class.
 	 */
 	const refreshAfterWriteOf = (command: string, msg: unknown): void => {
 		const repo = typeof msg === 'object' && msg !== null ? (msg as { repo?: unknown }).repo : undefined;
@@ -196,7 +194,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	/**
 	 * Respond to a message sent from the front-end: route it through the exhaustive handler
 	 * table with the RepoFileWatcher muted. When the command's handler can mutate the
-	 * repository, the ONE refresh that follows is the impact-based partial update of task 4.8
+	 * repository, the ONE refresh that follows is the impact-based partial update
 	 * (see {@link refreshAfterWrite}) — picked from the effects the GitWriter reported for the
 	 * dispatched request (the per-op truth) with the protocol's per-command table as the
 	 * fallback (a refused write, or a flow that bypassed the writer).
@@ -215,7 +213,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 			const result = await (opSpan !== null ? span(opSpan, () => dispatchRequest(msg, context)) : dispatchRequest(msg, context));
 			if (result === 'unknown') {
 				// No handler exists for the command: say so in exactly one log line and surface an
-				// error, instead of silently dropping the message (task 4.2). The protocol has no
+				// error, instead of silently dropping the message. The protocol has no
 				// generic error response a host could answer an unknown command with, so the error
 				// shows as the localized action-handling notification.
 				deps.logger.logError('Received an unknown "' + String(command) + '" message from the Git Graph View.');
@@ -245,7 +243,7 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 			deliverAutomationShimResult((msg as { __ggAutomationResult: unknown }).__ggAutomationResult);
 			return;
 		}
-		// The P1 trace report (OPTIMIZATION-PLAN §7 P1): the webview's collected marks arrive
+		// The P1 trace report: the webview's collected marks arrive
 		// once, after T5 - append them to the open trace and record it. Deliberately not a
 		// handler-table request: no handler exists (or may exist) for it.
 		if (typeof msg === 'object' && msg !== null

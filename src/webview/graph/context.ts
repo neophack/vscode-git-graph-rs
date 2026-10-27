@@ -41,7 +41,7 @@ export interface ViewDom {
 
 /**
  * The view's widgets. The Find widget, the Settings widget, the Reflog view, the Worktree dialog
- * and the Statistics view are LAZY (task 5.9): the context holds their facades, which load the
+ * and the Statistics view are LAZY: the context holds their facades, which load the
  * real modules through dynamic import() on first use - only the Conflict banner sits in the
  * first-paint bundle with the table, the graph and the control bar.
  */
@@ -68,7 +68,7 @@ export interface GraphContext {
 	readonly table: CommitTable;
 	readonly columns: ColumnLayout;
 	/**
-	 * The one render pass of the view (task 5.10): requesters that can wait a frame call
+	 * The one render pass of the view: requesters that can wait a frame call
 	 * `renderScheduler.request()` and merge into a single render; paths that must measure the DOM
 	 * they just wrote call `renderSync()`, which satisfies the pending requests instead of adding
 	 * another pass.

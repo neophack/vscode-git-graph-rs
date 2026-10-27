@@ -4,7 +4,7 @@
  * the requests that bring in avatars and pull requests, and applying a changed Extension
  * Configuration to the running view.
  *
- * This is the FACADE of the load pipeline (OPTIMIZATION-PLAN §6 F2): the lifecycle runs through
+ * This is the FACADE of the load pipeline: the lifecycle runs through
  * the explicit state machine (`loadMachine.ts`, driven by `loadController.ts`) — every lifecycle
  * event dispatches, and a response applies only in a state that expects it, keyed by its request
  * id; anything else is dropped and logged. The side effects live in the sibling modules
@@ -77,11 +77,11 @@ export class RepoLoader {
 	 * Load the first repository: restore what a webview reload keeps (the previous repository and
 	 * its scroll position), and wait for the pushed data.
 	 *
-	 * The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
+	 * The open path is push-based: the extension host began the merged
 	 * `loadView` read when the panel was created and pushes the result as soon as the page
 	 * reports `ready` — which main.ts sends once this loader is composed. The boot sends NO
 	 * loadRepoInfo/loadCommits requests; the loading state shows until the push arrives - unless
-	 * the first-paint snapshot (D10, task 5.9) already put the previous session's rows on screen.
+	 * the first-paint snapshot already put the previous session's rows on screen.
 	 * @param prevState The state VS Code persisted for this webview (or the snapshot of a page left behind by an Extension Host restart).
 	 * @param lastActiveRepo The repository that was last active.
 	 * @param initialLoadViewTo Where the extension asked the view to load to.
@@ -120,8 +120,7 @@ export class RepoLoader {
 	}
 
 	/**
-	 * Check the boot's first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9) and, when it is
-	 * paintable, hand it to the machine: the previous session's rows go on screen IMMEDIATELY,
+	 * Check the boot's first-paint snapshot and, when it is paintable, hand it to the machine: the previous session's rows go on screen IMMEDIATELY,
 	 * marked "refreshing" (`snapshotPainted`), and the pushed `loadView` data reconciles them when
 	 * it lands. The snapshot is skipped unless it is decodable, belongs to the repository being
 	 * opened, and was rendered under the configuration this page booted with; HEAD cannot be
@@ -246,16 +245,16 @@ export class RepoLoader {
 		ctx.persistence.saveState();
 		// The switch dispatches `openRepo` — valid from EVERY machine state (a switch mid-load
 		// restarts under the new repository; a switch to the same repository is a reload) — its
-		// effects clear the view and issue the repo-info request exactly like legacy's
-		// refresh(true) did. The boot's own adoption expects the pushed data instead.
+		// effects clear the view and issue the repo-info request, the same shape a hard refresh
+		// takes. The boot's own adoption expects the pushed data instead.
 		if (this.bootPushExpected) {
 			this.bootPushExpected = false;
 			this.controller.awaitPush(repo);
 			return;
 		}
-		// The cycle flags the responses still read start fresh with the switch (legacy's
-		// requestLoadRepoInfoAndCommits set them at every cycle start: the hard kind, and no
-		// repo-info change note and no pending config reload carried over)
+		// The cycle flags the responses still read start fresh with the switch (`beginCycle`
+		// sets the hard kind, and no repo-info change note or pending config reload carries
+		// over)
 		store.slices.repos.beginCycle(true, false);
 		this.controller.openRepo(repo);
 	}
@@ -284,7 +283,7 @@ export class RepoLoader {
 	/* Responses (acceptance is the machine's; these are the router's entry points) */
 
 	/**
-	 * The pushed merged view of the open path (task 4.7): the repo info and the first commit page
+	 * The pushed merged view of the open path: the repo info and the first commit page
 	 * in one message, followed by the same staged follow-ups the partial responses carry.
 	 */
 	public processLoadView(msg: GG.ResponseLoadView) {
@@ -372,8 +371,8 @@ export class RepoLoader {
 	/**
 	 * Start (or join) the refresh cycle: request the repository info and then the commits, or just
 	 * the commits. The machine decides the cycle (a join replaces the ids the new requests carry,
-	 * keeping an in-flight repo-info half valid); the legacy join flags the responses still read
-	 * (the hard kind, the config reload) are merged exactly as before.
+	 * keeping an in-flight repo-info half valid); the join flags the responses still read
+	 * (the hard kind, the config reload) merge into the running cycle.
 	 * @param hard Clear the view's commits (the loading state is shown) for this refresh.
 	 * @param skipRepoInfo Only request the commits (the repository info is unchanged).
 	 * @param configChanges Also reload the repository's configuration once the commits are loaded.

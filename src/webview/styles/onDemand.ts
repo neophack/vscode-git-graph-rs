@@ -1,5 +1,5 @@
 /**
- * The on-demand stylesheet chunk of task 5.9's CSS split: the styles of the widget surfaces
+ * The on-demand stylesheet chunk: the styles of the widget surfaces
  * whose MODULES sit in the first-paint bundle (the action runners reach them synchronously)
  * but whose DOM only appears after a user action - the dialogs (with their custom selects),
  * the context menu, the commit details view with its file tree, and the Gerrit review dialog.
@@ -21,9 +21,8 @@ import fileTreeCss from './fileTree.css';
 import gerritReviewCss from './gerritReview.css';
 
 /* Each sheet below carries its own phone-layout section (the former styles/mobile/ sheets) and
- * its own tablet-layout section (the former styles/tablet/ sheets; OPTIMIZATION-PLAN §6 F6
- * merged both directories into the component files), so one injection per surface puts the
- * wide, phone and tablet rules on the page in cascade order. */
+ * its own tablet-layout section (the former styles/tablet/ sheets), so one injection per surface
+ * puts the wide, phone and tablet rules on the page in cascade order. */
 injectOnDemandStyles(dialogCss);
 injectOnDemandStyles(contextMenuCss);
 injectOnDemandStyles(commitDetailsCss);

@@ -176,11 +176,11 @@ export async function runAutomationSuite(options: SuiteRunOptions): Promise<Suit
 	const startedMs = Date.now();
 	const bridge = new HostBridge();
 	const server = new AutomationServer({ logger: options.logger, bridge, version: 'in-process' });
-	// The scripted UiPort of the whole run (task 4.10): every native dialog any action raises —
+	// The scripted UiPort of the whole run: every native dialog any action raises —
 	// the archive flows' save dialog above all — is answered from the lenient default script
-	// (primary button / first item / a generated save path) and recorded, replacing both the
-	// former nativeSaveDialog skip (those actions now RUN) and the stall a real modal would
-	// cause. Scenario runs (the E2E entry) install their own strict per-scenario port on top.
+	// (primary button / first item / a generated save path) and recorded, so archive flows RUN
+	// (never skipped for raising a dialog) and a real modal can never stall the run. Scenario
+	// runs (the E2E entry) install their own strict per-scenario port on top.
 	installScriptedUiPort(new ScriptedUiPort({ mode: 'lenient' }));
 	server.start();
 	try {

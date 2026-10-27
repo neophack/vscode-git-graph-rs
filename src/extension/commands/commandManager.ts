@@ -30,7 +30,7 @@ import { fetch, filterByFile, view } from './view';
 
 /**
  * Commands whose handler consults Git, or opens a view whose first render decides on the Git
- * situation: they await the background Git resolution first (OPTIMIZATION-PLAN V1), so a command
+ * situation: they await the background Git resolution first, so a command
  * invoked while the `git --version` validation is still in flight waits for it instead of acting
  * on a "no Git" that only means "not validated yet". Once the resolution has answered, the await
  * is a settled promise and costs nothing.
@@ -55,7 +55,7 @@ const GIT_AWAITING_COMMANDS: ReadonlySet<string> = new Set([
 
 /**
  * Commands that change the repository or run the `git` CLI at all: refused while the workspace is
- * untrusted (OPTIMIZATION-PLAN V2) — in Restricted Mode the extension is read-only, served by the
+ * untrusted — in Restricted Mode the extension is read-only, served by the
  * Rust engine alone. The view-opening commands stay available (engine reads are safe).
  */
 const RESTRICTED_COMMANDS: ReadonlySet<string> = new Set([
@@ -76,7 +76,7 @@ const RESTRICTED_COMMANDS: ReadonlySet<string> = new Set([
 /**
  * Manages the registration and execution of Git Graph Commands.
  *
- * The handlers live in the per-group modules of `src/extension/commands/` (task 4.6); this
+ * The handlers live in the per-group modules of `src/extension/commands/`; this
  * class owns the registration order, the shared invocation wrapper (logging, the Restricted
  * Mode refusal, the Git-resolution await, and promise forwarding), the extension contexts, and
  * disposal — and IS the {@link CommandHost} the handlers run with.
@@ -106,8 +106,8 @@ export class CommandManager extends Disposable implements CommandHost {
 
 	/**
 	 * Creates the Git Graph Command Manager.
-	 * @param services The extension services (the composition root's frozen bag, OPTIMIZATION-PLAN
-	 * A2): every collaborator the handlers run with.
+	 * @param services The extension services (the composition root's frozen bag):
+	 * every collaborator the handlers run with.
 	 * @param panels The registry of the live Git Graph view (the view-opening commands open
 	 * through it).
 	 */
@@ -126,13 +126,12 @@ export class CommandManager extends Disposable implements CommandHost {
 		this.config = services.config;
 		this.panels = panels;
 
-		// P1 tracing (OPTIMIZATION-PLAN §7 P1): gated by the same setting as the session log, and
+		// P1 tracing: gated by the same setting as the session log, and
 		// every recorded trace is written to that log in the one-line shape
 		// scripts/analyze-log.mjs aggregates into P50/P95. The ring buffer itself is read through
-		// shared/perf/trace's `traces()` (the later Diagnostics command, V5).
-		// NOTE (P1 integration): when the extension entry lands its ACTIVATION mark (see
-		// MARK.activation), it should also call setEnabled(config.current.enableLog) BEFORE it,
-		// so the activation mark is recorded; the wiring here stays (it re-asserts the value).
+		// shared/perf/trace's `traces()` (the Diagnostics command, ./diagnostics).
+		// The extension entry (src/extension/main.ts) calls setEnabled before its ACTIVATION mark
+		// so that mark is recorded; the wiring here re-asserts the value.
 		setEnabled(this.config.current.enableLog);
 		onTraceRecorded((trace) => this.logger.log('Trace ' + formatTrace(trace)));
 
@@ -198,14 +197,14 @@ export class CommandManager extends Disposable implements CommandHost {
 					begin('boot');
 					mark(MARK.commandDispatch);
 				}
-				// Restricted Mode (V2): the Git-running commands are refused outright — the engine
+				// Restricted Mode: the Git-running commands are refused outright — the engine
 				// keeps serving the reads, but nothing may spawn `git` in an untrusted folder.
 				if (RESTRICTED_COMMANDS.has(command) && this.gitResolution.restricted()) {
 					this.logger.log('Command refused in Restricted Mode: ' + command);
 					void showInformationMessage(t('restrictedModeNotice'));
 					return undefined;
 				}
-				// Git-dependent commands await the background resolution (V1) before running.
+				// Git-dependent commands await the background resolution before running.
 				if (GIT_AWAITING_COMMANDS.has(command)) await this.gitResolution.ready();
 				this.logger.log('Command Invoked: ' + command);
 				try {

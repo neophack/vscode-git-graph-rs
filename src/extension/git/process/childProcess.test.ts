@@ -1,9 +1,8 @@
 /**
- * The view-side process helpers (ported from tests/utils.test.mjs): bounded-parallelism promise
- * evaluation, shell quoting and detection, and the integrated Git terminal. The `vscode` module
- * is faked with a recording stub so the terminal the wrapper opens can be inspected. (The
- * spawned-output resolution that used to be covered here moved to `spawn.test.ts` with its
- * implementation, OPTIMIZATION-PLAN A3.)
+ * The view-side process helpers (ported from legacy/tests/utils.test.mjs): bounded-parallelism
+ * promise evaluation, shell quoting and detection, and the integrated Git terminal. The `vscode`
+ * module is faked with a recording stub so the terminal the wrapper opens can be inspected.
+ * (Generic process spawning is covered by `spawn.test.ts`.)
  */
 
 import * as path from 'path';

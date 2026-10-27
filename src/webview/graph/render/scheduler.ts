@@ -1,17 +1,17 @@
 /**
- * The render scheduler (REFACTOR-PLAN task 5.10, OPTIMIZATION-PLAN §6 F1): every request to
+ * The render scheduler: every request to
  * re-render the view funnels through here, and multiple requests within one frame merge into a
  * SINGLE render pass on the next animation frame. A response - or any burst of store changes -
  * therefore never triggers more than one render, and the frame's layout work happens once, right
  * before the paint.
  *
- * Routing by slice (F1): the store's slice actions emit typed changes (`{ slice, keys }`),
+ * Routing by slice: the store's slice actions emit typed changes (`{ slice, keys }`),
  * `request(change)` collects them into ONE ChangeFrame per pass and marks every renderer
  * SUBSCRIBED to a changed slice dirty; the pass runs only the dirty renderers, in subscription
- * order, handing each the collected frame - the input the keyed row patching (task 5.10) reads.
+ * order, handing each the collected frame - the input the keyed row patching reads.
  * `request()` without a change (a geometry-driven render: a resize, a scroll re-windowing) and
- * `invalidateRender()` (the legacy full invalidation) mark EVERY renderer dirty - the whole pass
- * runs, exactly as it did before the routing existed.
+ * `invalidateRender()` (the store's full invalidation) mark EVERY renderer dirty - the whole pass
+ * runs.
  *
  * Two entry styles:
  *  - `request()` coalesces: it marks the view dirty and schedules one frame callback; further

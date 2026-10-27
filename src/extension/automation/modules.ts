@@ -1,5 +1,5 @@
 /**
- * The automation subsystem's build-mode entry gate (REFACTOR-PLAN task 6.2): whether the
+ * The automation subsystem's build-mode entry gate: whether the
  * automation modules load is decided AT BUILD TIME, not by which files happen to sit next to the
  * bundle. scripts/build/build.mjs passes esbuild `define: { __AUTOMATION__: 'true' | 'false' }`:
  *   - automation build (`--automation`): the flag is true, the requires below survive and the

@@ -2,8 +2,7 @@ import type { GerritChangeState } from '../../../shared/model/gerrit';
 
 /**
  * The cached (unfiltered) Gerrit data of a repository: the states and their patchsets as
- * `GerritDataSource` derived them, under the fetch limit they were fetched under. Ported from
- * GitGraphView's `GerritCacheEntry` (src/gitGraphView.ts).
+ * `GerritDataSource` derived them, under the fetch limit they were fetched under.
  */
 export interface GerritCacheEntry {
 	states: GerritChangeState[];
@@ -17,9 +16,8 @@ export interface GerritCacheEntry {
 }
 
 /**
- * The per-repository Gerrit caches of the graph view's staged loading pipeline (REFACTOR-PLAN
- * task 4.3), extracted from GitGraphView's `gerritCache` / `gerritFetches` / `gerritStaleRepos`
- * / `gerritCacheGeneration` fields. The entry holds the UNFILTERED states (switching the status
+ * The per-repository Gerrit caches of the graph view's staged loading pipeline. The entry holds
+ * the UNFILTERED states (switching the status
  * filter re-renders instantly); entries are rebuilt from the locally fetched change refs without
  * any network access, and only refreshed from the remote for a repository the user explicitly
  * asked to fetch (the Fetch button, enabling the integration, or changing its fetch settings) -

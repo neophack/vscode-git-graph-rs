@@ -1,5 +1,5 @@
 /**
- * The ResponseRouter (REFACTOR-PLAN task 5.3): every response the extension host can send, mapped
+ * The ResponseRouter: every response the extension host can send, mapped
  * to what the view does with it. The table is typed over the protocol's response union, so a
  * response without a handler (or a handler for a response that does not exist) is a compile
  * error.
@@ -38,7 +38,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 	/* Generic action handlers */
 
 	/**
-	 * The write-action success contract of REFACTOR-PLAN task 4.8: after a write succeeds, the
+	 * The write-action success contract: after a write succeeds, the
 	 * view does NOT refresh itself — the extension host pushes the impact-based partial update
 	 * (the re-annotated refs page, the uncommitted-changes row, the repository configuration, or
 	 * one incremental traversal reload) picked from the write's effects. On success only the
@@ -93,9 +93,9 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		}
 	};
 
-	/** The handler of an action answered by a single error: the host pushes the refresh (task 4.8). */
+	/** The handler of an action answered by a single error: the host pushes the refresh. */
 	const complete = (errorMessage: string) => (msg: { readonly error: GG.ErrorInfo }) => completeOrDisplayError(msg.error, errorMessage);
-	/** The handler of an action answered by several errors: the host pushes the refresh (task 4.8). */
+	/** The handler of an action answered by several errors: the host pushes the refresh. */
 	const completeAll = (errorMessage: string) => (msg: { readonly errors: GG.ErrorInfo[] }) => completeAndDisplayErrors(msg.errors, errorMessage);
 	/** The handler of an action answered by a single error: only report a failure. */
 	const finish = (errorMessage: string, dismissActionRunning: boolean = false) => (msg: { readonly error: GG.ErrorInfo }) => finishOrDisplayError(msg.error, errorMessage, dismissActionRunning);
@@ -203,7 +203,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		fetch: complete(strings.errFetch),
 		// The extension cleared its commit cache and (when disabling) deleted the local change
 		// refs — and the reload must run under the integration's NEW fetch settings, which this
-		// view holds: the one write response whose refresh stays here (see task 4.8)
+		// view holds: the one write response whose refresh stays here
 		gerritSetFetchRefs: (msg) => refreshViewOrDisplayError(msg.error, strings.errGerritSetFetchRefs, true),
 		fetchAvatar: (msg) => {
 			imageResizer.resize(msg.image, (resizedImage) => {
@@ -220,7 +220,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		loadCommits: (msg) => ctx.loader.processLoadCommitsResponse(msg),
 		loadConfig: (msg) => ctx.loader.processLoadConfig(msg),
 		loadRepoInfo: (msg) => ctx.loader.processLoadRepoInfoResponse(msg),
-		// The merged open path (task 4.7): the host pushes the repo info and the first commit page
+		// The merged open path: the host pushes the repo info and the first commit page
 		// in one message when the page reports `ready`; each half routes through the processing of
 		// the corresponding partial response, so the staged follow-ups keep working unchanged.
 		loadView: (msg) => ctx.loader.processLoadView(msg),
@@ -273,7 +273,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		},
 		rebase: (msg) => {
 			if (msg.error === null) {
-				// Both variants wait for the host's pushed impact refresh (task 4.8); the
+				// Both variants wait for the host's pushed impact refresh; the
 				// interactive one never had one to wait for (its Git runs in the terminal)
 				dialog.closeActionRunning();
 			} else {

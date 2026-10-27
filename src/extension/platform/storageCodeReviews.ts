@@ -1,5 +1,5 @@
 /**
- * The code-review store of the Git Graph Extension State (OPTIMIZATION-PLAN §3 A5): the review
+ * The code-review store of the Git Graph Extension State: the review
  * records of every repository (one workspaceState key) - split out of the former flat
  * platform/storage.ts, over the one versioned KV (./storageVersioned.ts). The `ExtensionState`
  * facade delegates its code-review methods here.

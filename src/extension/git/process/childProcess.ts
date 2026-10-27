@@ -1,6 +1,6 @@
 // View-side process helpers: bounded-parallelism promise evaluation, shell quoting and
-// detection, and the integrated git terminal. The spawned-output resolution that used to live
-// here moved to `spawn.ts` (OPTIMIZATION-PLAN A3: one process seam).
+// detection, and the integrated git terminal. Generic process spawning lives in `spawn.ts`
+// (the one process seam).
 
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -17,7 +17,7 @@ import { t } from '../../platform/i18n';
  * @param command The command to run.
  * @param name The name for the terminal.
  * @param shellPath The configured `git-graph-rs.integratedTerminalShell` (the caller answers
- * from the configuration snapshot, OPTIMIZATION-PLAN A4; empty means VS Code's default shell).
+ * from the configuration snapshot; empty means VS Code's default shell).
  */
 export function openGitTerminal(cwd: string, gitPath: string, command: string | null, name: string, shellPath: string) {
 	const sep = isWindows() ? ';' : ':';
@@ -32,9 +32,8 @@ export function openGitTerminal(cwd: string, gitPath: string, command: string | 
 	};
 	if (shellPath !== '') options.shellPath = shellPath;
 
-	// The platform adapter (task 4.10, INVENTORY.md #25) creates the terminal, optionally sends
-	// the command into it and shows it - the exact flow this wrapper drove directly through
-	// `vscode.window.createTerminal` before. Built at call time, so merely importing this
+	// The platform adapter creates the terminal, optionally sends
+	// the command into it and shows it. Built at call time, so merely importing this
 	// module never touches the vscode module surface (minimal test mocks stay usable).
 	new Terminals(vscode.window).run(options, command === null ? null : 'git ' + command);
 }
@@ -53,7 +52,7 @@ export type ShellKind = 'cmd' | 'powershell' | 'fish' | 'posix';
 /**
  * Identify the shell kind of the terminal that openGitTerminal creates: the configured
  * `git-graph-rs.integratedTerminalShell` (answered by the caller from the configuration
- * snapshot, OPTIMIZATION-PLAN A4), falling back to the profile default VS Code reports (only
+ * snapshot), falling back to the profile default VS Code reports (only
  * available in newer versions — otherwise the platform default is assumed).
  */
 export function detectTerminalShellKind(configuredShell: string): ShellKind {

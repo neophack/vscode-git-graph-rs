@@ -1,7 +1,7 @@
 /**
  * The avatar request queue: the ordered, de-duplicating backlog of avatar fetches the
  * `AvatarManager` drains on its interval. Split out of `avatarManager.ts` along the manager's
- * natural seam (REFACTOR-PLAN task 6.2): this module is the scheduling data structure; the
+ * natural seam: this module is the scheduling data structure; the
  * manager in `avatarManager.ts` owns the cache, storage and fetchers.
  */
 

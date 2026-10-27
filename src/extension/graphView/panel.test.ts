@@ -8,12 +8,13 @@ import { PanelRegistry } from './panelRegistry';
 import type { ExtensionServices } from '../services';
 
 /**
- * Panel tests with a fake 'vscode' module (REFACTOR-PLAN task 4.4's acceptance: panel
+ * Panel tests with a fake 'vscode' module (panel
  * restoration and orphaned tabs have tests with a fake vscode): the panel lifecycle through
- * the composition root's PanelRegistry (A2 — the former GitGraphView statics), the generated
+ * the composition root's PanelRegistry (the former GitGraphView statics, now registry
+ * methods), the generated
  * HTML's CSP/nonce discipline, the orphaned-tab replacement (both the no-Tab-API degradation
  * and the in-place replacement), the message routing through the handler table, and the open
- * path of task 4.7 - the panel begins the merged loadView read at creation and pushes it when
+ * path - the panel begins the merged loadView read at creation and pushes it when
  * the page reports `ready`, sending no loadRepoInfo/loadCommits at boot. The heavier handler
  * behaviors live in handlers/*.test.ts; the staged loading pipeline in commitLoader.test.ts.
  */
@@ -134,7 +135,7 @@ function fakeCollaborators() {
 		write: {
 			run: vi.fn(async () => null),
 			policies: { signCommits: false, signTags: false },
-			// The writer's repository-changed event (task 4.8's effect collection): no fake
+			// The writer's repository-changed event (the effect collection): no fake
 			// writes happen in these tests, so the listener is registered and never fires.
 			onRepositoryChanged: vi.fn(() => ({ dispose: () => undefined }))
 		},
@@ -231,7 +232,7 @@ describe('GitGraphView panel', () => {
 		const html = vs.state.createdPanels[panelIndex].webview.html;
 		expect(html).toMatch(/<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src [^;]+ 'unsafe-inline'; script-src 'nonce-[A-Za-z0-9]{32}' https?:[^;"]+(?:;|")/);
 		// The script-src directive carries the nonce plus the webview's own resource origin - the
-		// module chunks of task 5.9's code splitting load through relative dynamic import(), which
+		// module chunks of the code splitting load through relative dynamic import(), which
 		// a nonce cannot cover - but no unsafe-inline and no unsafe-eval (the automation shim is
 		// not present under the test extension path)
 		const scriptSrc = /script-src ([^;"]+)/.exec(html)![1];
@@ -241,7 +242,7 @@ describe('GitGraphView panel', () => {
 		// Every inline script the page carries is nonce-tagged
 		expect(html).toMatch(/<script nonce="[A-Za-z0-9]{32}">var initialState =/);
 		expect(html.match(/<script(?![^>]*nonce=)/g)).toBeNull();
-		// The view's bundle loads as an ES MODULE (task 5.9): its on-demand chunks follow through
+		// The view's bundle loads as an ES MODULE: its on-demand chunks follow through
 		// relative dynamic import(). The Markdown renderer's vendor preload is gone with it - the
 		// renderer itself became one of those chunks.
 		expect(html).toMatch(/<script nonce="[A-Za-z0-9]{32}" type="module" src="[^"]*out\.min\.js\?v=/);
@@ -335,7 +336,7 @@ describe('GitGraphView panel', () => {
 		expect(loadRepos!.loadViewTo).toBeNull();
 	});
 
-	it('the open path pushes the merged loadView on `ready` and sends no loadRepoInfo/loadCommits (task 4.7)', async () => {
+	it('the open path pushes the merged loadView on `ready` and sends no loadRepoInfo/loadCommits', async () => {
 		const col = fakeCollaborators();
 		const { view, panelIndex } = openView(col);
 		await flush();

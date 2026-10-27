@@ -1,7 +1,7 @@
 /**
  * Tests for the GitWriter: the gates in order (refusal, argument safety, executable, Git
  * version), the multi-step execution semantics (stop at first failure, tolerance, best effort),
- * the legacy error mapping, and the repository-changed event. The GitProcess runs over an
+ * the error mapping, and the repository-changed event. The GitProcess runs over an
  * injected spawn scripted per argv.
  */
 
@@ -164,7 +164,7 @@ describe('GitWriter error mapping', () => {
 	it('commandFailure reproduces getErrorMessage exactly', () => {
 		expect(commandFailure({ code: 1, stdout: Buffer.from('out line\n'), stderr: 'err line\n' })).toBe('err line\nout line');
 		expect(commandFailure({ code: 1, stdout: Buffer.alloc(0), stderr: '' })).toBe('');
-		// No trailing newline: the legacy pop() still drops the last line (kept for parity).
+		// No trailing newline: the final pop() still drops the last line (kept for parity).
 		expect(commandFailure({ code: 1, stdout: Buffer.alloc(0), stderr: 'one line only' })).toBe('');
 	});
 });

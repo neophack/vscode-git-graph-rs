@@ -1,5 +1,5 @@
 /**
- * The worktree/file-domain scenarios (task 4.10): the worktrees.ts operations (add, remove,
+ * The worktree/file-domain scenarios: the worktrees.ts operations (add, remove,
  * prune) and the files.ts operations (cleanUntrackedFiles, resetFileToRevision), each with a
  * success and a failure scenario. Worktree paths live OUTSIDE the repository
  * (`../ggs-auto-worktree`, the catalog's existing convention — the reseed removes the directory).
@@ -39,7 +39,7 @@ export const WORKTREE_FILE_SCENARIOS = [
 	scenario(byId(WORKTREE_ACTIONS, 'worktree/remove'), {
 		ops: ['addWorktree', 'removeWorktree'],
 		// The remove action's request path removes ../ggs-auto-worktree — the worktree the
-		// earlier add created. On a scenario-isolated run (§6.8.3's per-scenario reset) the add
+		// earlier add created. On a scenario-isolated run (the per-scenario reset) the add
 		// is part of this scenario's when, so the remove always has its target.
 		then: {
 			git: [{ kind: 'refPresent', ref: 'automation-worktree-branch' }, { kind: 'headIs', name: 'main' }]

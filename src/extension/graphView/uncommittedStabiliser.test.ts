@@ -3,10 +3,9 @@ import { UncommittedCountStabiliser } from './uncommittedStabiliser';
 
 /**
  * `UncommittedCountStabiliser` gates the "Uncommitted Changes" count delivered to the webview
- * (see the CommitLoader's uncommitted follow-up). The cases mirror tests/uncommittedStabiliser.test.mjs
- * (the legacy characterization suite that runs against the live src/gitGraphView.ts copy) one for
- * one, so the ported module is pinned to the same behavior before the Panel cutover deletes the
- * live class.
+ * (see the CommitLoader's uncommitted follow-up). These tests pin the delivery rules that
+ * follow-up depends on: immediate positive counts, zero only after the confirm window's
+ * re-reads, and NULL readings delivering nothing.
  */
 
 const CONFIRM_WINDOW_MS = 5000;

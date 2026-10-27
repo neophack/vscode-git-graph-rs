@@ -1,6 +1,6 @@
 /**
- * The keyboard actions of the automation catalog (task 6.2 split): carved verbatim out of
- * the former single-file catalog.ts, each action now carrying its tags (the group at minimum).
+ * The keyboard actions of the automation catalog: carved verbatim out of
+ * the former single-file catalog.ts, each action carrying its tags (the group at minimum).
  * See catalog.ts for the assembled catalog and the fixture-stable facts the entries rely on.
  */
 

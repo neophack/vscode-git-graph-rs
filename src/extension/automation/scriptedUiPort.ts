@@ -8,7 +8,7 @@ import type { DisposableLike } from '../platform/config';
 import { setScriptedUiPort } from '../platform/actions';
 
 /**
- * The ScriptedUiPort (REFACTOR-PLAN §6.8.2, task 4.10): the automation/E2E build's UiPort
+ * The ScriptedUiPort: the automation/E2E build's UiPort
  * implementation. It answers every native interaction the host raises — modal confirmations,
  * input boxes, quick picks, save/open dialogs — from a per-scenario script, and records every
  * call (kind, title, what was offered, the answer given) so scenario assertions can check them.
@@ -20,11 +20,11 @@ import { setScriptedUiPort } from '../platform/actions';
  *   - strict mode (scenario runs, the default): the call resolves cancelled and is recorded
  *     `from: 'exhausted'` — the scenario's then-block sees the disagreement;
  *   - lenient mode (the suite runner's blanket installation): the call is answered with the
- *     default the former dialog auto-answer used (the primary button, the first item, a
+ *     dialog auto-answer default (the primary button, the first item, a
  *     generated save path) and recorded `from: 'default'`.
  *
- * This module lives in src/automation and is bundled only by the automation build; the
- * production seam it installs through (utils/actions.ts's setScriptedUiPort) is the only piece
+ * This module lives in src/extension/automation and is bundled only by the automation build; the
+ * production seam it installs through (platform/actions.ts's setScriptedUiPort) is the only piece
  * the default bundle carries.
  */
 
@@ -32,7 +32,7 @@ import { setScriptedUiPort } from '../platform/actions';
 export type ScriptedDialogKind = 'message' | 'input' | 'quickPick' | 'save' | 'open';
 
 /**
- * One scripted answer, an entry of a scenario's `answers` array (§6.8.3). Values may contain
+ * One scripted answer, an entry of a scenario's `answers` array. Values may contain
  * `{{placeholder}}` references the runner expands against the live context before installing.
  */
 export type ScriptedAnswer =
@@ -89,7 +89,7 @@ export interface ScriptedUiPortOptions {
 	readonly answers?: readonly ScriptedAnswer[];
 	/**
 	 * 'strict' (default): a call the script has no answer for resolves cancelled and is recorded
-	 * `exhausted`. 'lenient': it is answered with the default the former dialog auto-answer used
+	 * `exhausted`. 'lenient': it is answered with the dialog auto-answer default
 	 * (primary button / first item / generated save path).
 	 */
 	readonly mode?: ScriptedUiPortMode;
@@ -325,7 +325,7 @@ export function activeScriptedUiPort(): ScriptedUiPort | null {
 }
 
 /**
- * Install a ScriptedUiPort through the production seam (utils/actions.ts's setScriptedUiPort).
+ * Install a ScriptedUiPort through the production seam (platform/actions.ts's setScriptedUiPort).
  * Returns the restore function that reinstates whatever was installed before (usually nothing).
  * Only one scripted port is installed at a time — a nested install replaces the previous one
  * until restored.

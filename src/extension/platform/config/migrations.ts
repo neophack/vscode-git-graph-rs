@@ -1,5 +1,5 @@
 /**
- * Deprecated-key migrations (REFACTOR-PLAN 3.7.2, "User data"): contributed configuration keys
+ * Deprecated-key migrations for user data: contributed configuration keys
  * are added, never removed, and a deprecated key keeps being read and mapped onto its modern
  * equivalent with the precedence `modern > deprecated > default`.
  */

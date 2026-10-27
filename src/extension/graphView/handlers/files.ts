@@ -66,7 +66,7 @@ export const openExternalDirDiff: Handler<'openExternalDirDiff'> = {
 	async handle(msg, ctx) {
 		// The hashes are interpolated into a shell command sent to the integrated terminal when
 		// the external diff tool is not GUI based, so they must be validated against injection.
-		// The gate is the write layer's own (OPTIMIZATION-PLAN A3): the handler does not import
+		// The gate is the write layer's own: the handler does not import
 		// argSafety, it asks the git layer the other checks go through.
 		const unsafe = ctx.repo.write.checkArgs(
 			['fromHash', msg.fromHash === UNCOMMITTED ? null : msg.fromHash, 'hash'],

@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 /**
  * The hex comparison frontend (the grid, the offset column, the row-width picking, the selection &
- * copy surface and the right-click menu), imported as the modules the page runs (REFACTOR-PLAN
- * task 6.1: these cases executed the host's script string through a dynamically built
- * Function before the extraction; they now drive HexView and the pure builders of hexGrid directly, in a jsdom laid
+ * copy surface and the right-click menu), imported as the modules the page runs: these cases
+ * drive HexView and the pure builders of hexGrid directly, in a jsdom laid
  * out at 7px per character - the probe the view measures with reads in the same terms the
- * assertions reason in).
+ * assertions reason in.
  */
 
 import { describe, expect, it } from 'vitest';

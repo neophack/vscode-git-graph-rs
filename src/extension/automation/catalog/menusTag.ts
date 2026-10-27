@@ -1,6 +1,6 @@
 /**
- * The menu-tag actions of the automation catalog (task 6.2 split): carved verbatim out of
- * the former single-file catalog.ts, each action now carrying its tags (the group at minimum).
+ * The menu-tag actions of the automation catalog: carved verbatim out of
+ * the former single-file catalog.ts, each action carrying its tags (the group at minimum).
  * See catalog.ts for the assembled catalog and the fixture-stable facts the entries rely on.
  */
 
@@ -36,7 +36,7 @@ export const MENUS_TAG_ACTIONS: readonly AutomationAction[] = [
 		tags: ['menu-tag', 'context-menu', 'dialog'],
 		mutable: true,
 		// Confirming opens the editor's native save dialog — answered by the ScriptedUiPort the
-		// suite runner installs (task 4.10), so the action RUNS in every mode.
+		// suite runner installs, so the action RUNS in every mode.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.tag[data-name="v1.29.0"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.tag[data-name="v1.29.0"]', item: bi('Create Archive', '创建归档') },

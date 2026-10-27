@@ -25,7 +25,7 @@ export function endAllWorkspaceCodeReviews(host: CommandHost) {
 /**
  * The method run when the `git-graph-rs.endSpecificWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the review picker runs through (task 4.10, INVENTORY.md #13);
+ * @param ui The native-UI port the review picker runs through (INVENTORY.md #13);
  * defaults to the production port, injectable for tests.
  */
 export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {
@@ -60,7 +60,7 @@ export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = u
 /**
  * The method run when the `git-graph-rs.resumeWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the review picker runs through (task 4.10, INVENTORY.md #14);
+ * @param ui The native-UI port the review picker runs through (INVENTORY.md #14);
  * defaults to the production port, injectable for tests.
  */
 export function resumeWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {

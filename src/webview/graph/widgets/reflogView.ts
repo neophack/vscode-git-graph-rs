@@ -22,7 +22,7 @@ import { ContextMenuActions } from './contextMenu';
 import { ReflogViewSurface } from './surfaces';
 import reflogCss from '../../styles/reflogView.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// This module sits in an on-demand chunk: its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(reflogCss);
 

@@ -4,10 +4,10 @@ import { NativeBackend, startCancellableRequest } from './gitReader';
 import { GitBackendError } from './types';
 
 /**
- * The cancellation-capable call shape (task 2.9) that the host scheduler of task 4.8 consumes:
+ * The cancellation-capable call shape the host scheduler consumes:
  * `startCancellableRequest` must wire its id through the same typed request seam, and its
  * `cancel()` must reach the addon's `cancel` under that id. Alongside it, the request shapes of
- * the read methods added for DataSource parity (tasks 3.5) — every one a thin mapping onto the
+ * the read methods — every one a thin mapping onto the
  * generated protocol, or a documented decline. The addon module is mocked - these tests pin the
  * wiring, not the engine.
  */
@@ -76,7 +76,7 @@ describe('startCancellableRequest', () => {
 	});
 });
 
-describe('NativeBackend read shapes added for DataSource parity', () => {
+describe('NativeBackend read shapes, CLI-parity twins', () => {
 	beforeEach(() => {
 		requestMock.mockClear();
 		cancelMock.mockClear();

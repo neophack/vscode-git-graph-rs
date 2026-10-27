@@ -1,6 +1,5 @@
 /* The styles of the embedded hex / picture comparison area, shared by the Commit Comparison
- * View's diff area and the standalone Binary Compare tab (REFACTOR-PLAN task 6.1: moved out of
- * the binaryCompareCss() template string of src/binaryCompare.ts). The standalone page's own
+ * View's diff area and the standalone Binary Compare tab. The standalone page's own
  * chrome (its body layout and header) is scoped under body.binaryComparePage, so the same file
  * serves both pages: only the standalone shell sets that class.
  *
@@ -10,7 +9,7 @@
  * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css).
  *
  * The shared semantic tokens (tokens.css) are imported so the sheet consumes the --gg-* names
- * like the other component sheets (OPTIMIZATION-PLAN §6 F6); comparison.css imports this file
+ * like the other component sheets; comparison.css imports this file
  * and inherits the same tokens. Reads with no --gg-* token (the diff editor, the hex grid, the
  * form controls) still read theme variables directly - tokenizing them would put page-only
  * tokens into the graph view's first-paint sheet (see tokens.css). */

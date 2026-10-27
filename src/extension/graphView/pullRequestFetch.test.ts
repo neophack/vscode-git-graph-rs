@@ -4,10 +4,10 @@ import { fetchPullRequestHeadRefs, fetchPullRequests } from './pullRequestFetch'
 import type { PullRequestFetchDeps } from './pullRequestFetch';
 
 /**
- * Pull-request fetch orchestration tests (REFACTOR-PLAN task 4.4): the degradation ladder
+ * Pull-request fetch orchestration tests: the degradation ladder
  * (integration disabled / no hosted remote / failed request), the completeness flag a failed
  * request must not claim, and the head-ref fetch + prune sequence - all against injected git
- * and HTTP reads, ported from the behaviors the GitGraphView methods carried.
+ * and HTTP reads.
  */
 
 function pr(number: number): PullRequestInfo {

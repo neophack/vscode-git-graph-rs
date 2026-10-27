@@ -1,12 +1,11 @@
 /**
  * `RepoFileWatcher` turns repository file events into (debounced) refresh callbacks. The watcher
- * is muted for the duration of every message the extension host handles, so the historical
- * "return while muted" DROPPED events: a commit made in a terminal or by VS Code's own Git while
- * the webview was loading data never refreshed the view (a new commit then only appeared after
+ * is muted for the duration of every message the extension host handles; a naive
+ * "return while muted" would DROP events: a commit made in a terminal or by VS Code's own Git while
+ * the webview was loading data would never refresh the view (a new commit would only appear after
  * some unrelated change).
  *
- * Ported from tests/repoFileWatcher.test.mjs to the new tree's module
- * (REFACTOR-PLAN task 7.1); assertions are unchanged. These tests pin the replacement contract:
+ * These tests pin the replacement contract of `RepoFileWatcher`:
  * a muted event is remembered and its refresh runs once the mute ends, past the post-action
  * suppression window, with the commit-graph classification accumulated across the whole debounce
  * window.

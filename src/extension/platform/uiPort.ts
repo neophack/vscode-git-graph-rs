@@ -2,16 +2,16 @@ import { DisposableLike } from './config';
 import { MessageChoice } from './notifications';
 
 /**
- * The native-UI port of the host (REFACTOR-PLAN 3.3 + task 4.10): every modal interaction the
+ * The native-UI port of the host: every modal interaction the
  * host drives - notifications, input boxes, quick picks, save/open dialogs and progress - behind
  * one interface, so the E2E build can inject a ScriptedUiPort and replay every branch.
  *
  * This file is INTERFACE ONLY (types + JSDoc, no implementation). The production implementation
- * (a later wave) wraps `vscode.window` - which satisfies these signatures structurally; the
- * platform adapters already built (notifications.ts, terminal.ts, clipboard.ts) cover the
+ * (platform/actions.ts's WindowUiPort) wraps `vscode.window`, which satisfies these signatures
+ * structurally; the platform adapters (notifications.ts, terminal.ts, clipboard.ts) cover the
  * non-modal subsets.
  *
- * Compatibility with the wave-1 handler table (src/extension/graphView/handlers/context.ts):
+ * Compatibility with the handler table (src/extension/graphView/handlers/context.ts):
  * its ctx.ui declares `showErrorMessage(message: string): void` among higher-level actions
  * (viewScm, viewDiff, ...). Those are compatible directions:
  * - any implementation of this UiPort also satisfies the handler's `showErrorMessage` member
@@ -109,7 +109,7 @@ export interface NotificationsPort {
 }
 
 /**
- * The full native-UI surface the host will route through (task 4.10's ESLint rule makes every
+ * The full native-UI surface the host routes through (the ESLint rule makes every
  * `vscode.window.show*` call outside platform/ illegal; INVENTORY.md lists the sites to absorb).
  */
 export interface UiPort extends NotificationsPort {

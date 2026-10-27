@@ -15,7 +15,7 @@ import { GraphContext } from '../context';
 import { StatisticsViewSurface } from './surfaces';
 import statisticsCss from '../../styles/statisticsView.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// This module sits in an on-demand chunk: its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(statisticsCss);
 

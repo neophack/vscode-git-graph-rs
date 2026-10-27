@@ -1,6 +1,6 @@
 /**
- * The menu-commit actions of the automation catalog (task 6.2 split): carved verbatim out of
- * the former single-file catalog.ts, each action now carrying its tags (the group at minimum).
+ * The menu-commit actions of the automation catalog: carved verbatim out of
+ * the former single-file catalog.ts, each action carrying its tags (the group at minimum).
  * See catalog.ts for the assembled catalog and the fixture-stable facts the entries rely on.
  */
 
@@ -146,7 +146,7 @@ export const MENUS_COMMIT_ACTIONS: readonly AutomationAction[] = [
 	},
 	{
 		// NOTE: no UI path. The menu item is only rendered when the repository config sets
-		// diff.tool / gui.diffTool (web/contextMenuActions.ts), the fixture seed configures
+		// diff.tool / gui.diffTool (src/webview/graph/actions/commitMenu.ts), the fixture seed configures
 		// neither, and no catalog step can write git config — so the item can never be reached
 		// in a UI run. The request path below still exercises the host side.
 		id: 'menu-commit/diff-working-tree',

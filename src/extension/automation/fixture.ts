@@ -190,8 +190,8 @@ export async function seedEmptyRepo(repo: string, options: Partial<FixtureOption
 	try {
 		submoduleSha = await importSubmodule(subScratch);
 	} finally {
-		// Best effort on purpose: a transient lock on the fresh pack file here used to abort the
-		// whole run (and, had importSubmodule failed, mask its real error with the cleanup's EPERM).
+		// Best effort on purpose: a transient lock on the fresh pack file here can abort the
+		// whole run (and, if importSubmodule failed, mask its real error with the cleanup's EPERM).
 		await rmScratch(subScratch);
 	}
 

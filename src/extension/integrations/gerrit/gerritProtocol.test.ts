@@ -1,8 +1,8 @@
 /**
  * The Gerrit integration's pure parsing/filtering logic.
  *
- * The first describes of tests/gerrit.test.mjs (REFACTOR-PLAN task 7.1), ported with unchanged
- * assertions. The repo-backed half (GerritDataSource against a throwaway repository and the
+ * The pure parsing and filtering halves are asserted here with unchanged assertions. The
+ * repo-backed half (GerritDataSource against a throwaway repository and the
  * engine agreement) lives in test/integration/gerrit/gerrit.test.ts.
  */
 

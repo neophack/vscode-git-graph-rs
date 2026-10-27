@@ -2,11 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CommitAuthor } from '../../shared/model/webview';
 
 /**
- * The pure decision functions of the global-settings module (task 4.4's extraction from
- * GitGraphView), ported from tests/commitAuthors.test.mjs's pure portion: the commitAuthors
- * validator and the global-author write/clear decisions. The real-git integration halves of
- * the legacy file (applyDefaultGlobalAuthor / clearGlobalAuthor against a scratch repository)
- * keep running through the out/ shim until the deeper layers land. The module imports 'vscode'
+ * The pure decision functions of the global-settings module: the commitAuthors
+ * validator and the global-author write/clear decisions. The module imports 'vscode'
  * for its save flow, so the mock only stands in for that.
  */
 

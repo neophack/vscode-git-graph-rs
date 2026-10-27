@@ -1,5 +1,5 @@
 /**
- * The stash-domain scenarios (task 4.10): every stash write operation of
+ * The stash-domain scenarios: every stash write operation of
  * src/extension/git/write/ops/stash.ts — apply, branch-from, drop, pop, push — with a success
  * and a failure scenario. The seeded clone carries exactly THREE stashes
  * (fixture-stash-1/2/3); the failure twins address stash@{9}, which git refuses with

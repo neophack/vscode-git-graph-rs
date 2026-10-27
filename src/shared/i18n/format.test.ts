@@ -1,12 +1,12 @@
 /**
  * Placeholder substitution and the dictionary invariants of the shared string tables (ported
- * from tests/i18n.test.mjs, REFACTOR-PLAN Appendix B: the table's key parity became a
+ * from legacy/tests/i18n.test.mjs; the table's key parity is a
  * compile-time property of `STRINGS_ZH_CN satisfies SharedStrings`, so only the runtime
  * invariants remain here): substitution semantics, both languages answering every key,
  * placeholder parity between the languages, well-formed placeholders, and the round-trip the
  * comparison pages rely on (baking `{0}`/`{1}` back into a template so the webview can
  * `.replace()` them later). The host-side language resolution ("auto" following the editor's
- * display language) lives in src/config.ts and keeps its legacy home until that module's batch.
+ * display language) lives in `src/extension/platform/i18n.ts`.
  */
 
 import * as fs from 'fs';

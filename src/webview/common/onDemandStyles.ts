@@ -1,5 +1,5 @@
 /**
- * Style injection for the on-demand chunks of the first-paint split (REFACTOR-PLAN task 5.9).
+ * Style injection for the on-demand chunks of the first-paint split.
  *
  * The styles of a lazily imported widget travel INSIDE its chunk as text (the webview build
  * gives .css imports the 'text' loader): esbuild emits a chunk's CSS as a sibling file but does
@@ -22,7 +22,7 @@ export function injectOnDemandStyles(css: string): void {
 }
 
 /**
- * Kick the load of the widgets' on-demand STYLESET (task 5.9's CSS split): the styles of the
+ * Kick the load of the widgets' on-demand STYLESET: the styles of the
  * widgets whose MODULES sit in the first-paint bundle but whose DOM appears only later (the
  * dialogs, the context menu, the commit details view) travel in one dynamically imported chunk
  * that injects itself when it evaluates. Every path that first shows one of those surfaces calls

@@ -1,6 +1,7 @@
 /**
- * Tests for the Git capability table: the five thresholds of the legacy `GitVersionRequirement`,
- * each with its below / equal / above case, plus the legacy version-parsing semantics.
+ * Tests for the Git capability table: the five thresholds of `CAPABILITIES`, each with its
+ * below / equal / above case, plus the version-parsing semantics (a version that cannot be
+ * parsed counts as meeting the requirement).
  */
 
 import { describe, expect, it } from 'vitest';

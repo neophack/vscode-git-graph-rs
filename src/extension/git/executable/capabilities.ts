@@ -1,10 +1,9 @@
 /**
- * Git version → capability, in one table: the five thresholds the legacy tree kept in
- * `GitVersionRequirement` (`src/utils/git.ts`), centralised here so no code under
- * `extension/git/**` compares versions anywhere else (REFACTOR-PLAN task 3.8).
+ * Git version → capability, in one table: the extension's five Git version thresholds,
+ * centralised here so no code under `extension/git/**` compares versions anywhere else.
  *
- * `meetsVersion` reproduces the legacy `doesVersionMeetRequirement` / `parseVersion` exactly,
- * including the "a version we cannot parse is assumed recent" fallback.
+ * `meetsVersion` compares `major.minor.patch` triples and treats a version it cannot
+ * parse as recent, so an unreadable version never disables a feature.
  */
 
 /** One capability's minimum Git version, and the i18n key naming the feature (when there is one). */
@@ -46,7 +45,7 @@ function parseVersion(version: string): [number, number, number] | null {
 
 /**
  * Whether `version` is at least `required`. A version that cannot be parsed is assumed to meet
- * the requirement (legacy behaviour: an unreadable version must not disable features).
+ * the requirement — an unreadable version must not disable features.
  */
 export function meetsVersion(version: string, required: string): boolean {
 	const have = parseVersion(version);

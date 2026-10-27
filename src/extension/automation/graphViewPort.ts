@@ -1,17 +1,16 @@
 /**
  * The GraphViewPort — the seam the automation subsystem reads and taps a live Git Graph view
- * through (REFACTOR-PLAN task 6.2). Automation used to reach the view through its statics
- * (the singleton panel reference plus the static message taps), which made the view class a
- * service locator every automation module could pull. The port inverts that: the view PUBLISHES
- * itself
- * here (setLiveGraphView) at every point the singleton panel changes — creation, serializer
- * revival, orphaned-tab replacement, disposal — and automation consumes the single
- * {@link graphViewPort} instance, with no static access of its own.
+ * through. The view PUBLISHES itself here (setLiveGraphView) at every point the singleton panel
+ * changes — creation, serializer revival, orphaned-tab replacement, disposal — and automation
+ * consumes the single {@link graphViewPort} instance, with no static access of its own. The
+ * direction is deliberate: static access (a singleton panel reference plus static message taps)
+ * would make the view class a service locator every automation module could pull.
  *
  * The two cross-view observation taps (onHostMessage / onShimResult) live in this module rather
  * than on the view class on purpose: a server that starts before any view exists, and survives
  * the view being disposed and recreated, must keep its subscription without re-subscribing —
- * exactly the lifetime the view's former static hooks had, moved to the seam that owns them.
+ * exactly the unbroken subscription lifetime a static hook would give, owned by the seam
+ * instead of the view class.
  *
  * The view side of the seam stays deliberately thin: GitGraphView keeps its per-instance hook
  * methods (automationState, runAutomationRequest, automationCloseRepository, postAutomationMessage
@@ -33,7 +32,7 @@ export interface GraphViewState {
 /**
  * The injected view surface. Every member is safe to call at any time: with no live view,
  * hasView() is false, viewState() reports an unloaded view and the message senders are no-ops —
- * the same semantics the former static panel reads used to give.
+ * the semantics every consumer of this port can rely on, view or no view.
  */
 export interface GraphViewPort {
 	/** Is a Git Graph view currently open? */

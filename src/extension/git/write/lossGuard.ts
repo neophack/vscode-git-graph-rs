@@ -1,10 +1,9 @@
 /**
- * Data-loss guards, ported from `DataSource` (`src/dataSource.ts`): the warning shown before
- * moving HEAD away from commits that would become unreachable, and the warning shown before a
- * hard reset discards uncommitted changes.
+ * Data-loss guards: the warning shown before moving HEAD away from commits that would become
+ * unreachable, and the warning shown before a hard reset discards uncommitted changes.
  *
  * The guards are pure functions over an injected text runner (`(argv) => Promise<string>`,
- * resolving Git's stdout, rejecting on failure), so the exact legacy sequence — including which
+ * resolving Git's stdout, rejecting on failure), so the exact sequence — including which
  * failure is swallowed and which aborts — is unit-testable without a repository.
  */
 

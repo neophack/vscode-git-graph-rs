@@ -1,5 +1,5 @@
 /**
- * The deferred Git resolution (OPTIMIZATION-PLAN V1): activation must never wait for the
+ * The deferred Git resolution: activation must never wait for the
  * `git --version` spawn that validates a Git executable. This module holds the resolution cell
  * the composition root wires everything else to:
  *
@@ -11,7 +11,7 @@
  *   existing Git-executable change event, so every consumer keeps following Git changes exactly
  *   as it did when the same value was awaited at activation.
  *
- * While the workspace is untrusted (Workspace Trust, V2) the resolution answers NULL and never
+ * While the workspace is untrusted (Workspace Trust) the resolution answers NULL and never
  * spawns: no `git` child process may run in an untrusted folder, so there is nothing to resolve.
  */
 

@@ -41,7 +41,7 @@ export async function amendLastCommit(host: CommandHost, arg: unknown) {
  * Soft resets the current branch to its upstream (remote tracking) branch, keeping all changes staged.
  * @param host The services the command runs with.
  * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
- * @param ui The native-UI port the destructive confirm runs through (task 4.10, INVENTORY.md #5);
+ * @param ui The native-UI port the destructive confirm runs through (INVENTORY.md #5);
  * defaults to the production port, injectable for tests.
  */
 export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {

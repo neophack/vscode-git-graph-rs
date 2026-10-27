@@ -1,5 +1,5 @@
 /**
- * The automation action catalog (task 6.2 assembly): the single source of truth that maps every
+ * The automation action catalog: the single source of truth that maps every
  * user-facing Git Graph View control (control-bar buttons, graph row interactions, context menus,
  * dialogs, view widgets) to a machine-runnable form. Each action declares both paths where
  * available:
@@ -161,7 +161,7 @@ import { WORKTREE_ACTIONS } from './catalog/worktree';
 
 /**
  * The catalog. Entries are grouped by the surface they drive; the groups mirror the suites the
- * test driver can select. Fixture-stable facts (src/automation/fixture.ts): the remote is
+ * test driver can select. Fixture-stable facts (src/extension/automation/fixture.ts): the remote is
  * `origin`, local branches are `main` / `local-ahead` (feature-NNN exist only as
  * origin/feature-NNN), tags are `v1.x.x` (spread over the whole history), three stashes are
  * seeded, an untracked file keeps the Uncommitted Changes row alive, (near HEAD, needing

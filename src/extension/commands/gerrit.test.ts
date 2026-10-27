@@ -1,5 +1,5 @@
 /**
- * The Gerrit command flows (task 4.10 migration): the push flow's branches around the
+ * The Gerrit command flows: the push flow's branches around the
  * Change-Id amend confirm (INVENTORY.md #2 - confirm amends and pushes, cancel aborts the
  * whole flow) and the "Open Change" action of the pushed-with-url notification (INVENTORY.md
  * #1). The interactive dialogs run through an injected fake UiPort; the plain messages and the

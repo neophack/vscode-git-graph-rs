@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * The scenario registry's gates (REFACTOR-PLAN task 4.10 acceptance):
+ * The scenario registry's gates:
  *   - the load gates: a scenario without tags must FAIL to load; so must a write scenario
  *     without then.git, an unknown assertion kind, a malformed dom entry, a duplicated id, a
  *     broken byId wiring, and a replacement id that breaks the dotted shape;

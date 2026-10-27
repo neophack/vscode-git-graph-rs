@@ -1,5 +1,5 @@
 /**
- * The tag-domain scenarios (task 4.10): every tag write operation of
+ * The tag-domain scenarios: every tag write operation of
  * src/extension/git/write/ops/tags.ts — add, delete, push — with a success and a failure
  * scenario. The fixture's tags are `v1.x.x` (the newest is always annotated); `{{tag}}` and
  * `{{annotatedTag}}` resolve from the live graph.

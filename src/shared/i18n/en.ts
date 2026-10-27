@@ -1,6 +1,6 @@
 /**
- * The English string table — the single dictionary shared by the webview and the extension host
- * (REFACTOR-PLAN task 6.3): plain data, one literal per key, organized in domain sections. The
+ * The English string table — the single dictionary shared by the webview and the extension host:
+ * plain data, one literal per key, organized in domain sections. The
  * first sections serve the webview UI; the later ones the extension host (notifications, quick
  * picks, dialogs and the fallback pages). The entries listed in MARKUP_KEYS (the webview's i18n
  * module, src/webview/common/i18n/index.ts) are markup templates; every other entry is text.

@@ -7,7 +7,7 @@ import { EventEmitter } from '../../shared/util/event';
 import { getWorkspaceFolderInfoForRepoInclusionMapping } from './repoDiscovery';
 
 /**
- * The state-and-events half of the repository manager (OPTIMIZATION-PLAN A5): the known
+ * The state-and-events half of the repository manager: the known
  * repository set with its per-repository states, the ignored-repository list, and the
  * most-recently-opened list, together with the change event the rest of the extension
  * subscribes to. The RepoManager (./repoManager) composes this registry with discovery
@@ -22,7 +22,7 @@ export interface RepoChangeEvent {
 	readonly loadRepo: string | null;
 }
 
-/** The maximum length of the most-recently-opened list RepoManager keeps (REFACTOR-PLAN 3.8.2 D11: prewarming covers at most 3 repositories). */
+/** The maximum length of the most-recently-opened list RepoManager keeps (prewarming covers at most 3 repositories). */
 export const MAX_RECENT_REPOS = 3;
 
 /**
@@ -174,7 +174,7 @@ export class RepoRegistry extends Disposable {
 
 	/**
 	 * Record that a repository was opened in the Git Graph View, making it the most-recently-opened
-	 * one. The PrewarmController (REFACTOR-PLAN task 4.9) serves its candidates in this order.
+	 * one. The PrewarmController (./prewarm) serves its candidates in this order.
 	 * @param repo The path of the repository that was opened.
 	 */
 	public recordRepoOpened(repo: string) {

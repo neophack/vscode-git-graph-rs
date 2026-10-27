@@ -1,15 +1,13 @@
 /**
- * Git configuration write operations, ported from `DataSource`'s
- * "Git Action Methods - Config" (`src/dataSource.ts`).
+ * Git configuration write operations: pure `WriteOp` builders for the Settings widget.
  */
 
 import { GitConfigLocation } from '../../../../shared/model/git';
 import { WriteOp, single } from './op';
 
 /**
- * The configuration keys the Settings widget can write. Ported from the legacy `GitConfigKey`
- * (`src/dataSource.ts`): redefined here because the legacy enum lives in a module that imports
- * vscode, which this tree must not depend on. A key is one of these fixed strings by
+ * The configuration keys the Settings widget can write. Defined locally (nothing under
+ * `extension/git/**` may import vscode); a key is one of these fixed strings by
  * construction, so no argument-injection check is needed for it.
  */
 export const enum GitConfigKey {
@@ -51,9 +49,9 @@ export interface AddRemoteTagsRefspecParams {
 }
 
 /**
- * The write half of the legacy `trackRemoteTags`: add the tag-tracking fetch refspec of a remote.
- * (The legacy method first reads `--get-all remote.<name>.fetch` and adds the refspec only when it
- * is not already there — that read is the caller's preflight.)
+ * The write half of remote tag tracking: add the tag-tracking fetch refspec of a remote.
+ * (The deduplication read — `--get-all remote.<name>.fetch`, adding the refspec only when it
+ * is not already there — is the caller's preflight.)
  */
 export function addRemoteTagsRefspec(params: AddRemoteTagsRefspecParams): WriteOp {
 	return {

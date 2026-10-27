@@ -1,5 +1,5 @@
 /**
- * The HostBridge (REFACTOR-PLAN task 5.2): the webview's only connection to the extension host.
+ * The HostBridge: the webview's only connection to the extension host.
  * It is the sole caller of `acquireVsCodeApi`, and every request goes through `send`, typed
  * against the protocol's RequestMessage union.
  *

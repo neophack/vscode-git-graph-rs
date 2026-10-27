@@ -1,5 +1,5 @@
 /**
- * The type layer of the repo-load state machine (OPTIMIZATION-PLAN §6 F2): the state, event,
+ * The type layer of the repo-load state machine: the state, event,
  * effect and drop shapes the reducer in `loadMachine.ts` transitions over. Split out so the
  * reducer file stays under the 600-line production gate; `loadMachine.ts` re-exports everything
  * for consumers.
@@ -7,15 +7,15 @@
 /** What a load cycle is still waiting for. */
 export type LoadPhase = 'repoInfo' | 'commits';
 
-/** The staged follow-ups a response can announce (repoLoader.ts:8-10; messages.ts:447-450). */
+/** The staged follow-ups a response can announce. */
 export type FollowUpKind = 'remoteRefs' | 'uncommitted' | 'gerrit';
 
 /**
  * The fields a running cycle (loading or refreshing) carries. `repoInfoId` and `commitsId`
  * hold the request ids the caller stamped the cycle's requests with; responses must match
- * them to apply (the refresh-id guard of repoLoader.ts:775/:830). `firstLoad` is the legacy
- * `currentRepoLoading`: TRUE when the cycle is this repository's first paint (scroll-to-head
- * / scroll-restore apply), i.e. it was opened by `openRepo` or feeds off the boot push.
+ * them to apply. `firstLoad` mirrors the view's `currentRepoLoading` reset: TRUE when the
+ * cycle is this repository's first paint (scroll-to-head / scroll-restore apply), i.e. it
+ * was opened by `openRepo` or feeds off the boot push.
  */
 export interface LoadCycle {
 	readonly repoInfoId: number;
@@ -35,7 +35,7 @@ export interface AwaitingPushState {
 	readonly repo: string;
 }
 
-/** Boot with a first-paint snapshot on screen, still waiting for the pushed `loadView` (D10). */
+/** Boot with a first-paint snapshot on screen, still waiting for the pushed `loadView`. */
 export interface SnapshotPaintedState {
 	readonly type: 'snapshotPainted';
 	readonly repo: string;
@@ -84,27 +84,27 @@ export interface EmptyState {
 
 export type LoadState = IdleState | AwaitingPushState | SnapshotPaintedState | LoadingState | RefreshingState | LoadedState | ErrorState | RepoGoneState | EmptyState;
 
-/** `loadRepo` (repoLoader.ts:206): adopt a repository and start a hard first-load cycle. */
+/** `loadRepo`: adopt a repository and start a hard first-load cycle. */
 export interface OpenRepoEvent {
 	readonly type: 'openRepo';
 	readonly repo: string;
 	readonly requestId: number;
 }
 
-/** `start` adopting the boot repository (repoLoader.ts:67-101): expect the pushed `loadView`. */
+/** `start` adopting the boot repository: expect the pushed `loadView`. */
 export interface AwaitPushEvent {
 	readonly type: 'awaitPush';
 	readonly repo: string;
 }
 
-/** `paintFirstPaintSnapshot` has a decodable snapshot for the awaited repository (:114-138). */
+/** `paintFirstPaintSnapshot` has a decodable snapshot for the awaited repository. */
 export interface SnapshotArrivedEvent {
 	readonly type: 'snapshotArrived';
 	readonly repo: string;
 }
 
 /**
- * The host's pushed merged view (:735-752). `followUpsPending` is derived by the caller from
+ * The host's pushed merged view. `followUpsPending` is derived by the caller from
  * the push's own pending flags (the staged follow-ups carry the same id).
  */
 export interface LoadViewPushedEvent {
@@ -115,7 +115,7 @@ export interface LoadViewPushedEvent {
 	readonly followUpsPending: readonly FollowUpKind[];
 }
 
-/** A `loadRepoInfo` response; accepted in phase 'repoInfo' of a matching cycle (:770-783). */
+/** A `loadRepoInfo` response; accepted in phase 'repoInfo' of a matching cycle. */
 export interface RepoInfoResponseEvent {
 	readonly type: 'repoInfoResponse';
 	readonly repo: string;
@@ -127,7 +127,7 @@ export interface RepoInfoResponseEvent {
 
 /**
  * A `loadCommits` response; accepted in phase 'commits' of a matching cycle AND in `loaded`
- * (the staged follow-ups, :822-873). `followUpsPending` REPLACES the tracked list; the caller
+ * (the staged follow-ups). `followUpsPending` REPLACES the tracked list; the caller
  * keeps listing 'remoteRefs' until a response carried the complete branch list.
  */
 export interface CommitsResponseEvent {
@@ -139,10 +139,10 @@ export interface CommitsResponseEvent {
 }
 
 /**
- * `refresh` / `requestLoadRepoInfoAndCommits` (:982, :1057-1094): start or join a cycle.
+ * `refresh` / `requestLoadRepoInfoAndCommits`: start or join a cycle.
  * `hard` clears the view (loading state), `skipRepoInfo` starts at the commits half (a
  * load-more, a Gerrit filter change) or, joining a cycle still in phase 'repoInfo', waits for
- * the in-flight repo-info response instead of issuing a new request (:1086-1093).
+ * the in-flight repo-info response instead of issuing a new request.
  */
 export interface RefreshRequestedEvent {
 	readonly type: 'refreshRequested';
@@ -152,7 +152,7 @@ export interface RefreshRequestedEvent {
 	readonly skipRepoInfo: boolean;
 }
 
-/** Abandon the in-flight cycle; keep what is painted and invalidate its ids (no legacy analogue). */
+/** Abandon the in-flight cycle; keep what is painted and invalidate its ids. */
 export interface CancelEvent {
 	readonly type: 'cancel';
 	readonly repo: string;
@@ -171,21 +171,21 @@ export type LoadEffect =
 	| { readonly kind: 'applyRepoInfo'; readonly repo: string; readonly requestId: number }
 	/**
 	 * Apply a commit page (the `loadCommits` processing + finalisation). `firstPaint` carries
-	 * legacy `currentRepoLoading` (scroll-to-head / scroll-restore apply); `followUp` marks a
-	 * staged follow-up landing in `loaded` (repoLoader.ts:825-863).
+	 * whether this is the repository's first paint (scroll-to-head / scroll-restore apply);
+	 * `followUp` marks a staged follow-up landing in `loaded`.
 	 */
 	| { readonly kind: 'applyCommits'; readonly repo: string; readonly requestId: number; readonly firstPaint: boolean; readonly followUp: boolean }
-	/** Paint the previous session's snapshot rows (D10, repoLoader.ts:114-138). */
+	/** Paint the previous session's snapshot rows. */
 	| { readonly kind: 'paintSnapshot'; readonly repo: string }
-	/** Empty the view of the current repository's commits (`clearCommits`, :684-707). */
+	/** Empty the view of the current repository's commits (`clearCommits`). */
 	| { readonly kind: 'clearView' }
 	/** Show the loading skeleton (`showLoadingSkeleton`). */
 	| { readonly kind: 'showSkeleton' }
 	/** Re-render the refresh button in the given spin state (`renderRefreshButton`). */
 	| { readonly kind: 'spinRefreshButton'; readonly spinning: boolean }
-	/** Show a load error dialog; `retry` offers the retry action (`displayLoadDataError`, :895-909). */
+	/** Show a load error dialog; `retry` offers the retry action (loadErrors' `show`). */
 	| { readonly kind: 'showLoadError'; readonly reason: string; readonly retry: boolean }
-	/** Re-check the repository list (`{ command: 'loadRepos', check: true }`, :376). */
+	/** Re-check the repository list (`{ command: 'loadRepos', check: true }`). */
 	| { readonly kind: 'checkRepos' };
 
 /** Why an event was dropped. Drops are data, never exceptions. */
@@ -218,7 +218,6 @@ export interface LoadResult {
 
 /**
  * The `commitsId` a cancelled cycle leaves behind: no request ever carries it, so any late
- * response of the abandoned cycle drops as stale (the machine's replacement for legacy's
- * id-bump invalidation, :1073).
+ * response of the abandoned cycle drops as stale.
  */
 export const CANCELLED_REQUEST_ID = -1;

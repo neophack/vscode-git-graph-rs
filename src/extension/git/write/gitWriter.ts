@@ -1,11 +1,10 @@
 /**
  * The GitWriter: the only place a repository is changed. Every write goes through the same steps
  * — argument-injection validation (the single `checkUnsafeGitArgs` call site), the refusal and
- * Git-version gates, the op's argv through the one `GitProcess`, the legacy error mapping, and
- * the repository-changed event — so no write path can skip one of them
- * (REFACTOR-PLAN tasks 3.3/3.8).
+ * Git-version gates, the op's argv through the one `GitProcess`, the error mapping, and
+ * the repository-changed event — so no write path can skip one of them.
  *
- * The writer takes its policies as a structural `WriterConfig` (the subset of the future
+ * The writer takes its policies as a structural `WriterConfig` (the subset of the
  * `ConfigSnapshot` the write path consults), so nothing under `extension/git/**` imports vscode.
  */
 
@@ -17,7 +16,7 @@ import { checkUnsafeGitArgs, Localize } from './argSafety';
 import { ArgCheck, REFUSAL_I18N_KEYS, WriteEffect, WriteOp } from './ops/op';
 
 /**
- * The write-path policies, a structural subset of the future `ConfigSnapshot`: a plain object
+ * The write-path policies, a structural subset of the `ConfigSnapshot`: a plain object
  * with these fields satisfies it, whatever its actual type is.
  */
 export interface WriterConfig {
@@ -47,7 +46,7 @@ export class GitWriter {
 
 	/**
 	 * Register a listener fired after every run that reached its commands (succeeded or failed:
-	 * a failed merge still changes things) — the hook Phase 4's impact-based refresh uses.
+	 * a failed merge still changes things) — the hook the impact-based refresh uses.
 	 */
 	onRepositoryChanged(listener: RepositoryChangedListener): { dispose(): void } {
 		this.listeners.push(listener);
@@ -57,8 +56,8 @@ export class GitWriter {
 	/**
 	 * Argument-injection validation for values the view must check OUTSIDE a full write op —
 	 * the external dir-diff's hashes are interpolated into the integrated terminal's command
-	 * line, so they must pass the same gate the ops pass in {@link run} (OPTIMIZATION-PLAN A3:
-	 * the handler layer asks the git layer here instead of importing `argSafety` itself).
+	 * line, so they must pass the same gate the ops pass in {@link run} (the
+	 * handler layer asks the git layer here instead of importing `argSafety` itself).
 	 * @returns The localised error message when a value is unsafe, otherwise NULL.
 	 */
 	checkArgs(...checks: ReadonlyArray<ArgCheck>): string | null {
@@ -67,7 +66,7 @@ export class GitWriter {
 
 	/**
 	 * Run a write operation.
-	 * @returns The legacy `ErrorInfo`: null on success, the user-facing error message otherwise.
+	 * @returns The `ErrorInfo`: null on success, the user-facing error message otherwise.
 	 */
 	async run(repo: string, op: WriteOp, signal?: AbortLike): Promise<string | null> {
 		if (op.refusal !== undefined) {
@@ -108,9 +107,9 @@ export class GitWriter {
 }
 
 /**
- * The error message of a Git command that ran and failed: the legacy `getErrorMessage`
- * (`src/dataSource.ts`) verbatim — stderr and stdout concatenated, split on line ends, the last
- * (empty, post-newline) element dropped, the rest joined with `\n`.
+ * The error message of a Git command that ran and failed: stderr and stdout concatenated,
+ * split on line ends, the last (empty, post-newline) element dropped, the rest joined
+ * with `\n`.
  */
 export function commandFailure(result: RunResult): string {
 	let lines: string[];

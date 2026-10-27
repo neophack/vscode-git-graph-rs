@@ -5,9 +5,8 @@ import {
 import type { PullRequestRemote } from './handlers/context';
 
 /**
- * The pull-request fetch orchestration of the graph view (REFACTOR-PLAN task 4.4), extracted
- * from GitGraphView's `fetchPullRequests` / `fetchPullRequestHeadRefs` methods
- * (src/gitGraphView.ts). Everything the two functions touch arrives injected through
+ * The pull-request fetch orchestration of the graph view. Everything the two functions touch
+ * arrives injected through
  * {@link PullRequestFetchDeps}, so the orchestration is unit-testable without Git and without
  * 'vscode'; the pure URL/refspec helpers live in the shared integration module
  * (extension/integrations/pullRequests.ts).
@@ -15,7 +14,7 @@ import type { PullRequestRemote } from './handlers/context';
 
 /** The git and pull-request reads the orchestration needs, injected so tests run without Git. */
 export interface PullRequestFetchDeps {
-	/** Run a raw git invocation in the repository (the DataSource's gitOutput). */
+	/** Run a raw git invocation in the repository (the runner's gitOutput). */
 	gitOutput<T>(args: string[], repo: string, resolveValue: (stdout: string) => T): Promise<T>;
 	/** Load the pull/merge requests of a remote URL: the list and whether it is complete, or NULL on failure. */
 	loadPullRequests(url: string): Promise<{ prs: PullRequestInfo[], complete: boolean } | null>;

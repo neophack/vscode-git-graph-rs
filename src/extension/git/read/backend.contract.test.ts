@@ -1,7 +1,7 @@
 /**
- * The two adapters' shared contract (task 3.5.3/3.5.4): equivalent failures reject with the same
- * `GitBackendError` shape on both sides, `createBackend`'s fallback actually engages for the read
- * methods added for DataSource parity, and the CLI adapter honours cancellation on the long log
+ * The two adapters' shared contract: equivalent failures reject with the same
+ * `GitBackendError` shape on both sides, `createBackend`'s fallback actually engages for read
+ * methods, and the CLI adapter honours cancellation on the long log
  * walk. The native side runs against a mocked addon (the engine has its own suite); the CLI side
  * runs real `git` against a temporary repository.
  */

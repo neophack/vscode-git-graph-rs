@@ -1,5 +1,5 @@
 /**
- * The scenario registry (REFACTOR-PLAN §6.8.3, task 4.10): the catalog's actions grown into
+ * The scenario registry: the catalog's actions grown into
  * scenarios, split by domain under ./ and assembled here in a fixed order. Like catalog.ts, the
  * assembly validates the invariants a split could silently break — unique ids, tags on every
  * scenario, a then.git assertion on every write scenario — and throws at import time: a broken
@@ -37,7 +37,7 @@ export const SCENARIOS: readonly AutomationScenario[] = [
 	...SMOKE_SCENARIOS
 ];
 
-/** The then.git assertions across the registry — the count the 4.10 acceptance gates at ≥ 82. */
+/** The then.git assertions across the registry — the count the acceptance gates hold at ≥ 82. */
 export const GIT_ASSERTION_COUNT = countGitAssertions(SCENARIOS);
 
 /**

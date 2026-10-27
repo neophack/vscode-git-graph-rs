@@ -1,6 +1,5 @@
 /**
- * The repo-load lifecycle as an explicit state machine (OPTIMIZATION-PLAN §6 F2): a PURE
- * reducer over the lifecycle that the loader's implicit flags used to encode (loading/repoLoader.ts).
+ * The repo-load lifecycle as an explicit state machine: a PURE reducer over the load lifecycle.
  * WIRED IN via `loadController.ts`: every lifecycle event — the boot's awaited push, a repository
  * switch, a refresh, a response, an error — is dispatched here, a response applies only in a
  * state that expects it and keyed by its request id, and anything else is dropped and logged.
@@ -12,8 +11,7 @@
  * apply a response, clear the view, show an error, …) and — when the event does not apply — a
  * drop record instead of an exception, so stale traffic is observable and testable.
  *
- * State diagram (see the deviations below for why this differs from the plan's sketch
- * `Idle → SnapshotPainted → Loading(requestId) → Loaded → Refreshing(requestId) → Loaded`):
+ * State diagram (the numbered notes below explain the shapes that need it):
  *
  *            awaitPush               snapshotArrived
  *   idle ──────────────────▶ awaitingPush ─────────────────▶ snapshotPainted
@@ -33,76 +31,68 @@
  *                                repoGone ◀───┘         refreshing(phase) ┘
  *                          (isRepo: false)
  *
- * How the legacy RepoLoader flags map onto these states (repoLoader.ts line numbers):
+ * How the machine states map onto the store's `refreshState` projection (state/slices/repos.ts):
  *
- * - `currentRepoLoading` (set :214 by `loadRepo`, :125 by `paintFirstPaintSnapshot`, cleared
- *   :463 at the first applied page) → the `firstLoad` field of a cycle plus the boot states:
- *   TRUE exactly in `awaitingPush`, `snapshotPainted` and cycles opened by `openRepo`. It
- *   gated the first-paint scroll behaviour (:517-526) — carried into the wiring by the
- *   `applyCommits` effect's `firstPaint` flag.
- * - `refreshState.inProgress` (set :1075, cleared :564/:373/:903) → `loading`/`refreshing`
- *   (a cycle is pending); `loaded` is the "cycle finalised" state (follow-ups may still land).
- * - `refreshState.snapshotRefreshing` (set :135, cleared :538) → `snapshotPainted` exactly.
- * - `refreshState.hard` (set :982/:1060/:1074) → `loading` means hard (view cleared),
- *   `refreshing` means soft (rows kept); `firstLoad: false` separates a hard refresh from a
- *   repository's first load, which `currentRepoLoading` also conflated.
- * - `refreshState.requestingRepoInfo` (set :1091, cleared :369) → the cycle's `phase:
- *   'repoInfo'`.
- * - `refreshState.loadRepoInfoRefreshId` / `loadCommitsRefreshId` (:1006/:1030 incremented,
- *   :775/:830/:883 compared) → the caller keeps owning the counters and stamps each event
- *   with the id of the request it belongs to; the machine records per-kind ids (`repoInfoId`,
- *   `commitsId`) and accepts only matching ones. The two ids stay separate because a join
- *   that skips the repo-info half keeps the in-flight repo-info response valid while
- *   invalidating commit responses (:1062-1066, :1086-1093).
- * - `refreshState.repoInfoChanges` (:368) → computed inside the `applyRepoInfo` effect's
- *   implementation (`loadRepoInfo` already tracks it, :263-331); it shapes dialog refresh,
- *   not the lifecycle.
- * - `refreshState.requestingConfig` / `loadConfigRefreshId` (:1097-1102, :875-893) → kept
- *   OUT: the config load never blocks, clears or re-shapes the view; it is its own one-shot
- *   request/response keyed by its own id, issued from the `applyCommits` effect's
- *   finalisation (`finaliseRepoLoad`, :678-680).
- * - `bootPushExpected` (:48, set :81, consumed :251/:737) → `awaitingPush`/`snapshotPainted`.
- * - `pendingScrollCommitHash` / `countCommitsBeforePending` (:34-38, :577-622) → kept OUT:
- *   the pinned-commit jump is a sub-machine that only OBSERVES load completions
- *   (`checkPendingScrollCommit` runs inside `finaliseLoadCommits`, :568); folding it in would
- *   multiply the transition matrix without changing a single load transition.
- * - `remoteRefsPending` (response-borne, :280-290) / `uncommittedPending` (:388-410) / the
- *   Gerrit pending flag → the `followUpsPending` list: the wiring derives the kinds from each
- *   response message and the machine carries the latest list. A repo-info response that
- *   announces `remoteRefsPending` seeds `['remoteRefs']`; every commits response REPLACES the
- *   list wholesale (the caller keeps listing 'remoteRefs' until a response carried the
- *   complete branch list).
- * - `prStatusRepos` (:42, :790-801) → kept OUT: pull requests are a follow-up subsystem (the
- *   plan's `FollowUps` split), requested once per repository from the `applyRepoInfo` effect.
+ * - `currentRepoLoading` → the `firstLoad` field of a cycle plus the boot states: TRUE exactly
+ *   in `awaitingPush`, `snapshotPainted` and cycles opened by `openRepo`. The first-paint
+ *   scroll behaviour it gates is carried into the wiring by the `applyCommits` effect's
+ *   `firstPaint` flag.
+ * - `refreshState.inProgress` → `loading`/`refreshing` (a cycle is pending); `loaded` is the
+ *   "cycle finalised" state (follow-ups may still land).
+ * - `refreshState.snapshotRefreshing` → `snapshotPainted` exactly.
+ * - `refreshState.hard` → `loading` means hard (view cleared), `refreshing` means soft (rows
+ *   kept); `firstLoad: false` separates a hard refresh from a repository's first load, which
+ *   `currentRepoLoading` alone does not.
+ * - `refreshState.requestingRepoInfo` → the cycle's `phase: 'repoInfo'`.
+ * - `refreshState.loadRepoInfoRefreshId` / `loadCommitsRefreshId` → the caller keeps owning
+ *   the counters and stamps each event with the id of the request it belongs to; the machine
+ *   records per-kind ids (`repoInfoId`, `commitsId`) and accepts only matching ones. The two
+ *   ids stay separate because a join that skips the repo-info half keeps the in-flight
+ *   repo-info response valid while invalidating commit responses.
+ * - `refreshState.repoInfoChanges` → computed inside the `applyRepoInfo` effect's
+ *   implementation (repoInfoApply tracks it); it shapes dialog refresh, not the lifecycle.
+ * - `refreshState.requestingConfig` / `loadConfigRefreshId` → kept OUT: the config load never
+ *   blocks, clears or re-shapes the view; it is its own one-shot request/response keyed by
+ *   its own id, issued from the page application's finalisation.
+ * - the boot push expectation → `awaitingPush`/`snapshotPainted`.
+ * - the pinned-commit jump's `pendingScrollCommitHash` / `countCommitsBeforePending` → kept
+ *   OUT: the jump is a sub-machine that only OBSERVES load completions (pinnedJump.ts's
+ *   `checkPending` runs inside the commit page's finalisation); folding it in would multiply
+ *   the transition matrix without changing a single load transition.
+ * - `remoteRefsPending` / `uncommittedPending` / the Gerrit pending flag (all response-borne)
+ *   → the `followUpsPending` list: the wiring derives the kinds from each response message
+ *   and the machine carries the latest list. A repo-info response that announces
+ *   `remoteRefsPending` seeds `['remoteRefs']`; every commits response REPLACES the list
+ *   wholesale (the caller keeps listing 'remoteRefs' until a response carried the complete
+ *   branch list).
+ * - the pull-request request record → kept OUT: pull requests are a follow-up subsystem
+ *   (followUps.ts), requested once per repository from the `applyRepoInfo` effect.
  *
- * Deviations from the plan's sketch, each forced by what RepoLoader actually does:
+ * Design notes on the less obvious shapes:
  *
- * 1. The boot is push-based (REFACTOR-PLAN task 4.7): between adopting the repository and the
- *    data landing, the webview issues NO request — the host pushes the merged `loadView`
- *    (:59-101, :735-752). Hence `awaitingPush` (the sketch's `Idle → Loading` edge does not
- *    exist at boot) and `snapshotPainted` as a refinement of that wait (:114-138).
+ * 1. The boot is push-based: between adopting the repository and the data landing, the
+ *    webview issues NO request — the host pushes the merged `loadView`. Hence `awaitingPush`
+ *    (no `idle → loading` edge exists at boot) and `snapshotPainted` as a refinement of that
+ *    wait.
  * 2. `Loaded` still accepts commit responses keyed by `requestId`: the staged delivery (remote
  *    refs, Gerrit, "Uncommitted Changes") sends further responses with the SAME refresh id
- *    after the first one finalised the cycle (:6-10, :825-863). The sketch's
- *    `Loaded → Refreshing → Loaded` loop misses that dimension; `followUpsPending` encodes it.
+ *    after the first one finalised the cycle. A plain `Loaded → Refreshing → Loaded` loop
+ *    would miss that dimension; `followUpsPending` encodes it.
  * 3. Errors have two shapes. With rows on screen (a soft refresh failing) the data STAYS and
- *    the state returns to `loaded` carrying a `lastError` note — the behaviour §6 F2 asks
- *    for. Legacy `displayLoadDataError` instead clears the view in BOTH cases (:895-909); the
- *    machine deliberately emits no `clearView` effect for the data-on-screen case and records
- *    the difference, so the wiring can choose during migration.
+ *    the state returns to `loaded` carrying a `lastError` note; with nothing on screen the
+ *    view is cleared into `error`. The machine deliberately emits no `clearView` effect for
+ *    the data-on-screen case, so the wiring can tell the two apart.
  * 4. `repoGone`: a `loadRepoInfo` response with `isRepo: false` ends the cycle and asks the
- *    host to re-check the repository list (:364-379) — the sketch has no home for it.
- * 5. `empty`: reachable only through `cancel`, which legacy has no analogue of (supersession
- *    by id bump is its only invalidation mechanism). It models "abandon the in-flight cycle,
- *    keep what is painted, invalidate the ids" for panel disposal / a future cancel affordance.
+ *    host to re-check the repository list.
+ * 5. `empty`: reachable only through `cancel` (an invalidation beyond the newer-request id
+ *    bump). It models "abandon the in-flight cycle, keep what is painted, invalidate the ids"
+ *    for panel disposal / a future cancel affordance.
  *
- * Tightenings over legacy (cases where legacy would apply, the machine drops): a pushed
- * `loadView` is accepted only while a push is expected — legacy `processLoadView` applies it
- * unconditionally and adopts its refresh ids over a possibly-running cycle (:741-744), which
- * is exactly the mid-boot repo-switch stomp; responses are keyed by repo as well as id
- * (legacy checks repo only for pull requests :810 and config :877); a response in the wrong
- * phase, after an error, or while quiescent drops instead of applying (legacy applies
- * anything whose id matches — :830 has no inProgress gate).
+ * Acceptance guards (what the machine drops that a plain id check would let through): a pushed
+ * `loadView` is accepted only while a push is expected (applying it unconditionally, adopting
+ * its refresh ids over a possibly-running cycle, would stomp a mid-boot repository switch);
+ * responses are keyed by repo as well as id; a response in the wrong phase, after an error, or
+ * while quiescent drops instead of applying.
  */
 
 
@@ -156,10 +146,9 @@ export function reduce(state: LoadState, event: LoadEvent): LoadResult {
 }
 
 /**
- * `openRepo` is valid from EVERY state (repoLoader.ts:206-243 switches repositories even
- * mid-load; a switch to the same repository is a reload): it resets the view and starts a
- * hard first-load cycle. The clearView effect is unconditional, exactly like legacy's
- * `clearCommits` call in the hard path (a no-op when nothing is painted).
+ * `openRepo` is valid from EVERY state (a repository switch lands even mid-load; a switch to
+ * the same repository is a reload): it resets the view and starts a hard first-load cycle.
+ * The clearView effect is unconditional (a no-op when nothing is painted).
  */
 
 import {
@@ -193,7 +182,7 @@ function reduceOpenRepo(event: OpenRepoEvent): LoadResult {
 	};
 }
 
-/** `awaitPush` happens once, at boot (repoLoader.ts:67-101): idle → awaitingPush. */
+/** `awaitPush` happens once, at boot: idle → awaitingPush. */
 function reduceAwaitPush(state: LoadState, event: AwaitPushEvent): LoadResult {
 	if (state.type !== 'idle') return stay(state, event, 'unexpectedState');
 	return {
@@ -203,7 +192,7 @@ function reduceAwaitPush(state: LoadState, event: AwaitPushEvent): LoadResult {
 	};
 }
 
-/** A snapshot paints only during the boot wait, and only for the awaited repository (:114-138). */
+/** A snapshot paints only during the boot wait, and only for the awaited repository. */
 function reduceSnapshotArrived(state: LoadState, event: SnapshotArrivedEvent): LoadResult {
 	if (state.type !== 'awaitingPush') return stay(state, event, 'unexpectedState');
 	if (state.repo !== event.repo) return stay(state, event, 'repoMismatch');
@@ -218,11 +207,11 @@ function reduceSnapshotArrived(state: LoadState, event: SnapshotArrivedEvent): L
 }
 
 /**
- * The pushed merged view, accepted only while a push is expected. Legacy applies it
- * unconditionally and adopts its refresh ids (:735-752) — the tightening that prevents a
- * switch-during-boot stomp. The caller's post-application decision (a repository whose own
- * settings differ re-requests the commits, :749-752) stays with the wiring: it reads repo
- * settings the machine does not hold.
+ * The pushed merged view, accepted only while a push is expected — the guard that prevents a
+ * switch-during-boot stomp (a push landing after the switch must not adopt its refresh ids
+ * over the new cycle). The caller's post-application decision (a repository whose own
+ * settings differ re-requests the commits) stays with the wiring: it reads repo settings the
+ * machine does not hold.
  */
 function reduceLoadViewPushed(state: LoadState, event: LoadViewPushedEvent): LoadResult {
 	if (state.type !== 'awaitingPush' && state.type !== 'snapshotPainted') {
@@ -231,8 +220,8 @@ function reduceLoadViewPushed(state: LoadState, event: LoadViewPushedEvent): Loa
 	if (state.repo !== event.repo) return stay(state, event, 'repoMismatch');
 	const spinOff = state.type === 'snapshotPainted';
 	if (event.error !== null) {
-		// Legacy clears the view even when the snapshot's rows are on screen (:895-909); the
-		// machine does the same here — an empty view with a retry dialog.
+		// The snapshot's rows are cleared even here: the push that would reconcile them
+		// failed, so the view empties under the retry dialog.
 		return {
 			state: { type: 'error', repo: state.repo, reason: event.error },
 			effects: [
@@ -257,9 +246,8 @@ function reduceLoadViewPushed(state: LoadState, event: LoadViewPushedEvent): Loa
 /**
  * The repo-info half of a cycle: accepted in phase 'repoInfo' with matching repo and
  * `repoInfoId`. Success moves to phase 'commits' and asks the caller to issue the commits
- * request (legacy `finaliseLoadRepoInfo` → `requestLoadCommits`, :364-379) under the cycle's
- * `commitsId`. `isRepo: false` ends the cycle for `repoGone`; an error clears an empty view
- * or, with rows on screen, returns to `loaded` with a note.
+ * request under the cycle's `commitsId`. `isRepo: false` ends the cycle for `repoGone`; an
+ * error clears an empty view or, with rows on screen, returns to `loaded` with a note.
  */
 function reduceRepoInfoResponse(state: LoadState, event: RepoInfoResponseEvent): LoadResult {
 	if (state.type !== 'loading' && state.type !== 'refreshing') return stay(state, event, 'unexpectedState');
@@ -269,7 +257,7 @@ function reduceRepoInfoResponse(state: LoadState, event: RepoInfoResponseEvent):
 
 	if (event.error !== null) {
 		if (state.type === 'refreshing') {
-			// Rows stay on screen (the F2 behaviour); only the spin and the error note change.
+			// Rows stay on screen; only the spin and the error note change.
 			return {
 				state: { type: 'loaded', repo: state.repo, commitsId: state.commitsId, followUpsPending: [], lastError: event.error },
 				effects: [
@@ -291,7 +279,7 @@ function reduceRepoInfoResponse(state: LoadState, event: RepoInfoResponseEvent):
 	}
 	if (!event.isRepo) {
 		// The repository vanished: end the cycle, ask the host to re-check the list. Whatever is
-		// on screen stays (legacy does not clear here either, :367-377).
+		// on screen stays (the view is not cleared for a vanished repository).
 		return {
 			state: { type: 'repoGone', repo: state.repo },
 			effects: [
@@ -321,10 +309,10 @@ function reduceRepoInfoResponse(state: LoadState, event: RepoInfoResponseEvent):
 
 /**
  * The commits half: accepted in phase 'commits' with matching repo and `commitsId`, and in
- * `loaded` for the staged follow-ups (same id, cycle already finalised — repoLoader.ts:825-863).
- * Success completes the cycle into `loaded` (firstPaint carries legacy `currentRepoLoading`);
- * an error clears an empty view, but with rows on screen the data stays and the note is
- * recorded (deviation from legacy's unconditional clear, per F2's stated behaviour).
+ * `loaded` for the staged follow-ups (same id, cycle already finalised). Success completes
+ * the cycle into `loaded` (`firstPaint` carries whether the view is getting its first rows of
+ * this repository); an error clears an empty view, but with rows on screen the data stays and
+ * the note is recorded.
  */
 function reduceCommitsResponse(state: LoadState, event: CommitsResponseEvent): LoadResult {
 	if (state.type === 'loading' || state.type === 'refreshing') {
@@ -367,8 +355,8 @@ function reduceCommitsResponse(state: LoadState, event: CommitsResponseEvent): L
 		if (state.commitsId !== event.requestId) return stay(state, event, 'staleRequestId');
 
 		if (event.error !== null) {
-			// A follow-up failed: rows stay, the note is recorded (legacy clears here too —
-			// :864-872 — the same F2 deviation as a refresh error).
+			// A follow-up failed: rows stay, the note is recorded (the same data-stays
+			// rule as a refresh error).
 			return {
 				state: { type: 'loaded', repo: state.repo, commitsId: state.commitsId, followUpsPending: [], lastError: event.error },
 				effects: [{ kind: 'showLoadError', reason: event.error, retry: true }],
@@ -385,13 +373,12 @@ function reduceCommitsResponse(state: LoadState, event: CommitsResponseEvent): L
 }
 
 /**
- * Start or join a cycle (repoLoader.ts:1057-1094). From a quiescent state: a hard request
- * enters `loading` (clearView + skeleton), a soft one `refreshing` (rows kept). Joining a
- * running cycle replaces its ids (invalidating stragglers) but keeps the in-flight repo-info
- * half valid when `skipRepoInfo` joined it in phase 'repoInfo' — the join rule of
- * :1062-1066/:1086-1093. A refresh during the boot push is refused: legacy lets it run and
- * the late push then stomps the cycle by adopting its ids (:741-744); the wiring should
- * disable the refresh affordance while a push is pending.
+ * Start or join a cycle. From a quiescent state: a hard request enters `loading` (clearView +
+ * skeleton), a soft one `refreshing` (rows kept). Joining a running cycle replaces its ids
+ * (invalidating stragglers) but keeps the in-flight repo-info half valid when `skipRepoInfo`
+ * joined it in phase 'repoInfo'. A refresh during the boot push is refused (a late push
+ * adopting its ids over the cycle would stomp it); the wiring should disable the refresh
+ * affordance while a push is pending.
  */
 function reduceRefreshRequested(state: LoadState, event: RefreshRequestedEvent): LoadResult {
 	if (state.type === 'idle') return stay(state, event, 'noRepoOpen');
@@ -400,9 +387,8 @@ function reduceRefreshRequested(state: LoadState, event: RefreshRequestedEvent):
 
 	if (state.type === 'loaded') {
 		if (event.hard) {
-			// A hard refresh clears the view; `skipRepoInfo` skips the repo-info half (a selection
-			// or filter change re-queries just the commits — legacy controlBar's
-			// clearCommits + requestLoadRepoInfoAndCommits(true, true) shape).
+			// A hard refresh clears the view; `skipRepoInfo` skips the repo-info half (a
+			// selection or filter change re-queries just the commits).
 			return {
 				state: { type: 'loading', repo: state.repo, repoInfoId: event.requestId, commitsId: event.requestId, phase: event.skipRepoInfo ? 'commits' : 'repoInfo', firstLoad: false, followUpsPending: [] },
 				effects: [
@@ -460,7 +446,7 @@ function reduceRefreshRequested(state: LoadState, event: RefreshRequestedEvent):
 	}
 
 	// Joining a running cycle (loading/refreshing): replace the ids the new requests will
-	// carry, keep the in-flight repo-info id when the join waits for it (:1086-1093).
+	// carry, keep the in-flight repo-info id when the join waits for it.
 	const joinedRepoInfoId = event.skipRepoInfo ? state.repoInfoId : event.requestId;
 	const phase = event.skipRepoInfo
 		? (state.phase === 'repoInfo' ? 'repoInfo' : 'commits')
@@ -494,8 +480,8 @@ function reduceRefreshRequested(state: LoadState, event: RefreshRequestedEvent):
 }
 
 /**
- * Abandon the in-flight cycle (no legacy analogue — legacy only invalidates by issuing newer
- * requests). Whatever is painted stays; a painted-rows cycle returns to `loaded` under the
+ * Abandon the in-flight cycle (an invalidation beyond the newer-request supersession).
+ * Whatever is painted stays; a painted-rows cycle returns to `loaded` under the
  * `CANCELLED_REQUEST_ID` sentinel so stragglers of the abandoned cycle drop, a data-less
  * cycle lands in `empty`, and a snapshot that can never be reconciled (its push is gone) is
  * cleared.

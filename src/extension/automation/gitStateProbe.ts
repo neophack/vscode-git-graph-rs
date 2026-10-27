@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 
 /**
- * GitStateProbe (REFACTOR-PLAN §6.8.3, task 4.10): the scenario runner's `then.git` assertion
+ * GitStateProbe: the scenario runner's `then.git` assertion
  * engine. It judges a repository's REAL state — refs, HEAD, commits, worktree, stashes, config,
  * remotes — through the git CLI, so a passing scenario proves the write operation changed the
  * repository, not merely "a response arrived".

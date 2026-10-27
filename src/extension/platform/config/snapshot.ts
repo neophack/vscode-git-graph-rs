@@ -3,7 +3,7 @@ import { ConfigSnapshot, CONFIG_SCHEMA, SnapshotField } from './schema';
 import { readWithMigrations } from './migrations';
 
 /**
- * The snapshotting half of the configuration model (REFACTOR-PLAN 3.3 + task 4.5): take one
+ * The snapshotting half of the configuration model: take one
  * immutable {@link ConfigSnapshot} of every contributed `git-graph-rs.*` setting, and subscribe
  * to the changes of that section. Defaults come from the checked-in schema table
  * ({@link ./schema}), whose parity with `package.json#contributes.configuration` a test asserts
@@ -47,7 +47,7 @@ export interface ObservableWorkspaceLike extends WorkspaceLike {
  * The unset `mobileAdaptation` default is host-aware: Git Graph Studio (uriScheme 'ggs') turns
  * the narrow-window phone layout on — its remote phone sessions are the layout's audience —
  * while VS Code keeps the manifest default (off). Expressing the studio default in the snapshot
- * reader (instead of a settings write the activation used to seed, OPTIMIZATION-PLAN V1) means
+ * reader (instead of a settings write at activation) means
  * no user settings are touched at activation, and an explicitly set value still wins on every
  * host. This is the ONE declared divergence of the snapshot from the manifest defaults.
  */

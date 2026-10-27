@@ -1,5 +1,5 @@
 /**
- * The staged follow-ups of a load (OPTIMIZATION-PLAN §6 F2): the requests and responses that run
+ * The staged follow-ups of a load: the requests and responses that run
  * BESIDE the commit pipeline rather than in it — the pull/merge request badges (one request per
  * repository), the author avatars — plus the Gerrit status filter's debounced background reload.
  *

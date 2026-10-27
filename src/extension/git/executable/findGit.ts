@@ -26,7 +26,7 @@ export interface GitExecutable {
  * Find a Git executable that Git Graph can use.
  * @param extensionState The Git Graph ExtensionState instance.
  * @param configGitPaths The Git paths configured by the `git.path` Visual Studio Code setting
- * (answered by the caller from the configuration snapshot, OPTIMIZATION-PLAN A4).
+ * (answered by the caller from the configuration snapshot).
  * @returns A Git executable.
  */
 export async function findGit(extensionState: ExtensionState, configGitPaths: ReadonlyArray<string>) {
@@ -58,8 +58,8 @@ export async function findGit(extensionState: ExtensionState, configGitPaths: Re
  * @returns A Git executable.
  */
 function findGitOnDarwin() {
-	// The two probes are plain executables, so they spawn directly (the legacy `cp.exec` shell
-	// invocation added nothing but quoting risk); the generic spawn owns windowsHide.
+	// The two probes are plain executables, so they spawn directly (a shell would add
+	// nothing but quoting risk); the generic spawn owns windowsHide.
 	return spawnOutput('which', ['git']).then((which) => {
 		if (which.code !== 0) return Promise.reject();
 
@@ -129,9 +129,9 @@ function isExecutable(path: string) {
  * @returns The GitExecutable data.
  */
 export function getGitExecutable(path: string) {
-	// The version probe runs through the process seam's generic spawn (OPTIMIZATION-PLAN A3):
-	// unlike the direct `cp.spawn` it replaces it carries `windowsHide: true`, so probing a
-	// candidate on PATH cannot flash a console window.
+	// The version probe runs through the process seam's generic spawn: unlike a direct
+	// `cp.spawn` it carries `windowsHide: true`, so probing a candidate on PATH cannot
+	// flash a console window.
 	return spawnOutput(path, ['--version']).then((output) => {
 		if (output.code !== 0 || output.error !== null) return Promise.reject();
 		return { path: path, version: output.stdout.toString().trim().replace(/^git version /, '') };

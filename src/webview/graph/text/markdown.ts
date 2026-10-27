@@ -38,7 +38,7 @@ interface MarkdownItToken {
 	attrGet(name: string): string | number | null;
 }
 
-/* The Markdown renderer loads ON DEMAND (task 5.9): markdown-it is one of the heaviest
+/* The Markdown renderer loads ON DEMAND: markdown-it is one of the heaviest
    dependencies of the webview and the Commit Details View is the only consumer, so it sits in an
    on-demand chunk (see loadMarkdown) and the idle prefetch after the first paint usually has it
    ready before the first click on a commit. */
@@ -51,7 +51,8 @@ export function isMarkdownLoaded(): boolean {
 }
 
 /**
- * Load the Markdown renderer (idempotent). The instance mirrors the pre-task-5.9 vendor build:
+ * Load the Markdown renderer (idempotent). The instance configuration is unchanged from the
+ * retired vendored build:
  * html disabled (raw HTML embedded in a commit message is never treated as markup, even before
  * this module's own token-based safety pass), no linkify, line breaks on.
  */

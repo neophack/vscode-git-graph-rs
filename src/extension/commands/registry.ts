@@ -1,5 +1,5 @@
 /**
- * The declarative registry of the extension's commands (REFACTOR-PLAN task 4.6): the single
+ * The declarative registry of the extension's commands: the single
  * list of command identifiers the extension can register, in registration order, together with
  * the non-palette menu surfaces of `package.json#contributes.menus` each command backs.
  *

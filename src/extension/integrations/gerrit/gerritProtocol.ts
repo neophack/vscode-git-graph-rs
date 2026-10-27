@@ -6,9 +6,9 @@ import { GerritChangeEvent, GerritChangeState, GerritChangeStatus, GerritPatchse
  * adaptive sampling schedule, Change-Id helpers, and remote-URL parsing — all plain functions
  * over data, with no I/O.
  *
- * Split out of `gerrit.ts` along the integration's natural seam (REFACTOR-PLAN task 6.2): this
+ * Split along the integration's natural seam: this
  * module answers "what does this data mean"; the `GerritDataSource` in `gerrit.ts` answers "how
- * is the data fetched and cached". The historical `src/gerrit.ts` path re-exports both.
+ * is the data fetched and cached".
  */
 
 export interface ParsedChangeRef {

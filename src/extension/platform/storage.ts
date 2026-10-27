@@ -18,11 +18,10 @@ export type { CodeReviewData, CodeReviews } from './storageCodeReviews';
 export { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE } from './storageViewState';
 
 /**
- * Platform storage adapter (REFACTOR-PLAN 3.3): the ONE storage module, unifying the
- * `Storage` seam this module introduced (global- and workspace-state persistence behind one
+ * Platform storage adapter: the ONE storage module, unifying the
+ * `Storage` seam (global- and workspace-state persistence behind one
  * lenient interface, with the dependency injected structurally) with the Git Graph
- * `ExtensionState` absorbed verbatim from the former flat src/extensionState.ts (now a
- * re-export shim of this module) - the typed, key-by-key view over both mementos the live
+ * `ExtensionState` - the typed, key-by-key view over both mementos the live
  * extension host uses.
  *
  * The `Storage` seam's dependency is injected structurally (production wiring passes a
@@ -31,7 +30,7 @@ export { DEFAULT_GIT_GRAPH_VIEW_GLOBAL_STATE } from './storageViewState';
  * `undefined`, never throws. Writes report success as a boolean instead of rejecting, so state
  * bookkeeping can never take down a request path.
  *
- * The `ExtensionState` values are versioned user data (REFACTOR-PLAN §3.7.2): reads migrate
+ * The `ExtensionState` values are versioned user data: reads migrate
  * older versions leniently and preserve newer writers' unknown fields, while every write
  * stamps `STORAGE_STATE_VERSION`. All of it sits on ONE versioned KV (`VersionedStateKv`,
  * ./storageVersioned.ts); the per-store modules are ./storageAvatars.ts (the avatar cache and
@@ -171,7 +170,7 @@ export class ExtensionState extends Disposable {
 	 * Creates the Git Graph Extension State.
 	 * @param context The context of the extension.
 	 * @param onDidChangeGitExecutable The Event emitting the Git executable for Git Graph to use.
-	 * @param config The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4).
+	 * @param config The configuration service (the latest settings snapshot).
 	 */
 	constructor(context: vscode.ExtensionContext, onDidChangeGitExecutable: GgEvent<GitExecutable | null>, private readonly config: ConfigProvider) {
 		super();

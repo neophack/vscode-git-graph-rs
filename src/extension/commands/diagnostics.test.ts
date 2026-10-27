@@ -1,5 +1,5 @@
 /**
- * The Diagnostics command's pure halves (OPTIMIZATION-PLAN §V5): the snapshot-vs-defaults diff
+ * The Diagnostics command's pure halves: the snapshot-vs-defaults diff
  * and the document formatting. The vscode-dependent shell (`showDiagnostics`) stays thin and
  * untested, like the `version` command's — only the two functions the document is built from
  * are asserted here.

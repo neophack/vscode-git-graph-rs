@@ -5,7 +5,7 @@
  * readers share (the resolved empty tree of each repository, the last whole-diff numstat counts)
  * lives on this object, so each theme module stays a set of functions over one `GitCli`.
  *
- * Every run goes through the write layer's {@link GitProcess} (OPTIMIZATION-PLAN A3: one process
+ * Every run goes through the write layer's {@link GitProcess} (the one process
  * seam): the buffered `run` (optionally cancellable through an `AbortLike` that kills the child —
  * the long log walk), `collect` (the raw stdout bytes — the `--textconv` contents read),
  * `runDetailed`'s exit code and both streams separately (the merge-tree probe, whose conflict
@@ -52,7 +52,7 @@ export class GitCli {
 	/** The resolved empty tree of each repository, keyed by repo path (its hash is format-dependent). */
 	private readonly emptyTrees = new Map<string, Promise<string>>();
 
-	/** The process adapter every run goes through (OPTIMIZATION-PLAN A3: the one process seam). */
+	/** The process adapter every run goes through (the one process seam). */
 	private readonly process: GitProcess;
 
 	constructor(
@@ -60,8 +60,8 @@ export class GitCli {
 		/** The spawn implementation behind {@link process}; injected so tests fake the child. */
 		private readonly spawnFn?: GitSpawnFn
 	) {
-		// No askpass provider is wired for the read path: like the `execFile` spawns it replaces,
-		// the reads run with the plain inherited environment.
+		// No askpass provider is wired for the read path: the reads run with the plain
+		// inherited environment.
 		this.process = new GitProcess(() => ({ path: this.gitPath, version: '' }), this.spawnFn);
 	}
 

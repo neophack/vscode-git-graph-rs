@@ -1,9 +1,8 @@
 import type { UncommittedReading, UncommittedStabiliser } from './commitLoader';
 
 /**
- * Decides when a reading of the "Uncommitted Changes" count may be delivered to the webview
- * (REFACTOR-PLAN task 4.3), ported verbatim from GitGraphView's `UncommittedCountStabiliser`
- * (src/gitGraphView.ts; the live class stays there until the Panel cutover deletes it). The row
+ * Decides when a reading of the "Uncommitted Changes" count may be delivered to the webview.
+ * The row
  * it gates must never disappear and reappear on a momentary reading (a `git status` that failed
  * or raced a concurrent index write reports 0, not the real count - delivering that 0 removes
  * the rendered row, and the next refresh brings it straight back):

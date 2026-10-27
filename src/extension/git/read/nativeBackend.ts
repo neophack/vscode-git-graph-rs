@@ -51,9 +51,9 @@ const DEFAULT_REF_OPTIONS: Required<RefReadOptions> = {
 };
 
 /**
- * One engine request in flight, together with the handle that cancels it (task 2.9).
+ * One engine request in flight, together with the handle that cancels it.
  *
- * This is the shape the host scheduler (task 4.8) consumes: it issues a request, hands the
+ * This is the shape the host scheduler consumes: it issues a request, hands the
  * promise to whoever waits, and calls `cancel()` when a newer request of the same kind
  * supersedes this one. Cancelling is safe at any point in the request's life — see
  * {@link cancel} in `addon.ts`.
@@ -74,8 +74,8 @@ export function issueRequestId(): number {
 }
 
 /**
- * Issue one engine request the caller can cancel (task 2.9), through the same typed seam as
- * `NativeBackend`'s methods. Not wired into the backend itself yet — the host scheduler (4.8)
+ * Issue one engine request the caller can cancel, through the same typed seam as
+ * `NativeBackend`'s methods. Not wired into the backend itself yet — the host scheduler
  * decides which calls run under cancellation.
  */
 export function startCancellableRequest<M extends EngineMethod>(
@@ -153,7 +153,7 @@ export class NativeBackend implements GitBackend {
 		if (signal === undefined) {
 			return request(repo, 'loadCommits', params);
 		}
-		// The structural cancellation surface (task 2.9): an aborted signal cancels the in-flight
+		// The structural cancellation surface: an aborted signal cancels the in-flight
 		// request by id, and the promise rejects with kind `Cancelled` — the same outcome the CLI
 		// adapter produces by killing its child process.
 		const requestId = issueRequestId();
@@ -169,14 +169,14 @@ export class NativeBackend implements GitBackend {
 		return request(repo, 'loadRefs', payload);
 	}
 
-	/** The engine's one-pass ref snapshot (task 4.8): dropdown data without a history walk. */
+	/** The engine's one-pass ref snapshot: dropdown data without a history walk. */
 	public getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot> {
 		const payload = { ...DEFAULT_REF_OPTIONS, ...options } as EngineMethods['refs']['params'];
 		return request(repo, 'refs', payload);
 	}
 
 	/**
-	 * The engine's refs-only re-annotation (task 4.8): fresh labels for the commits the caller
+	 * The engine's refs-only re-annotation: fresh labels for the commits the caller
 	 * already holds, with the same signal-based cancellation a page walk gets.
 	 */
 	public annotate(repo: string, commits: ReadonlyArray<string>, options?: AnnotateReadOptions, signal?: AbortLike): Promise<GitAnnotation> {

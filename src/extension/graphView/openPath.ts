@@ -4,8 +4,8 @@ import { launchFollowUps, sendRemoteRefsFollowUp, sendUncommittedChangesFollowUp
 import type { FollowUpContext } from './followUpStages';
 
 /**
- * The merged open path of the graph view (task 4.7), split out of commitLoader.ts along its
- * seam (OPTIMIZATION-PLAN §A5): the ONE read that answers a repository being opened with both
+ * The merged open path of the graph view, split out of commitLoader.ts along its
+ * seam: the ONE read that answers a repository being opened with both
  * its repo info and its first commit page, begun while the webview is still booting, whose
  * completed (or in-flight) result the panel PUSHES when the page reports `ready`. The
  * CommitLoader facade owns the run state and the caches; what this module needs of them arrives
@@ -14,7 +14,7 @@ import type { FollowUpContext } from './followUpStages';
  */
 
 /**
- * One began merged open-path read (task 4.7): the promise settles with the merged response (NULL
+ * One began merged open-path read: the promise settles with the merged response (NULL
  * once a newer load of the repository superseded it — the caller pushes nothing), and the
  * follow-up launcher runs the staged remote-refs / uncommitted-changes responses once the
  * response was actually pushed to a webview.

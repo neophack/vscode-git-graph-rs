@@ -41,7 +41,7 @@ export function renderCommitMessageBody(ctx: GraphContext, getScope: () => Paren
 	const offerToggle = ctx.store.config.markdown && hasMarkdown(body);
 	const showMarkdown = offerToggle && expandedCommit.showMarkdown;
 	if (showMarkdown && !isMarkdownLoaded()) {
-		// The Markdown renderer's on-demand chunk has not landed yet (task 5.9): paint the
+		// The Markdown renderer's on-demand chunk has not landed yet: paint the
 		// plain inline-formatted body now - never blank, never blocked - and swap in the
 		// rendered Markdown the moment the module resolves, provided this same commit is
 		// still the open one.
@@ -114,7 +114,7 @@ export function toggleMessageMarkdown(ctx: GraphContext, getScope: () => ParentN
 	const body = getCdvMessageBody(expandedCommit.commitDetails.body, ctx.layout.isTouchLayout());
 	const renderBody = () => setHtml(bodyElem, expandedCommit.showMarkdown ? renderMarkdown(body) : textFormatter.format(body));
 	if (expandedCommit.showMarkdown && !isMarkdownLoaded()) {
-		// Flipping to Markdown before the on-demand renderer landed (task 5.9): keep the
+		// Flipping to Markdown before the on-demand renderer landed: keep the
 		// toggle's label in sync immediately and paint the rendered body once it resolves
 		void loadMarkdown().then(renderBody, () => undefined);
 	} else {

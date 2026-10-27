@@ -108,7 +108,7 @@ export class CommitDetails extends Component {
 	/* Opening & closing */
 
 	/**
-	 * The details view's styles are on demand (task 5.9's CSS split): opening is the first use,
+	 * The details view's styles are on demand: opening is the first use,
 	 * so it kicks their chunk (idle-prefetched after the first paint) before anything renders.
 	 */
 	private ensureStyles() {

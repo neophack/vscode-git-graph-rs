@@ -1,5 +1,5 @@
 /**
- * Centralized layout measurement (REFACTOR-PLAN task 5.10): the layout READS the render pipeline
+ * Centralized layout measurement: the layout READS the render pipeline
  * needs are gathered here so they can run as one batch BEFORE the DOM writes that follow them.
  * A layout read (clientHeight, offsetWidth, getBoundingClientRect, ...) interleaved with a write
  * forces a synchronous layout of the whole table; batched reads collapse into at most one forced

@@ -1,7 +1,7 @@
 import type { AbortLike } from '../git/process/gitProcess';
 
 /**
- * The host request scheduler (REFACTOR-PLAN task 4.8, §3.8.3 "Cancellation and priority").
+ * The host request scheduler.
  * Two queues, one rule each:
  *
  * - **Interactive** jobs (a user-initiated view load, a post-write impact refresh) start
@@ -22,7 +22,7 @@ import type { AbortLike } from '../git/process/gitProcess';
 
 /** Why a job was abandoned before its result could be delivered. */
 export type JobAbandonReason =
-	/** A newer job of the same kind superseded it (§3.8.3's "a new request of the same kind invalidates the old one"). */
+	/** A newer job of the same kind superseded it — a new request of the same kind invalidates the old one. */
 	'superseded'
 	/** An interactive job arrived while this background job was running or waiting. */
 	| 'yielded';
@@ -39,7 +39,7 @@ export class JobAbandonedError extends Error {
 	}
 }
 
-/** The two scheduling classes of §3.8.3: interactive requests first, background concurrency 1. */
+/** The two scheduling classes: interactive requests first, background concurrency 1. */
 export type JobPriority = 'interactive' | 'background';
 
 /** One scheduled job's bookkeeping (the maps below hold it by identity). */

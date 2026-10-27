@@ -15,13 +15,13 @@ import type { GitRunnerPort } from './gitRunner';
 import { getRemotesContainingCommit } from './repoReads';
 
 /**
- * The write flows of the graph view (REFACTOR-PLAN task 3.6, host side): the orchestration of the
- * legacy `DataSource` write methods — the loss-warning preflights, the squash follow-ups, the
+ * The write flows of the graph view (host side): the orchestration of the view's write
+ * actions — the loss-warning preflights, the squash follow-ups, the
  * remote-containment checks, the interactive-rebase and message-edit handoffs — expressed as
  * reads on the facade's `read` face plus the pure write ops through `write`. No handler spawns a
  * process and no flow skips the GitWriter's gates: every repository mutation goes through
  * `repo.write(repo, op)`; the editor-script rebase of `editCommitMessage` and the terminal
- * handoff of the interactive rebase are the two legacy spawn sequences that are not pure ops,
+ * handoff of the interactive rebase are the two spawn sequences that are not pure ops,
  * and they run through the runner and UI ports the panel injects.
  */
 
@@ -56,12 +56,12 @@ function run(ctx: WriteFlowContext, repo: Repo, op: ops.WriteOp): Promise<ErrorI
 	return ctx.repo.write.run(repo, op);
 }
 
-/** The detached-commits warning of the legacy checkout-family methods, over the runner. */
+/** The detached-commits warning of the checkout-family flows, over the runner. */
 function guardDetachedCommits(ctx: WriteFlowContext, repo: Repo, anchoredAt: string | null = null): Promise<LossWarning | null> {
 	return detachedCommitsLossWarning((argv) => ctx.git.gitOutput(argv, repo, (out) => out), ctx.t, anchoredAt);
 }
 
-/** The hard-reset warning of the legacy `resetToCommit`, over the runner. */
+/** The hard-reset warning of `resetToCommit`, over the runner. */
 function guardHardReset(ctx: WriteFlowContext, repo: Repo): Promise<LossWarning | null> {
 	return hardResetLossWarning((argv) => ctx.git.gitOutput(argv, repo, (out) => out), ctx.t);
 }
@@ -145,7 +145,7 @@ export async function pushBranch(ctx: WriteFlowContext, repo: Repo, branchName: 
 	return run(ctx, repo, ops.pushBranch({ branchName: branchName, remote: remote, setUpstream: setUpstream, mode: mode }));
 }
 
-/** Push a branch to multiple remotes, stopping at the first failure (the legacy loop). */
+/** Push a branch to multiple remotes, stopping at the first failure. */
 export async function pushBranchToMultipleRemotes(ctx: WriteFlowContext, repo: Repo, branchName: string, remotes: ReadonlyArray<string>, setUpstream: boolean, mode: GitPushBranchMode, confirmed: boolean): Promise<(ErrorInfo | LossWarning)[]> {
 	if (remotes.length === 0) {
 		return ['No remote(s) were specified to push the branch ' + branchName + ' to.'];
@@ -159,7 +159,7 @@ export async function pushBranchToMultipleRemotes(ctx: WriteFlowContext, repo: R
 	return results;
 }
 
-/** Push a tag, with the remotes-contain-commit preflight of the legacy `pushTag`. */
+/** Push a tag, with the remotes-contain-commit preflight. */
 export async function pushTag(ctx: WriteFlowContext, repo: Repo, tagName: string, remotes: ReadonlyArray<string>, commitHash: string, skipRemoteCheck: boolean): Promise<ErrorInfo[]> {
 	const unsafe = checkUnsafeGitArgs(ctx.t, ['tagName', tagName, 'ref'], ['commitHash', commitHash, 'hash']);
 	if (unsafe !== null) return [unsafe];
@@ -177,7 +177,7 @@ export async function pushTag(ctx: WriteFlowContext, repo: Repo, tagName: string
 			return ['PushTagCommitNotOnRemote:' + JSON.stringify(notContaining)];
 		}
 	}
-	// The op's steps stop at the first failing push, exactly like the legacy loop; the view
+	// The op's steps stop at the first failing push; the view
 	// reads the entries as the per-remote results.
 	const error = await run(ctx, repo, ops.pushTag({ tagName: tagName, remotes: remotes, commitHash: commitHash }));
 	return error === null ? [] : [error];
@@ -228,7 +228,7 @@ export function addTag(ctx: WriteFlowContext, repo: Repo, tagName: string, commi
 	}));
 }
 
-/** Delete a tag (optionally on a remote), cleaning the other remotes' tracking refs like the legacy method. */
+/** Delete a tag (optionally on a remote), cleaning the other remotes' tracking refs. */
 export async function deleteTag(ctx: WriteFlowContext, repo: Repo, tagName: string, deleteOnRemote: string | null): Promise<ErrorInfo> {
 	const unsafe = checkUnsafeGitArgs(ctx.t, ['tagName', tagName, 'ref'], ['deleteOnRemote', deleteOnRemote, 'ref']);
 	if (unsafe !== null) return unsafe;
@@ -296,7 +296,7 @@ export function resetFileToRevision(ctx: WriteFlowContext, repo: Repo, commitHas
 
 /* ---------- Merge & rebase ---------- */
 
-/** Merge a branch/commit, committing an applied squash merge afterwards like the legacy method. */
+/** Merge a branch/commit, committing an applied squash merge afterwards. */
 export async function merge(ctx: WriteFlowContext, repo: Repo, obj: string, actionOn: MergeActionOn, createNewCommit: boolean, squash: boolean, noCommit: boolean): Promise<ErrorInfo> {
 	const mergeStatus = await run(ctx, repo, ops.merge({
 		obj: obj, actionOn: actionOn, createNewCommit: createNewCommit, squash: squash, noCommit: noCommit,
@@ -310,7 +310,7 @@ export async function merge(ctx: WriteFlowContext, repo: Repo, obj: string, acti
 	}));
 }
 
-/** Pull a branch, committing an applied squash pull afterwards like the legacy method. */
+/** Pull a branch, committing an applied squash pull afterwards. */
 export async function pullBranch(ctx: WriteFlowContext, repo: Repo, branchName: string, remote: string, createNewCommit: boolean, squash: boolean): Promise<ErrorInfo> {
 	const error = await run(ctx, repo, ops.pullBranch({
 		branchName: branchName, remote: remote, createNewCommit: createNewCommit, squash: squash,
@@ -404,7 +404,7 @@ export function pruneWorktrees(ctx: WriteFlowContext, repo: Repo): Promise<Error
 /* ---------- Message editing (the one flow that is not a pure op) ---------- */
 
 /**
- * Edit the message (and optionally the author) of an unpushed commit (the legacy
+ * Edit the message (and optionally the author) of an unpushed commit:
  * `editCommitMessage`): HEAD is amended directly; an earlier commit is reworded through an
  * automated interactive rebase whose sequence/message editors are small node scripts, aborted
  * (with `--autostash` restoring the working tree) when it fails part-way.
@@ -508,14 +508,14 @@ export async function editCommitMessage(ctx: WriteFlowContext, repo: Repo, commi
 
 /* ---------- Internals ---------- */
 
-/** The staged-changes probe + squash commit of the legacy `commitSquashIfStagedChangesExist`. */
+/** The staged-changes probe + squash commit (`commitSquashIfStagedChangesExist`). */
 async function commitSquashIfStagedChangesExist(ctx: WriteFlowContext, repo: Repo, buildOp: () => ops.WriteOp): Promise<ErrorInfo> {
 	const staged = await ctx.git.gitOutput(['diff-index', 'HEAD'], repo, (out) => out !== '').catch(() => false);
 	if (!staged) return null;
 	return run(ctx, repo, buildOp());
 }
 
-/** The error message of a failed collected run, in the legacy `commandFailure` shape. */
+/** The error message of a failed collected run, in the shared `commandFailure` shape (gitWriter.ts). */
 function commandFailureText(result: { stderr: string; stdout: Buffer }): string {
 	const lines = (result.stderr + result.stdout.toString('utf8')).split(/\r\n|\r|\n/);
 	lines.pop();

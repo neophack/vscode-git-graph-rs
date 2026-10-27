@@ -1,13 +1,13 @@
 /**
- * The commits slice (OPTIMIZATION-PLAN §6 F1): the loaded commit page and everything derived
+ * The commits slice: the loaded commit page and everything derived
  * from it - the hash→index lookup (a `Map`, built by and kept in sync ONLY by this slice's
- * actions; before F1 it was a plain object whose consistency with `commits` was every caller's
- * job), the page's HEAD, the paging bookkeeping, the author avatars, and the render bookkeeping
+ * actions), the page's HEAD, the paging bookkeeping, the author avatars, and the render
+ * bookkeeping
  * ("which HEAD the rendered rows were built for").
  *
  * Emission discipline: `replacePage` and `clear` emit page-level changes - the response
  * application's own changes, satisfied by the response's render pass, and the (old, new) page
- * pair is what the keyed row patching of task 5.10 will diff by hash. Everything else is silent:
+ * pair is what the keyed row patching diffs by hash. Everything else is silent:
  * `patchUncommittedRow` is followed by the caller's own in-place row patch
  * (`renderUncommittedChanges`), which EXISTS so the row is never rebuilt - an emission here would
  * schedule exactly that rebuild; avatars patch their rows in place; the rendered-HEAD record is
@@ -100,8 +100,8 @@ export class CommitsSlice {
 	/** Which of two loaded commits is older (`from`) and which newer (`to`). */
 	public getCommitOrder(hash1: string, hash2: string): { from: string, to: string } {
 		const first = this.commitLookupValue.get(hash1), second = this.commitLookupValue.get(hash2);
-		// An unknown hash never counts as "older" (the plain-object lookup compared `undefined`,
-		// which every `>` comparison answered false - identical outcomes here).
+		// An unknown hash never counts as "older" (from = the other hash): the lookup has no
+		// index for it, so it never wins the `>` comparison.
 		if (first !== undefined && second !== undefined && first > second) {
 			return { from: hash1, to: hash2 };
 		}

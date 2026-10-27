@@ -17,7 +17,7 @@ import {
 } from './repoConfigFile';
 
 /**
- * The repository-settings half of the repository manager (OPTIMIZATION-PLAN A5): everything the
+ * The repository-settings half of the repository manager: everything the
  * extension does with a repository's External Configuration File (`.vscode/git-graph-rs.json`)
  * beyond the file format itself (./repoConfigFile owns reading, writing, validating and
  * applying a file): importing detected file changes into the repository states (queued, so a

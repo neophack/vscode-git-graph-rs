@@ -1,6 +1,6 @@
 /**
- * Platform clipboard adapter (REFACTOR-PLAN 3.3): the typed seam over `vscode.env.clipboard`
- * (the surface src/utils/actions.ts's copyToClipboard drives directly today).
+ * Platform clipboard adapter: the typed seam over `vscode.env.clipboard`, driven by the
+ * platform actions module's copyToClipboard flows.
  *
  * The dependency is injected structurally (production wiring passes `vscode.env.clipboard`).
  * Degradation is part of the contract, not an error: when the clipboard is unavailable or the

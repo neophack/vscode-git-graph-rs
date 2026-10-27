@@ -1,14 +1,14 @@
 /**
  * Step builders and shared step sequences referenced across the catalog's domain files: exact-text
  * candidates across interface languages, dropdown/pin/scroll barriers, dialog assertions and the
- * Gerrit settings toggles. Carved verbatim out of the former single-file catalog.ts (task 6.2);
- * the definitions are unchanged, only exported now.
+ * Gerrit settings toggles. Carved verbatim out of the former single-file catalog.ts;
+ * the definitions are unchanged, only exported.
  */
 
 import { UiStep } from './types';
 
 /**
- * Exact-text candidates across the interface languages the extension ships (web/strings.ts):
+ * Exact-text candidates across the interface languages the extension ships (src/shared/i18n/):
  * the shim clicks/looks for whichever the rendered UI shows, so a catalog entry matches menu
  * items, dropdown options and labels under both the English and the zh-CN interface.
  */

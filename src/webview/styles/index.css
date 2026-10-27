@@ -1,10 +1,10 @@
 /* The webview stylesheet. The import order is the cascade order: the tokens, then the base
  * styles, then the widgets - each component sheet carrying its own phone-layout section under
  * body.mobileMode / body.touchMode and its tablet-layout section under body.tabletMode
- * (OPTIMIZATION-PLAN §6 F6 merged the former styles/mobile/ and styles/tablet/ directories into
- * them). Bundled into media/out.min.css by scripts/build/webview.mjs.
+ * (the sections came from the former styles/mobile/ and styles/tablet/ directories). Bundled
+ * into media/out.min.css by scripts/build/webview.mjs.
  *
- * CRITICAL only (task 5.9): this file is the first paint's stylesheet - the table, the graph and
+ * CRITICAL only: this file is the first paint's stylesheet - the table, the graph and
  * the control bar. Everything that only a user action brings on screen loads on demand: the Find
  * widget, the Settings widget, the Reflog view, the Worktree dialog and the Statistics view ride
  * their module chunks as text, while the dialogs, the context menu, the commit details view (with

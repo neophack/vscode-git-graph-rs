@@ -1,6 +1,6 @@
 /**
- * Tests for the argument-injection safety port: the validators and the `checkUnsafeGitArgs`
- * behaviour, matching the legacy `DataSource` implementation tuple for tuple.
+ * Tests for the argument-injection safety module: the validators and the `checkUnsafeGitArgs`
+ * behaviour, tuple for tuple.
  */
 
 import { describe, expect, it } from 'vitest';

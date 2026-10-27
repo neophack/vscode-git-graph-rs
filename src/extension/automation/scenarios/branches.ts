@@ -1,12 +1,12 @@
 /**
- * The branch-domain scenarios (REFACTOR-PLAN §6.8.3, task 4.10): every branch write operation of
+ * The branch-domain scenarios: every branch write operation of
  * src/extension/git/write/ops/branches.ts with a SUCCESS and a FAILURE scenario, each asserting
  * the repository's real state through then.git. Success scenarios wrap the existing catalog
  * actions (their ui/request paths run unchanged); failure scenarios add inline request-only
  * actions whose DESIGNED outcome is git's refusal (nonexistent refs, invalid names) — the
  * refusal is accepted via allowErrorOn and the assertion proves the repository did NOT change.
  *
- * Fixture-stable facts (src/automation/fixture.ts): local branches are `main` (checked out,
+ * Fixture-stable facts (src/extension/automation/fixture.ts): local branches are `main` (checked out,
  * tracking origin/main) and `local-ahead` (one commit ahead, no upstream); `{{branch}}` resolves
  * to the first local branch that is not HEAD (local-ahead on the seeded clone).
  */

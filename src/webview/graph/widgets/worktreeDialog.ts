@@ -18,7 +18,7 @@ import { DialogInputType } from './dialog';
 import { WorktreeDialogSurface } from './surfaces';
 import worktreeCss from '../../styles/worktreeDialog.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// This module sits in an on-demand chunk: its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(worktreeCss);
 

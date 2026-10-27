@@ -25,8 +25,8 @@ import {
 	searchRepoForSubmodules
 } from './repoDiscovery';
 
-// The pure policy helpers and the state-and-events half this facade composes (OPTIMIZATION-PLAN
-// A5): re-exported here so the repository manager's importers keep their single import path.
+// The pure policy helpers and the state-and-events half this facade composes:
+// re-exported here so the repository manager's importers keep their single import path.
 export type { RepoChangeEvent } from './repoRegistry';
 export { MAX_RECENT_REPOS, bumpRecentRepos, recentReposList } from './repoRegistry';
 
@@ -50,7 +50,7 @@ function configSnapshotOf(repo?: string): ConfigSnapshot {
 
 /**
  * The collaborators the RepoManager is constructed with: the service's explicit dependency
- * list (OPTIMIZATION-PLAN A2). The manager is a member of the composition root's frozen
+ * list. The manager is a member of the composition root's frozen
  * services bag, so it is built before the freeze with this record instead of the bag itself.
  */
 export interface RepoManagerDeps {
@@ -216,8 +216,8 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Add the tag-tracking fetch refspec (`+refs/tags/*:refs/remotes/<remote>/tags/*`) to every
-	 * remote of the repository that does not already carry it (the port of the legacy
-	 * `DataSource.trackRemoteTags`): the refspec is only added when the remote's fetch
+	 * remote of the repository that does not already carry it: the refspec is only added when
+	 * the remote's fetch
 	 * configuration does not yet include it, and any failure is swallowed (a repository whose
 	 * remotes cannot be read or configured simply keeps its current fetch behaviour).
 	 * @param repo The path of the repository.
@@ -227,7 +227,7 @@ export class RepoManager extends Disposable {
 			const remotes = await this.repo.read.getRemotes(repo);
 			await Promise.all(remotes.map(async (remote) => {
 				// `git config --get-all` exits non-zero when the key holds no value at all — read as
-				// "no tag refspec present" rather than a failure (the legacy read ignored the exit code)
+				// "no tag refspec present" rather than a failure (the empty answer is the correct one)
 				const fetchConfigs = await this.git.gitOutput(['config', '--get-all', 'remote.' + remote + '.fetch'], repo, (stdout) => stdout).catch(() => '');
 				if (!fetchConfigs.includes('refs/remotes/' + remote + '/tags/*')) {
 					await this.repo.write.run(repo, addRemoteTagsRefspec({ remote: remote }));

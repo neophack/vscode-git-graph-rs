@@ -1,5 +1,5 @@
 /**
- * Package manifest localisation parity (REFACTOR-PLAN task 6.3).
+ * Package manifest localisation parity.
  *
  * package.nls.json and package.nls.zh-cn.json must stay two separate files — Visual Studio Code
  * resolves them by fixed file name — which puts them outside everything the compiler checks: no

@@ -9,12 +9,10 @@ import type { GerritCacheEntry } from './caches/gerritCache';
 import type { GerritCacheStore } from './caches/gerritCache';
 
 /**
- * The Gerrit half of the staged loading pipeline (task 4.3), extracted from src/gitGraphView.ts's
- * `loadGerritData` / `fetchGerritChanges` / `buildLocalGerritEntry` / `loadGerritPage` /
- * `gerritChangeRefs` / `gerritPageStates`. Split out of commitLoader.ts to keep both files under
- * the 600-line cap; the loader owns the response staging and cancellation, this class owns the
- * Gerrit data itself. Like the loader, it is pure TypeScript: the Gerrit reads arrive injected,
- * so unit tests run without Git and without 'vscode'.
+ * The Gerrit half of the staged loading pipeline. Split out of commitLoader.ts to keep both
+ * files under the 600-line cap; the loader owns the response staging and cancellation, this
+ * class owns the Gerrit data itself. Like the loader, it is pure TypeScript: the Gerrit reads
+ * arrive injected, so unit tests run without Git and without 'vscode'.
  */
 
 /** The Gerrit pipeline's slice of the loader's injected dependencies. */

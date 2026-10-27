@@ -8,7 +8,7 @@ import type { GerritChangeState } from '../../shared/model/gerrit';
 import type { RequestLoadCommits, ResponseLoadCommits } from '../../shared/protocol/loading';
 
 /**
- * CommitLoader tests (REFACTOR-PLAN task 4.3): the staged follow-up orders (plain / Gerrit /
+ * CommitLoader tests: the staged follow-up orders (plain / Gerrit /
  * delayed remote refs / delayed uncommitted), stale-follow-up suppression, cache hits and
  * invalidation, and the follow-up error contract (an error response, never an unhandled
  * rejection). Everything is driven through fakes - no Git, no vscode.
@@ -509,7 +509,7 @@ describe('CommitLoader uncommitted stabilisation', () => {
 	});
 });
 
-/** The characterization cases of tests/gitGraphView.test.mjs, mirrored for the extracted copy. */
+/** The characterization cases of `remoteRefsFollowUpChanged` (followUpChange.ts). */
 describe('remoteRefsFollowUpChanged', () => {
 	it('is FALSE when the complete response is identical to the deferred one', () => {
 		expect(remoteRefsFollowUpChanged(page([commit('a'), commit('b')]), page([commit('a'), commit('b')]))).toBe(false);

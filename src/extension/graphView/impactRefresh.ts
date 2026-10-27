@@ -7,7 +7,7 @@ import type { RequestLoadCommits, ResponseLoadCommits, ResponseLoadRepoInfo } fr
 import type { ResponseMessage } from '../../shared/protocol/messages';
 
 /**
- * The loader surface the impact refresh needs (task 4.8): what the {@link CommitLoader} exposes
+ * The loader surface the impact refresh needs: what the {@link CommitLoader} exposes
  * about the last load it served, plus its cache and the two push paths the partial updates ride.
  * Structural, so the loader satisfies it without importing this module (one dependency
  * direction: impactRefresh → commitLoader).
@@ -28,10 +28,10 @@ export interface ImpactRefreshView {
 }
 
 /**
- * The write-path impact refresh (REFACTOR-PLAN task 4.8, §3.8.3 "Impact-based refresh"): after a
- * write operation completed, pick the MINIMAL refresh from the effects its write ops declared —
- * replacing the old "every operation refreshes the whole view". The webview no longer refreshes
- * itself after a write (responses.ts); it waits for the partial update pushed here, which rides
+ * The write-path impact refresh: after a
+ * write operation completed, pick the MINIMAL refresh from the effects its write ops declared.
+ * The webview does not refresh itself after a write (responses.ts); it waits for the partial
+ * update pushed here, which rides
  * the EXISTING response commands with the refresh ids the view last used, so its staged-response
  * processors accept and reconcile it in place:
  *

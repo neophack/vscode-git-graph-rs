@@ -1,5 +1,4 @@
-/* The Commit Comparison View's styles (REFACTOR-PLAN task 6.1: moved out of the <style> template
- * string of src/comparisonView.ts), bundled into media/comparison.min.css by
+/* The Commit Comparison View's styles, bundled into media/comparison.min.css by
  * scripts/build/webview.mjs. It also inlines the shared binary comparison area's styles, which
  * the view embeds for binary files.
  *
@@ -8,8 +7,8 @@
  * `gap` (Chrome 84) sites are moved as authored, matching the established practice of the other
  * stylesheets (settingsWidget.css, statisticsView.css, conflictBanner.css).
  *
- * The shared semantic tokens (tokens.css) ride in through binaryCompare.css (OPTIMIZATION-PLAN
- * §6 F6); reads with no --gg-* token (the diff editor tints, the sidebar tree, the form controls)
+ * The shared semantic tokens (tokens.css) ride in through binaryCompare.css; reads with no
+ * --gg-* token (the diff editor tints, the sidebar tree, the form controls)
  * still read theme variables directly - see tokens.css. */
 
 @import "./binaryCompare.css";

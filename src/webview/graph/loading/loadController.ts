@@ -1,7 +1,7 @@
 /**
- * The wiring of the explicit load state machine (OPTIMIZATION-PLAN §6 F2): this class owns the
+ * The wiring of the explicit load state machine: this class owns the
  * machine's state, feeds it the lifecycle events (the boot push, a repository switch, a refresh,
- * a response), projects the state onto the legacy `store.refreshState` flags that out-of-loader
+ * a response), projects the state onto the `store.refreshState` flags that out-of-loader
  * readers still consume (the refresh button, the auto load-more gate), and applies the machine's
  * effects to the view through the sibling modules.
  *
@@ -89,7 +89,7 @@ export class LoadController {
 		this.dispatch({ type: 'awaitPush', repo: repo });
 	}
 
-	/** A decodable first-paint snapshot for the awaited repository was found (D10). */
+	/** A decodable first-paint snapshot for the awaited repository was found. */
 	public snapshotArrived(snapshot: FirstPaintSnapshot, prevBranchHead: string | null): void {
 		this.snapshotSeed = { snapshot: snapshot, prevBranchHead: prevBranchHead };
 		this.dispatch({ type: 'snapshotArrived', repo: this.ctx().store.currentRepo });
@@ -114,9 +114,9 @@ export class LoadController {
 	/* Response acceptance (the router's response-side sources) */
 
 	/**
-	 * The pushed merged view of the open path (task 4.7). The machine accepts it only while a
-	 * push is expected and for the awaited repository — legacy applied it unconditionally and
-	 * adopted its refresh ids over a possibly-running cycle, which was the mid-boot stomp. The
+	 * The pushed merged view of the open path. The machine accepts it only while a
+	 * push is expected and for the awaited repository — applying it unconditionally, adopting
+	 * its refresh ids over a possibly-running cycle, would stomp a mid-boot load. The
 	 * two halves apply through the same `applyRepoInfo` / `applyCommits` effects a partial
 	 * response uses; the machine's single error consolidates the halves' errors (the host pushes
 	 * one merged read: in practice both halves carry it or neither does).
@@ -134,8 +134,8 @@ export class LoadController {
 		});
 		// The pushed page used the default view options (Show All branches, the extension's
 		// defaults): a repository whose own settings select specific branches, a Gerrit feed or a
-		// different ordering re-requests just the commits — one request instead of the two the
-		// old boot sent.
+		// different ordering re-requests just the commits — one request instead of re-running
+		// the whole repo-info-plus-commits cycle.
 		if (!this.deps.repoInfo.pushedPageMatchesRepoSettings()) {
 			this.deps.refreshCommitsOnly();
 		}
@@ -145,8 +145,8 @@ export class LoadController {
 	 * A `loadRepoInfo` response: acceptance is repo + id keyed; the payload applies on success.
 	 * A response landing in `idle` — before the boot adopted a repository, a state production
 	 * cannot reach (the response router installs only after `start()`) — applies as raw data
-	 * through the same payload path, exactly as the legacy id-0 guard applied it; the machine's
-	 * state is untouched (there is no lifecycle to transition).
+	 * through the same payload path; the machine's state is untouched (there is no lifecycle
+	 * to transition).
 	 */
 	public processLoadRepoInfoResponse(msg: GG.ResponseLoadRepoInfo): void {
 		const store = this.ctx().store;
@@ -169,8 +169,7 @@ export class LoadController {
 			error: msg.error
 		});
 		// The merge/rebase banner reflects the operation state of every accepted response,
-		// success or error (legacy updated it right after the id check, before the body ran;
-		// the effects apply first now — the two updates touch disjoint DOM).
+		// success or error. The effects apply first; the two updates touch disjoint DOM.
 		if (result.dropped === null) {
 			this.ctx().widgets.conflictBanner.update(msg.operationState);
 		}
@@ -182,8 +181,8 @@ export class LoadController {
 	 * machine accepts them in the cycle's commits phase AND in `loaded`, always keyed by id.
 	 * A response landing in `idle` — before the boot adopted a repository, a state production
 	 * cannot reach (the response router installs only after `start()`) — applies as raw data
-	 * through the same payload path, exactly as the legacy id-0 guard applied it; the machine's
-	 * state is untouched (there is no lifecycle to transition).
+	 * through the same payload path; the machine's state is untouched (there is no lifecycle
+	 * to transition).
 	 */
 	public processLoadCommitsResponse(msg: GG.ResponseLoadCommits): void {
 		const store = this.ctx().store;
@@ -288,7 +287,7 @@ export class LoadController {
 	/* The dispatch core */
 
 	/**
-	 * Run one transition: reduce, project the new state onto the legacy flags, then apply the
+	 * Run one transition: reduce, project the new state onto the store flags, then apply the
 	 * effects in the machine's order (a nested dispatch from inside an effect — a selection
 	 * reset's reload, a pinned-commit jump's auto page — is fine: dispatch is synchronous and
 	 * each event is decided from the state current at its arrival).
@@ -307,9 +306,9 @@ export class LoadController {
 			this.logDrop(result.dropped);
 			return result;
 		}
-		// The pre-collapse anchor capture of legacy displayLoadDataError ran BEFORE the view was
-		// cleared; the machine emits `clearView` before `showLoadError`, so capture up front
-		// whenever the transition is about to show an error.
+		// The machine emits `clearView` before `showLoadError`, and the pre-collapse anchor must
+		// be captured BEFORE the view is cleared (the collapse clamps the scroll away), so
+		// capture up front whenever the transition is about to show an error.
 		if (result.effects.some((effect) => effect.kind === 'showLoadError')) {
 			this.ctx().viewport.capturePendingViewportAnchor();
 		}
@@ -348,12 +347,12 @@ export class LoadController {
 				this.repoInfoPayload = null;
 				// The accepted response's id IS the repo-info id of the view state: a cycle's
 				// response re-stamps what its request already carried; the pushed `loadView`
-				// ADOPTS its id here (legacy processLoadView:741-744), so its staged follow-ups
-				// validate while anything older drops.
+				// ADOPTS its pushed id here, so its staged follow-ups validate while anything
+				// older drops.
 				ctx.store.slices.repos.stampRepoInfoRequestId(effect.requestId);
 				if (payload !== null) {
 					// The cycle's response tracks its change note for the dialog refresh; the boot
-					// push applies with no cycle running (legacy's inProgress was false there).
+					// push applies with no cycle running.
 					const inCycle = this.state.type === 'loading' || this.state.type === 'refreshing';
 					this.deps.repoInfo.apply(payload, inCycle);
 					// The pull/merge request badges ride the repo info of every accepted response
@@ -391,7 +390,7 @@ export class LoadController {
 				this.deps.commitPage.clearView();
 				break;
 			case 'showSkeleton':
-				// Legacy showed the skeleton only while the view held no final rows (a painted
+				// The skeleton shows only while the view holds no final rows (a painted
 				// snapshot or pushed page must not be covered by it)
 				if (ctx.store.commits.length === 0) {
 					ctx.table.showLoadingSkeleton();
@@ -406,8 +405,8 @@ export class LoadController {
 				this.deps.errors.show(this.errorTitle, effect.reason);
 				break;
 			case 'checkRepos':
-				// The repository vanished: legacy finaliseLoadRepoInfo closed the running action's
-				// dialog, dropped the deferred view load and asked the host to re-check the list
+				// The repository vanished: close the running action's dialog, drop the deferred
+				// view load and ask the host to re-check the list
 				ctx.dialog.closeActionRunning();
 				ctx.store.slices.repos.setLoadViewTo(null);
 				ctx.bridge.send({ command: 'loadRepos', check: true });

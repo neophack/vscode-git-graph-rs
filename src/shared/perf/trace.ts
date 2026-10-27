@@ -1,11 +1,11 @@
 /**
- * The P1 timing markers (OPTIMIZATION-PLAN §7 P1): a tiny isomorphic trace API shared by the
+ * The P1 timing markers: a tiny isomorphic trace API shared by the
  * extension host and the webview.
  *
  * - `mark(name)` records one instant; `begin(name)` / `end()` bracket a named trace; `span(name, fn)`
  *   is the begin/end pair around one function (synchronous or promise-returning).
- * - The host keeps the last 20 recorded traces in a ring buffer (`traces()`), the seam the later
- *   Diagnostics command (V5) reads; a sink (`onTraceRecorded`) forwards every recorded trace -
+ * - The host keeps the last 20 recorded traces in a ring buffer (`traces()`), the seam the
+ *   Diagnostics command reads; a sink (`onTraceRecorded`) forwards every recorded trace -
  *   the CommandManager wires it to the session log while `git-graph-rs.enableLog` is on, in the
  *   one-line shape {@link formatTrace} renders and `scripts/analyze-log.mjs` aggregates.
  * - The webview collects its marks (T2 script start, T4 data received, T5 the animation frame
@@ -13,7 +13,7 @@
  *   message; the host appends them to its open trace and records the whole thing.
  *
  * Everything is OFF by default and stays off until `setEnabled(true)`: a disabled call is one
- * boolean read and a return, well under the plan's 1 us budget. When enabled, marks also go to
+ * boolean read and a return, well under a microsecond. When enabled, marks also go to
  * the runtime's own `performance.mark` (prefixed `gg:`) so a DevTools or `--cpu-prof` timeline
  * shows them alongside the collected traces.
  *
@@ -23,9 +23,9 @@
  * still millisecond-accurate enough for the spans the budgets are stated in.
  */
 
-/** The canonical marker names (the T0-T5 rows of OPTIMIZATION-PLAN §3.8.1). */
+/** The canonical marker names (the T0-T5 timeline points). */
 export const MARK = {
-	/** Extension activation (host). Placed by the extension entry file - a P1 integration TODO, see the plan's P3. */
+	/** Extension activation (host). Placed by the extension entry file. */
 	activation: 'ACTIVATION',
 	/** T0: a view-opening command dispatched (host, CommandManager). */
 	commandDispatch: 'T0',
@@ -69,7 +69,7 @@ export interface Trace {
 	readonly marks: ReadonlyArray<TraceMark>;
 }
 
-/** The ring buffer's capacity: the last 20 traces, per OPTIMIZATION-PLAN §7 P1. */
+/** The ring buffer's capacity: the last 20 traces. */
 const RING_CAPACITY = 20;
 
 /**
@@ -109,8 +109,8 @@ export function isEnabled(): boolean {
 }
 
 /**
- * Register the consumer of every recorded trace - the host's log wiring (V5's Diagnostics
- * command will read the ring buffer itself via {@link traces}). Pass NULL to detach.
+ * Register the consumer of every recorded trace - the host's log wiring (the
+ * Diagnostics command reads the ring buffer itself via {@link traces}). Pass NULL to detach.
  */
 export function onTraceRecorded(handler: ((trace: Trace) => void) | null): void {
 	sink = handler;

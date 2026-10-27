@@ -9,9 +9,9 @@
  * clamped at zero no matter what the arithmetic produced; the mask rect always covers the same
  * height as the svg.
  *
- * (The other guard of the legacy test - a zero-height table measurement never overwriting the
- * last good grid in CommitTable.renderGraph - needs the full render pipeline and stays with the
- * webview journey tests.)
+ * (The other guard - a zero-height table measurement never overwriting the
+ * last good grid in CommitTable.renderGraph - needs the full render pipeline and lives in the
+ * full-page integration tests: test/integration/webview/graphDimensions.test.ts.)
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';

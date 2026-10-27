@@ -50,8 +50,8 @@ declare const workspaceState: GG.GitGraphViewWorkspaceState;
 const CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH = 'branchLabelsAlignedToGraph';
 const CLASS_TAG_LABELS_RIGHT_ALIGNED = 'tagLabelsRightAligned';
 
-// P1 timing (OPTIMIZATION-PLAN §7 P1): the webview half of the trace layer, gated by the same
-// `enableLog` setting the host reads (embedded into the page's initialState). T2 fires at the
+// The webview half of the trace layer, gated by the same `enableLog` setting the host reads
+// (embedded into the page's initialState). T2 fires at the
 // first statement of the bundle; T4 is marked by the response router, and T5 - plus the single
 // `webviewTraces` report to the host - happens once the first rows have painted (see
 // observeFirstPaint).
@@ -115,7 +115,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	ctx.viewport = new Viewport(getContext);
 	ctx.table = new CommitTable(getContext);
 	ctx.columns = new ColumnLayout(getContext);
-	// The single render pass (task 5.10), routed by slice (F1): store changes flow through the
+	// The single render pass, routed by slice: store changes flow through the
 	// scheduler, which merges every request made before the frame into ONE render - a response
 	// with several changed slices of the store renders once, not once per change - and runs only
 	// the renderers subscribed to the changed slices, in the pass's order (the pinned row, the
@@ -166,7 +166,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	}
 
 	// The Find widget, the Settings widget, the Reflog view, the Worktree dialog and the
-	// Statistics view are the LAZY half of the first-paint split (task 5.9): their facades load
+	// Statistics view are the LAZY half of the first-paint split: their facades load
 	// the real modules through dynamic import() on first use, so none of them sits in the
 	// first-paint bundle (widgets/lazy.ts)
 	ctx.widgets = {
@@ -182,7 +182,7 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 		getSettingsWidgetState: () => ctx.widgets.settings.getState()
 	});
 	// The first-paint snapshot's capture reads the rendered row height and the viewport's height
-	// for its visible-window check (task 5.9; read at capture time, so layout changes apply)
+	// for its visible-window check (read at capture time, so layout changes apply)
 	ctx.persistence.setViewMetrics(() => ({ rowHeight: ctx.layout.getRowHeight(), viewHeight: measureClientSize(dom.view).height }));
 
 	const config = store.config;
@@ -225,7 +225,7 @@ let loaded = false;
 let activeView: GraphContext | null = null;
 
 /**
- * The P1 T5 marker (OPTIMIZATION-PLAN §7 P1): once the boot's data push (T4) has been routed,
+ * The T5 marker: once the boot's data push (T4) has been routed,
  * the first render request it triggered schedules two animation frames - the first is the frame
  * the render scheduler's pass runs in (the rows enter the DOM), the second only fires once a
  * compositor frame has passed over the first rows - and then reports the webview's collected
@@ -254,7 +254,7 @@ window.addEventListener('load', () => {
 
 	TextFormatter.registerCustomEmojiMappings(initialState.config.customEmojiShortcodeMappings);
 	// The configured language's string table loads BEFORE anything renders: the zh-cn table is
-	// one of the on-demand chunks (task 5.9) and an English page skips the fetch entirely. The
+	// one of the on-demand chunks and an English page skips the fetch entirely. The
 	// boot continues only once the active table is in - exactly the state the pre-split bundle
 	// was in when it ran, one module-fetch later for a Chinese page.
 	void ensureInterfaceLanguage(initialState.config.interfaceLanguage).then(() => {
@@ -271,7 +271,7 @@ window.addEventListener('load', () => {
 
 		bridge.onMessage(createResponseRouter(ctx));
 
-		// The open path is push-based (REFACTOR-PLAN task 4.7): the extension host began the merged
+		// The open path is push-based: the extension host began the merged
 		// `loadView` read when the panel was created and pushes the result now that this page's
 		// response router is installed — the boot sent no loadRepoInfo/loadCommits requests of its
 		// own. The handshake MUST follow the router registration above, or a fast push would arrive
@@ -283,7 +283,7 @@ window.addEventListener('load', () => {
 		void loadContextMenuActions().catch(() => undefined);
 
 		// The on-demand modules and the widgets' stylesheet chunk prefetch while the user is idle
-		// after the first paint (task 5.9): the first open of any widget, the first dialog, the
+		// after the first paint: the first open of any widget, the first dialog, the
 		// first context menu, the first commit details view - or the first Markdown-rendering
 		// commit body - then resolves from the browser's module cache, not the network
 		prefetchOnIdle([

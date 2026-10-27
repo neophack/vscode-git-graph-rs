@@ -1,5 +1,5 @@
 /**
- * The exhaustive transition table of the load state machine (OPTIMIZATION-PLAN §6 F2): one test
+ * The exhaustive transition table of the load state machine: one test
  * per (state, event) cell of the 11-state × 8-event matrix — every case asserts the FULL next
  * state, the full effect list, and the drop record (event, reason, detail) — plus the variant
  * cases the base matrix keeps out (stale request ids, repo mismatches, error shapes, the join
@@ -91,7 +91,7 @@ interface Cell {
 /**
  * The base matrix: every (state, event) pair. Variant payloads (stale ids, wrong repos,
  * errors, hard/skipRepoInfo refreshes) live in VARIANTS below so this table stays one cell
- * per pair, as §6 F2's acceptance requires.
+ * per pair.
  */
 const TABLE: readonly Cell[] = [
 	/* idle — nothing open yet */
@@ -268,7 +268,7 @@ function expectCell(cell: Cell) {
 	}
 }
 
-describe('loadMachine transition table (OPTIMIZATION-PLAN §6 F2)', () => {
+describe('loadMachine transition table', () => {
 	describe('one test per (state, event) pair: the 11 × 8 base matrix', () => {
 		for (const cell of TABLE) {
 			it(cell.name, () => { expectCell(cell); });
@@ -313,10 +313,10 @@ describe('loadMachine transition table (OPTIMIZATION-PLAN §6 F2)', () => {
 		}
 	});
 
-	it('initialLoadState is idle; refreshSpinning maps the legacy spin flags', () => {
+	it('initialLoadState is idle; refreshSpinning spins exactly for the pending states', () => {
 		expect(initialLoadState()).toEqual({ type: 'idle' });
 		// inProgress (loading/refreshing) or snapshotRefreshing (snapshotPainted) spin the button;
-		// the boot's empty wait (awaitingPush) does not — repoLoader.ts:88/:135/:536-541.
+		// the boot's empty wait (awaitingPush) does not.
 		expect(refreshSpinning(initialLoadState())).toBe(false);
 		expect(refreshSpinning(awaitingPush())).toBe(false);
 		expect(refreshSpinning(snapshotPainted())).toBe(true);
@@ -341,13 +341,13 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 		state = result.state;
 		expect(state).toEqual({ type: 'loaded', repo: REPO, commitsId: PUSH_ID, followUpsPending: ['uncommitted'], lastError: null });
 
-		// The deferred "Uncommitted Changes" follow-up carries the push's id (repoLoader.ts:825-863)
+		// The deferred "Uncommitted Changes" follow-up carries the push's id
 		result = reduce(state, { type: 'commitsResponse', repo: REPO, requestId: PUSH_ID, error: null, followUpsPending: [] });
 		expect(result.state).toEqual({ type: 'loaded', repo: REPO, commitsId: PUSH_ID, followUpsPending: [], lastError: null });
 		expect(result.effects).toEqual([fx.applyCommits(REPO, PUSH_ID, false, true)]);
 	});
 
-	it('boot with a snapshot: paint, reconcile with the push, spin stops (D10, task 5.9)', () => {
+	it('boot with a snapshot: paint, reconcile with the push, spin stops', () => {
 		let state = reduce(initialLoadState(), { type: 'awaitPush', repo: REPO }).state;
 		state = reduce(state, { type: 'snapshotArrived', repo: REPO }).state;
 		expect(state).toEqual({ type: 'snapshotPainted', repo: REPO });
@@ -364,7 +364,7 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 		state = reduce(state, { type: 'repoInfoResponse', repo: REPO, requestId: REPO_INFO_ID, isRepo: true, remoteRefsPending: false, error: null }).state;
 		expect(state.type).toBe('loading');
 
-		// The user switches before the commits response lands (repoLoader.ts:184-243)
+		// The user switches before the commits response lands
 		state = reduce(state, { type: 'openRepo', repo: OTHER, requestId: NEXT_ID }).state;
 		expect(state).toEqual({ type: 'loading', repo: OTHER, repoInfoId: NEXT_ID, commitsId: NEXT_ID, phase: 'repoInfo', firstLoad: true, followUpsPending: [] });
 
@@ -391,7 +391,7 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 
 		const failed = reduce(state, { type: 'commitsResponse', repo: REPO, requestId: NEXT_ID, error: 'git index locked', followUpsPending: [] });
 		expect(failed.state).toEqual({ type: 'loaded', repo: REPO, commitsId: NEXT_ID, followUpsPending: [], lastError: 'git index locked' });
-		// The F2 behaviour: no clearView — the rendered rows stay on screen under the error note
+		// No clearView — the rendered rows stay on screen under the error note
 		expect(failed.effects).toEqual([fx.showLoadError('git index locked'), fx.spinOff()]);
 
 		// A later successful refresh clears the note
@@ -425,8 +425,8 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 	});
 
 	it('a follow-up of the previous cycle is dropped once a new refresh superseded its id', () => {
-		// The reseed hazard of the smoke run (repoLoader.ts:1068-1073): the first response
-		// finalised the cycle, its follow-up is still in flight, a new refresh starts.
+		// The reseed hazard: the first response finalised the cycle, its follow-up is still in
+		// flight, a new refresh starts.
 		let state = reduce(initialLoadState(), { type: 'awaitPush', repo: REPO }).state;
 		state = reduce(state, { type: 'loadViewPushed', repo: REPO, requestId: PUSH_ID, error: null, followUpsPending: ['uncommitted'] }).state;
 		state = reduce(state, { type: 'commitsResponse', repo: REPO, requestId: PUSH_ID, error: null, followUpsPending: [] }).state;
@@ -439,8 +439,8 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 	});
 
 	it('a push landing after the user switched repositories during boot is dropped (the stomp prevented)', () => {
-		// Legacy processLoadView applies the push unconditionally and adopts its refresh ids
-		// (repoLoader.ts:737-744); the machine refuses it once the boot wait is over.
+		// A push applied unconditionally would adopt its refresh ids over the switched-to
+		// repository's cycle; the machine refuses it once the boot wait is over.
 		let state = reduce(initialLoadState(), { type: 'awaitPush', repo: '/repo-a' }).state;
 		state = reduce(state, { type: 'openRepo', repo: '/repo-b', requestId: NEXT_ID }).state;
 		expect(state).toEqual({ type: 'loading', repo: '/repo-b', repoInfoId: NEXT_ID, commitsId: NEXT_ID, phase: 'repoInfo', firstLoad: true, followUpsPending: [] });
@@ -463,7 +463,7 @@ describe('loadMachine lifecycle scenarios (the sequences RepoLoader really runs)
 	});
 
 	it('a load-more joining a refresh still in its repo-info half waits for the in-flight response (two-id rule)', () => {
-		// repoLoader.ts:1086-1093: skipRepoInfo + requestingRepoInfo ⇒ nothing is issued now;
+		// skipRepoInfo while still in the repo-info phase ⇒ nothing is issued now;
 		// the repo-info response triggers the commits request — under the JOIN's new id.
 		let state = loaded();
 		state = reduce(state, { type: 'refreshRequested', repo: REPO, requestId: REPO_INFO_ID, hard: false, skipRepoInfo: false }).state;

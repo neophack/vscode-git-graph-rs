@@ -15,7 +15,7 @@ import type { CommandHost } from './context';
 /**
  * The method run when the `git-graph-rs.version` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the modal version dialog runs through (task 4.10, INVENTORY.md #3);
+ * @param ui The native-UI port the modal version dialog runs through (INVENTORY.md #3);
  * defaults to the production port, injectable for tests.
  */
 export async function version(host: CommandHost, ui: UiPort = uiPort) {

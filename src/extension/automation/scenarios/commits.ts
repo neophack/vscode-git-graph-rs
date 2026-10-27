@@ -1,14 +1,13 @@
 /**
- * The commit-domain scenarios (task 4.10): every commit write operation of
+ * The commit-domain scenarios: every commit write operation of
  * src/extension/git/write/ops/commits.ts with a success and a failure scenario. The failure
  * forms are the designed refusals — nonexistent revisions (git's "bad revision"), nothing
  * staged to commit, a missing committer identity, a root HEAD with no parent to reset to — each
  * accepted via allowErrorOn and judged by then.git to have left the repository unchanged.
  *
  * The amend pair rides the Source Control title-menu commands (amendLastCommit and
- * resetCurrentBranchToRemote are command-driven, not protocol requests); the archive triple is
- * the flow the former nativeSaveDialog skip existed for — its save dialog is answered by the
- * ScriptedUiPort, including the CANCEL branch.
+ * resetCurrentBranchToRemote are command-driven, not protocol requests); the archive triple's
+ * save dialog is answered by the ScriptedUiPort — including the CANCEL branch.
  */
 
 import { MENUS_COMMIT_ACTIONS } from '../catalog/menusCommit';
@@ -343,7 +342,7 @@ export const COMMIT_SCENARIOS = [
 		}
 	}),
 
-	/* ---------------- archive (the former nativeSaveDialog skip) ---------------- */
+	/* ------------- archive (save dialogs answered by the ScriptedUiPort) ------------- */
 	scenario(byId(MENUS_BRANCH_ACTIONS, 'menu-branch/create-archive'), {
 		ops: ['archive'],
 		answers: [{ dialog: 'save', path: '{{repo}}/automation-archive.zip' }],

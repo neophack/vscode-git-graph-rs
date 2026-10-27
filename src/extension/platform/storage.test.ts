@@ -245,7 +245,7 @@ describe('ExtensionState (absorbed from src/extensionState.ts)', () => {
 	});
 });
 
-describe('versioned user data (REFACTOR-PLAN §3.7.2)', () => {
+describe('versioned user data', () => {
 	/** One sample directory per historical version: 1.0.27 (version 0), current (v1), v2-newer-writer. */
 	const USER_DATA = ['test', 'fixtures', 'user-data'];
 

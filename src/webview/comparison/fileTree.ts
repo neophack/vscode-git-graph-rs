@@ -1,7 +1,6 @@
 /**
  * The file tree sidebar of the Commit Comparison View: the changed files built into a nested tree
- * of folders and files, with deferred +N/-M line counts patched in once they arrive. Ported out of
- * the host's template string (task 6.1).
+ * of folders and files, with deferred +N/-M line counts patched in once they arrive.
  */
 
 import { html, insertHtml, SafeHtml, setHtml } from '../common/html';

@@ -1,9 +1,9 @@
 /**
- * The integrations slice (OPTIMIZATION-PLAN §6 F1): the third-party badge data rendered onto the
+ * The integrations slice: the third-party badge data rendered onto the
  * commit rows - the Gerrit change states of the current repository and the pull requests of its
  * remote. The ONLY writer of these fields is this class; every change leaves as a typed
- * `SliceChange<'integrations'>` for the render scheduler (these are the changes that used to be
- * `invalidateRender()` calls - a whole-view invalidation for what is a row-badge change).
+ * `SliceChange<'integrations'>` for the render scheduler (a row-badge change routes by slice
+ * instead of a whole-view invalidation).
  */
 
 import * as GG from '../../../common/protocol';

@@ -39,8 +39,8 @@
 }
 
 /* Phone layout: the banner's action button becomes a touch target (merged from
- * styles/mobile/panels.css, OPTIMIZATION-PLAN §6 F6 - it rides the first-paint sheet now, so the
- * rule is in place before any widget chunk loads) */
+ * styles/mobile/panels.css - it rides the first-paint sheet, so the rule is in place before any
+ * widget chunk loads) */
 body.mobileMode #conflictBanner .roundedBtn{
 	min-height:calc(var(--m-target) - 8px);
 	box-sizing:border-box;

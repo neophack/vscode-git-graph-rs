@@ -2,7 +2,7 @@
  * Git signature status parsing: the GnuPG status records of `git verify-commit --raw` /
  * `git verify-tag --raw`, and one real unsigned commit read back through the CLI reader.
  *
- * Migrated from tests/signatures.test.mjs (REFACTOR-PLAN Appendix B), asserting the same cases
+ * Migrated from legacy/tests/signatures.test.mjs, asserting the same cases
  * against the module in its new home.
  */
 

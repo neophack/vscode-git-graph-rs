@@ -164,8 +164,7 @@ body.vscode-high-contrast .findMatch{
 	outline-style:dotted;
 }
 
-/* ===== Phone layout: a search field over the app bar (merged from styles/mobile/findWidget.css,
- * OPTIMIZATION-PLAN §6 F6) ===== */
+/* ===== Phone layout: a search field over the app bar (merged from styles/mobile/findWidget.css) ===== */
 
 body.mobileMode .findWidget{
 	top:-72px;
@@ -243,7 +242,7 @@ body.mobileMode #findPosition{
 	}
 }
 
-/* ===== Tablet layout: the find bar (merged from styles/tablet/findWidget.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: the find bar (merged from styles/tablet/findWidget.css) =====
  * The wide layout's bar is a 34px strip with 20px buttons in the top-right corner. On a tablet it
  * is a rounded card at touch size, clear of the Commit Details side pane (--gg-pane-width, set by
  * layoutMode.ts) while that is open: a capsule field with its Aa / .* toggles inside, then the

@@ -1,5 +1,5 @@
 /**
- * The first-paint snapshot (REFACTOR-PLAN §3.8.2 D10, task 5.9): what a reopening Git Graph view
+ * The first-paint snapshot: what a reopening Git Graph view
  * paints IMMEDIATELY, before the extension host's pushed `loadView` data arrives. After each
  * stable render the view stores the loaded commits (the graph layout's inputs and the rows'
  * content in one) plus the bookkeeping the render needs, in a compact record capped at 200 KB,
@@ -26,9 +26,9 @@ import type * as GG from '../../common/protocol';
 export const FIRST_PAINT_SNAPSHOT_VERSION = 1;
 
 /**
- * The snapshot's size cap: the JSON-encoded record may not exceed 200 KB (§3.8.2's bound for
- * what the webview state carries for the first paint). Measured in UTF-16 code units of the JSON
- * text - every field the writer emits is ASCII or near it, so the units track the bytes.
+ * The snapshot's size cap: the JSON-encoded record may not exceed 200 KB. Measured in UTF-16
+ * code units of the JSON text - every field the writer emits is ASCII or near it, so the
+ * units track the bytes.
  */
 export const FIRST_PAINT_SNAPSHOT_MAX_LENGTH = 200 * 1024;
 

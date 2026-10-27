@@ -2,9 +2,8 @@
  * The entry point of the Commit Comparison View: a header with the overall statistics, a file tree
  * sidebar of the changed files, and the split diff view of the selected file, with the shared
  * binary comparison area embedded for binary files. The boot `init` message delivers the file
- * changes and the commit summaries (the host used to bake them into the page's inline script);
- * the per-file diffs arrive in response to `getFileDiff` messages. Ported out of the host's
- * template string (REFACTOR-PLAN task 6.1).
+ * changes and the commit summaries; the per-file diffs arrive in response to `getFileDiff`
+ * messages.
  */
 
 import { ComparisonBridge } from './../binaryCompare/host';

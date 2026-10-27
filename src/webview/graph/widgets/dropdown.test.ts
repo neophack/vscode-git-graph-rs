@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * The dropdown widget (src/webview/graph/widgets/dropdown.ts) and the repository dropdown's
- * options (getRepoDropdownOptions of src/webview/graph/controlBar/controlBar.ts), merged per
- * REFACTOR-PLAN Appendix B from three legacy full-page-boot tests:
+ * options (getRepoDropdownOptions of src/webview/graph/controlBar/controlBar.ts), merged from
+ * three full-page-boot tests of the retired v1 suite:
  *
  *  - tests/dropdownKeyboardNav.test.mjs: a real key press fires keydown THEN keyup; the filter's
  *    keyup used to reset the keyboard highlight that keydown had just set, leaving the option
@@ -29,7 +29,7 @@ import { Dropdown } from './dropdown';
  * The widgets on these click paths schedule real jsdom timers (the dropdown's 500 ms
  * double-click window, the dialog's 180 ms delayed removal). A timer that outlives its test
  * fires after the jsdom environment is torn down and surfaces as a post-teardown error under
- * heavy parallel load (OPTIMIZATION-PLAN §12's known-flaky). Every window.setTimeout of a
+ * heavy parallel load (a known-flaky failure mode). Every window.setTimeout of a
  * test is captured and whatever is still pending is cleared at the test's end; timing WITHIN
  * a test stays real, so no assertion changes.
  */

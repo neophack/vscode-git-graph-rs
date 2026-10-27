@@ -1,5 +1,5 @@
 /**
- * The repositories slice (OPTIMIZATION-PLAN §6 F1): the repository set, the repository loaded in
+ * The repositories slice: the repository set, the repository loaded in
  * the view, and the load lifecycle's view-level bookkeeping (the deferred view load, the refresh
  * cycle flags the load machine projects onto the rest of the view). The ONLY writer of these
  * fields is this class. Its actions emit NO render changes: nothing that reads these fields is
@@ -106,7 +106,7 @@ export class ReposSlice {
 		this.refreshStateValue.repoInfoChanges = true;
 	}
 
-	/** Allocate the request id of a new cycle (or of a join): the legacy id-invalidation bump. */
+	/** Allocate the request id of a new cycle (or of a join): the bump invalidates every response still in flight. */
 	public nextCommitsRequestId(): number {
 		return ++this.refreshStateValue.loadCommitsRefreshId;
 	}
@@ -132,7 +132,7 @@ export class ReposSlice {
 		this.refreshStateValue.requestingConfig = false;
 	}
 
-	/** Project the load machine's state onto the flags the rest of the view reads (F2). */
+	/** Project the load machine's state onto the flags the rest of the view reads. */
 	public projectLoadState(inProgress: boolean, snapshotRefreshing: boolean, requestingRepoInfo: boolean): void {
 		this.refreshStateValue.inProgress = inProgress;
 		this.refreshStateValue.snapshotRefreshing = snapshotRefreshing;

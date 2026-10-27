@@ -1,6 +1,5 @@
 /**
- * Remote and remote-sync write operations, ported from `DataSource`'s
- * "Git Action Methods - Remotes" and "Git Action Methods - Remote Sync" (`src/dataSource.ts`).
+ * Remote and remote-sync write operations: pure `WriteOp` builders.
  */
 
 import { GitPushBranchMode } from '../../../../shared/model/git';
@@ -11,7 +10,7 @@ export interface AddRemoteParams {
 	readonly name: string;
 	readonly url: string;
 	readonly pushUrl: string | null;
-	/** Fetch the remote right after adding it (the legacy `addRemote` ran `fetch <name>`). */
+	/** Fetch the remote right after adding it (`fetch <name>`). */
 	readonly fetchAfter: boolean;
 }
 
@@ -71,7 +70,7 @@ export function editRemote(params: EditRemoteParams): WriteOp {
 }
 
 /**
- * The legacy `remote set-url` argument order, kept verbatim: the new URL (or `--delete`/`--add`
+ * The `remote set-url` argument order: the new URL (or `--delete`/`--add`
  * with the respective one) comes first and the old URL last — `set-url <name> <new> <old>`.
  */
 function setUrlArgv(name: string, oldUrl: string | null, newUrl: string | null, push: boolean): string[] {
@@ -147,7 +146,7 @@ export function pushBranchToMultipleRemotes(params: PushBranchToMultipleRemotesP
 		...params.remotes.map((remote) => ['remotes', remote, 'ref'] as ArgCheck)
 	];
 	return {
-		// One push per remote, stopping at the first failure (the legacy loop breaks on it).
+		// One push per remote, stopping at the first failure.
 		steps: params.remotes.map((remote) => ({ argv: pushBranchArgv(params.branchName, remote, params.setUpstream, params.mode) })),
 		effects: [],
 		network: true,

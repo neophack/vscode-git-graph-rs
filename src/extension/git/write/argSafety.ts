@@ -1,8 +1,8 @@
 /**
- * Argument-injection safety: the port of the legacy `DataSource.checkUnsafeGitArgs`
- * (`src/dataSource.ts`), plus the three value validators it consults. The validators are copied
- * verbatim from `src/utils/git.ts` (they live in a module that transitively imports vscode, which
- * this tree must not depend on); the localisation is injected so the function stays pure.
+ * Argument-injection safety: `checkUnsafeGitArgs`, plus the three value validators it
+ * consults. The validators mirror the platform's (`src/extension/platform/git.ts`): that
+ * module transitively imports vscode, which this tree must not depend on, so the git layer
+ * keeps its own copies; the localisation is injected so the function stays pure.
  *
  * The GitWriter is the single intended call site: it feeds every op's `checks` through here
  * before any argv runs.
@@ -10,20 +10,20 @@
 
 import type { ArgCheck } from './ops/op';
 
-/** Localisation, injected: `(key, ...params) => message`, the legacy `t` signature. */
+/** Localisation, injected: `(key, ...params) => message`, the host's `t` signature. */
 export type Localize = (key: string, ...params: Array<string | number>) => string;
 
 // 4-64 hex characters: full hashes of SHA-1 (40) and SHA-256 (64) repositories, and
 // abbreviations of either.
 const COMMIT_HASH_REGEX = /^[0-9a-fA-F]{4,64}$/;
 
-/** Whether a commit hash from an untrusted source is hexadecimal (copied from `utils/git.ts`). */
+/** Whether a commit hash from an untrusted source is hexadecimal. */
 export function isValidCommitHash(commitHash: string): boolean {
 	return typeof commitHash === 'string' && COMMIT_HASH_REGEX.test(commitHash);
 }
 
-/** Whether a reference name from an untrusted source is safe for git (copied from `utils/git.ts`,
- * following https://git-scm.com/docs/git-check-ref-format). */
+/** Whether a reference name from an untrusted source is safe for git
+ * (following https://git-scm.com/docs/git-check-ref-format). */
 export function isSafeRefName(name: string): boolean {
 	if (typeof name !== 'string' || name.length === 0) return false;
 	if (name[0] === '-' || name[0] === '.') return false;
@@ -35,8 +35,7 @@ export function isSafeRefName(name: string): boolean {
 
 const STASH_SELECTOR_REGEX = /^refs\/stash@\{\d+\}$/;
 
-/** Whether a stash selector from an untrusted source is the expected `stash@{N}` form (copied
- * from `utils/git.ts`). */
+/** Whether a stash selector from an untrusted source is the expected `stash@{N}` form. */
 export function isSafeStashSelector(selector: string): boolean {
 	return typeof selector === 'string' && STASH_SELECTOR_REGEX.test(selector);
 }

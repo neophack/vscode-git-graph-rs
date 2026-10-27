@@ -364,7 +364,7 @@ export class Dialog extends Component {
 	}
 
 	private show(type: DialogType, message: DialogMessage, actionName: string | null, secondaryActionName: string, actioned: (() => void) | null, secondaryActioned: (() => void) | null, target: DialogTarget | null) {
-		// The dialog styles are on demand (task 5.9's CSS split): kick their chunk so the first
+		// The dialog styles are on demand: kick their chunk so the first
 		// dialog of a session is styled as soon as the (idle-prefetched) chunk arrives
 		ensureWidgetStyles(() => import('../../styles/onDemand'));
 		this.deps.closeDialogAndContextMenu();

@@ -1,5 +1,5 @@
 /**
- * The view-state store of the Git Graph Extension State (OPTIMIZATION-PLAN §3 A5): the global
+ * The view-state store of the Git Graph Extension State: the global
  * view state, the workspace view state and the view snapshot the Git Graph View's page reports
  * - three keys over the one versioned KV (./storageVersioned.ts), split out of the former flat
  * platform/storage.ts. The `ExtensionState` facade delegates its view-state methods here.

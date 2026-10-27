@@ -4,9 +4,9 @@ import { GitAssertion, GitStateProbe } from './gitStateProbe';
 import type { ScriptedAnswer } from './scriptedUiPort';
 
 /**
- * The scenario layer (REFACTOR-PLAN §6.8.3, task 4.10): the catalog's actions grown into
+ * The scenario layer: the catalog's actions grown into
  * scenarios. A scenario is an EXISTING catalog action (or an inline action with the same shape)
- * plus the four §6.8.3 dimensions the action form lacks:
+ * plus the four dimensions the action form lacks:
  *
  *   given   — the fixture/setting/branch state the executor must establish first;
  *   when    — the action's own drive path (ui / request / vscodeCommand), unchanged;
@@ -17,12 +17,12 @@ import type { ScriptedAnswer } from './scriptedUiPort';
  * scenario() is the single constructor: it validates at LOAD time (a scenario without tags does
  * not load at all) and the assembled registry (scenarios/index.ts) re-validates the invariants
  * that only hold across entries — unique ids, every write scenario carrying then.git, and the
- * write-operation coverage the 4.10 acceptance criteria gate on.
+ * write-operation coverage the acceptance tests gate on.
  */
 
-/** The pre-state a scenario declares (§6.8.3 `given`); the executor establishes it before the run. */
+/** The pre-state a scenario declares (`given`); the executor establishes it before the run. */
 export interface ScenarioGiven {
-	/** The fixture to seed; only 'standard' (src/automation/fixture.ts's seeded clone) exists today. */
+	/** The fixture to seed; only 'standard' (src/extension/automation/fixture.ts's seeded clone) exists today. */
 	readonly fixture?: 'standard';
 	/** Settings to apply before the run (`git-graph-rs.*` keys, ConfigurationTarget.Global). */
 	readonly settings?: Readonly<Record<string, unknown>>;
@@ -57,7 +57,7 @@ export type DomExpectation =
 	| { readonly absent: string }
 	| { readonly text: string; readonly contains: string | readonly string[] };
 
-/** The assertions of a scenario (§6.8.3 `then`). */
+/** The assertions of a scenario (`then`). */
 export interface ScenarioThen {
 	/** Response commands that must have arrived; defaults to the action's own expect.responses. */
 	readonly responses?: readonly string[];
@@ -84,7 +84,7 @@ export interface AutomationScenario extends AutomationAction {
 	readonly then: ScenarioThen;
 	/**
 	 * The write-op factories (src/extension/git/write/ops/*.ts export names) this scenario
-	 * exercises — the explicit op-coverage mapping the 4.10 acceptance counts then.git
+	 * exercises — the explicit op-coverage mapping the acceptance gates count then.git
 	 * assertions against (the protocol command names alone cannot express it: worktreeAdd's op
 	 * is addWorktree, the merge flow reaches commitSquashFromMerge only with squash set, ...).
 	 */
@@ -154,7 +154,7 @@ export function scenario(action: ScenarioAction, extras: ScenarioExtras): Automa
 		const dotted = extras.id.split('/');
 		// The replacement keeps the dotted <group>/<name> shape, with the group either the
 		// action's own or one the scenario's tags carry (the smoke tier re-ids wrapped actions
-		// as smoke/S1…S9 per §6.6 while keeping their original group in the tags).
+		// as smoke/S1…S9 while keeping their original group in the tags).
 		const allowedGroups = extras.tags ?? [action.group];
 		if (dotted.length !== 2 || dotted[1].trim() === '' || !allowedGroups.includes(dotted[0])) {
 			throw new Error('Scenario ' + action.id + ': replacement id "' + extras.id + '" must keep the <group>/<name> shape (group one of ' + allowedGroups.join(', ') + ')');
@@ -243,7 +243,7 @@ export function validateScenarios(scenarios: readonly AutomationScenario[]): str
 }
 
 /**
- * Count the then.git assertions across a registry — the number the 4.10 acceptance gates at
+ * Count the then.git assertions across a registry — the number the acceptance gates hold at
  * ≥ 82 (all write operations with success AND failure scenarios).
  */
 export function countGitAssertions(scenarios: readonly AutomationScenario[]): number {

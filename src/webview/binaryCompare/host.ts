@@ -1,5 +1,5 @@
 /**
- * The host connection of the two extracted comparison frontends (task 6.1), following the sole
+ * The host connection of the two comparison frontends, following the sole
  * acquireVsCodeApi holder pattern of common/host/bridge.ts: the handle is acquired once and
  * published on window.__ggVscodeApi, so any other script in the page (an automation shim) reuses
  * it instead of hitting VS Code's once-only guard.

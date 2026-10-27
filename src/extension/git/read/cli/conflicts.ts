@@ -33,8 +33,8 @@ export async function predictConflicts(cli: GitCli, repo: string, ours: string, 
 	// conflicted file info line, `<mode> <oid> <stage>\t<path>` (stage 1/2/3 =
 	// base/ours/theirs - the same path can appear up to three times, once per stage), which
 	// a free-text informational message cannot accidentally match. Both streams are parsed
-	// (the informational text and the entries arrive across them), exactly as the legacy
-	// read parsed its combined error message.
+	// (the informational text and the entries arrive across them), matching on the combined
+	// output.
 	const files = new Set<string>();
 	for (const line of (result.stderr + result.stdout).split(EOL)) {
 		const match = line.match(/^[0-7]{6} [0-9a-f]+ [1-3]\t(.+)$/);

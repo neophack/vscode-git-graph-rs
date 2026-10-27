@@ -81,8 +81,8 @@ export function readFixtureMarker(repo: string): { remote: string } | null {
 /**
  * Reset a fixture repository to a pristine, seeded state WITHOUT EVER DELETING IT: the directory
  * may be the user's own folder (a VS Code workspace root is held open by the editor on Windows —
- * deleting it mid-run is the EPERM that used to abort the whole suite after the write phase, and
- * a partially-torn-down `.git` left the repository unusable). Everything under git's control is
+ * deleting it mid-run is the EPERM that can abort the whole suite after the write phase, and
+ * a partially-torn-down `.git` leaves the repository unusable). Everything under git's control is
  * forced back in place to the bare remote recorded in the marker: the remote set is rebuilt as
  * exactly `origin`, leftover worktrees are removed, stashes/untracked files cleared, `main` is
  * force-checked out to `origin/main`, every other branch and tag is dropped and the remote's

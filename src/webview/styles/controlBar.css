@@ -186,7 +186,7 @@
 	cursor:pointer;
 }
 
-/* ===== Phone layout: the app bar (merged from styles/mobile/appBar.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Phone layout: the app bar (merged from styles/mobile/appBar.css) =====
  * One 52px row: [repo ▾] [branch ▾ ..........] (find) (refresh) (⋯)
  * The other toolbar buttons and "Show Remote Branches" live in the ⋯ overflow sheet
  * (showMobileOverflowMenu); an active path filter keeps its button in the bar as an indicator.
@@ -472,7 +472,7 @@ body.touchMode .contextMenu .mobileMenuSwitch.on::after{
 		width:40px !important;
 	}
 }
-/* ===== Tablet layout: the toolbar (merged from styles/tablet/toolbar.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: the toolbar (merged from styles/tablet/toolbar.css) =====
  * One 48px row: [repo ▾] [branch ▾] [author ▾] (Remote) .................. (⌖)(⌕)(⏚)(▤)(>_)(⚙)(⤓)(⟳)
  * The phone keeps only the essentials in its app bar; a tablet has the width for every control,
  * so nothing moves into an overflow sheet. Left: the filters as capsules (the phone's capsule

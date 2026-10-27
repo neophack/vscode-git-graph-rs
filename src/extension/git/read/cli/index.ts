@@ -140,12 +140,12 @@ export class CliBackend implements GitBackend {
 		return getRefs(this.cli, repo, options);
 	}
 
-	/** The one-pass ref snapshot of a refs-only refresh (task 4.8), over the CLI's split ref scans. */
+	/** The one-pass ref snapshot of a refs-only refresh, over the CLI's split ref scans. */
 	public getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot> {
 		return getRefSnapshot(this.cli, repo, options);
 	}
 
-	/** The CLI's refs-only re-annotation (task 4.8): one ref scan, no history walk. */
+	/** The CLI's refs-only re-annotation: one ref scan, no history walk. */
 	public annotate(repo: string, commits: ReadonlyArray<string>, options?: AnnotateReadOptions): Promise<GitAnnotation> {
 		return annotate(this.cli, repo, commits, options);
 	}

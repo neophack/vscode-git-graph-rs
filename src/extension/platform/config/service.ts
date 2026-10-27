@@ -3,7 +3,7 @@ import { ObservableWorkspaceLike, onConfigChange, takeSnapshot } from './snapsho
 
 /**
  * The read side the long-lived consumers hold: the latest snapshot of the extension settings,
- * kept current by one subscription (OPTIMIZATION-PLAN A4). Services constructed in the
+ * kept current by one subscription. Services constructed in the
  * composition root take this instead of re-reading `vscode.workspace.getConfiguration` per
  * operation; per-request consumers (the graph view handlers) receive the snapshot itself as a
  * parameter. The snapshot replaces itself wholesale on every relevant change, so a consumer

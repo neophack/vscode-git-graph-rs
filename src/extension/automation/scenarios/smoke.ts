@@ -1,5 +1,5 @@
 /**
- * The smoke tier's scenarios (task 4.10, §6.8.5): the manual smoke checklist S1–S9 (§6.6) as
+ * The smoke tier's scenarios: the manual smoke checklist S1–S9 as
  * machine-runnable entries with ids `smoke/S1` … `smoke/S9` and the `smoke` tag, plus the
  * `smoke` tag on the most critical scenario of each write domain (those live in the domain
  * files). S7 (restart the extension host) and S9 (delete the engine binaries) are environment
@@ -77,7 +77,7 @@ export const SMOKE_SCENARIOS = [
 		tags: ['smoke', 'failure'],
 		mutable: true,
 		// The environment half: the E2E tier registers a credential-demanding HTTPS remote
-		// (§6.8.5's credential variant). The askpass prompt the push raises is answered by the
+		// (the tier's credential variant). The askpass prompt the push raises is answered by the
 		// ScriptedUiPort's INPUT answers — the S6 pass condition "the credential prompt appears"
 		// is exactly the prompt being answered (then.git refuses to move: the pinned test
 		// credential is wrong by design, so the push itself fails with an auth error).
@@ -132,8 +132,8 @@ export const SMOKE_SCENARIOS = [
 		group: 'smoke',
 		tags: ['smoke'],
 		mutable: false,
-		// The environment half: the tier variant with native/ absent (the nogit/cli build of
-		// §6.8.5's full tier). The when re-runs S3's core (a commit-details read) — under the
+		// The environment half: the tier variant with native/ absent (the nogit/cli
+		// environment). The when re-runs S3's core (a commit-details read) — under the
 		// fallback the read answers through the CLI path and the view still renders it.
 		ui: [
 			{ op: 'waitFor', selector: 'tr.commit[data-hash="{{commit}}"]' },

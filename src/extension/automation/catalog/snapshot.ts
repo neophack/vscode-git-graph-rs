@@ -1,7 +1,7 @@
 /**
- * Snapshot of the pre-split catalog (task 6.2): the ordered { id, group, title } triples of
- * all 146 actions of the single-file src/automation/catalog.ts, captured before it was split
- * into the tagged domain files under src/automation/catalog/. Generated from commit 8d730141da0ccfd02f6a1e201d54a34eae5586a5
+ * Snapshot of the pre-split catalog: the ordered { id, group, title } triples of
+ * all 146 actions of the former single-file catalog.ts, captured before it was split
+ * into the tagged domain files that now live alongside this module. Generated from commit 8d730141da0ccfd02f6a1e201d54a34eae5586a5
  * (npx esbuild + require; not hand-written) — do not edit by hand. The assembly test
  * (catalog.test.ts) proves the split catalog is still this exact sequence.
  */

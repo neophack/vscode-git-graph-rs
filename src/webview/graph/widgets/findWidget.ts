@@ -18,14 +18,14 @@ import { FindWidgetState } from '../state/types';
 import { FindWidgetSurface } from './surfaces';
 import findWidgetCss from '../../styles/findWidget.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text
+// This module sits in an on-demand chunk: its stylesheet rides the chunk as text
 // (the sheet carries its own phone-layout section; the tablet sheet follows it)
 injectOnDemandStyles(findWidgetCss);
 
 const CLASS_FIND_CURRENT_COMMIT = 'findCurrentCommit';
 const CLASS_FIND_MATCH = 'findMatch';
 const ATTR_ERROR = 'data-error';
-/** How many commits one search slice tests before yielding to the frame (task 5.10). */
+/** How many commits one search slice tests before yielding to the frame. */
 const FIND_SEARCH_SLICE = 500;
 
 /**
@@ -42,7 +42,7 @@ export class FindWidget extends Component implements FindWidgetSurface {
 	private position: number = -1;
 	private visible: boolean = false;
 	/**
-	 * The generation of the current search (task 5.10): every new query, refresh or close bumps
+	 * The generation of the current search: every new query, refresh or close bumps
 	 * it, and the slices of an in-flight scan compare against it and abort - a stale search never
 	 * lands its (partial) results over a newer one.
 	 */
@@ -278,7 +278,7 @@ export class FindWidget extends Component implements FindWidgetSurface {
 	/**
 	 * Find all matches based on the user's criteria.
 	 *
-	 * Incremental and cancellable (task 5.10): the loaded commits are tested in slices of
+	 * Incremental and cancellable: the loaded commits are tested in slices of
 	 * FIND_SEARCH_SLICE, the first synchronously (short lists and the first matches land
 	 * immediately) and the rest on successive animation frames, so a large repository no longer
 	 * blocks a frame while it is scanned. Each new search - a new query, a modifier toggle, a

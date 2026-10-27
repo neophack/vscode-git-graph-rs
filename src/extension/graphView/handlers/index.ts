@@ -17,7 +17,7 @@ import * as tags from './tags';
 import * as worktrees from './worktrees';
 
 /**
- * The exhaustive request handler table (task 4.2): one Handler per request command of the
+ * The exhaustive request handler table: one Handler per request command of the
  * graph view protocol, assembled from the domain modules. The `satisfies` check makes the
  * compiler guarantee exhaustiveness - a missing or extra entry fails compilation - so the
  * protocol half of the old contract tests is replaced by tsc itself.
@@ -137,9 +137,9 @@ export type DispatchResult =
 /**
  * Route one inbound webview message to its handler.
  *
- * The minimal runtime guard of plan 3.2: the command must be a key of the handler table. A
+ * The minimal runtime guard: the command must be a key of the handler table. A
  * message with an unknown command answers 'unknown' (the panel logs it and replies with an
- * error instead of silently dropping it - task 4.2); anything further (the `repo` must name a
+ * error instead of silently dropping it); anything further (the `repo` must name a
  * known repository) is the caller's guard, which owns the repository list.
  *
  * @param msg The raw message received from the webview.

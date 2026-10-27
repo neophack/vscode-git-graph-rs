@@ -1,12 +1,12 @@
 /**
- * Applying a repo-info payload (OPTIMIZATION-PLAN §6 F2): the branches / HEAD / remotes /
+ * Applying a repo-info payload: the branches / HEAD / remotes /
  * stashes half of a `loadRepoInfo` response, the late branch list a `loadCommits` response can
  * carry once the remote-tracking refs were scanned, and the pushed page's settings-match check.
  *
  * The machine decides WHETHER a payload applies (the `applyRepoInfo` effect fires only for an
- * accepted response); this module is the WHAT. The cycle sequencing legacy `loadRepoInfo`
- * performed in its tail (`finaliseLoadRepoInfo` → `requestLoadCommits`) is the machine's
- * `issueCommitsRequest` effect now.
+ * accepted response); this module is the WHAT. The cycle sequencing that follows a repo-info
+ * response (issuing the commits request of the cycle) is the machine's `issueCommitsRequest`
+ * effect.
  */
 
 import { SHOW_ALL_BRANCHES } from '../../common/util';
@@ -31,9 +31,9 @@ export class RepoInfoApplier {
 	 * Apply a repo-info payload.
 	 *
 	 * `trackChanges` is TRUE for a cycle's response (its changed/unchanged note feeds the dialog
-	 * refresh decision of the cycle's commits application — legacy `finaliseLoadRepoInfo`'s
-	 * `repoInfoChanges` OR, which only ran while the cycle was in progress) and FALSE for the
-	 * boot push (no cycle runs there; the pushed page's commits application finalises nothing).
+	 * refresh decision of the cycle's commits application — `noteRepoInfoChanges` runs only
+	 * while a cycle is in progress) and FALSE for the boot push (no cycle runs there; the
+	 * pushed page's commits application finalises nothing).
 	 */
 	public apply(payload: RepoInfoPayload, trackChanges: boolean): void {
 		const ctx = this.ctx(), store = ctx.store;
@@ -111,8 +111,8 @@ export class RepoInfoApplier {
 		}
 
 		// The repository info changed: note it for the cycle's commits application (its dialog
-		// refresh closes instead of updating when the ref selections moved under it — legacy
-		// `finaliseLoadRepoInfo`'s `repoInfoChanges` OR, which only ran while the cycle ran)
+		// refresh closes instead of updating when the ref selections moved under it — noted
+		// only while a cycle runs)
 		if (trackChanges) store.slices.repos.noteRepoInfoChanges();
 	}
 

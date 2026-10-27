@@ -1,5 +1,5 @@
 /**
- * The remote-branch-domain scenarios (task 4.10): the remote-facing branch write operations —
+ * The remote-branch-domain scenarios: the remote-facing branch write operations —
  * deleteRemoteBranch, deleteRemoteTrackingBranch (both halves of the Delete Remote Branch flow,
  * writeFlows.ts deletes the remote ref and, when the remote no longer has the branch, the stale
  * tracking ref) — plus the remote-branch merge/pull conflict scenarios the failure paths of the

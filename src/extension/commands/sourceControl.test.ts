@@ -1,5 +1,5 @@
 /**
- * The Source Control view commands (task 4.10 migration): the destructive "reset to remote"
+ * The Source Control view commands: the destructive "reset to remote"
  * confirm runs through the injected UiPort as a modal dialog whose cancel branch must abort
  * the reset (INVENTORY.md #5); the amend flow and the plain completion messages keep their
  * behavior. Messages run against a recording fake of the `vscode` module.

@@ -7,7 +7,7 @@ import { COMMANDS, COMMAND_IDS } from './registry';
 import type { CommandSpec } from './registry';
 
 /**
- * The registry contract (task 4.6): the declarative command list is compared bidirectionally
+ * The registry contract: the declarative command list is compared bidirectionally
  * against package.json#contributes — every contributed command is registered, every registered
  * command is contributed (automation-build commands aside), and the menu surfaces match exactly.
  * A command extra or missing on either side fails. Also carries the menu-structure assertions

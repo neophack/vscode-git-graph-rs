@@ -1,7 +1,7 @@
 /**
  * The markup of one commit row of the commit table, built from a RowContext (everything a row
  * depends on, computed once per render). Pure: the table (commitTable.ts) decides which rows to
- * build and reconciles them with the DOM.
+ * build; the keyed patcher (rowPatcher.ts) reconciles them with the DOM.
  */
 
 import { formatCompactDate, formatShortDate } from '../../common/dates';

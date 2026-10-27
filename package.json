@@ -66,8 +66,9 @@
 		"typecheck": "tsc -p src/tsconfig.json --noEmit && tsc -p src/webview/tsconfig.json && tsc -p tsconfig.json && tsc -p test/e2e/tsconfig.json --noEmit",
 		"gen:i18n-subset": "node scripts/dev/gen-compare-subset.mjs",
 		"check:generated": "cargo test -p git-graph-core --test protocol && node scripts/dev/gen-compare-subset.mjs && git diff --exit-code -- src/shared/engine src/webview/common/i18n/subset.generated.ts",
-		"check": "npm run typecheck && npm run lint:js && npm run lint:css && npm run lint:deps && npm run lint:size && npm run lint && npm run check:generated",
-		"baseline": "node scripts/dev/baseline.mjs"
+		"check": "npm run typecheck && npm run lint:js && npm run lint:css && npm run lint:deps && npm run lint:size && npm run lint:comments && npm run lint && npm run check:generated",
+		"baseline": "node scripts/dev/baseline.mjs",
+		"lint:comments": "node scripts/dev/check-comments.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

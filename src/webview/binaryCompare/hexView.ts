@@ -1,8 +1,8 @@
 /**
  * The hex comparison view: two panes side by side, each the hex editor's offset | bytes | gutter |
  * ASCII grid. Only the visible rows are kept in the DOM and requested from the extension host, so
- * a file of any size scrolls smoothly and costs the same memory. Ported out of the host's template
- * string (task 6.1): the grid geometry is hexGrid.ts, the selection and copy machinery hexCopy.ts.
+ * a file of any size scrolls smoothly and costs the same memory. The grid geometry is hexGrid.ts,
+ * the selection and copy machinery hexCopy.ts.
  */
 
 

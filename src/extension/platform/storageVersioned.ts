@@ -1,10 +1,10 @@
 /**
- * Versioned records for the globalState / workspaceState surface (REFACTOR-PLAN §3.7.2
- * "User data", C8): every value the `ExtensionState` persists is wrapped in a versioned
+ * Versioned records for the globalState / workspaceState surface: every value the
+ * `ExtensionState` persists is wrapped in a versioned
  * envelope so schema evolution goes through a migrations table instead of losing or
  * corrupting the user's settings on an upgrade or downgrade.
  *
- * The rules (§3.7.2):
+ * The rules:
  * - **Lenient read** - every older version is readable. A value stored before versioning
  *   existed (the 1.0.27 extension wrote raw values) is treated as version 0 data and
  *   migrated; data written by a NEWER version is preserved as-is, unknown fields included,
@@ -152,7 +152,7 @@ export class VersionedStateKv {
 
 	/**
 	 * Update the Git Graph Global State with a new <key, value> pair. Values are stored in the
-	 * versioned envelope (strict write, §3.7.2); undefined removes the key.
+	 * versioned envelope (strict write); undefined removes the key.
 	 * @param key The key.
 	 * @param value The value.
 	 * @returns A Thenable resolving to the ErrorInfo that resulted from updating the Global State.

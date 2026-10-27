@@ -1,5 +1,5 @@
 /**
- * The details slice (OPTIMIZATION-PLAN §6 F1): the open Commit Details View / Commit Comparison -
+ * The details slice: the open Commit Details View / Commit Comparison -
  * which commit (compared with which other) is open, the data its panel shows, and its transient
  * bookkeeping (scroll positions, context-menu flags, the deferred line counts). The ONLY writer
  * of the `expandedCommit` field is this class; every change leaves as a typed

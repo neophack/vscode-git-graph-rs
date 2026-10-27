@@ -11,13 +11,13 @@ import {
 import type { WebViewState } from './types';
 
 /**
- * The versioned persistence of the Git Graph View's state (REFACTOR-PLAN §3.7.2 "User data").
- * The WebViewState FIELDS are a frozen public contract (§2.2), so the version travels as an
- * extra field on the persisted record. Samples come from test/fixtures/user-data/, one
- * directory per historical version: 1.0.27 (pre-versioning), current (v2: carries the firstPaint
- * snapshot field of task 5.9 / D10) and the newer-writer directory (a version 3 webview state
- * from a NEWER page: unknown fields, downgrade case; the directory also carries the other
- * user-data surfaces' own newer-writer samples, whose version counters are independent).
+ * The versioned persistence of the Git Graph View's state. The WebViewState FIELDS are a
+ * frozen public contract, so the version travels as an extra field on the persisted record.
+ * Samples come from test/fixtures/user-data/, one directory per historical version:
+ * 1.0.27 (pre-versioning), current (v2: carries the firstPaint snapshot field) and the
+ * newer-writer directory (a version 3 webview state from a NEWER page: unknown fields,
+ * downgrade case; the directory also carries the other user-data surfaces' own newer-writer
+ * samples, whose version counters are independent).
  */
 
 /** The webview tsconfig compiles without Node types; declare the Vite glob the loader uses. */
@@ -30,7 +30,7 @@ declare global {
 /** One sample directory per historical version. */
 const SAMPLE_DIRS = ['1.0.27', 'current', 'v2-newer-writer'];
 
-/** The raw text of every webviewState.json sample, loaded through Vite (no Node builtins: the webview tree never imports them, §3.6). */
+/** The raw text of every webviewState.json sample, loaded through Vite (no Node builtins: the webview tree never imports them). */
 const SAMPLE_TEXT = import.meta.glob('/test/fixtures/user-data/*/webviewState.json', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
 function loadSample(dir: string): WebViewState {
@@ -81,7 +81,7 @@ function fakeBridge(): HostBridge<WebViewState> {
 	} as unknown as HostBridge<WebViewState>;
 }
 
-describe('versioned webview state (REFACTOR-PLAN §3.7.2)', () => {
+describe('versioned webview state', () => {
 	it.each(SAMPLE_DIRS)('round-trips the %s webviewState.json sample: decode → encode → decode', (dir) => {
 		const sample = loadSample(dir);
 

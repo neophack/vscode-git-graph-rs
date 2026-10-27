@@ -2,7 +2,7 @@
  * The webview's interface language: the active string table and the substitution helper.
  *
  * The tables themselves live in the shared dictionary (src/shared/i18n, re-exported below) so
- * the extension host and the webview localise from one source (REFACTOR-PLAN task 6.3); this
+ * the extension host and the webview localise from one source; this
  * module keeps what is webview-specific — the markup split and the live language switch.
  *
  * The keys listed in MARKUP_KEYS hold markup templates (bold names, line breaks, ...); every
@@ -15,7 +15,7 @@
  * forwarded by the extension host) switches both. `strings` and `markup` are live bindings, so
  * every importer reads the active table.
  *
- * The zh-cn table loads ON DEMAND (task 5.9): it is one of the largest single modules of the
+ * The zh-cn table loads ON DEMAND: it is one of the largest single modules of the
  * webview and an English page never needs it, so it joins the page as an on-demand chunk through
  * dynamic import() - the boot awaits it only when the configured language is Chinese, before
  * anything renders. A language change of a RUNNING page regenerates the page anyway (the
@@ -87,7 +87,7 @@ let stringsZhCn: SharedStrings | null = null;
 
 /**
  * Switch to the configured interface language, loading the Chinese table first when it is
- * needed (on demand, task 5.9). Callers that only ever switch BACK to English may use the
+ * needed (on demand). Callers that only ever switch BACK to English may use the
  * synchronous {@link setInterfaceLanguage}.
  * @param lang The language code ('zh-cn'; anything else selects English).
  */

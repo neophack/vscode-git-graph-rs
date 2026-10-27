@@ -2,8 +2,7 @@
  * The diff view of the Commit Comparison View: the file header (status letter, path, counts, the
  * open-diff button) and the split diff table of the selected file, switching between side-by-side
  * and inline layout at the width breakpoint VS Code's own diff editor uses. Binary files hand the
- * area over to the shared hex / picture comparison. Ported out of the host's template string
- * (task 6.1).
+ * area over to the shared hex / picture comparison.
  */
 
 import { escapeHtml, html, SafeHtml, setHtml } from '../common/html';

@@ -78,14 +78,14 @@ export interface GitBackend {
 
 	/**
 	 * One pass over the repository's refs, answering everything a refs-only refresh needs at
-	 * once (task 4.8): the ref data, the view's branch list, the checked-out branch and the tag
+	 * once: the ref data, the view's branch list, the checked-out branch and the tag
 	 * names — the engine's `refs` request, served by the same ref scan a view load runs, without
 	 * any history walk.
 	 */
 	getRefSnapshot(repo: string, options?: RefReadOptions): Promise<GitRefSnapshot>;
 
 	/**
-	 * Re-annotate the given commits with freshly read refs (task 4.8's refs-only refresh): the
+	 * Re-annotate the given commits with freshly read refs (the refs-only refresh): the
 	 * answer carries exactly the labels a full page load of the same options would attach, plus
 	 * the commit HEAD resolves to now — no traversal runs. The optional signal cancels the read.
 	 */

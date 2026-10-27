@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { Disposable } from '../../shared/util/disposable';
 
 /**
- * Platform logger adapter (REFACTOR-PLAN 3.3): the ONE Logger of the extension host, unifying
+ * Platform logger adapter: the ONE Logger of the extension host, unifying
  * the two halves that used to live side by side - the flat src/logger.ts (absorbed here
  * wholesale: the 'Git Graph RS' Output Channel, the opt-in enable gate and the log-file
  * mirroring) and this module's structurally-injected channel seam.
@@ -15,7 +15,7 @@ import { Disposable } from '../../shared/util/disposable';
  *   every recorded line is mirrored to the log file while one is configured. The mirror is
  *   written asynchronously: the truncations and appends run through one serialized queue in
  *   log-call order, so the shared extension host never performs synchronous fs for a log line
- *   (OPTIMIZATION-PLAN A6) while the file still reads back as an ordered log.
+ *   while the file still reads back as an ordered log.
  * - `new Logger(name, factory)` - the injected seam (unit tests, degraded hosts): the channel
  *   comes from the injected factory and logging is ungated; a missing, throwing or unusable
  *   factory degrades every method to a no-op, so logging can never break a request path.

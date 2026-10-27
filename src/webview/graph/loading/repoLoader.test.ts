@@ -9,7 +9,7 @@ import { Store } from '../state/store';
 import { RepoLoader } from './repoLoader';
 
 /**
- * The open path of the webview (REFACTOR-PLAN task 4.7): the initial boot sends ZERO
+ * The open path of the webview: the initial boot sends ZERO
  * loadRepoInfo/loadCommits requests — it only reports `ready` — and the pushed `loadView`
  * response applies the repo-info and commit-page halves through the same processing the
  * partial responses use. The repository's own settings matching the pushed defaults costs no
@@ -61,7 +61,7 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 	const ctx = {
 		store: store,
 		// Route the scheduler's render through the (per-test stubbed) fake table, so render-count
-		// assertions observe the passes the loader asks for (task 5.10's renderSync integration).
+		// assertions observe the passes the loader asks for.
 		renderScheduler: new RenderScheduler(),
 		bridge: {
 			send: (message: unknown) => { sent.push(message as SentMessage); }
@@ -96,8 +96,8 @@ function fakeContext(options: { repos?: GG.GitRepoSet } = {}): { ctx: GraphConte
 			headerRow: { classList: { contains: () => false, add: noop, remove: noop } }
 		}
 	};
-	// The scheduler's one render pass routes by slice (F1); the fake table stands in for the
-	// whole pass, so the render-count assertions observe what the loader asks for (task 5.10).
+	// The scheduler's one render pass routes by slice; the fake table stands in for the
+	// whole pass, so the render-count assertions observe what the loader asks for.
 	ctx.renderScheduler.subscribe({
 		slices: ['repos', 'refs', 'commits', 'details', 'integrations'],
 		render: () => (ctx as { table: { render: () => void } }).table.render()
@@ -127,7 +127,7 @@ function commit(hash: string) {
 	return { hash: hash, parents: [], author: 'A', email: 'a@x', date: 1, message: 'm', heads: [], tags: [], remotes: [], stash: null };
 }
 
-describe('RepoLoader open path (task 4.7)', () => {
+describe('RepoLoader open path', () => {
 	it('the initial boot sends ZERO loadRepoInfo/loadCommits requests (main.ts reports `ready` next)', () => {
 		const { ctx, sent } = fakeContext();
 		const loader = new RepoLoader(() => ctx);
@@ -218,7 +218,7 @@ function snapshotOf(ctx: GraphContext, hashes: string[]): FirstPaintSnapshot {
 	})!;
 }
 
-describe('first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9)', () => {
+describe('first-paint snapshot', () => {
 	it('paints a valid snapshot at boot: the rows seed immediately and the refresh button spins until the push lands', () => {
 		const { ctx, store } = fakeContext();
 		let refreshButtonRenderings = 0;

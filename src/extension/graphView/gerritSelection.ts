@@ -1,14 +1,11 @@
 import type { GerritChangeState, GerritPatchsetsMode } from '../../shared/model/gerrit';
 
 /**
- * The pure Gerrit ref/state selection math the staged loading pipeline needs (task 4.3), ported
- * verbatim from src/gerrit.ts. Importing that module here is impossible while it also carries the
- * `GerritDataSource` process code (its `evalPromises` util imports 'vscode', which would drag the
- * extension host into a module whose whole point is being unit-testable without it). When the
- * integrations/ split (Phase 5) extracts the pure helpers, this file should shrink to a re-export;
- * until then src/gerrit.ts remains the source of truth and the two must stay in lockstep - the
- * cases exercised here (through commitLoader.test.ts and this file's own tests) mirror the live
- * behavior.
+ * The pure Gerrit ref/state selection math the staged loading pipeline needs. The Gerrit
+ * integration keeps a copy of the same math in integrations/gerrit/gerritProtocol.ts (its
+ * pure-model half); the two must stay in lockstep - the cases exercised here (through
+ * commitLoader.test.ts and this file's own tests) pin this copy against drift from the
+ * integration's.
  */
 
 /**

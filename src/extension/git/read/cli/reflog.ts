@@ -9,13 +9,12 @@ import { EOL, GitCli, message } from './process';
 
 /**
  * A page of the reflog of a reference (defaulting to `HEAD`), newest first, with the dangling
- * commits flagged. The read rejects with the failure — the view message's `error` field is the
- * caller's composition, as it was on the legacy `DataSource`.
+ * commits flagged. The read rejects with the failure — the view message's `error` field is
+ * composed by the caller.
  */
 export async function getReflog(cli: GitCli, repo: string, ref: string, limit: number): Promise<GitReflogPage> {
 	// The ref arrives from the webview and is passed to git as a bare argument, so drop one that
-	// could be misinterpreted as a git option (argument injection) — the legacy read validated
-	// inside the method, and the check must survive the move to the backend.
+	// could be misinterpreted as a git option (argument injection).
 	if (!isSafeRefName(ref)) {
 		throw new GitBackendError('InvalidArgument', `The reference name "${ref}" cannot be used`);
 	}

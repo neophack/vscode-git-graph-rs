@@ -1,5 +1,5 @@
 /**
- * Worktree write operations, ported from `DataSource` (`src/dataSource.ts`).
+ * Worktree write operations: pure `WriteOp` builders.
  */
 
 import { WriteOp, single } from './op';

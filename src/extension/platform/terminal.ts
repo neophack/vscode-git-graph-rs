@@ -1,7 +1,7 @@
 /**
- * Platform terminal adapter (REFACTOR-PLAN 3.3): the typed seam over
+ * Platform terminal adapter: the typed seam over
  * `vscode.window.createTerminal` + `Terminal.sendText` + `Terminal.show` - the surface
- * src/utils/childProcess.ts's openGitTerminal drives directly today.
+ * src/extension/git/process/childProcess.ts's openGitTerminal drives.
  *
  * The dependency is injected structurally (production wiring passes `vscode.window`). A missing
  * or malformed API degrades to NULL instead of throwing (the vscodeCompat pattern), so a caller

@@ -4,9 +4,6 @@
  * response parsing (including the commit each request points at), and the refspecs that fetch
  * the head commits of the still-open requests into the repository - so that requests opened from
  * a fork appear in the Git Graph View, while the refs of requests that closed are pruned.
- *
- * Ported from tests/pullRequests.test.mjs to the new tree's module (REFACTOR-PLAN task 7.1);
- * assertions are unchanged.
  */
 
 import assert from 'node:assert/strict';

@@ -202,7 +202,7 @@ describe('writeExternalConfigFile / readExternalConfigFile', () => {
 	});
 });
 
-describe('versioned config file (REFACTOR-PLAN §3.7.2)', () => {
+describe('versioned config file', () => {
 	/** One sample directory per historical version: 1.0.27 (version 0), current (v1), v2-newer-writer. */
 	const SAMPLE_DIRS = ['1.0.27', 'current', 'v2-newer-writer'];
 
@@ -270,7 +270,7 @@ describe('versioned config file (REFACTOR-PLAN §3.7.2)', () => {
 	});
 });
 
-describe('normalizeExternalConfigFile (lenient read, §3.7.2)', () => {
+describe('normalizeExternalConfigFile (lenient read)', () => {
 	it('answers NULL for anything that is not a config record', () => {
 		expect(normalizeExternalConfigFile(null)).toBeNull();
 		expect(normalizeExternalConfigFile(42)).toBeNull();

@@ -1,7 +1,7 @@
 /**
- * The BufferedQueue of src/utils/bufferedQueue.ts (ported from tests/utils.test.mjs): buffering,
+ * The BufferedQueue (ported from legacy/tests/utils.test.mjs): buffering,
  * de-duplication, the single onChanges notification, re-entrant enqueues and disposal. Runs on
- * real timers with polling waits (the legacy suite found fixed sleeps flaky on loaded machines).
+ * real timers with polling waits (fixed sleeps are flaky on loaded machines).
  */
 
 import { describe, expect, it } from 'vitest';

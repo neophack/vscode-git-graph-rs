@@ -1,13 +1,13 @@
 /**
- * The host↔webview protocol of the binary comparison area (REFACTOR-PLAN task 6.1): the hex and
+ * The host↔webview protocol of the binary comparison area: the hex and
  * picture comparison shared by the standalone Binary Compare tab and the Commit Comparison View's
  * embedded diff area.
  *
- * This is a mechanical typing layer over the messages `src/binaryCompare.ts`'s responders and the
- * webview script have always exchanged — the command names and payload shapes are unchanged. One
- * pair is added by the frontend extraction itself: the `ready` / `init` boot handshake, which
- * replaces the data the host used to bake into the page's inline script (no inline scripts are
- * served any more, so the file's nature - hex or picture - now arrives as a message).
+ * This is a mechanical typing layer over the messages the host responders
+ * (`extension/views/binaryCompare/`) and the webview script exchange — the command names and
+ * payload shapes are unchanged. One pair is the boot handshake: the `ready` / `init` pair,
+ * which replaces data baked into the page's inline script (no inline scripts are
+ * served, so the file's nature - hex or picture - arrives as a message).
  */
 
 /** One rendered hex row as it travels the wire: both sides' offsets (-1 when absent), up-to-16

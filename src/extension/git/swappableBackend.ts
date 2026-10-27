@@ -5,14 +5,14 @@ import type { GitExecutable } from './process/gitProcess';
 /**
  * The composition root's read-backend seam: the swappable handle the rest of the host holds
  * while the backend behind it is rebuilt, and the builder that decides the backend for a Git
- * situation. (OPTIMIZATION-PLAN A2: the hand-written ~30-method forwarder in main.ts is gone —
- * there is no method table here at all.)
+ * situation. There is no hand-written method forwarder here at all — the proxy forwards every
+ * member access, so no method table needs keeping in sync.
  */
 
 /**
  * A `GitBackend` handle that re-resolves its target on every member access. The composition
  * root rebuilds the read backend when the Git executable changes (or a trust transition swaps
- * in an engine-only one, V2); the facade and the prewarm reader hold this ONE handle and follow
+ * in an engine-only one); the facade and the prewarm reader hold this ONE handle and follow
  * the rebuilds without having to rebind anything.
  *
  * There is no method table to keep in sync: the proxy forwards every property access to the
@@ -38,10 +38,10 @@ export function swappableBackend(current: () => GitBackend): GitBackend {
 }
 
 /**
- * Build the read backend for a Git situation (the legacy `DataSource.rebuildBackend`): the
+ * Build the read backend for a Git situation: the
  * engine with the CLI fallback while a Git executable exists, the engine alone without one (the
  * whole read path is engine-served), the CLI alone without the engine. In Restricted Mode
- * (`engineOnly`, V2) the CLI is never reached: the engine serves every read in-process, and
+ * (`engineOnly`) the CLI is never reached: the engine serves every read in-process, and
  * without an engine binary every call fails rather than spawning `git` in an untrusted folder.
  */
 export function buildBackend(gitExecutable: GitExecutable | null, logger: { log(message: string): void }, engineOnly: boolean): GitBackend {

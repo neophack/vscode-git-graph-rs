@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 /**
- * The Restricted Mode branch of `createBackend` (OPTIMIZATION-PLAN V2): with `engineOnly`, no
+ * The Restricted Mode branch of `createBackend`: with `engineOnly`, no
  * `git` child process may be reachable through the backend. On a machine with the engine binary
  * that is the engine alone (covered by the contract suites wherever the addon loads); without
  * one it is the `unavailable` backend — construction succeeds, every read fails with the

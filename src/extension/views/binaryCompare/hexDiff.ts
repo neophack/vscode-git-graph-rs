@@ -15,7 +15,7 @@ import { BlockSource, CHUNK_SIZE, destroyStream, EMPTY_BUFFER, GitStreamSpawner,
  * bytes per 64 KiB of file.
  *
  * The chunked byte-source layer lives in `hexDiffSources.ts`; this module is the session that
- * owns it — the section layout, the row builder and the background scan (REFACTOR-PLAN task 6.1).
+ * owns it — the section layout, the row builder and the background scan.
  */
 
 export type { GitStreamSpawner } from './hexDiffSources';

@@ -89,7 +89,7 @@ export async function rmTree(target: string, budgetMs: number): Promise<void> {
 			rmRecursive(target);
 			return;
 		} catch (error) {
-			if ((error as { code?: string }).code === 'ENOENT') return; // the legacy rmdirSync path has no force
+			if ((error as { code?: string }).code === 'ENOENT') return; // the rmdirSync fallback has no force option
 			if (Date.now() >= deadline) throw error;
 		}
 		await new Promise((resolve) => setTimeout(resolve, RM_ATTEMPT_INTERVAL_MS));
@@ -213,8 +213,8 @@ async function withLockRetry<T>(step: () => Promise<T>): Promise<T> {
 /**
  * One git call with the fixture's base config, resilient to the editor's concurrent git probes.
  * Exported for the whole automation layer: the reseed's and pre/post-action git calls
- * run inside the live editor session too, and each of them used to be a separate unprotected
- * exec that one background index write could abort the run with.
+ * run inside the live editor session too; every call routes through withLockRetry, because
+ * one background index write is enough to abort a single unprotected exec.
  */
 export async function git(args: string[], options: { cwd?: string; env?: Readonly<SetupGitEnv> } = {}): Promise<{ stdout: string }> {
 	return withLockRetry(() => gitRaw(args, options));

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The lazy facades of the on-demand widgets (REFACTOR-PLAN task 5.9): before a widget's module
+ * The lazy facades of the on-demand widgets: before a widget's module
  * has loaded it simply does not exist - not open, nothing to close or refresh, no response to
  * deliver - and show() is what loads the module through dynamic import() and opens the real
  * widget. The Settings widget additionally stashes the state restored for it at boot, so the
@@ -35,7 +35,7 @@ async function waitFor(ready: () => boolean) {
 	}
 }
 
-describe('lazy on-demand widgets (task 5.9)', () => {
+describe('lazy on-demand widgets', () => {
 	it('a not-yet-loaded widget answers the not-open semantics and drops its responses', () => {
 		const { ctx } = fakeContext();
 		const view = new LazyStatisticsView(() => ctx);

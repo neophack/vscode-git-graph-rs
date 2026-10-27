@@ -11,13 +11,11 @@ import { unableToFindGitMsg } from '../git/executable/findGit';
 import { encodeJsonForInlineScript, getNonce } from '../platform/format';
 
 /**
- * The webview HTML shell of the Git Graph main view (REFACTOR-PLAN task 4.4), extracted from
- * GitGraphView's `getHtmlForWebview` / `getWebviewConfig` / `getMediaUri` plumbing
- * (src/gitGraphView.ts): the CSP + nonce document, the initial state the page boots on, the
- * media URIs (with their cache-busting version) and the automation shim injection. The Panel
- * supplies every input; the side effects the old method performed (recording whether the view
- * loaded, consuming loadViewTo / the restored snapshot, the language last sent) stay with the
- * Panel.
+ * The webview HTML shell of the Git Graph main view: the CSP + nonce document, the initial
+ * state the page boots on, the media URIs (with their cache-busting version) and the automation
+ * shim injection. The Panel supplies every input; the side effects around rendering (recording
+ * whether the view loaded, consuming loadViewTo / the restored snapshot, the language last
+ * sent) stay with the Panel.
  */
 
 /**
@@ -174,7 +172,7 @@ export interface GraphViewHtmlInputs {
  * bodies - the view itself, the "unable to load" page (no engine and no Git), or the
  * "no repositories found" page with its rescan button.
  *
- * The view's script loads as an ES MODULE (task 5.9): the first-paint bundle media/out.min.js
+ * The view's script loads as an ES MODULE: the first-paint bundle media/out.min.js
  * imports its on-demand chunks (media/chunks/*.js) with relative dynamic import(), which the
  * nonce cannot cover - a dynamically imported module carries no nonce - so the CSP's script-src
  * allows the webview's own resource origin next to the nonce. The Markdown renderer is no

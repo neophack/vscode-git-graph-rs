@@ -1,9 +1,9 @@
 /**
- * The webview's live language switch (the language-selection half of tests/i18n.test.mjs): the
+ * The webview's live language switch: the
  * host resolves `git-graph-rs.interfaceLanguage` ("auto" defers to the editor's display
  * language) and forwards the resolved language with the initial state; this module's
  * `ensureInterfaceLanguage` is what every rendered string then follows. The zh-cn table loads on
- * demand (task 5.9's on-demand chunks) - exactly what the boot awaits before rendering - so the
+ * demand - exactly what the boot awaits before rendering - so the
  * switch to Chinese goes through the async loader here too. Both the text table and the markup
  * table (whose entries arrive as SafeHtml) must switch together, and the switch is idempotent in
  * either direction.

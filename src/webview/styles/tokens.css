@@ -1,4 +1,4 @@
-/* Design tokens (OPTIMIZATION-PLAN §6 F6): the one sheet that maps VS Code's theme variables
+/* Design tokens: the one sheet that maps VS Code's theme variables
  * (--vscode-*) onto this view's semantic tokens. Component stylesheets consume the --gg-* names
  * so a theme variable is remapped in exactly one place. The migration is deliberately
  * incremental - the most-repeated reads moved first. The standalone page sheets (comparison.css,
@@ -40,8 +40,8 @@
 /* Touch layouts (phone and tablet): the tokens both layouts share, scoped under body.touchMode
  * (see base.css for how the classes are set). The phone-only rules live in the component sheets
  * under body.mobileMode, the tablet-only refinements under body.tabletMode - each in a
- * clearly-marked section at the end of its component sheet (OPTIMIZATION-PLAN §6 F6 merged the
- * former styles/mobile/ and styles/tablet/ directories into them). */
+ * clearly-marked section at the end of its component sheet (the sections came from the former
+ * styles/mobile/ and styles/tablet/ directories). */
 body.touchMode{
 	--m-fg:var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc));
 	--m-fg-2:var(--vscode-descriptionForeground, rgba(128,128,128,0.9));

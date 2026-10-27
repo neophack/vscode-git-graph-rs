@@ -1,11 +1,10 @@
 /**
- * The base shapes and the two wire unions of the Git Graph view protocol (the former
- * src/types/messages.ts): every request/response interface lives in the domain module that
+ * The base shapes and the two wire unions of the Git Graph view protocol:
+ * every request/response interface lives in the domain module that
  * mirrors its host handler (loading, branches, commits, commitDetails, ...), and this module
  * keeps the shared envelopes (BaseMessage, the RepoRequest/Response error shapes, the
  * data-loss warning pair) plus the RequestMessage/ResponseMessage unions that aggregate the
- * domain members. Declarations moved verbatim; task 4.1 folds the protocol into
- * src/shared/protocol, split by domain.
+ * domain members, split by domain.
  */
 
 /* Base Interfaces for Request / Response Messages */

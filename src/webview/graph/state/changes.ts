@@ -1,16 +1,16 @@
 /**
- * Typed change sets (OPTIMIZATION-PLAN §6 F1): what a slice action changed, in a shape precise
- * enough for the render scheduler to route by slice - and later, for the keyed row patching of
- * REFACTOR-PLAN task 5.10, to patch by commit hash without re-comparing the whole page.
+ * Typed change sets: what a slice action changed, in a shape precise enough for the render
+ * scheduler to route by slice - and for the keyed row patching, to patch by commit hash
+ * without re-comparing the whole page.
  *
  * A slice action NEVER notifies renderers directly: it returns/emits one `StoreChange`, the store
  * forwards it to its render-change listeners, and the render scheduler collects one frame's
  * changes and runs only the renderers subscribed to the touched slices. `null` (the shape
- * `invalidateRender()` emits) is the legacy "something changed, anything could be stale" full
+ * `invalidateRender()` emits) is the "something changed, anything could be stale" full
  * invalidation - today only the configuration applier and the Gerrit filter path use it.
  */
 
-/** The slices of the store (REFACTOR-PLAN task 5.4): the partitions every field belongs to. */
+/** The slices of the store: the partitions every field belongs to. */
 export type SliceId = 'repos' | 'refs' | 'commits' | 'details' | 'ui' | 'integrations';
 
 /** What changed within the repositories slice. */
@@ -40,7 +40,7 @@ export interface SliceChange<S extends SliceId = SliceId> {
 	readonly keys: ReadonlyArray<SliceKey<S>>;
 	/**
 	 * The commit hashes the change is scoped to, when it touches specific rows (e.g. the
-	 * "Uncommitted Changes" row patch) - the input the keyed row patching (task 5.10) will read
+	 * "Uncommitted Changes" row patch) - the input the keyed row patching reads
 	 * instead of re-comparing the page. A page-level change (`replacePage`) carries none: its
 	 * precise row-level diff is the (old, new) page pair the patcher compares by hash.
 	 */
@@ -62,7 +62,7 @@ export type EmitChange<C extends SliceChange> = (change: C) => void;
 /**
  * The changes collected for one frame: the union of every change the actions emitted since the
  * last render. The scheduler reads it as "which slices are dirty"; the keys and hashes travel
- * along for the keyed patching that consumes the frame after routing lands (task 5.10).
+ * along for the keyed patching that consumes the frame after routing lands.
  */
 export class ChangeFrame {
 	private readonly keys = new Map<SliceId, Set<string>>();

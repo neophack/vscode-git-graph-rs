@@ -1,6 +1,5 @@
 /**
- * Commit write operations, ported one-for-one from `DataSource`'s
- * "Git Action Methods - Commits" (`src/dataSource.ts`), plus the archive action.
+ * Commit write operations: one pure `WriteOp` builder per action, plus the archive action.
  */
 
 import { GitResetMode } from '../../../../shared/model/git';
@@ -128,10 +127,9 @@ export function amendLastCommit(params: AmendLastCommitParams): WriteOp {
 }
 
 /**
- * Amend HEAD's commit message (and optionally its author): the HEAD case of the legacy
- * `editCommitMessage`. The earlier-commit case drives an interactive rebase through temporary
- * editor scripts (see `src/dataSource.ts`), which is a process-side flow this pure op table does
- * not model — it stays with the caller until a follow-up models it.
+ * Amend HEAD's commit message (and optionally its author). The earlier-commit case drives an
+ * interactive rebase through temporary editor scripts, which is a process-side flow this pure
+ * op table does not model — it stays with the caller.
  */
 export interface AmendCommitMessageParams {
 	readonly message: string;

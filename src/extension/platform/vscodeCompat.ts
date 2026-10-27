@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 
 /**
- * The only sanctioned form of post-1.38 VS Code API access (REFACTOR-PLAN 3.7.3): each wrapper
+ * The only sanctioned form of post-1.38 VS Code API access: each wrapper
  * declares the shape of the newer API locally, feature-detects it at runtime and answers with
  * `null` when it is unavailable - and every caller must handle the null branch. `(vscode.x as
- * any)` probes are forbidden; this module replaces the ones that existed in
- * src/automation/hostBridge.ts and src/automation/suiteRunner.ts.
+ * any)` probes are forbidden; this module is the surface the modules that used to probe -
+ * src/extension/automation/hostBridge.ts and src/extension/automation/suiteRunner.ts - go
+ * through instead.
  */
 
 /**

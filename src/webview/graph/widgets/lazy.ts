@@ -1,5 +1,5 @@
 /**
- * The lazy facades of the on-demand widgets (REFACTOR-PLAN task 5.9): the Settings widget, the
+ * The lazy facades of the on-demand widgets: the Settings widget, the
  * Reflog view, the Worktree dialog and the Statistics view sit OUTSIDE the first-paint bundle —
  * their modules load through dynamic import() on first use, and the facades stand in from boot
  * with the exact call surface the rest of the view uses (widgets/surfaces.ts).
@@ -276,7 +276,7 @@ export class LazyStatisticsView extends LazyWidget<StatisticsViewSurface> implem
 }
 
 /**
- * Warm the on-demand modules while the user is idle after the first paint (task 5.9: a widget's
+ * Warm the on-demand modules while the user is idle after the first paint (a widget's
  * first open then costs no network wait). Only the MODULES are imported - no widget is
  * constructed, so nothing appears on screen. requestIdleCallback exists on the runtime floor
  * (Chromium 47+); the setTimeout fallback covers older shells and the test environment.

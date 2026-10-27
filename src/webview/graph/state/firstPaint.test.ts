@@ -10,7 +10,7 @@ import {
 } from './firstPaint';
 
 /**
- * The first-paint snapshot's pure halves (REFACTOR-PLAN 3.8.2 D10, task 5.9): the capture (with
+ * The first-paint snapshot's pure halves: the capture (with
  * its 200 KB cap and the visible-window guarantee), the lenient decode (corruption and foreign
  * versions answer NULL, never a throw), and the configuration fingerprint the reopen compares.
  * The paint itself is covered by the RepoLoader suite (it flows through the ordinary

@@ -18,7 +18,7 @@ import { resolveRepoFromCommandArg, type CommandHost } from './context';
  * amending a Change-Id onto HEAD first if it has none (after asking).
  * @param host The services the command runs with.
  * @param arg An optional argument passed to the command (when invoked from the Visual Studio Code Source Control View).
- * @param ui The native-UI port (task 4.10); defaults to the production port, injectable for tests.
+ * @param ui The native-UI port; defaults to the production port, injectable for tests.
  */
 export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
@@ -103,7 +103,7 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
  * @param repo The path of the repository.
  * @param confirm Ask the user to confirm the amend before performing it (used by the push flow,
  * where amending is a side effect of another action, rather than the action itself).
- * @param ui The native-UI port the confirm dialog runs through (task 4.10, INVENTORY.md #2).
+ * @param ui The native-UI port the confirm dialog runs through (INVENTORY.md #2).
  * @returns The error of the operation (NULL => HEAD already had a Change-Id, or one was amended),
  *          the Change-Id of HEAD, and whether it was newly amended.
  */

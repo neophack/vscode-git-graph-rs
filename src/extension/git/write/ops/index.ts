@@ -1,5 +1,5 @@
 /**
- * The write-operation registry: every pure op of the legacy `DataSource` write methods, grouped
+ * The write-operation registry: every pure write op, grouped
  * by theme. Each function builds a `WriteOp` from plain parameters — no process, no
  * configuration, no vscode — so the argv of every option branch is unit-testable as data.
  */

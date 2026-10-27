@@ -1,11 +1,11 @@
 /**
- * The host↔webview protocol of the Commit Comparison View (REFACTOR-PLAN task 6.1).
+ * The host↔webview protocol of the Commit Comparison View.
  *
- * This is a mechanical typing layer over the messages `src/comparisonView.ts` and its embedded
- * script have always exchanged — the command names and payload shapes are unchanged. One pair is
- * added by the frontend extraction itself: the `ready` / `init` boot handshake, which replaces the
- * file changes and commit summaries the host used to bake into the page's inline script (no inline
- * scripts are served any more, so that data now arrives as a message).
+ * This is a mechanical typing layer over the messages the view's host responders and the
+ * embedded script exchange — the command names and payload shapes are unchanged. One pair is
+ * the `ready` / `init` boot handshake, which replaces file changes and commit summaries baked
+ * into the page's inline script (no inline scripts are served, so that data arrives as a
+ * message).
  *
  * The view also embeds the binary comparison area for binary files, so its request and response
  * unions include the whole of `binaryCompare.ts`'s protocol.

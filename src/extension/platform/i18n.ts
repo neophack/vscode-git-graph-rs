@@ -3,9 +3,9 @@
  * fallback webview pages).
  *
  * The dictionary itself is the shared string table of src/shared/i18n (one table for the host and
- * the webview, REFACTOR-PLAN task 6.3); this module only adds the host's lookup: the active
+ * the webview); this module only adds the host's lookup: the active
  * language follows the `git-graph-rs.interfaceLanguage` Extension Setting, read from the
- * configuration source the composition root installs at activation (OPTIMIZATION-PLAN A4 — the
+ * configuration source the composition root installs at activation (the
  * setting is never re-read per message; the source answers from the held snapshot), and applied
  * at call time so a configuration change applies to every message shown afterwards.
  */
@@ -25,7 +25,7 @@ let interfaceLanguageSource: () => 'auto' | 'en' | 'zh-cn' = () => 'auto';
 
 /**
  * Point the localizer at the configuration source (the composition root wires this to the
- * configuration service's current snapshot at activation, OPTIMIZATION-PLAN A4).
+ * configuration service's current snapshot at activation).
  * @param source Answers the current raw `git-graph-rs.interfaceLanguage` setting.
  */
 export function setInterfaceLanguageSource(source: () => 'auto' | 'en' | 'zh-cn'): void {

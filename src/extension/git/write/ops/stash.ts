@@ -1,6 +1,5 @@
 /**
- * Stash write operations, ported from `DataSource`'s "Git Action Methods - Stash"
- * (`src/dataSource.ts`).
+ * Stash write operations: pure `WriteOp` builders.
  */
 
 import { WriteOp, single } from './op';

@@ -1,15 +1,15 @@
 /**
- * The `GitRepository` facade: what the rest of the host will hold instead of the legacy
- * `DataSource` (REFACTOR-PLAN task 3.6). It composes the three faces of a repository —
- * reads, writes and in-progress-operation state — without owning any of them:
+ * The `GitRepository` facade: the repository object the rest of the host holds. It composes
+ * the three faces of a repository — reads, writes and in-progress-operation state — without
+ * owning any of them:
  *
  * - `read` is the structural `GitReaderLike` (the engine/CLI reader satisfies it; this tree must
  *   not depend on `src/backend`, so the reader arrives as an interface);
  * - `write` is the `GitWriter`;
- * - `getOperationState` is the ported detection over an injected text runner.
+ * - `getOperationState` is the in-progress-operation detection over an injected text runner.
  *
- * Phase 4 wires the real reader in and migrates the `DataSource` call sites; this skeleton is
- * the composition point they will land on.
+ * Production types the facade as `ProductionGitRepository`, with the full backend wired in as
+ * the read face — this is the composition point the call sites land on.
  */
 
 import type { GitBackend } from './read/gitReader';
@@ -20,7 +20,7 @@ import { detectOperationState, fsOperationStateEnv, RepoTextRunner } from './ope
 import { GitWriter } from './write/gitWriter';
 
 /**
- * The read face of a repository, as the facade consumes it: a structural subset of the future
+ * The read face of a repository, as the facade consumes it: a structural subset of the
  * reader (`read/gitReader.ts`), so no dependency on `src/backend` is created here.
  */
 export interface GitReaderLike {
@@ -45,8 +45,7 @@ export type ProductionGitRepository = GitRepository<GitBackend>;
 /**
  * The facade's text runner over the composition root's `GitProcess` (main.ts passes it at
  * construction): one Git read resolving its stdout, rejecting with the combined
- * stderr+stdout message when it fails — the exact rejection shape the legacy `DataSource`
- * spawns produced.
+ * stderr+stdout message when it fails.
  */
 export function repoTextRunnerOf(process: GitProcess): RepoTextRunner {
 	return (argv, repo) => process.run(argv, { cwd: repo }).then((result) => {

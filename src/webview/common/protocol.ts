@@ -2,8 +2,8 @@
  * The webview's single seam to the host↔webview protocol and domain types.
  *
  * The types live in src/shared: the Git/model vocabulary under src/shared/model and the
- * request/response message protocol under src/shared/protocol (the former src/types, moved by
- * REFACTOR-PLAN task 4.1 — the split mirrors the host handlers, e.g. loading/branches/commits).
+ * request/response message protocol under src/shared/protocol (the split mirrors the host
+ * handlers, e.g. loading/branches/commits).
  * Every webview module imports them from here, so only this re-export list changed; the
  * dependency rule "webview/** → webview/**, shared/**" holds everywhere else already. The
  * module is type-only apart from the protocol's const enums, which esbuild inlines.

@@ -6,7 +6,8 @@
  * row), a moving finger is a scroll, not a long press, and the wide layout keeps long presses
  * inert. The fast scroller appears on the right edge while a long list scrolls - only in the
  * mobile layout. (The mobile stylesheet's hiding of the view's native scrollbar stays in the
- * legacy suite: jsdom applies no CSS, and reading the stylesheet source needs the fs module the
+ * full-page integration tests (test/integration/webview/mobileAdaptation.test.ts): jsdom applies
+ * no CSS, and reading the shipped stylesheet source needs the fs module the
  * webview layer must not import.)
  */
 

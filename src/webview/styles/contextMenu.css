@@ -95,8 +95,7 @@ body.vscode-high-contrast .contextMenu li.contextMenuItem:focus{
 	opacity:0.8;
 }
 
-/* ===== Phone layout: bottom action sheets (merged from styles/mobile/contextMenu.css,
- * OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Phone layout: bottom action sheets (merged from styles/mobile/contextMenu.css) =====
  * The menu element becomes a full-screen scrim; its items form a floating, rounded sheet at the
  * bottom (inset 8px from the edges, like iOS). Tapping the scrim closes it (ContextMenu.show).
  * ::before is the flexible spacer above the sheet. */
@@ -184,7 +183,7 @@ body.mobileMode .contextMenu li.contextMenuDivider{
 	opacity:1;
 }
 
-/* ===== Tablet layout: context menus (merged from styles/tablet/overlays.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: context menus (merged from styles/tablet/overlays.css) =====
  * Context menus open where the finger (or pointer) is, as anchored popovers: ContextMenu.show
  * frames them by the whole page in the tablet layout, so a menu opened from the side pane stays
  * beside it. Flat: one soft shadow and a hairline lift the menu off the content - no borders,

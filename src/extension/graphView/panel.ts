@@ -30,18 +30,17 @@ import type { PanelRegistry } from './panelRegistry';
 import { BackgroundChangePoller } from './poller';
 
 /**
- * The Git Graph view panel (REFACTOR-PLAN task 4.4) — the PanelHost of OPTIMIZATION-PLAN A5:
- * this class owns the vscode Webview Panel lifecycle (creation, serializer revival, the
+ * The Git Graph view panel: this class owns the vscode Webview Panel lifecycle (creation, serializer revival, the
  * orphaned-tab replacement of orphanedTabs.ts, disposal) and the wiring of the collaborators:
  * the collaborators' ports (panelContext.ts), the staged commit loader (commitLoader.ts), the
  * background poll (poller.ts), the HTML shell (html.ts), the inbound message routing
  * (messageRouter.ts) and the serialization/restore state (viewState.ts) — plus the view state
  * no other module may touch directly. Its repository access is the `GitRepository` facade of
- * the new git layer (task 3.6); the open path is push-based (task 4.7): the panel begins the
+ * the git layer; the open path is push-based: the panel begins the
  * merged loadView read when the page is (re)generated and pushes the result when the page
  * reports `ready`.
  *
- * The panel is a plain instance now (OPTIMIZATION-PLAN A2): it registers itself with the
+ * The panel is a plain instance: it registers itself with the
  * composition root's {@link PanelRegistry} at every lifecycle point (creation, revival,
  * orphaned-tab replacement, disposal) and publishes its activity transitions there, instead of
  * a static singleton field that any module could read.
@@ -195,7 +194,7 @@ export class GitGraphView extends Disposable {
 			currentRepo: () => this.currentRepo
 		});
 		// Poll the repository for changes the file watcher may have missed. The signature read
-		// runs as a background job of the host scheduler (task 4.8): it yields to interactive
+		// runs as a background job of the host scheduler: it yields to interactive
 		// requests instead of competing with them.
 		this.poller = new BackgroundChangePoller({
 			currentRepo: () => this.currentRepo,
@@ -269,7 +268,7 @@ export class GitGraphView extends Disposable {
 		});
 
 		this.registerDisposables(
-			// The write-path impact collection (task 4.8), created with the router: the GitWriter
+			// The write-path impact collection, created with the router: the GitWriter
 			// reports the effects of every op that ran while a request was being dispatched into it.
 			this.messageRouter.effectCollection,
 
@@ -358,8 +357,8 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
-	 * One background-poll tick immediately: the legacy pipeline test (and the automation suite)
-	 * drive a tick directly instead of waiting out the multi-second interval.
+	 * One background-poll tick immediately: the integration pipeline test (and the automation
+	 * suite) drive a tick directly instead of waiting out the multi-second interval.
 	 */
 	public checkForBackgroundChanges(): Promise<void> {
 		return this.poller.check();

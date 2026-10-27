@@ -1,8 +1,7 @@
 /**
  * The hex comparison's selection and copy machinery: the selection model (a span of grid position
  * shared by both panes), the copy formats, the row fetches a copy makes for uncached spans, the
- * address copies, and the waiters that settle when the host's rows arrive. Ported out of the
- * host's template string with the rest of the hex view (REFACTOR-PLAN task 6.1); it is a module of
+ * address copies, and the waiters that settle when the host's rows arrive. It is a module of
  * its own because HexView delegates every selection question here - the view renders what this
  * selects, this copies what the view has cached.
  */

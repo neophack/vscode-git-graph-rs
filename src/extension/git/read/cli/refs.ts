@@ -57,7 +57,7 @@ export async function getRefs(cli: GitCli, repo: string, options: RefReadOptions
 }
 
 /**
- * The one-pass ref snapshot of a refs-only refresh (task 4.8): `readRefs` already answers
+ * The one-pass ref snapshot of a refs-only refresh: `readRefs` already answers
  * exactly the engine's `refs` shape, from the same split scans a view load runs — no history
  * walk, no page load.
  */
@@ -66,7 +66,7 @@ export async function getRefSnapshot(cli: GitCli, repo: string, options: RefRead
 }
 
 /**
- * Re-annotate the given commits with freshly read refs (task 4.8's refs-only refresh over the
+ * Re-annotate the given commits with freshly read refs (the refs-only refresh over the
  * CLI): one ref scan maps every branch, tag and remote-tracking ref onto the commit hashes the
  * caller already holds — the labels a full page load of the same options would attach, without
  * running one.

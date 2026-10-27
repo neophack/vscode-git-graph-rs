@@ -13,7 +13,7 @@ import type { RepoManager } from './repos/repoManager';
 
 /**
  * The extension's services, composed exactly once in the composition root (`main.ts`) as one
- * frozen object (OPTIMIZATION-PLAN A2). Everything constructed downstream of the git layer —
+ * frozen object. Everything constructed downstream of the git layer —
  * the command manager, the panel registry and the Git Graph view, the prewarm controller —
  * takes this one parameter (plus its own immediate arguments), so no wiring position list can
  * drift out of order and no consumer can reach a collaborator it was not handed.
@@ -44,7 +44,7 @@ export interface ExtensionServices {
 	readonly auxViews: AuxiliaryViewsPort;
 	/** The Gerrit integration the gerrit commands run over the shared runner. */
 	readonly gerrit: GerritDataSource;
-	/** The deferred Git resolution (V1): `current()`, `ready()` and `restricted()`. */
+	/** The deferred Git resolution: `current()`, `ready()` and `restricted()`. */
 	readonly gitResolution: GitResolutionHandle;
 	/** The configuration service: the latest settings snapshot, following setting changes. */
 	readonly config: ConfigService;

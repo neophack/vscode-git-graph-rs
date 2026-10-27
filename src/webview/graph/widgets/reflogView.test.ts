@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
  * The Reflog Widget (src/webview/graph/widgets/reflogView.ts): the client-side classification of
- * reflog messages (ported from tests/reflogClassification.test.mjs, which bundled the source with
- * esbuild and executed it through `new Function` — banned by REFACTOR-PLAN T2/T3; this is the
- * real module imported directly), and the overlay's lifecycle (ported from the reflog cases of
- * tests/webviewTools.test.mjs): the request it sends, the rows it renders, and that closing it
- * CLEARS the content — the widget hides by sliding up to top:-158px, so leftover content would
- * keep a tall list's lower part visible on screen.
+ * reflog messages (the real module, imported directly — the page's content security policy
+ * allows no 'unsafe-eval', so evaluating bundled source through `new Function` is not an
+ * option), and the overlay's lifecycle: the request it sends, the rows it renders, and that
+ * closing it CLEARS the content — the widget hides by sliding up to top:-158px, so leftover
+ * content would keep a tall list's lower part visible on screen.
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';

@@ -217,7 +217,7 @@ describe('the Visual Studio Code command wrappers', () => {
 		vscodeMock.responses['executeCommand:workbench.view.scm'] = [];
 	});
 
-	it('openFile opens existing files, follows renames via the DataSource and reports missing files', async () => {
+	it('openFile opens existing files, follows renames via the supplied lookup and reports missing files', async () => {
 		vscodeMock.resetCalls();
 		vscodeMock.responses['executeCommand:vscode.open'] = [];
 		expect(await openFile(repo, 'dir/new.txt')).toBe(null);

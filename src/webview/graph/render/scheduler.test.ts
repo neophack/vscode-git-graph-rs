@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The render scheduler (REFACTOR-PLAN task 5.10, OPTIMIZATION-PLAN §6 F1): every render request
+ * The render scheduler: every render request
  * funnels through one scheduler, and however many requests arrive before the next frame, each
  * renderer renders EXACTLY ONCE. Requests carrying a typed slice change mark only the renderers
  * subscribed to that slice, so a change of slice A never runs a renderer subscribed to B; the
@@ -54,7 +54,7 @@ function countingRenderer(name: string, slices: ReadonlyArray<SliceId>, log: str
 	};
 }
 
-describe('RenderScheduler (task 5.10)', () => {
+describe('RenderScheduler', () => {
 	beforeEach(() => { vi.useFakeTimers(); });
 	afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -165,11 +165,11 @@ describe('RenderScheduler routing by slice (F1)', () => {
 		scheduler.subscribe(countingRenderer('pinned', ['repos', 'refs', 'commits'], ran));
 
 		// A pull-request response: an integrations-only change - only the table shows the badges,
-		// and it is handed the frame's merged change (the keyed patcher's input, task 5.10)
+		// and it is handed the frame's merged change (the keyed patcher's input)
 		scheduler.request({ slice: 'integrations', keys: ['pullRequests'] });
 		frames.fire();
 		expect(ran).toEqual(['table']);
-		// The pass handed the table the frame's merged change: the keyed patcher's input (task 5.10)
+		// The pass handed the table the frame's merged change: the keyed patcher's input
 		expect(tableFrames[tableFrames.length - 1]).toEqual({ integrations: ['pullRequests'] });
 
 		// A refs-only change: the table (labels), the graph (muted lanes) and the pinned row

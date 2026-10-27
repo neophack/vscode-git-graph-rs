@@ -5,8 +5,8 @@ import type { AutomationAction } from '../automation/catalog';
 import type { AutomationModules } from '../automation/modules';
 import type { CommandHost } from './context';
 
-/* The automation-testing capability is a compile-time build variant (task 6.2): the dist build
- * defines __AUTOMATION__ through the gate in src/automation/modules.ts, which either bundles
+/* The automation-testing capability is a compile-time build variant: the dist build
+ * defines __AUTOMATION__ through the gate in src/extension/automation/modules.ts, which either bundles
  * the modules in (the automation build) or dead-code-eliminates the requires entirely (the
  * default build — no automation code in the bundle). The out/ (tsc) tree keeps the v1.0
  * load-when-present behavior: the default packaging variant removes out/automation/ WHOLE,
@@ -124,7 +124,7 @@ export async function runAutomationTest(host: CommandHost, request?: unknown): P
 	if (modules === null) return undefined;
 	const machine = isPlainObject(request) ? request : undefined;
 
-	// The observational machine modes (§6.8.1's entry needs eyes, not a second module copy).
+	// The observational machine modes (the entry needs eyes, not a second module copy).
 	if (machine !== undefined && typeof machine.e2eEval === 'string') return modules.e2eEvalPage(host.logger, machine.e2eEval);
 	if (machine !== undefined && machine.e2eProbe === true) return modules.e2eProbe(host.logger);
 

@@ -15,8 +15,8 @@ import { getSortedRepositoryPaths } from './repo';
 import { getPathFromUri, getRepoName } from '../platform/paths';
 
 /**
- * The collaborators a command handler runs with (task 4.6): the same services the
- * `CommandManager` was constructed with (the composition root's frozen bag, A2), passed to the
+ * The collaborators a command handler runs with: the same services the
+ * `CommandManager` was constructed with (the composition root's frozen bag), passed to the
  * per-group handler modules so each command group is a standalone unit. The Git executable is
  * mutable: it updates through the `onDidChangeGitExecutable` event the manager subscribes to,
  * and handlers read the current value at invocation time.
@@ -24,7 +24,7 @@ import { getPathFromUri, getRepoName } from '../platform/paths';
 export interface CommandHost {
 	readonly context: vscode.ExtensionContext;
 	readonly avatarManager: AvatarManager;
-	/** The repository facade: reads on `.read`, writes through the GitWriter (task 3.6). */
+	/** The repository facade: reads on `.read`, writes through the GitWriter. */
 	readonly repo: ProductionGitRepository;
 	/** The view's raw git runner (editor-script flows the ops do not model). */
 	readonly gitRunner: GitRunnerPort;
@@ -37,7 +37,7 @@ export interface CommandHost {
 	readonly repoManager: RepoManager;
 	/** The registry of the live Git Graph view (the view-opening commands go through it). */
 	readonly panels: PanelRegistry;
-	/** The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4). */
+	/** The configuration service (the latest settings snapshot). */
 	readonly config: ConfigProvider;
 	/** The Git executable currently available to the extension (NULL until one is found). */
 	gitExecutable: GitExecutable | null;

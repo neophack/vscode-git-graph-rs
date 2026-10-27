@@ -3,11 +3,11 @@ import { CATALOG, validateCatalog } from './catalog';
 import { CATALOG_SNAPSHOT } from './catalog/snapshot';
 
 /**
- * The catalog split's zero-change proof (REFACTOR-PLAN task 6.2): the domain files under
+ * The catalog split's zero-change proof: the domain files under
  * ./catalog/ reassemble into EXACTLY the pre-split single-file catalog (the committed snapshot
  * holds the ordered { id, group, title } triples captured from it before the split), the count
  * is still 146, and every action carries at least one tag — the invariant the load-time
- * assertion in catalog.ts enforces and the affected-tier selection (§6.8) will rely on.
+ * assertion in catalog.ts enforces and the affected-tier selection relies on.
  */
 
 describe('the split automation catalog', () => {

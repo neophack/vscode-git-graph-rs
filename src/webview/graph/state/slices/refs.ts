@@ -1,5 +1,5 @@
 /**
- * The refs slice (OPTIMIZATION-PLAN §6 F1): the current repository's refs (branches, HEAD,
+ * The refs slice: the current repository's refs (branches, HEAD,
  * remotes, stashes, tags), its git configuration, and the commit-query filters the dropdowns and
  * the path filter shape (branch selection, author selection, path filter). The ONLY writer of
  * these fields is this class. Emission discipline: the RESPONSE-application actions emit (their

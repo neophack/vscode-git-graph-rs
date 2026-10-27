@@ -1,13 +1,12 @@
 /**
- * The generic (non-Git) spawn of the process seam (OPTIMIZATION-PLAN A3): the ONE place outside
+ * The generic (non-Git) spawn of the process seam: the ONE place outside
  * {@link ./gitProcess.ts} that starts a child process. It exists for the probes that must run
  * before a Git executable is resolved (`git --version` validation, the platform `which` search)
  * and for the executables that are not Git at all — still with `windowsHide`, the environment
  * assembly, an output cap and cancellation decided in one place.
  *
  * The output is fully buffered and the result never rejects: a spawn failure is reported
- * through `error` with code -1, the way `resolveSpawnOutput` (whose place this takes) reported
- * it to the discovery code.
+ * through `error` with code -1.
  */
 
 import * as cp from 'child_process';

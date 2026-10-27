@@ -1,5 +1,5 @@
 /**
- * The Workspace Trust gate (OPTIMIZATION-PLAN V2, decision D-1: `untrustedWorkspaces` supported
+ * The Workspace Trust gate (the manifest declares `untrustedWorkspaces` supported
  * "limited"). While the workspace is untrusted ("Restricted Mode") the extension serves reads
  * from the Rust engine alone and disables everything that would run the `git` CLI — running Git
  * in an untrusted folder is a real code-execution vector (`core.fsmonitor`, `core.sshCommand`,

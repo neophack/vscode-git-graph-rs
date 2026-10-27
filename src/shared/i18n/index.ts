@@ -1,5 +1,5 @@
 /**
- * The string tables shared by the extension host and the webview (REFACTOR-PLAN §3.2, task 6.3).
+ * The string tables shared by the extension host and the webview.
  *
  * Key consistency is a compile-time property: `STRINGS_ZH_CN` in zh-cn.ts is declared
  * `satisfies SharedStrings` (the type of the English table), so a key missing from either

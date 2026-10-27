@@ -1,11 +1,9 @@
 import * as vscode from 'vscode';
 
 /**
- * The orphaned-tab replacement of the graph view (REFACTOR-PLAN task 4.4), extracted from
- * GitGraphView's static `watchForOrphanedTabs` (src/gitGraphView.ts). The Tab Groups API it
- * reads is a post-1.38 API; the local feature detection below is the same probe the old static
- * used (task 1.8 moves it into platform/vscodeCompat.ts, which cannot express `onDidChangeTabs`
- * yet - until then this module keeps its own narrow shape).
+ * The orphaned-tab replacement of the graph view. The Tab Groups API it reads is a post-1.38
+ * API; platform/vscodeCompat.ts cannot express `onDidChangeTabs`, so the local feature
+ * detection below probes its own narrow shape of that API.
  */
 
 /** How long a Git Graph tab may be shown without a live view before it is treated as left behind by an Extension Host restart. */

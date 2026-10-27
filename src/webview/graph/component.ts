@@ -1,7 +1,7 @@
 /**
- * The base of the graph view's components (OPTIMIZATION-PLAN §6 F3 "Component lifecycle and
- * DOM ownership"): a component owns one element subtree, registers every listener it creates
- * through its disposable store, and answers for all of them at dispose() time.
+ * The base of the graph view's components: a component owns one element subtree, registers
+ * every listener it creates through its disposable store, and answers for all of them at
+ * dispose() time.
  *
  *   - `listen(target, type, fn)` ties a listener to the COMPONENT's lifetime: `dispose()`
  *     (called by the parent) removes it. Document- and window-level listeners (a context

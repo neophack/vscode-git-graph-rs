@@ -7,12 +7,12 @@ import { PullRequestConfig, PullRequestConfigBase, PullRequestProvider } from '.
 import { getPathFromStr } from '../platform/paths';
 
 /**
- * The External Repository Configuration File seam of the repository manager (REFACTOR-PLAN
- * §3.3 / Appendix A): everything that reads, writes, generates, validates and applies a
- * repository's `.vscode/git-graph-rs.json`. Extracted verbatim from the former flat
- * src/repoManager.ts so the file handling can be tested on its own.
+ * The External Repository Configuration File seam of the repository manager: everything that
+ * reads, writes, generates, validates and applies a
+ * repository's `.vscode/git-graph-rs.json`, split into its own module so the file handling can
+ * be tested on its own.
  *
- * The file is versioned user data (REFACTOR-PLAN §3.7.2): readers are "lenient read, strict
+ * The file is versioned user data: readers are "lenient read, strict
  * write" - every older version is readable (unversioned 1.0.27 files are version 0), unknown
  * fields written by NEWER versions are preserved as-is so a downgrade can read them back, and
  * every write stamps REPO_CONFIG_VERSION.
@@ -92,7 +92,7 @@ export namespace ExternalRepoConfig {
 }
 
 /**
- * Leniently normalize a parsed configuration file record to the current schema (§3.7.2):
+ * Leniently normalize a parsed configuration file record to the current schema:
  * a record without a version stamp is treated as version 0 (the pre-versioning 1.0.27
  * format) and migrated; a record written by a NEWER version is kept as-is, unknown fields
  * and its own version included, so a downgrade can read it back. Known fields are never
@@ -144,7 +144,7 @@ export function readExternalConfigFile(repo: string) {
 
 /**
  * Writes the External Configuration File of a repository to the File System. The file is
- * always stamped with the current schema version (strict write, §3.7.2); fields unknown to
+ * always stamped with the current schema version (strict write); fields unknown to
  * this version are written back untouched.
  * @param repo The path of the repository.
  * @param file The file contents.

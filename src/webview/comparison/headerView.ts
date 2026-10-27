@@ -1,7 +1,7 @@
 /**
  * The header of the Commit Comparison View: the one or two commit description cards (collapsed by
  * default, expanding together), the divider with the commits-between count, and the overall
- * statistics line above the file tree. Ported out of the host's template string (task 6.1).
+ * statistics line above the file tree.
  */
 
 import { escapeHtml, html, joinHtml, raw, setHtml } from '../common/html';

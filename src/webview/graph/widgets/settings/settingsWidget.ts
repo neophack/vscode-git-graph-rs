@@ -15,7 +15,7 @@ import { renderRepoColumn, wireRepoSettings } from './repoSection';
 import type { SettingsHost } from './settingsHost';
 import settingsCss from '../../../styles/settingsWidget.css';
 
-// This module sits in an on-demand chunk (task 5.9): its stylesheet rides the chunk as text (the
+// This module sits in an on-demand chunk: its stylesheet rides the chunk as text (the
 // sheet carries its own phone-layout and tablet-layout sections)
 injectOnDemandStyles(settingsCss);
 

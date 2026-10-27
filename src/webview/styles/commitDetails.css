@@ -12,7 +12,7 @@
 
 #cdv.inline, #cdv.docked{
 	animation:ggFadeIn var(--gg-dur-base) var(--gg-ease);
-	/* Render containment (task 5.10): the panel's (re)rendering stays inside it */
+	/* Render containment: the panel's (re)rendering stays inside it */
 	contain:layout paint;
 }
 #cdv.inline td{
@@ -355,7 +355,7 @@
 }
 
 /* ===== Touch layouts: a full-screen sheet on the phone, the side pane's content on the tablet
- * (merged from styles/mobile/commitDetails.css, OPTIMIZATION-PLAN §6 F6) =====
+ * (merged from styles/mobile/commitDetails.css) =====
  * isCdvDocked() is true in both touch layouts, so the view is a <div> on <body>. Its inline height
  * and the #view bottom offset the docked layout sets are overridden. A 52px title bar (close,
  * the commit, its actions) over one scrolling page: the summary card, the "Files" header with the
@@ -822,7 +822,7 @@ body.touchMode #cdvFiles .fileTreeFolderIcon{
 	}
 }
 
-/* ===== Tablet layout: the commit details side pane (merged from styles/tablet/commitDetails.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: the commit details side pane (merged from styles/tablet/commitDetails.css) =====
  * The canonical list-detail split of a tablet (iPadOS Mail, Material 3 list-detail): the details
  * open beside the list, full height, at --gg-pane-width (set by layoutMode.ts from the window
  * width), and the list narrows by exactly that width (base.css) so neither covers the

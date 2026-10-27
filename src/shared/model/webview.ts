@@ -96,7 +96,7 @@ export interface GitGraphViewConfig {
 	readonly showTags: boolean;
 	readonly showUncommittedChanges: boolean;
 	readonly showUntrackedFiles: boolean;
-	/** Whether the view paints the previous session's snapshot before the fresh data arrives (REFACTOR-PLAN 3.8.2 D10). */
+	/** Whether the view paints the previous session's snapshot before the fresh data arrives. */
 	readonly snapshotFirstPaint: boolean;
 	readonly stickyHeader: boolean;
 	readonly trackRemoteTags: boolean;

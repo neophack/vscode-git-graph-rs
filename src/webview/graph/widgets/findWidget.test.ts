@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Find Widget's search behaviour (REFACTOR-PLAN task 5.10): the input debounces (a burst of
+ * The Find Widget's search behaviour: the input debounces (a burst of
  * keystrokes runs ONE search, of the final text), the scan of the loaded commits is incremental
  * (slices per frame, so a large repository never blocks), and a stale search is CANCELLED - the
  * slices still in flight when the query changes (or the widget closes) abort without landing
@@ -81,7 +81,7 @@ function type(input: HTMLInputElement, text: string) {
 /** Every find-match highlight currently in the table. */
 const matchSpans = () => Array.from(document.querySelectorAll('.findMatch'));
 
-describe('the find input debounces (task 5.10)', () => {
+describe('the find input debounces', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.stubGlobal('requestAnimationFrame', undefined); // the scheduler's setTimeout fallback
@@ -106,7 +106,7 @@ describe('the find input debounces (task 5.10)', () => {
 	});
 });
 
-describe('the search is incremental and stale searches are cancelled (task 5.10)', () => {
+describe('the search is incremental and stale searches are cancelled', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.stubGlobal('requestAnimationFrame', undefined);
@@ -168,7 +168,7 @@ describe('the search is incremental and stale searches are cancelled (task 5.10)
 	});
 });
 
-describe('incremental matching refines from the previous result (task 5.10)', () => {
+describe('incremental matching refines from the previous result', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.stubGlobal('requestAnimationFrame', undefined);

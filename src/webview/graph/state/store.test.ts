@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The Store's subscription semantics (REFACTOR-PLAN task 5.10): the config listeners replace the
- * old global config-changed plumbing, and the render-change channel is what the render scheduler
+ * The Store's subscription semantics: the config listeners carry every configuration
+ * replacement, and the render-change channel is what the render scheduler
  * coalesces - any number of changes within a frame produce ONE render, which is the store-side
- * half of "one response, one render". The slice-action half of F1 is table-driven: every action's
+ * half of "one response, one render". The slice-action half is table-driven: every action's
  * emitted change set (slice + keys, row-scoped hashes where they exist) and the commitLookup
  * consistency the commits slice owns.
  */
@@ -52,7 +52,7 @@ function commitOf(hash: string): GG.GitCommit {
 	return { hash: hash, parents: [], author: 'a', email: 'a@example.com', date: 1700000000, message: hash, heads: [], tags: [], remotes: [], stash: null };
 }
 
-describe('Store subscription semantics (task 5.10)', () => {
+describe('Store subscription semantics', () => {
 	beforeEach(() => { vi.useFakeTimers(); });
 	afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -110,10 +110,10 @@ describe('Store subscription semantics (task 5.10)', () => {
 	});
 });
 
-describe('slice actions emit typed change sets (F1, table-driven)', () => {
-	// The EMITTING actions: the response-application changes the render pass (and, after task
-	// 5.10, the keyed row patcher) consumes, plus the pull-request badges - the one change that
-	// used to be a whole-view `invalidateRender()` and now routes by slice.
+describe('slice actions emit typed change sets (table-driven)', () => {
+	// The EMITTING actions: the response-application changes the render pass (and the keyed
+	// row patcher) consumes, plus the pull-request badges - a row-badge change that routes
+	// by slice instead of a whole-view `invalidateRender()`.
 	it.each([
 		{
 			name: 'commits.replacePage',
@@ -256,7 +256,7 @@ describe('slice actions emit typed change sets (F1, table-driven)', () => {
 	});
 });
 
-describe('the commits slice owns commitLookup (F1)', () => {
+describe('the commits slice owns commitLookup', () => {
 	it('replacePage rebuilds the lookup; getCommitId/getCommit answer from it', () => {
 		const store = makeStore();
 		store.slices.commits.replacePage({ commits: [commitOf('c1'), commitOf('c2')], head: 'c1', moreCommitsAvailable: false, onlyFollowFirstParent: false });
@@ -284,8 +284,8 @@ describe('the commits slice owns commitLookup (F1)', () => {
 		store.slices.commits.replacePage({ commits: [commitOf('newer'), commitOf('older')], head: 'newer', moreCommitsAvailable: false, onlyFollowFirstParent: false });
 		expect(store.getCommitOrder('newer', 'older')).toEqual({ from: 'older', to: 'newer' });
 		expect(store.getCommitOrder('older', 'newer')).toEqual({ from: 'older', to: 'newer' });
-		// An unknown hash lands on the OLDER side, exactly like the old plain-object lookup whose
-		// `undefined` answered every `>` comparison false (from = the other hash then)
+		// An unknown hash never counts as the older one (from = the other hash): the lookup
+		// has no index for it, so it never wins the `>` comparison
 		expect(store.getCommitOrder('missing', 'older')).toEqual({ from: 'older', to: 'missing' });
 		expect(store.getCommitOrder('newer', 'missing')).toEqual({ from: 'missing', to: 'newer' });
 	});

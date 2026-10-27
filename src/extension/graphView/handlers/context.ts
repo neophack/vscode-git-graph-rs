@@ -11,19 +11,19 @@ import type { PullRequestConfig, PullRequestInfo } from '../../../shared/model/p
 import type { RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView } from '../../../shared/protocol/loading';
 
 /**
- * The handler side of the graph view protocol (REFACTOR-PLAN 3.3 + task 4.2): one Handler per
+ * The handler side of the graph view protocol: one Handler per
  * request command, assembled exhaustively in index.ts. Handlers may touch the outside world
  * only through the {@link HandlerContext} ports, so unit tests substitute every effect.
  */
 
 /**
- * The host UI surface the handlers drive. The production implementation (panel.ts, task 4.4)
- * delegates to src/utils/actions.ts and the vscode API; routing through this port keeps both
- * 'vscode' and the utils out of the handler modules, which is what makes them unit-testable.
+ * The host UI surface the handlers drive. The production implementation (panelContext.ts)
+ * delegates to platform/actions.ts and the vscode API; routing through this port keeps both
+ * 'vscode' and the actions out of the handler modules, which is what makes them unit-testable.
  */
 export interface UiPort {
 	showErrorMessage(message: string): void;
-	/** Reveal the Source Control view (the util of the same name in src/utils/actions.ts). */
+	/** Reveal the Source Control view (the util of the same name in platform/actions.ts). */
 	viewScm(): Thenable<ErrorInfo>;
 	openExternalUrl(url: string): Thenable<ErrorInfo>;
 	openExtensionSettings(): Thenable<ErrorInfo>;
@@ -34,7 +34,7 @@ export interface UiPort {
 	viewDiffWithWorkingFile(repo: string, hash: string, filePath: string): Thenable<ErrorInfo>;
 	viewFileAtRevision(repo: string, hash: string, filePath: string): Thenable<ErrorInfo>;
 	openFile(repo: string, filePath: string, hash: string): Thenable<ErrorInfo>;
-	/** Create a zip archive of a ref (the save dialog flow of src/utils/actions.ts's archive). */
+	/** Create a zip archive of a ref (the save dialog flow of platform/actions.ts's archive). */
 	createArchive(repo: string, ref: string): Thenable<ErrorInfo>;
 	/** Open the browser at a pull/merge request creation URL for the given source. */
 	createPullRequest(config: PullRequestConfig, sourceOwner: string, sourceRepo: string, sourceBranch: string): Thenable<ErrorInfo>;
@@ -42,12 +42,12 @@ export interface UiPort {
 	setInterfaceLanguage(language: 'auto' | 'en' | 'zh-cn'): Promise<ErrorInfo>;
 	/**
 	 * Open the Commit Comparison view of two commits (a separate webview panel; its host
-	 * controller moves to extension/views in Phase 6, until then the impl closes over it).
+	 * controller lives in extension/views/comparison, and the impl closes over it).
 	 */
 	openCompareTab(repo: string, fromHash: string, toHash: string, singleCommit: boolean): void;
 	/**
 	 * Open the standalone binary compare view for a binary/image file the native Diff view cannot
-	 * show (the impl derives the comparison base the same way src/utils/actions.ts does).
+	 * show (the impl derives the comparison base the same way platform/actions.ts does).
 	 */
 	viewDiffBinary(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus): void;
 	/**
@@ -66,10 +66,9 @@ export interface UiPort {
 
 /**
  * The commit-loading machinery the handlers need. The production implementation is the
- * CommitLoader extracted from GitGraphView in task 4.3 (src/extension/graphView/commitLoader.ts:
- * staged loadCommits responses, the commit-page cache, the Gerrit cache and staleness set); the
- * Panel cutover (task 4.4) is what constructs it in the live path, replacing the still-live
- * inline pipeline of src/gitGraphView.ts.
+ * CommitLoader (src/extension/graphView/commitLoader.ts: staged loadCommits responses, the
+ * commit-page cache, the Gerrit cache and staleness set), constructed by the panel
+ * (panel.ts, through panelContext.ts).
  */
 export interface CommitLoaderPort {
 	/**
@@ -114,8 +113,8 @@ export interface AvatarPort {
 
 /**
  * The persisted-state surface the handlers need. The production instance is the ExtensionState
- * (src/extensionState.ts); the port exists until platform/storage (task 4.5/Phase 6) owns the
- * impl, so handler modules stay free of both 'vscode' and the concrete class.
+ * (platform/storage.ts); the port keeps the handler modules free of both 'vscode' and the
+ * concrete class.
  */
 export interface StoragePort {
 	/** The stored code review of a commit (or a fromHash-toHash pair), or NULL when there is none. */
@@ -132,8 +131,8 @@ export interface StoragePort {
 
 /**
  * The repository-registry surface the handlers need. The production instance is the RepoManager
- * (src/extension/repos/repoManager.ts); the port exists until extension/repos (Phase 6) owns the
- * impl, keeping the manager (and its vscode dependency) out of the handler modules.
+ * (src/extension/repos/repoManager.ts); the port keeps the manager (and its vscode dependency)
+ * out of the handler modules.
  */
 export interface ReposPort {
 	/** The set of known repositories (the repo path is the key, the name the value). */
@@ -172,7 +171,7 @@ export interface UserConfigPort {
 /**
  * The global (user) settings the Settings widget may write. The validators, the global-author
  * side effects of 'commitAuthors' and the registered-configuration quirk live behind this port
- * (graphView/globalSettings.ts implements them) until platform/config owns them (task 4.5).
+ * (graphView/globalSettings.ts implements them; platform/config owns the read side).
  */
 export interface GlobalSettingsPort {
 	/**
@@ -231,15 +230,15 @@ export interface ViewPort {
 	repoSwitched(repo: string): void;
 	/**
 	 * The webview reported `ready`: the impl pushes the merged loadView result the panel began
-	 * reading at creation (the open path of task 4.7) and records the repository it pushed for.
+	 * reading at creation (the open path) and records the repository it pushed for.
 	 */
 	viewReady(): void;
 }
 
 /**
  * Everything a handler may touch: the repository facade (the `GitRepository` the composition root
- * composed from the read backend and the GitWriter — task 3.6's replacement of the legacy
- * `DataSource`), the raw Git runner, the composed config cache and the Gerrit write, the
+ * composed from the read backend and the GitWriter), the raw Git runner, the composed config
+ * cache and the Gerrit write, the
  * configuration snapshot, the UI and commit-loading ports, the panel-collaborator ports (avatars,
  * persisted state, the repository registry, the settings writes, pull requests and the view
  * state), the localizer, and the send function back to the webview.
@@ -300,9 +299,8 @@ export interface ConfigSnapshot {
 export type GitPort = GitRunnerPort;
 
 /**
- * The composed, cached repository configuration of the Settings widget (the legacy
- * `DataSource.getConfig` / `invalidateConfigCache` pair): the loadConfig handler serves identical
- * requests from the cache, and a config-affecting write drops it.
+ * The composed, cached repository configuration of the Settings widget: the loadConfig handler
+ * serves identical requests from the cache, and a config-affecting write drops it.
  */
 export interface RepoConfigPort {
 	/** The repository's composed configuration (the GitRepoConfig the response carries). */

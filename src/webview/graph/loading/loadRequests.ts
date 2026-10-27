@@ -1,5 +1,5 @@
 /**
- * The request half of the load pipeline (OPTIMIZATION-PLAN §6 F2): issuing the host requests of a
+ * The request half of the load pipeline: issuing the host requests of a
  * load cycle and stamping them with the refresh ids the responses are validated against.
  *
  * The id counters stay on `store.refreshState` (the boot adopts the pushed `loadView`'s id into
@@ -21,8 +21,8 @@ export class LoadRequests {
 	/**
 	 * Allocate the request id of a new cycle (or of a join): the caller stamps its machine event
 	 * with it, so every request the cycle issues carries it and every response of a SUPERSEDED
-	 * cycle drops as stale. Bumping `loadCommitsRefreshId` is the legacy id-invalidation bump
-	 * (repoLoader.ts:1065/:1073) — it retires every staged follow-up still in flight.
+	 * cycle drops as stale. The bump of `loadCommitsRefreshId` retires every staged follow-up
+	 * still in flight.
 	 */
 	public nextRequestId(): number {
 		return this.ctx().store.slices.repos.nextCommitsRequestId();

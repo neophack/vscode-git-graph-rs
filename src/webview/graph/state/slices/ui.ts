@@ -1,5 +1,5 @@
 /**
- * The ui slice (OPTIMIZATION-PLAN §6 F1): the view-level selections that outlive the data they
+ * The ui slice: the view-level selections that outlive the data they
  * were made against - the scroll position (persisted with the webview state) and the "Select for
  * Compare" source. The ONLY writer of these fields is this class.
  *

@@ -1,10 +1,10 @@
 /**
- * Tests for the automation action catalog's source-derived consistency (src/automation/catalog.ts):
+ * Tests for the automation action catalog's source-derived consistency (src/extension/automation/catalog.ts):
  * structural validity, command names that exist in the message protocol, resolvable
  * placeholders, and UI selectors that exist in the real webview DOM.
  *
- * Ported from tests/automationCatalog.test.mjs (REFACTOR-PLAN task 7.1); assertions are
- * unchanged. The structural split-snapshot checks live in catalog.test.ts.
+ * Ported from the v1 suite (its tests/automationCatalog.test.mjs, now only in git history);
+ * the assertions are unchanged. The structural split-snapshot checks live in catalog.test.ts.
  */
 
 import assert from 'node:assert/strict';
@@ -179,8 +179,7 @@ describe('the automation catalog against its sources', () => {
 	});
 
 	it('deterministic refusal commands assert their captured notifications', () => {
-		// The shared dictionary of task 6.3: src/i18n.ts is a thin re-export, the messages live in
-		// src/shared/i18n (both interface languages).
+		// The shared dictionary: the messages live in src/shared/i18n (both interface languages).
 		const i18n = sourceFiles('src/shared/i18n/en.ts', 'src/shared/i18n/zh-cn.ts').map((file) => file.text).join('\n');
 		const deterministic = CATALOG.filter((a: any) => a.group === 'menu-vscode' && a.mutable && a.expectNotifications !== undefined);
 		// The two designed refusals of the fixture: the local-path remote offers no Gerrit server to
@@ -198,7 +197,7 @@ describe('the automation catalog against its sources', () => {
 	});
 
 	it('command-mode entries execute commands the extension actually contributes', () => {
-		// The CommandManager split by command group in task 4.6: the registration sites live under
+		// Command registration is split by group: the registration sites live under
 		// src/extension/commands/.
 		const commandsDir = path.join(rootDir, 'src', 'extension', 'commands');
 		const commandsSource = fs.readdirSync(commandsDir)

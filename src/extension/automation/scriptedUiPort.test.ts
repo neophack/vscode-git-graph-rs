@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The `vscode` module stub: importing the production seam (utils/actions.ts, which scriptedUiPort
+ * The `vscode` module stub: importing the production seam (platform/actions.ts, which scriptedUiPort
  * installs through) transitively imports vscode; none of it may run here, and the port's answers
  * must not depend on it (the scripted path never touches the window).
  */
@@ -192,7 +192,7 @@ describe('ScriptedUiPort progress and the installation seam', () => {
 		const restore = installScriptedUiPort(new ScriptedUiPort({ answers: [{ dialog: 'message', choose: 'Retry' }] }));
 		try {
 			expect(ScriptedUiPort.active()).not.toBeNull();
-			// The production port's methods dispatch to the scripted override (utils/actions.ts).
+			// The production port's methods dispatch to the scripted override (platform/actions.ts).
 			await expect(uiPort.showWarningMessage('Network down?', 'Retry', 'Ignore')).resolves.toBe('Retry');
 			expect(ScriptedUiPort.active()!.recordedCalls()[0]).toMatchObject({ kind: 'warning', answer: 'Retry', source: 'script' });
 		} finally {

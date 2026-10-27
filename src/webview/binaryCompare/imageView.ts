@@ -1,7 +1,7 @@
 /**
  * The picture comparison view: old picture | pixel difference | new picture, rendered from data
  * URLs the extension host builds out of the two git sides; the difference canvas is computed in
- * the webview. Ported out of the host's template string (task 6.1).
+ * the webview.
  */
 
 import { html, raw, setHtml } from '../common/html';

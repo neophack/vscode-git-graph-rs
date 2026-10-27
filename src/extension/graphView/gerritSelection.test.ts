@@ -6,9 +6,8 @@ import {
 } from './gerritSelection';
 
 /**
- * The pure Gerrit selection math, ported verbatim from src/gerrit.ts (see the module header for
- * why the copy exists): these tests pin the ported behavior so drift against the source of truth
- * is caught by the mirrored cases.
+ * The pure Gerrit selection math (see the module header for why the copy exists): these tests
+ * pin this copy's behavior so drift against the integration's is caught by the mirrored cases.
  */
 
 const ALL = { new: true, merged: true, abandoned: true, wip: true };

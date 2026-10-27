@@ -1,16 +1,16 @@
 /**
- * Applying a commit page (OPTIMIZATION-PLAN §6 F2): the data half of a `loadCommits` response —
+ * Applying a commit page: the data half of a `loadCommits` response —
  * the staged pre-processing (Gerrit states, the late branch list, the exact "Uncommitted
  * Changes" count) and the page application itself (the seamless-update equality check, the
  * anchored full render, the cycle finalisation's dialog refresh).
  *
  * The machine decides WHETHER a payload applies (the `applyCommits` / `paintSnapshot` effects
- * fire only for accepted responses); this module is the WHAT. Two legacy concerns moved out of
- * the body: the in-progress flag of the finalisation became the `cycleCompleting` argument (the
- * machine knows whether the response completes a cycle or is a staged follow-up), the spin flags
- * are the machine state's projection (`spinRefreshButton` effects render the button), the
- * deferred view load completes through `completeLoad`, and the pinned-commit jump observes the
- * completions from its own sub-machine (`pinnedJump.ts`).
+ * fire only for accepted responses); this module is the WHAT. The sequencing concerns around
+ * the body live elsewhere: whether the response completes a cycle is the `cycleCompleting`
+ * argument (the machine knows whether the response completes a cycle or is a staged follow-up),
+ * the spin flags are the machine state's projection (`spinRefreshButton` effects render the
+ * button), the deferred view load completes through `completeLoad`, and the pinned-commit jump
+ * observes the completions from its own sub-machine (`pinnedJump.ts`).
  */
 
 import { html } from '../../common/html';
@@ -78,8 +78,8 @@ export class CommitPage {
 	}
 
 	/**
-	 * Paint the first-paint snapshot's rows (REFACTOR-PLAN 3.8.2 D10, task 5.9; the
-	 * `paintSnapshot` effect): the previous session's rows go on screen IMMEDIATELY, and the
+	 * Paint the first-paint snapshot's rows (the `paintSnapshot` effect): the previous session's
+	 * rows go on screen IMMEDIATELY, and the
 	 * pushed `loadView` data reconciles them when it lands - through the same page-application
 	 * path, whose equality check leaves identical rows untouched (the seamless update) and whose
 	 * anchored rebuild replaces the rest without a coordinate jump. The snapshot was already
@@ -116,10 +116,9 @@ export class CommitPage {
 
 	/**
 	 * Apply a commits response: the staged pre-processing its envelope carried (the Gerrit
-	 * states, the late branch list, the exact uncommitted count — the parts legacy
-	 * `processLoadCommitsResponse` ran ahead of the page), then the page itself.
-	 * `cycleCompleting` is TRUE when this response completes a cycle (legacy's
-	 * `refreshState.inProgress` at this point) and FALSE for a staged follow-up landing after it.
+	 * states, the late branch list, the exact uncommitted count — applied ahead of the page
+	 * itself), then the page. `cycleCompleting` is TRUE when this response completes a cycle
+	 * and FALSE for a staged follow-up landing after it.
 	 */
 	public applyResponse(payload: CommitsPayload, cycleCompleting: boolean): void {
 		const ctx = this.ctx(), store = ctx.store;
@@ -148,8 +147,8 @@ export class CommitPage {
 		// The branch list of the ref scan this page was built from: the deferred view load
 		// delivers the remote-tracking entries here (they are the same scan the remote
 		// pills come from), completing the branch dropdown without another request. A reset
-		// selection re-requests just the commits (nested into this application, exactly as
-		// legacy's applyBranches did).
+		// selection re-requests just the commits (nested into this application, with the new
+		// branch list already applied).
 		if (Array.isArray(payload.branches) && this.deps.repoInfo.applyBranchList(payload.branches)) {
 			this.deps.refreshCommitsOnly();
 		}
@@ -289,7 +288,7 @@ export class CommitPage {
 		// (Rendering first and correcting afterwards would window the list at the stale position,
 		// then move - destroying and rebuilding the rows at both edges of the window for nothing.)
 		viewport.applyViewportAnchor(anchor);
-		// The ONE render of this response (task 5.10): synchronous because the anchor re-application
+		// The ONE render of this response: synchronous because the anchor re-application
 		// below measures the rows this pass wrote, and it satisfies any render requested earlier in
 		// the same response (the scheduler's pending flag), so nothing renders twice
 		ctx.renderScheduler.renderSync();
@@ -315,7 +314,7 @@ export class CommitPage {
 
 		this.finalise(cycleCompleting);
 		this.deps.followUps.requestAvatars(avatarsNeeded);
-		// A stable commits render is the first-paint snapshot's capture point (D10): debounced, so
+		// A stable commits render is the first-paint snapshot's capture point: debounced, so
 		// a rapid load-more sequence captures once, at its end
 		ctx.persistence.scheduleFirstPaintCapture();
 	}
@@ -323,8 +322,8 @@ export class CommitPage {
 	/**
 	 * Finalise the application of a commit page: refresh (or close) a dialog and context menu
 	 * that targeted the dynamic sources of the previous data, then complete the deferred view
-	 * load and the pinned-commit jump. `cycleCompleting` carries legacy's
-	 * `refreshState.inProgress` gate (TRUE only for the response that completes a cycle).
+	 * load and the pinned-commit jump. `cycleCompleting` is TRUE only for the response
+	 * that completes a cycle.
 	 */
 	private finalise(cycleCompleting: boolean): void {
 		const ctx = this.ctx(), store = ctx.store;

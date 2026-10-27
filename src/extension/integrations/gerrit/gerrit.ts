@@ -13,26 +13,26 @@ import { buildKeepPatterns, changeShard, chunkFetchRefspecs, gerritRemoteServer,
  * protocol.
  *
  * The pure parsing half of the integration — change refs, NoteDb metas, status filtering and the
- * sampling schedule — lives in `gerritProtocol.ts` (REFACTOR-PLAN task 6.2); this module is the
- * data source that fetches, caches and schedules it. The historical `src/gerrit.ts` path
- * re-exports both.
+ * sampling schedule — lives in `gerritProtocol.ts`; this module is the
+ * data source that fetches, caches and schedules it.
  */
 
 /**
- * A minimal structural interface for running Git commands (implemented by `DataSource`).
+ * A minimal structural interface for running Git commands (satisfied by the raw Git runner the
+ * composition root and the panel wire in).
  */
 export interface GitRunner {
 	gitOutput: <T>(args: string[], repo: string, resolveValue: { (stdout: string): T }) => Promise<T>;
 	runGitCommand: (args: string[], repo: string) => Promise<ErrorInfo>;
 	runGitCommandWithInput: (args: string[], repo: string, input: string) => Promise<ErrorInfo>;
 	/**
-	 * The Rust-engine NoteDb meta parser of a `DataSource`: one native call parses every requested
+	 * The Rust-engine NoteDb meta parser: one native call parses every requested
 	 * meta history in-process. Optional (absent in stand-in runners, e.g. the tests'): without it —
 	 * or when it resolves NULL — the `git log` pool below serves the parse.
 	 */
 	parseGerritMetas?: (repo: string, remote: string, changes: ReadonlyArray<number>, urlBase: string | null) => Promise<Map<number, GerritChangeState | null> | null>;
 	/**
-	 * The Rust-engine change-ref scan of a `DataSource`: one native call resolves every
+	 * The Rust-engine change-ref scan: one native call resolves every
 	 * `refs/remotes/<remote>/changes/**` refname and hash in-process. Optional (absent in stand-in
 	 * runners, e.g. the tests'): without it — or when it resolves NULL — the `git for-each-ref`
 	 * commands below serve the listing.
@@ -106,7 +106,7 @@ export interface RunnerEngineFastPaths {
  * A Gerrit data source over the shared raw runner (the graph view's `GitRunnerPort`, taken
  * structurally so this module does not depend on `graphView/`): the runner's engine fast paths
  * answer in array shapes, which the `GitRunner` seam above consumes as Maps, so the two results
- * are adapted here (REFACTOR-PLAN task 3.6 — the same adaptation the panel performs inline).
+ * are adapted here (the same adaptation the panel performs inline).
  */
 export function gerritDataSourceOver(runner: {
 	gitOutput: GitRunner['gitOutput'];

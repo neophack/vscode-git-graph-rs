@@ -1,5 +1,5 @@
 /**
- * The CLI read themes added for DataSource read parity (tasks 3.5): table-driven argv and parse
+ * The CLI read themes: table-driven argv and parse
  * tests over a scripted `GitCli` double that records every argv and answers from a per-argv
  * script — no real Git process is spawned here (the process layer has its own tests).
  */

@@ -1,7 +1,7 @@
 /**
- * The Markdown renderer of src/webview/graph/text/markdown.ts (ported from
- * tests/markdownRenderer.test.mjs, which bundled the source with esbuild and executed it through
- * `new Function` — banned by REFACTOR-PLAN T2/T3; this is the real module imported directly).
+ * The Markdown renderer of src/webview/graph/text/markdown.ts (the real module, imported
+ * directly — the page's content security policy allows no 'unsafe-eval', so evaluating bundled
+ * source through `new Function` is not an option).
  * A commit message is attacker-controllable text (anyone who can push a commit controls what
  * every viewer of this repository sees rendered), so beyond rendering fidelity the token-based
  * walk's core job is that no token's raw text ever reaches the DOM as anything but escaped text
@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 
 import { hasMarkdown, loadMarkdown, renderMarkdown } from './markdown';
 
-// The renderer loads on demand (task 5.9): the same dynamic import the Commit Details View
+// The renderer loads on demand: the same dynamic import the Commit Details View
 // triggers, constructing the same preconfigured instance (html disabled, so raw HTML in the
 // source is never even recognised as a distinct token type)
 await loadMarkdown();

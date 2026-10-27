@@ -29,17 +29,18 @@ import type { ResponseStartCodeReview, ResponseUpdateCodeReview } from './codeRe
 import type { ResponseWorktreeAdd, ResponseWorktreeList, ResponseWorktreePrune, ResponseWorktreeRemove } from './worktrees';
 
 /**
- * The host↔webview protocol of the Git Graph main view, in the RequestMap form of
- * REFACTOR-PLAN §3.2 (task 4.1): each request command is declared exactly once, together with
+ * The host↔webview protocol of the Git Graph main view, in the RequestMap form:
+ * each request command is declared exactly once, together with
  * the request it receives and the response the host sends back.
  *
- * This module is a mechanical typing layer over the existing contract; `src/types/messages.ts`
- * (re-exported by the webview through `src/webview/common/protocol.ts`) stays the runtime truth.
- * Every entry's `req` IS the corresponding `Request*` interface and every non-silent entry's
- * `res` IS the corresponding `Response*` interface, which the compile-time assertions at the
- * bottom of this file prove — so the two definitions cannot drift apart silently. Task 4.2's
- * handler table is declared against `RequestCommand`, and task 5.2's webview bridge will send
- * `send<K extends RequestCommand>(cmd: K, req: ...)`.
+ * This module is a mechanical typing layer over the message contract (the RequestMessage /
+ * ResponseMessage unions of `messages.ts`, re-exported to the webview through
+ * `src/webview/common/protocol.ts`). Every entry's `req` IS the corresponding `Request*`
+ * interface and every non-silent entry's `res` IS the corresponding `Response*` interface,
+ * which the compile-time assertions at the
+ * bottom of this file prove — so the two definitions cannot drift apart silently. The host's
+ * handler table is declared against `RequestCommand`, and the webview bridge sends messages
+ * typed against the same protocol.
  */
 
 /**
@@ -186,22 +187,23 @@ export const REQUEST_COMMANDS: ReadonlyArray<RequestCommand> = [
 ];
 
 /**
- * What a write operation can change about the repository (REFACTOR-PLAN §3.8.3, task 4.8): the
- * impact classes `CommitLoader.refreshAfter` picks the minimal refresh from. The single
+ * What a write operation can change about the repository: the
+ * impact classes the host's impact refresh (`extension/graphView/impactRefresh.ts`)
+ * picks the minimal refresh from. The single
  * definition lives here (shared vocabulary); the write-op table (`extension/git/write/ops/op.ts`)
  * re-exports it and declares it per op, and {@link WRITE_EFFECTS} aggregates it per command.
  */
 export type WriteEffect = 'refs' | 'head' | 'commits' | 'worktree' | 'stash' | 'config';
 
 /**
- * The impact classes each request command's write can produce (task 4.8): the UNION over the
+ * The impact classes each request command's write can produce: the UNION over the
  * write ops the command's handler may run (a handler often picks between ops by its flags —
  * `createBranch` with and without checkout — and a partially completed action may have run the
  * heavier one). NULL for commands whose handler cannot modify the repository: those match
  * `MUTATING_COMMANDS`' FALSE entries, and the host pushes no refresh for them.
  *
- * The host reads this table after a mutating handler completed (the panel's
- * `refreshAfterWrite`) to push the minimal partial update per §3.8.3; the write-success side of
+ * The host reads this table after a mutating handler completed (the message router's
+ * `refreshAfterWrite`) to push the minimal partial update; the write-success side of
  * the WEBVIEW does not refresh such a command itself — it waits for that push.
  *
  * One deliberate exception: `gerritSetFetchRefs` is NULL although it mutates. Its handler owns
@@ -302,10 +304,10 @@ export const WRITE_EFFECTS: { readonly [K in RequestCommand]: ReadonlyArray<Writ
 
 /**
  * Whether each request's handler can modify the repository (its HEAD, refs, stash, index,
- * working tree or Git config) — the parallel definition of `GitGraphView.REPO_MUTATING_COMMANDS`
- * (src/gitGraphView.ts), which stays in place until task 4.2 wires this table into the message
- * dispatch and deletes the old set. Handlers run with the RepoFileWatcher muted, so these
- * commands must also invalidate the commit cache directly (see respondToMessage).
+ * working tree or Git config) — the flag every handler entry declares (`mutates`) and the
+ * dispatcher tests. Handlers run with the RepoFileWatcher muted, so these
+ * commands must also invalidate the commit cache directly (see the message router's
+ * respondToMessage).
  */
 export const MUTATING_COMMANDS: { readonly [K in RequestCommand]: boolean } = {
 	abortOperation: true,
@@ -398,7 +400,7 @@ export const MUTATING_COMMANDS: { readonly [K in RequestCommand]: boolean } = {
 	worktreeRemove: true
 };
 
-/* Compile-time contract guards: fail `tsc` when this map and src/types/messages.ts drift apart. */
+/* Compile-time contract guards: fail `tsc` when this map and the message unions drift apart. */
 
 /** Type-level equality (mutual identity, stronger than mutual assignability). */
 type Eq<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
@@ -406,9 +408,9 @@ type AssertTrue<T extends true> = T;
 
 /**
  * The RequestMap covers every RequestMessage command, exactly, in both directions.
- * P1 exception: `webviewTraces` (OPTIMIZATION-PLAN §7 P1) rides the RequestMessage union but is
+ * P1 exception: `webviewTraces` rides the RequestMessage union but is
  * deliberately not a graph-view request - the panel consumes it before the handler table, so it
- * has no GraphViewRequests entry. Drop the Exclude when the protocol move absorbs the message.
+ * has no GraphViewRequests entry. Drop the Exclude when the protocol absorbs the message.
  */
 export type AssertRequestCoverage = AssertTrue<Eq<RequestCommand, Exclude<RequestMessage['command'], 'webviewTraces'>>>;
 

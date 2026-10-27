@@ -4,7 +4,7 @@
 	z-index:1;
 }
 /*
- * Render containment (REFACTOR-PLAN task 5.10): a commit row's internal layout and paint are
+ * Render containment: a commit row's internal layout and paint are
  * isolated from the rest of the table, so patching one row (a ref moving, the uncommitted count
  * changing) neither re-lays out its siblings nor invalidates their paint. Chromium 52+ (the VS
  * Code floor of 69 has it); the absolutely positioned column-resize handles keep their own
@@ -161,8 +161,7 @@ table { border-collapse: collapse; }
     border-right: none;
 }
 
-/* ===== Phone layout: the commit list (merged from styles/mobile/commitList.css, OPTIMIZATION-PLAN
- * §6 F6) =====
+/* ===== Phone layout: the commit list (merged from styles/mobile/commitList.css) =====
  * 52px two-line rows. Line 1: subject ............ date   (the date compact: 16:32 / Yesterday / Mon / Oct 9)
  * Line 2: [refs] author ...... hash
  * The row height is uniform (MOBILE_ROW_HEIGHT of the render code), which windowed rendering
@@ -360,7 +359,7 @@ body.mobileMode #fastScroller.dragging #fastScrollerBubble{
 }
 
 /* ===== Tablet layout: the commit list (merged from styles/tablet/commitList.css and
- * styles/tablet/compactRows.css, OPTIMIZATION-PLAN §6 F6) =====
+ * styles/tablet/compactRows.css) =====
  * 40px single-line rows: [graph] subject ..... [refs] date author hash. A tablet keeps every
  * column on one line at touch height (layoutMode.ts TABLET_ROW_HEIGHT, uniform as windowed
  * rendering requires). Flat: no column rules, one hairline per row drawn as an inset shadow (it

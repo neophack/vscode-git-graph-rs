@@ -11,10 +11,10 @@ import type { ProductionGitRepository } from '../../git/gitRepository';
 import { dispatchRequest } from './index';
 
 /**
- * Wiring tests (task 4.3, feature 2 + task 4.7): the handler table's `loadCommits` handler
+ * Wiring tests: the handler table's `loadCommits` handler
  * delegates to a REAL CommitLoader (not the recording stub of index.test.ts) and every staged
  * response the loader emits reaches the webview through `ctx.send` - proving the port surface the
- * table consumes is exactly the surface the extracted loader implements. The `loadView` half
+ * table consumes is exactly the surface the real loader implements. The `loadView` half
  * proves the merged open path answers in ONE response carrying both halves, through the same send.
  */
 
@@ -86,7 +86,7 @@ class WiringContext implements HandlerContext {
 				isRepo: true, operationState: { type: null, conflictedFiles: [], progress: null }
 			}),
 			getOperationState: () => Promise.resolve({ type: null, conflictedFiles: [], progress: null }),
-			// The refs-only reads of task 4.8's impact refresh: unused by these handler tests,
+			// The refs-only reads of the impact refresh: unused by these handler tests,
 			// but part of the port the real loader reads through
 			getRefSnapshot: () => Promise.resolve({
 				refData: { head: 'a', heads: [], tags: [], remotes: [] },

@@ -1,5 +1,5 @@
 /**
- * The remote/config-domain scenarios (task 4.10): the remotes.ts and config.ts write operations
+ * The remote/config-domain scenarios: the remotes.ts and config.ts write operations
  * — addRemote, deleteRemote, editRemote, pruneRemote, fetch (remotes.ts) and setConfigValue,
  * unsetConfigValue, addRemoteTagsRefspec (config.ts) — each with a success and a failure
  * scenario. The failure forms: duplicating an existing remote, removing/editing a nonexistent
@@ -230,7 +230,7 @@ export const REMOTES_CONFIG_SCENARIOS = [
 		group: 'settings',
 		tags: ['settings', 'failure', 'dialog'],
 		mutable: true,
-		// The E2E run pins GIT_CONFIG_GLOBAL at an empty temp file (§6.8.6): `git config --global
+		// The E2E run pins GIT_CONFIG_GLOBAL at an empty temp file (hermetic isolation): `git config --global
 		// --unset user.name` exits 5 ("No such section") — the designed refusal of the unset.
 		request: [{ command: 'deleteUserDetails', repo: '{{repo}}', name: true, email: true, location: 'global' }],
 		expect: { responses: ['deleteUserDetails'] },

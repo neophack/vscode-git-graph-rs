@@ -1,17 +1,17 @@
 /**
- * The compare pages' string adapter over the shared dictionary (OPTIMIZATION-PLAN §6 F7).
+ * The compare pages' string adapter over the shared dictionary.
  *
  * Every localised entry of the comparison and binary-compare frontends lives in the ONE
  * dictionary, src/shared/i18n (the flat compare* keys, used by the extension host's fallback
  * pages as well); the former private duplicate tables are gone. This module selects those keys
- * for the two extracted frontends (REFACTOR-PLAN task 6.1) and keeps the small API their modules
+ * for the two compare frontends and keeps the small API their modules
  * consume: the text entries, the markup entries, the placeholder substitution and the language
  * switch the boot `init` message drives - the extension host tells each page which language it
  * rendered it for, and the boot applies it before anything renders.
  *
  * The module still exists because src/webview/comparison imports it too; once that frontend
  * reads the shared dictionary directly, it can be deleted and its importers pointed at
- * src/shared/i18n (a flagged follow-up of the F7 item).
+ * src/shared/i18n.
  *
  * Entries that carry markup (HTML entities, the statistics <span>s) are listed in MARKUP_KEYS:
  * they must be inserted as markup (raw()), never as escaped text.

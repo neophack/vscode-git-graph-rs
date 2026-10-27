@@ -10,8 +10,8 @@ import type { ErrorInfo } from '../../shared/protocol/messages';
  * `GitRunner` src/extension/integrations/gerrit/gerrit.ts builds its `GerritDataSource` over, so
  * the same instance backs both.
  *
- * Every member rejects with the legacy `getErrorMessage` shape (stderr + stdout, split on line
- * ends, the trailing empty element dropped) exactly as `DataSource._spawnGit` did.
+ * Every member rejects with the shared `commandFailure` message shape (stderr + stdout,
+ * split on line ends, the trailing empty element dropped).
  */
 export interface GitRunnerPort {
 	/** Spawn Git, resolving the value parsed out of its stdout; rejecting when it fails. */
@@ -22,7 +22,7 @@ export interface GitRunnerPort {
 	 * stderr, so callers that mine both streams need this form.
 	 */
 	gitOutputWithStderr<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string, stderr: string) => T): Promise<T>;
-	/** Run a Git command, resolving the legacy `ErrorInfo` (NULL => success). */
+	/** Run a Git command, resolving the `ErrorInfo` (NULL => success). */
 	runGitCommand(args: ReadonlyArray<string>, repo: string): Promise<ErrorInfo>;
 	/** Run a Git command fed a command stream on stdin (e.g. `update-ref --stdin`). */
 	runGitCommandWithInput(args: ReadonlyArray<string>, repo: string, input: string): Promise<ErrorInfo>;
@@ -47,7 +47,7 @@ export interface GitRunnerPort {
 	listChangeRefs: ((repo: string, remote: string) => Promise<ReadonlyArray<readonly [string, string]>>) | null;
 }
 
-/** The failure message of a runner spawn, mirroring the legacy `getErrorMessage`. */
+/** The failure message of a spawn error (an unknown thrown value, stringified). */
 function spawnFailure(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }

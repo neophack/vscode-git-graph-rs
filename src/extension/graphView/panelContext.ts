@@ -49,18 +49,18 @@ import { UncommittedCountStabiliser } from './uncommittedStabiliser';
 import { RepoConfigCache } from './repoReads';
 
 /**
- * The production implementations of the HandlerContext's ports (REFACTOR-PLAN task 4.4 + 3.6):
- * thin adapters over the collaborators the Panel already owns — the `GitRepository` facade and
+ * The production implementations of the HandlerContext's ports: thin adapters over the
+ * collaborators the Panel owns — the `GitRepository` facade and
  * its raw runner (the git layer the composition root composed), the ExtensionState, the
- * AvatarManager, the RepoManager, the utils/actions helpers and the auxiliary view controllers —
- * so the handler table runs against the real thing while staying substitutable in tests. Each
- * port moves to its future module (platform/storage, extension/repos, integrations/*,
- * platform/config) as those land.
+ * AvatarManager, the RepoManager, the platform/actions helpers and the auxiliary view controllers —
+ * so the handler table runs against the real thing while staying substitutable in tests. The
+ * collaborators live in their own modules (platform/storage, extension/repos, integrations/*,
+ * platform/config, platform/actions); these adapters only expose their port-shaped surfaces.
  */
 
 /** The Panel collaborators the ports adapt. */
 export interface PanelPortDeps {
-	/** The repository facade: the read backend + the GitWriter (task 3.6). */
+	/** The repository facade: the read backend + the GitWriter. */
 	readonly repo: ProductionGitRepository;
 	/** The raw Git runner over the same GitProcess the writer runs on. */
 	readonly git: GitRunnerPort;
@@ -71,7 +71,7 @@ export interface PanelPortDeps {
 	readonly repoManager: RepoManager;
 	readonly logger: Logger;
 	readonly extensionPath: string;
-	/** The configuration service (the latest settings snapshot; OPTIMIZATION-PLAN A4). */
+	/** The configuration service (the latest settings snapshot). */
 	readonly config: ConfigProvider;
 	/** The shared pull-request data source (HTTP + parsing; owned by the Panel). */
 	readonly pullRequests: { getPullRequests(url: string): Promise<{ prs: PullRequestInfo[], complete: boolean } | null> };
@@ -217,7 +217,7 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 			}, setting, value, previousValue)
 		},
 		pullRequests: {
-			// Background jobs of the host scheduler (task 4.8): one at a time, yielded by any
+			// Background jobs of the host scheduler: one at a time, yielded by any
 			// interactive request. The head-ref fetch runs Git writes; an abandonment severs the
 			// DELIVERY only, so a fetch already talking to Git still completes.
 			fetchPullRequests: (repo) => hostScheduler.run('pr:' + repo, 'background', () => fetchPullRequests(prDeps, repo)),
@@ -233,8 +233,8 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 /**
  * The two auxiliary webviews the view opens — the Commit Comparison View and the Binary Compare
  * view — composed over the read backend and the streaming spawner (built here over the one
- * process adapter, the localised no-Git message of the legacy spawn kept for the hex view's
- * error toast), so no graphView module imports the view controllers.
+ * process adapter, whose no-Git failure throws the localised message the hex view's error toast
+ * shows), so no graphView module imports the view controllers.
  */
 export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): AuxiliaryViewsPort {
 	const gitStream: GitStreamSpawner = {
@@ -256,11 +256,11 @@ export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): A
 	};
 }
 
-/* ---------- The staged commit loader's production reads (tasks 4.3 / 4.7 / 4.8) ---------- */
+/* ---------- The staged commit loader's production reads ---------- */
 
 /**
  * The CommitDataPort over the repository facade — the one port both the staged loader and the
- * write-path impact refresh (task 4.8) read through: page walks, the uncommitted count, the
+ * write-path impact refresh read through: page walks, the uncommitted count, the
  * repo-info half, the operation state, and the refs-only reads (`getRefSnapshot` / `annotate`)
  * whose engine requests answer a refs-only refresh without any traversal.
  */
@@ -277,12 +277,11 @@ export function createLoaderReads(repo: ProductionGitRepository, config: ConfigP
 
 /**
  * The staged commit loader over the repository facade: the commit-page cache, the Gerrit pipeline
- * and the uncommitted-changes stabiliser, reading through `repo.read` (the log options the legacy
- * getCommits assembled by hand are the read layer's `LogOptions` now) and the configuration at
- * load time exactly as the live inline pipeline did. The uncommitted row's message arrives
+ * and the uncommitted-changes stabiliser, reading through `repo.read` (the read layer's
+ * `LogOptions`) and the configuration at load time. The uncommitted row's message arrives
  * injected (`t` would drag the vscode-dependent config module into the loader), as do the clock
  * and the sleep the confirm loop re-checks under. The reads port is injectable so the panel can
- * share ONE port with the impact refresh; the scheduler (task 4.8) routes the page reads as
+ * share ONE port with the impact refresh; the scheduler routes the page reads as
  * interactive jobs and the follow-ups as background ones.
  */
 export function createCommitLoader(repo: ProductionGitRepository, git: GitRunnerPort, logger: Logger, config: ConfigProvider, reads: CommitDataPort = createLoaderReads(repo, config), scheduler: HostScheduler = hostScheduler): CommitLoader {
@@ -358,7 +357,7 @@ async function loadRepoInfoHalf(repo: ProductionGitRepository, repoPath: string,
 	return { ...info, isRepo: isRepo, operationState: operationState };
 }
 
-/** Map the loader's commit-page query onto the read layer's `LogOptions` (the legacy branch filtering included). */
+/** Map the loader's commit-page query onto the read layer's `LogOptions` (branch filtering included). */
 function logOptionsOf(query: CommitLoadQuery, config: ConfigSnapshot): LogOptions {
 	// Branch names arrive from the webview: drop any that Git could misread as an option. Custom
 	// Branch Glob Patterns are the one legitimate exception (a single `--glob=<pattern>` token).
@@ -416,7 +415,7 @@ async function openFileResolvingRenames(repo: ProductionGitRepository, config: C
 	return t('fileNotInRepo', newFilePath);
 }
 
-/** Open the integrated terminal at `repo` (the legacy DataSource.openGitTerminal). */
+/** Open the integrated terminal at `repo`, optionally running a Git command. */
 async function openTerminalAt(git: GitRunnerPort, shellPath: string, repo: string, command: string | null, name: string): Promise<ErrorInfo> {
 	const gitPath = git.gitPath();
 	if (gitPath === null) return unableToFindGitMsg();
@@ -424,7 +423,7 @@ async function openTerminalAt(git: GitRunnerPort, shellPath: string, repo: strin
 	return new Promise<ErrorInfo>((resolve) => setTimeout(() => resolve(null), 1000));
 }
 
-/** Open the external diff tool over the directory diff of two revisions (the legacy DataSource.openExternalDirDiff). */
+/** Open the external diff tool over the directory diff of two revisions. */
 function openExternalDirDiff(git: GitRunnerPort, logger: Logger, config: ConfigSnapshot, repo: string, fromHash: string, toHash: string, isGui: boolean): Promise<ErrorInfo> {
 	return new Promise<ErrorInfo>((resolve) => {
 		const gitPath = git.gitPath();
@@ -463,10 +462,9 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, config: ConfigS
 }
 
 /**
- * The save-dialog + `git archive` flow of utils/actions.archive, over the pure op. The dialog
- * goes through the host's UiPort (utils/actions.ts's uiPort), so the automation/E2E build's
- * ScriptedUiPort answers it from the scenario script — this flow is the exact site the former
- * `nativeSaveDialog` catalog skip existed for (REFACTOR-PLAN task 4.10's acceptance).
+ * The save-dialog + `git archive` flow, over the pure op. The dialog
+ * goes through the host's UiPort (platform/actions.ts's uiPort), so the automation/E2E build's
+ * ScriptedUiPort answers it from the scenario script.
  */
 async function createArchive(repo: ProductionGitRepository, repoPath: string, ref: string): Promise<ErrorInfo> {
 	try {
@@ -517,8 +515,8 @@ export interface ViewPortDeps {
  * regenerated page's initialState (the webview drops responses older than them); a repository
  * switch records the last-active repository, restarts the watcher and the poll baseline, and
  * resets the loader's per-repo view state (the remote-refs deferral and the uncommitted
- * stabiliser) - exactly the block the live loadRepoInfo case ran inline. `viewReady` is the
- * open-path handshake (task 4.7): the panel pushes the merged loadView result it began reading
+ * stabiliser). `viewReady` is the
+ * open-path handshake: the panel pushes the merged loadView result it began reading
  * at creation, and records the repository it pushed for as the current one.
  */
 export function createViewPort(deps: ViewPortDeps): ViewPort {

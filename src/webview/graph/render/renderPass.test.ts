@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The render pass of a response (REFACTOR-PLAN task 5.10): one response triggers exactly ONE
+ * The render pass of a response: one response triggers exactly ONE
  * render (counted at the scheduler's single choke point), and the keyed row patches mean a
  * refs-only update rewrites only the rows whose refs changed - the other visible rows keep their
  * very DOM nodes (asserted both by element identity and by counting the replaced rows through a
@@ -187,7 +187,7 @@ function loadCommitsResponse(commits: GG.GitCommit[]): GG.ResponseLoadCommits {
 	} as unknown as GG.ResponseLoadCommits;
 }
 
-describe('one response, one render pass (task 5.10)', () => {
+describe('one response, one render pass', () => {
 	beforeEach(() => { vi.useFakeTimers(); });
 	afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -227,7 +227,7 @@ describe('one response, one render pass (task 5.10)', () => {
 	});
 });
 
-describe('keyed row patches: a refs-only update rewrites only the affected rows (task 5.10)', () => {
+describe('keyed row patches: a refs-only update rewrites only the affected rows', () => {
 	it('replaces exactly the row whose refs changed, keeping every other row element (MutationObserver + identity)', async () => {
 		const { ctx, loader } = makeView();
 		const hashOf = (suffix: number) => ENTRIES[suffix].hash;

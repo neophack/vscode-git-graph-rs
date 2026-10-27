@@ -39,15 +39,15 @@ import type { ExtensionServices } from './services';
 
 /**
  * Activate Git Graph — the composition root: everything is constructed and wired here, once,
- * into the frozen {@link ExtensionServices} bag (OPTIMIZATION-PLAN A2). Activation never waits
- * for a `git` spawn (V1): everything is registered synchronously first and Git is resolved in
- * the background; while the workspace is untrusted (V2, D-1) the extension runs in Restricted
+ * into the frozen {@link ExtensionServices} bag. Activation never waits
+ * for a `git` spawn: everything is registered synchronously first and Git is resolved in
+ * the background; while the workspace is untrusted the extension runs in Restricted
  * Mode — engine-only reads, no Git runs.
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
 	// The configuration service first: the latest snapshot of the settings, kept current by one
-	// subscription (A4) — every read below answers from `.current` instead of re-reading
+	// subscription — every read below answers from `.current` instead of re-reading
 	// vscode.workspace.getConfiguration, and the platform free-function seams (the interface
 	// language, the default editor group) are pointed at it before anything can localize.
 	const config = new ConfigService(vscode.workspace);
@@ -63,11 +63,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const onDidChangeGitExecutable = gitExecutableEmitter.subscribe;
 	const state = new ExtensionState(context, onDidChangeGitExecutable, config);
 
-	// Workspace Trust (V2): untrusted means Restricted Mode — engine-only reads, no Git runs.
+	// Workspace Trust: untrusted means Restricted Mode — engine-only reads, no Git runs.
 	const trust = createTrustGate();
 	if (!trust.isTrusted) showRestrictedModeNoticeOnce(logger);
 
-	// The deferred Git resolution (V1): `current()` is the persisted last-good record until the
+	// The deferred Git resolution: `current()` is the persisted last-good record until the
 	// background validation answers, then its result (NULL while untrusted); `ready()` is what
 	// every Git-CLI-dependent path awaits. Validation starts only once everything is registered.
 	const gitResolution = createGitResolution({
@@ -96,11 +96,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const gitCell: { executable: GitExecutable | null } = { executable: gitResolution.current() };
 	const applyGitExecutable = () => { gitCell.executable = gitResolution.current(); };
 	// The one process adapter (askpass, cancellation, output limits, error shape), shared by the
-	// writer and the runner; every run awaits the Git resolution first (V1), so a spawn issued
+	// writer and the runner; every run awaits the Git resolution first, so a spawn issued
 	// while validation is still in flight waits instead of failing with "no Git".
 	const askpass = new AskpassManager();
 	const gitProcess = new GitProcess(() => gitCell.executable, undefined, () => ({ ...askpass.getEnv() }), () => gitResolution.ready());
-	// The read backend, rebuilt when the Git executable changes or trust transitions (V2); the
+	// The read backend, rebuilt when the Git executable changes or trust transitions; the
 	// host holds the swappable forwarder, so a rebuild re-aims every consumer without rebinding.
 	const readerCell: { backend: GitBackend } = { backend: buildBackend(gitResolution.current(), logger, !trust.isTrusted) };
 	const reader = swappableBackend(() => readerCell.backend);
@@ -133,7 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const panels = new PanelRegistry(services);
 	const commandManager = new CommandManager(services, panels);
 
-	// Prewarming (§3.8.2 D11): prefetch recently-opened repositories 2 s after activation; the
+	// Prewarming: prefetch recently-opened repositories 2 s after activation; the
 	// live view is read only through the registry's 2-method port, cycles yield to interactive work.
 	const prewarmReader = createScheduledPrewarmReader(reader);
 	const prewarm = createPrewarmController({
@@ -187,12 +187,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 	prewarm.start();
 
-	// No engine binary is not an error (everything runs over the CLI); said once per version (V1).
+	// No engine binary is not an error (everything runs over the CLI); said once per version.
 	if (!hasEngineForPlatform(context.extensionPath)) {
 		showInformationMessageOncePerVersion(context, logger, 'noEngineForPlatform', t('noEngineForPlatform', platformKey()));
 	}
 
-	// Everything is registered: start the background Git validation now (V1). Until it answers,
+	// Everything is registered: start the background Git validation now. Until it answers,
 	// `current()` is the persisted last-good record and engine reads are already served.
 	gitResolution.start();
 	logger.log('Started Git Graph - Ready to use!');

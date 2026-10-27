@@ -1,5 +1,5 @@
 /**
- * Safe HTML construction (REFACTOR-PLAN task 5.6).
+ * Safe HTML construction.
  *
  * Every piece of markup the webview inserts into the DOM is a `SafeHtml` value, and this module is
  * the only one that writes HTML into the DOM (`setHtml`, `replaceWithHtml`, `insertHtml`,

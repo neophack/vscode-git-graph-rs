@@ -98,7 +98,7 @@ export function observeViewScroll(ctx: GraphContext) {
 	let timeout: number | null = null;
 	let virtualRafId: number | null = null;
 
-	// Passive (task 5.10): the handler never prevents the default scroll, and a passive listener
+	// Passive: the handler never prevents the default scroll, and a passive listener
 	// keeps it off the scroll's critical path
 	viewElem.addEventListener('scroll', () => {
 		const scrollTop = viewElem.scrollTop;

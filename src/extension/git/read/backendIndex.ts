@@ -29,7 +29,7 @@ export interface BackendOptions {
 	 */
 	readonly gitPath?: string | null;
 	/**
-	 * Restricted Mode (Workspace Trust, OPTIMIZATION-PLAN V2): serve reads from the in-process
+	 * Restricted Mode (Workspace Trust): serve reads from the in-process
 	 * engine alone — no `git` child process may run in an untrusted workspace, so the CLI
 	 * fallback is not built. Without an engine binary there is nothing left to serve reads with,
 	 * and every call fails rather than silently reaching for the CLI.

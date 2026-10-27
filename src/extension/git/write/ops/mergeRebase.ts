@@ -1,6 +1,5 @@
 /**
- * Merge and rebase write operations, ported from `DataSource`'s
- * "Git Action Methods - Branches & Commits" (`src/dataSource.ts`), plus the continue/abort
+ * Merge and rebase write operations, plus the continue/abort
  * commands of an in-progress operation.
  */
 
@@ -32,7 +31,7 @@ export function merge(params: MergeParams): WriteOp {
 }
 
 /**
- * The follow-up of a squash merge (the legacy `commitSquashIfStagedChangesExist`): the caller
+ * The follow-up of a squash merge: the caller
  * runs it only when the merge succeeded AND staged changes exist (a read between the two
  * commands) and the merge was not `--no-commit`.
  */
@@ -63,7 +62,7 @@ export interface RebaseParams {
 }
 
 export function rebase(params: RebaseParams): WriteOp {
-	// The interactive variant of the legacy `rebase` runs through the integrated terminal
+	// The interactive rebase variant runs through the integrated terminal
 	// (shell quoting and an editor are involved), so it has no argv here; only the headless
 	// rebase is a plain spawn.
 	const argv = ['rebase', params.obj];

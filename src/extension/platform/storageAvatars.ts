@@ -1,5 +1,5 @@
 /**
- * The avatar store of the Git Graph Extension State (OPTIMIZATION-PLAN §3 A5): the avatar
+ * The avatar store of the Git Graph Extension State: the avatar
  * cache (one globalState key) plus the global storage folder the avatar files live in -
  * split out of the former flat platform/storage.ts, over the one versioned KV
  * (./storageVersioned.ts). The `ExtensionState` facade delegates its avatar methods here.

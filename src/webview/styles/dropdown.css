@@ -181,8 +181,7 @@ body.vscode-high-contrast .dropdownOption:hover{
 	font-style:italic;
 }
 
-/* ===== Phone layout: a floating card under the app bar (merged from styles/mobile/dropdown.css,
- * OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Phone layout: a floating card under the app bar (merged from styles/mobile/dropdown.css) =====
  * position:fixed with top:auto keeps the menu's static position (directly below the control),
  * while left/right span the screen; the inline right:0 the dropdown sets is overridden. */
 
@@ -299,7 +298,7 @@ body.mobileMode .dropdownNoResults{
 	color:var(--m-fg-2);
 }
 
-/* ===== Tablet layout: dropdown menus (merged from styles/tablet/dropdown.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: dropdown menus (merged from styles/tablet/dropdown.css) =====
  * A tablet anchors menus to their control (iPadOS / Material 3 menus) rather than spanning the
  * screen as the phone does: the wide layout's positioning, a rounded popover with a little gap,
  * 36px options with an inset highlight, and a capsule filter field. Flat: a hairline and one soft

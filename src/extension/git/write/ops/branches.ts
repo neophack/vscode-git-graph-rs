@@ -1,6 +1,6 @@
 /**
- * Branch write operations, ported one-for-one from `DataSource`'s "Git Action Methods - Branches"
- * (`src/dataSource.ts`). Pure: the argv for each option branch matches the legacy method exactly.
+ * Branch write operations: one pure `WriteOp` builder per action. The argv of each option
+ * branch is fixed data, pinned exactly by the table tests in `ops.test.ts`.
  */
 
 import { GitPushBranchMode } from '../../../../shared/model/git';
@@ -75,7 +75,7 @@ export function deleteRemoteBranch(params: DeleteRemoteBranchParams): WriteOp {
 }
 
 /**
- * The fallback of the legacy `deleteRemoteBranch`: when the remote ref no longer exists (the push
+ * The fallback of a remote-branch deletion: when the remote ref no longer exists (the push
  * fails with "remote ref does not exist"), the stale remote-tracking branch is deleted instead.
  */
 export function deleteRemoteTrackingBranch(params: DeleteRemoteBranchParams): WriteOp {
@@ -157,10 +157,9 @@ export function pullBranch(params: PullBranchParams): WriteOp {
 }
 
 /**
- * The follow-up of a squash pull (the legacy `commitSquashIfStagedChangesExist`): the squash
+ * The follow-up of a squash pull: the squash
  * leaves the merge staged, which is committed here. The caller runs it only when the pull
- * succeeded AND staged changes exist (a read between the two commands), exactly like the legacy
- * `pullBranch`.
+ * succeeded AND staged changes exist (a read between the two commands).
  */
 export interface CommitSquashFromPullParams {
 	readonly remote: string;

@@ -106,7 +106,7 @@ export interface SettingsWidgetState {
 
 /**
  * The state VS Code persists for the webview (restored after the webview is reloaded). Its shape
- * is a public contract (REFACTOR-PLAN §2.2): the same fields as v1.0.
+ * is a public contract: the same fields as v1.0.
  */
 export interface WebViewState {
 	readonly currentRepo: string;
@@ -130,9 +130,9 @@ export interface WebViewState {
 	readonly commitPathFilter?: string | null; // only show commits that modified the file(s) at this path
 	readonly compareSourceHash?: string | null; // the commit selected via "Select for Compare"
 	/**
-	 * The first-paint snapshot (REFACTOR-PLAN 3.8.2 D10, task 5.9): the commits and layout
+	 * The first-paint snapshot: the commits and layout
 	 * inputs a reopening view paints before the fresh data arrives. An ADDED field of the frozen
-	 * contract (§2.2: fields are only ever added) - readers written before it existed see an
+	 * contract (fields are only ever added) - readers written before it existed see an
 	 * absent optional and ignore it; the snapshot itself carries its own schema version
 	 * (state/firstPaint.ts) and the state's version was bumped with a migration that normalizes
 	 * the field to NULL (persistence.ts).
@@ -143,7 +143,7 @@ export interface WebViewState {
 /** The refresh cycle of the current repository (loadRepoInfo → loadCommits → loadConfig). */
 export interface RefreshState {
 	inProgress: boolean;
-	/** TRUE while the view shows a first-paint snapshot whose fresh data has not arrived yet (D10): the refresh button spins for it, exactly as for an in-progress refresh, and the first loadCommits response clears it (its reconciliation replaces the snapshot rows). */
+	/** TRUE while the view shows a first-paint snapshot whose fresh data has not arrived yet: the refresh button spins for it, exactly as for an in-progress refresh, and the first loadCommits response clears it (its reconciliation replaces the snapshot rows). */
 	snapshotRefreshing: boolean;
 	hard: boolean;
 	loadRepoInfoRefreshId: number;

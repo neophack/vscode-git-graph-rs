@@ -8,7 +8,7 @@ import type { Logger } from '../platform/logger';
 import { MAX_RECENT_REPOS, RepoManager, bumpRecentRepos, recentReposList } from './repoManager';
 
 /**
- * The recently-opened repository list (REFACTOR-PLAN task 4.9): the pure ordering/merge helpers
+ * The recently-opened repository list: the pure ordering/merge helpers
  * are tested directly, and the RepoManager wiring around them is tested through a constructed
  * instance whose heavy collaborators (the repository facade, the raw runner, ExtensionState,
  * Logger) are structural fakes -
@@ -52,7 +52,7 @@ interface HarnessOptions {
 	readonly repos?: readonly string[];
 	/** The previous session's last-active repository. */
 	readonly lastActiveRepo?: string | null;
-	/** The repository root the fake DataSource answers `repoRoot` with, keyed by the asked path. */
+	/** The repository root the fake repository facade answers `repoRoot` with, keyed by the asked path. */
 	readonly rootOf?: (repo: string) => string | null;
 }
 
@@ -192,7 +192,7 @@ describe('RepoManager recently-opened tracking', () => {
 	});
 
 	it('records an open made through the view-load path (sendRepos with a repo to load)', async () => {
-		// A repo the DataSource can root but RepoManager does not know yet: registering it loads
+		// A repo the repository facade can root but RepoManager does not know yet: registering it loads
 		// it in the view, which must head the recently-opened list
 		const { manager } = createRepoManager({
 			repos: [],

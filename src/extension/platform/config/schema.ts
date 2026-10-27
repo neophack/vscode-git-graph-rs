@@ -59,7 +59,7 @@ export type OpenNewTabEditorGroupSetting = 'Active' | 'Beside' | 'One' | 'Two' |
 
 /**
  * One immutable reading of every `git-graph-rs.*` extension setting, taken once at the start of
- * a request (REFACTOR-PLAN task 4.5). Field names are the camelCase join of the dotted setting
+ * a request. Field names are the camelCase join of the dotted setting
  * key (`commitDetailsView.autoCenter` -> `commitDetailsViewAutoCenter`); the order and grouping
  * follow the package.json manifest, and the {@link CONFIG_SCHEMA} table below is that mapping,
  * typed against this interface so a table row cannot drift from its field's type.

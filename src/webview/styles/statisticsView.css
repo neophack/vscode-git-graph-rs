@@ -137,8 +137,7 @@
 	border:1px solid transparent;
 }
 
-/* ===== Phone layout: the full-screen Statistics panel (merged from styles/mobile/panels.css,
- * OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Phone layout: the full-screen Statistics panel (merged from styles/mobile/panels.css) =====
  * The four full-screen panels (Settings, Reflog, Statistics, Worktrees) share one geometry; each
  * component sheet carries its own copy so every widget's on-demand chunk is self-contained and
  * injecting one panel's styles never depends on another widget's chunk having loaded. */
@@ -256,8 +255,8 @@ body.touchMode .statisticsLoading, body.touchMode .statisticsEmpty{
 	opacity:1;
 }
 
-/* ===== Tablet layout: the panel (merged from styles/tablet/panels.css, OPTIMIZATION-PLAN §6 F6;
- * the shared tablet rules are split per widget so each on-demand chunk carries only its own) =====
+/* ===== Tablet layout: the panel (merged from styles/tablet/panels.css; the shared tablet
+ * rules are split per widget so each on-demand chunk carries only its own) =====
  * The wide layout drops the panels from the top-right corner at desktop density; a phone covers
  * the screen with them. A tablet shows them as a centred sheet: a rounded card with the shadow of
  * the other tablet overlays, scrolling inside. The card's content is the grouped-card form both

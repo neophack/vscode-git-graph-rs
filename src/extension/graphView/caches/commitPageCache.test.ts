@@ -4,8 +4,8 @@ import { CommitOrdering } from '../../../shared/model/webview';
 import type { RequestLoadCommits } from '../../../shared/protocol/loading';
 import { CommitPageCache, commitPageCacheKey } from './commitPageCache';
 
-/** The commit-page cache and its key, ported from GitGraphView (task 4.3): the bound, the
- * error-result rule, and the exact key sensitivity of the live `commitsCacheKey`. */
+/** The commit-page cache and its key: the bound, the error-result rule, and the exact key
+ * sensitivity of the key function. */
 
 function page(commits: string[], error: string | null = null): GitCommitData {
 	return { commits: commits.map((hash) => ({ hash, parents: [], author: '', email: '', date: 0, message: '', heads: [], tags: [], remotes: [], stash: null })), head: null, tags: [], branches: [], moreCommitsAvailable: false, error: error };
@@ -57,7 +57,7 @@ describe('CommitPageCache', () => {
 		expect(cache.get('k')).toBeDefined(); // the newer good entry survives
 	});
 
-	it('removes an entry whose load REJECTED (a superseded walk cancelled through its signal, task 4.8)', async () => {
+	it('removes an entry whose load REJECTED (a superseded walk cancelled through its signal)', async () => {
 		const cache = new CommitPageCache(32);
 		const rejected = cache.put('k', () => Promise.reject(new Error('cancelled')));
 		await expect(rejected).rejects.toThrow('cancelled');

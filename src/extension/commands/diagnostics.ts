@@ -11,8 +11,7 @@ import type { Trace } from '../../shared/perf/trace';
 import type { CommandHost } from './context';
 
 /**
- * The `git-graph-rs.showDiagnostics` command (OPTIMIZATION-PLAN §V5, the extended §3.8.7 "Show
- * Performance Trace"): collects the extension's own view of its runtime state into one untitled
+ * The `git-graph-rs.showDiagnostics` command: collects the extension's own view of its runtime state into one untitled
  * document, ready to paste into an issue. Everything it reports is state the host already holds
  * — nothing is collected ahead of time and nothing leaves the editor (no telemetry).
  *

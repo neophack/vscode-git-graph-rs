@@ -106,7 +106,7 @@ code{
 	pointer-events:none;
 }
 
-/* ===== Touch layouts: phone and tablet (merged from styles/mobile/, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Touch layouts: phone and tablet (merged from styles/mobile/) =====
  * The git-graph-rs.mobileAdaptation Extension Setting ("Phone and tablet layouts") switches the
  * view to a touch layout, decided per render by render/layoutMode.ts: <body> carries .mobileMode
  * while the view is at most 600px wide, .tabletMode above that, and .touchMode with either. The
@@ -140,7 +140,7 @@ body.mobileMode .gg-helpTooltipPopup{
 	line-height:20px;
 }
 
-/* ===== Tablet layout: the view (merged from styles/tablet/base.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: the view (merged from styles/tablet/base.css) =====
  * The tablet visual language is flat and compact, after iPadOS, Material 3 large-screen and Meta's
  * tablet apps: one solid surface, no shadows on resting content, hairline separators instead of
  * borders, capsule controls, a 48px toolbar, 40px single-line rows that keep every column, and the

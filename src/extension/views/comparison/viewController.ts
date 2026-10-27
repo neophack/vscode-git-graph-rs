@@ -18,7 +18,7 @@ import { Disposable, toDisposable } from '../../../shared/util/disposable';
 /**
  * A webview tab that displays the changes between two commits in a GitHub-style layout: a header
  * with the overall statistics, a file tree sidebar of the changed files, and the split diff view of
- * the selected file. The host is the controller (REFACTOR-PLAN task 6.1): it owns the panel
+ * the selected file. The host is the controller: it owns the panel
  * lifecycle and the typed message handling, serves an external-script HTML shell, and delivers the
  * file changes and commit summaries through the `ready` / `init` boot pair; the frontend itself
  * lives in src/webview/comparison (bundled into media/comparison.min.js).
@@ -197,7 +197,7 @@ export class CommitComparisonView extends Disposable {
 	}
 
 	/**
-	 * The file list of the comparison (the legacy `getCommitComparison` adapter): the hashes go
+	 * The file list of the comparison: the hashes go
 	 * through the argument-injection gate, the backend's commit comparison answers the list, and
 	 * a failed read maps to the empty list plus the error the view shows in its place.
 	 */
@@ -213,7 +213,7 @@ export class CommitComparisonView extends Disposable {
 	}
 
 	/**
-	 * The unified diff of one file (the legacy `getCommitFileDiff` adapter): the diff of a single
+	 * The unified diff of one file: the diff of a single
 	 * file in a single commit is answered directly by the backend (the engine resolves it without
 	 * spawning a diff), everything else runs the two-revision comparison.
 	 */
@@ -226,7 +226,7 @@ export class CommitComparisonView extends Disposable {
 	}
 
 	/**
-	 * The progressive +/- line counts (the legacy `getCommitFileCounts` adapter): the same
+	 * The progressive +/- line counts: the same
 	 * argument gate, then the backend's line counts with a failed read mapping to empty counts.
 	 */
 	private getCommitFileCounts(from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ counts: { [path: string]: { additions: number, deletions: number } }; error: string | null }> {
@@ -240,7 +240,7 @@ export class CommitComparisonView extends Disposable {
 		);
 	}
 
-	/** The commits-before count (the legacy `countCommitsBefore` adapter): unsafe branch names are dropped, a failed read answers NULL. */
+	/** The commits-before count: unsafe branch names are dropped, a failed read answers NULL. */
 	private getCommitsBefore(branches: ReadonlyArray<string>, hash: string): Promise<number | null> {
 		const refs = branches.filter((branch) => isSafeRefName(branch) || isValidCommitHash(branch) || branch.startsWith('--glob='));
 		return this.read.countCommitsBefore(this.repo, refs, hash, false, false).catch(() => null);
@@ -285,7 +285,7 @@ export class CommitComparisonView extends Disposable {
 	/**
 	 * The page shell: the static skeleton the frontend renders into, with the stylesheet and the
 	 * two scripts (the vendored highlighter and the page's own bundle) loaded as external files
-	 * under a nonce - the CSP allows no inline scripts or styles at all (task 6.1). The loading
+	 * under a nonce - the CSP allows no inline scripts or styles at all. The loading
 	 * status stands until the frontend's `ready` handshake and the comparison data produce the
 	 * `init` message.
 	 */

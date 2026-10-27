@@ -1,11 +1,11 @@
 /**
- * The Store (REFACTOR-PLAN task 5.4, OPTIMIZATION-PLAN §6 F1): the single source of truth of the
+ * The Store: the single source of truth of the
  * Git Graph View's data, organised into SLICES - `repos`, `refs`, `commits`, `details`, `ui`,
  * `integrations` - each the ONLY writer of its own fields, changed from outside only through the
  * slice's named actions. Every action emits a typed change (`{ slice, keys }`, see changes.ts)
  * that the render scheduler collects per frame and routes to the renderers subscribed to the
- * changed slices. The store's own surface is read-only: getters delegate to the slices, and the
- * two legacy notification channels remain - the Extension Settings' `config` listeners, and the
+ * changed slices. The store's own surface is read-only: getters delegate to the slices, and two
+ * notification channels sit beside them - the Extension Settings' `config` listeners, and the
  * render-invalidation channel (`invalidateRender()` = the coalesced FULL invalidation; slices
  * emit the precise per-slice changes).
  *
@@ -40,7 +40,7 @@ export class Store {
 	private configValue: GG.GitGraphViewConfig;
 	private readonly configListeners: Array<(config: GG.GitGraphViewConfig, previous: GG.GitGraphViewConfig) => void> = [];
 	/**
-	 * Render-change listeners (REFACTOR-PLAN task 5.10): every slice action's change (and every
+	 * Render-change listeners: every slice action's change (and every
 	 * `invalidateRender()`) reaches them; the subscriber (main.ts wires the render scheduler)
 	 * coalesces the notifications into ONE render on the next frame - however many changes a
 	 * response made.
@@ -96,7 +96,7 @@ export class Store {
 	}
 
 
-	/* Render invalidation (REFACTOR-PLAN task 5.10) */
+	/* Render invalidation */
 
 	/**
 	 * Subscribe to render changes: the typed change of each slice action (NULL for a full
@@ -114,7 +114,7 @@ export class Store {
 	 * Mark the rendered view fully stale: whatever changed, the DOM may not reflect the store.
 	 * The subscribers merge any number of these into a single render on the next animation frame.
 	 * Slice actions do NOT call this - they emit their typed change, which routes precisely; this
-	 * is the legacy whole-view invalidation (the configuration applier, the Gerrit filter).
+	 * is the whole-view invalidation (the configuration applier, the Gerrit filter).
 	 */
 	public invalidateRender(): void {
 		this.emitRenderChange(null);

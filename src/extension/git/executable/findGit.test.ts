@@ -50,7 +50,7 @@ describe('Git executable discovery', () => {
 
 	it('findGit prefers the last known path, then the git.path setting, then the platform search', async () => {
 		const state = (lastKnownPath: string | null) => <ExtensionState><unknown>{ getLastKnownGitPath: () => lastKnownPath };
-		// What the composition root answers via gitPathsOf (OPTIMIZATION-PLAN A4)
+		// What the composition root answers via gitPathsOf
 		const gitPaths = (): string[] => {
 			const configured = vscodeMock.settings['git.path'] as string | string[] | undefined;
 			if (configured === undefined) return [];

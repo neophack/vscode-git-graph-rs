@@ -405,8 +405,7 @@ body.vscode-high-contrast .customSelectOptions > .customSelectOption.focussed{
 	opacity:0.85;
 }
 
-/* ===== Phone layout: centred cards with full-width buttons (merged from styles/mobile/dialog.css,
- * OPTIMIZATION-PLAN §6 F6) ===== */
+/* ===== Phone layout: centred cards with full-width buttons (merged from styles/mobile/dialog.css) ===== */
 
 body.mobileMode .dialog{
 	width:calc(100vw - 32px);
@@ -482,7 +481,7 @@ body.mobileMode .customSelectOption{
 	line-height:var(--m-target);
 }
 
-/* ===== Tablet layout: dialogs (merged from styles/tablet/overlays.css, OPTIMIZATION-PLAN §6 F6) =====
+/* ===== Tablet layout: dialogs (merged from styles/tablet/overlays.css) =====
  * Dialogs are form sheets: a centred card at tablet density, flat filled fields, capsule
  * buttons. One soft shadow and a hairline lift the card off the content - no borders, no
  * gradients. */

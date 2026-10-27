@@ -1,13 +1,13 @@
 /**
- * Rebase / merge / cherry-pick / revert state detection, ported from `DataSource.getOperationState`
- * (`src/dataSource.ts`): which operation is in progress (read off the state files in the Git
- * directory), a rebase's step counter, and the still-unresolved files.
+ * Rebase / merge / cherry-pick / revert state detection: which operation is in progress
+ * (read off the state files in the Git directory), a rebase's step counter, and the
+ * still-unresolved files.
  *
- * The environment (`exists`, `readIntFile`, `runText`) is injected, so the exact legacy sequence
+ * The environment (`exists`, `readIntFile`, `runText`) is injected, so the exact sequence
  * — including the precedence of the state files and which failure resolves to "no operation in
  * progress" — is unit-testable without a repository. Every member is asynchronous: the detection
  * runs on the shared extension host, whose synchronous fs would stall every other extension in
- * the window (OPTIMIZATION-PLAN A6).
+ * the window.
  */
 
 import * as fs from 'fs';
@@ -59,7 +59,7 @@ export function conflictedFilesArgv(): ReadonlyArray<string> {
 	return ['diff', '--name-only', '--diff-filter=U'];
 }
 
-/** Resolve the Git directory the way the legacy code did: absolute as-is, else repo-relative. */
+/** Resolve the Git directory: an absolute path as-is, else repo-relative. */
 export function resolveGitDir(repo: string, gitDirOutput: string): string {
 	return path.isAbsolute(gitDirOutput) ? gitDirOutput : path.join(repo, gitDirOutput);
 }

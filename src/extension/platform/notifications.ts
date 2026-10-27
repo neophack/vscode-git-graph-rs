@@ -1,13 +1,13 @@
 /**
- * Platform notifications adapter (REFACTOR-PLAN 3.3): the typed seam over
+ * Platform notifications adapter: the typed seam over
  * `vscode.window.showInformationMessage` / `showWarningMessage` / `showErrorMessage`.
  *
  * The dependency is injected structurally (production wiring passes `vscode.window`), so the
  * module never imports 'vscode' and tests run against a plain fake. Following the vscodeCompat
  * pattern, a missing or malformed API degrades instead of throwing: every method answers
  * `undefined` (the "no choice made" answer - the same value a dismissed message yields), and a
- * rejected Thenable is swallowed to `undefined`, matching how the existing call sites in
- * src/utils/actions.ts already settle their message dialogs.
+ * rejected Thenable is swallowed to `undefined`, the settled value the platform actions
+ * module's message flows already treat as "no choice made".
  */
 
 /** A message choice: a plain string item, or a `vscode.MessageItem`-shaped object. */

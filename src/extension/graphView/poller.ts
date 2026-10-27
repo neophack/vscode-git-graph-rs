@@ -1,7 +1,5 @@
 /**
- * The background change poll of the graph view (REFACTOR-PLAN task 4.4), extracted from
- * GitGraphView's `checkForBackgroundChanges` method and its `backgroundRefreshTimer` /
- * `lastRepoSignature` fields (src/gitGraphView.ts). Everything it touches arrives injected, so
+ * The background change poll of the graph view. Everything it touches arrives injected, so
  * the tick logic is unit-testable without Git and without 'vscode'.
  */
 

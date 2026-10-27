@@ -71,7 +71,7 @@ export class ContextMenu extends Component {
 		// pane (beside #view, not inside it) must stay next to its anchor rather than be pushed back
 		// over the list, and on <body> no stacking context of #view can hide it under the pane
 		const frameElem = document.body.classList.contains(CLASS_TABLET_MODE) ? document.body : requestedFrameElem;
-		// The menu's styles are on demand (task 5.9's CSS split): kick their chunk so the first
+		// The menu's styles are on demand: kick their chunk so the first
 		// menu of a session is styled as soon as the (idle-prefetched) chunk arrives
 		ensureWidgetStyles(() => import('../../styles/onDemand'));
 		const groups: SafeHtml[] = [], handlers: (() => void)[] = [];

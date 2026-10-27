@@ -10,7 +10,7 @@ import type { CommitLoaderDeps } from './commitLoader';
 
 /**
  * The staged follow-up half of the commit loading pipeline, split out of commitLoader.ts along
- * its natural seam (OPTIMIZATION-PLAN §A5): the responses a `loadCommits` request sends AFTER its
+ * its natural seam: the responses a `loadCommits` request sends AFTER its
  * initial one — the remote-tracking refs completion, the Gerrit stages (badges, then the review
  * timelines), the "Uncommitted Changes" row — plus the detached plumbing that launches the chain
  * and answers its errors, and the worktree impact refresh's row push. Not to be confused with
@@ -25,7 +25,7 @@ import type { CommitLoaderDeps } from './commitLoader';
 export interface FollowUpContext {
 	/** The loader's injected dependencies: the reads, the config, the stabiliser, the scheduler. */
 	readonly deps: CommitLoaderDeps;
-	/** The confirm window the zero-confirmation re-reads are bounded by (GitGraphView's 5000/1000 constants). */
+	/** The confirm window the zero-confirmation re-reads are bounded by (CommitLoader's 5000/1000 ms fallbacks). */
 	readonly uncommittedZeroConfirmMs: number;
 	readonly uncommittedRecheckMs: number;
 	/** The Gerrit pipeline instance the Gerrit stages drive. */
@@ -45,9 +45,8 @@ export interface FollowUpContext {
 }
 
 /**
- * The synthetic hash of the "Uncommitted Changes" row. Duplicated from src/utils/git.ts's
- * UNCOMMITTED ('*') because importing that module would transitively require the
- * vscode-dependent i18n module - the price of a vscode-free pipeline.
+ * The synthetic hash of the "Uncommitted Changes" row - the same value as the backend's
+ * `UNCOMMITTED` constant (git/read/types).
  */
 const UNCOMMITTED_HASH = '*';
 
@@ -56,8 +55,8 @@ const UNCOMMITTED_HASH = '*';
 /**
  * Run the follow-up chain detached from the initial response, catching every error: a
  * rejecting follow-up read is answered with an error response (so the view is never left
- * hanging), never left as an unhandled rejection - the fix task 4.3 exists for. With a
- * scheduler (task 4.8) the chain runs as a BACKGROUND job: one at a time, and yielded by any
+ * hanging), never left as an unhandled rejection. With a
+ * scheduler the chain runs as a BACKGROUND job: one at a time, and yielded by any
  * interactive arrival (a newer page load of the same repository supersedes the run the chain
  * belongs to anyway, so an abandonment is silently dropped, never surfaced as an error).
  */
@@ -284,7 +283,7 @@ function lightGerritStates(states: GerritChangeState[]): GerritChangeState[] {
 /* ---------- The worktree impact refresh's row push (see impactRefresh.ts) ---------- */
 
 /**
- * The worktree-only impact refresh (task 4.8's `worktree` class): re-read the "Uncommitted
+ * The worktree-only impact refresh (the impact refresh's `worktree` class): re-read the "Uncommitted
  * Changes" count and push the row update on the page the view last received — the same
  * stabiliser-gated delivery the load pipeline's follow-up performs (a zero that would remove
  * the row is re-checked across the confirm window; an unknown count delivers nothing).

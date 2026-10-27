@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { MUTATING_COMMANDS, REQUEST_COMMANDS } from './graphView';
 
 /**
- * The REPO_MUTATING_COMMANDS set of src/gitGraphView.ts (lines ~414-421), transcribed as the
- * expected value: the protocol table is its planned replacement (task 4.2 deletes the old set
- * once the handler table is wired in), and this comparison proves the two agree exactly.
+ * The REPO_MUTATING_COMMANDS set the v1.0 view dispatcher hand-maintained, transcribed as the
+ * expected value: this comparison proves the protocol table's MUTATING_COMMANDS agrees with it
+ * exactly.
  */
 const REPO_MUTATING_COMMANDS: ReadonlyArray<string> = [
 	'abortOperation', 'addRemote', 'addTag', 'applyStash', 'branchFromStash', 'checkoutBranch', 'checkoutCommit',
@@ -18,10 +18,10 @@ const REPO_MUTATING_COMMANDS: ReadonlyArray<string> = [
 ];
 
 /**
- * Every request command of the RequestMessage union in src/types/messages.ts, transcribed from
- * the union's members. The compile-time assertions in graphView.ts already tie RequestCommand
- * to that union; this runtime snapshot additionally fails when someone edits the union without
- * re-running the generator of these tables (a stale table is caught even before tsc runs).
+ * Every request command of the RequestMessage union (shared/protocol/messages.ts), transcribed
+ * from the union's members. The compile-time assertions in graphView.ts tie RequestCommand to
+ * that union; this runtime snapshot additionally fails when someone edits the union without
+ * updating these tables (a stale table is caught even before tsc runs).
  */
 const REQUEST_MESSAGE_COMMANDS: ReadonlyArray<string> = [
 	'abortOperation', 'addRemote', 'addTag', 'applyStash', 'branchFromStash', 'checkoutBranch', 'checkoutCommit',

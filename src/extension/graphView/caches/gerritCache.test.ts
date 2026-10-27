@@ -3,8 +3,7 @@ import type { GerritChangeState } from '../../../shared/model/gerrit';
 import type { GerritCacheEntry } from './gerritCache';
 import { GerritCacheStore } from './gerritCache';
 
-/** The Gerrit cache store, ported from GitGraphView's gerritCache/gerritFetches/gerritStaleRepos
- * /gerritCacheGeneration fields (task 4.3): staleness, the settings generation, and fetch dedupe. */
+/** The Gerrit cache store: staleness, the settings generation, and fetch dedupe. */
 
 function entry(change: number): GerritCacheEntry {
 	return { states: [state(change)], patchsets: new Map([[change, [1, 2]]]), fetchLimit: 20 };

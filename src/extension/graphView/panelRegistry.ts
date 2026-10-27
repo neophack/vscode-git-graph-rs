@@ -7,8 +7,8 @@ import { activeEditorColumn, GitGraphView } from './panel';
 import { watchForOrphanedTabs } from './orphanedTabs';
 
 /**
- * The registry of the one live Git Graph panel (OPTIMIZATION-PLAN A2): an instance owned by the
- * composition root, replacing the static `GitGraphView.currentPanel` field. The static doubled
+ * The registry of the one live Git Graph panel: an instance owned by the
+ * composition root. A static panel field would double
  * as a service locator — anything could read the panel's state off the class — so the registry
  * inverts it: the panel PUBLISHES itself here at every point its lifecycle changes (creation,
  * serializer revival, orphaned-tab replacement, disposal) and publishes its activity (page
@@ -18,8 +18,8 @@ import { watchForOrphanedTabs } from './orphanedTabs';
  * - `onDidChangeActivity` to observe the view's activity transitions,
  * - the 2-method live-view port `currentRepo()` / `isBusy()` that the prewarm controller yields to.
  *
- * The panel lifecycle entries (`open`, `restore`, `watchForOrphanedTabs`) are the former
- * `GitGraphView` statics; they are registry methods now, so the singleton logic and the
+ * The panel lifecycle entries (`open`, `restore`, `watchForOrphanedTabs`) are registry
+ * methods, so the singleton logic and the
  * singleton state live in the same object.
  *
  * The registry reads the panel's state through two public getters (`viewLoaded`, `shownRepo`);

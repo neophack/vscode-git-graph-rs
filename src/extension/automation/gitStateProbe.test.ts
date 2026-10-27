@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 /**
- * The GitStateProbe's L3 tests (REFACTOR-PLAN task 4.10): one real throwaway repository per
+ * The GitStateProbe's L3 tests: one real throwaway repository per
  * suite, known fixture mutations between assertions, and — for EVERY assertion kind — one case
  * that must HOLD and one that must FAIL. The probe judges through the git CLI, so these tests
  * prove each judgment against real git behavior, not a mock.
@@ -34,7 +34,7 @@ let previousNoSystem: string | undefined;
 
 beforeAll(async () => {
 	vi.setConfig({ testTimeout: 120000 });
-	// Hermetic config (plan §6.8.6's isolation): the probe reads config exactly as git resolves
+	// Hermetic config: the probe reads config exactly as git resolves
 	// it, so the developer's real global user.name must not leak into the unset-judgments.
 	isolatedGlobalConfig = path.join(os.tmpdir(), 'gg-probe-global-config-' + Date.now());
 	fs.writeFileSync(isolatedGlobalConfig, '');

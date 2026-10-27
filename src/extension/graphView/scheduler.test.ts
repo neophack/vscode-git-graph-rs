@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HostScheduler, JobAbandonedError } from './scheduler';
 
 /**
- * HostScheduler tests (REFACTOR-PLAN task 4.8, §3.8.3 "Cancellation and priority"): the two
+ * HostScheduler tests: the two
  * priority classes, background concurrency 1, the yield-on-interactive rule, and same-kind
  * supersession — including the rapid-switch acceptance (10 same-kind requests: 9 cancelled,
  * only the last result delivered, within ~1.5x a single request's time).

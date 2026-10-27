@@ -1,5 +1,5 @@
-/* The Gerrit review info dialog (click on a change badge) - the on-demand half of the former
- * gerrit.css (task 5.9's CSS split): this sheet loads with the other widget surfaces through
+/* The Gerrit review info dialog (click on a change badge) - the on-demand half of gerrit.css:
+ * this sheet loads with the other widget surfaces through
  * src/webview/styles/onDemand.ts, because the dialog only appears after a user click. The row
  * badge and the colour palette it shares stay critical in gerrit.css.
  * Baseline is Chromium 69 (VS Code 1.38). */

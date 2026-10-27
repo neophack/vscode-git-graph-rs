@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The picture-difference half of the binary comparison frontend (REFACTOR-PLAN task 6.1: these
- * cases executed the host's script string through a dynamically built Function before
- * the extraction; they now
+ * The picture-difference half of the binary comparison frontend: these cases
  * drive ImageView and computeImageDiff directly, in a jsdom whose canvas behaves like the Chromium
  * one the real page draws into - including drawing pixels from the decoded sides, which is
- * precisely how the missing-side crash surfaced).
+ * precisely how the missing-side crash surfaced.
  */
 
 import { describe, expect, it } from 'vitest';

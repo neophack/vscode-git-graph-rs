@@ -1,5 +1,5 @@
 /**
- * The merge/rebase-domain scenarios (task 4.10): the mergeRebase.ts write operations — merge,
+ * The merge/rebase-domain scenarios: the mergeRebase.ts write operations — merge,
  * commitSquashFromMerge, rebase, continueOperation, abortOperation — each with a success and a
  * failure scenario. The in-progress-operation pair (continue/abort) uses the given.state
  * recipes: a conflicted merge (abort) and a resolved one (continue); their failure twins run
@@ -117,7 +117,7 @@ export const MERGE_REBASE_SCENARIOS = [
 		tags: ['menu-commit'],
 		mutable: true,
 		given: { state: 'merge-conflict-resolved' },
-		// The run env pins GIT_EDITOR (§6.8.6's isolation): `git merge --continue` commits the
+		// The run env pins GIT_EDITOR (hermetic isolation): `git merge --continue` commits the
 		// resolved merge headlessly with git's own merge subject.
 		request: [{ command: 'continueOperation', repo: '{{repo}}', type: 'merge' }],
 		expect: { responses: ['continueOperation'] }

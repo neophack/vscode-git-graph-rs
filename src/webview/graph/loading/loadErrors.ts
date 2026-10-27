@@ -1,9 +1,9 @@
 /**
- * The error display of the load pipeline (OPTIMIZATION-PLAN §6 F2): the dialog half of a failed
- * load. The machine decides WHEN an error shows (the `showLoadError` effect) and whether the
- * view is cleared around it (`clearView` is a separate effect the applier runs first — legacy
- * `displayLoadDataError` captured the pre-collapse anchor before clearing, which the applier
- * reproduces by capturing up front whenever an error effect is coming).
+ * The error display of the load pipeline: the dialog half of a failed load. The machine decides
+ * WHEN an error shows (the `showLoadError` effect) and whether the view is cleared around it
+ * (`clearView` is a separate effect the applier runs first — the applier captures the
+ * pre-collapse anchor up front whenever an error effect is coming, before the clear takes the
+ * scroll position away).
  */
 
 import { strings } from '../../common/i18n/index';

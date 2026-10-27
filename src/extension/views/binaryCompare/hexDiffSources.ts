@@ -7,7 +7,7 @@ import type { SpawnedStream } from '../../git/process/gitProcess';
  * fixed-size chunks from `git cat-file blob` streams (or, for the working-tree side, seeked file
  * reads), with a bounded LRU cache keeping the most recent chunks resident — never a whole file.
  *
- * Split out of `hexDiff.ts` along the model's natural seam (REFACTOR-PLAN task 6.1): this module
+ * Split out of `hexDiff.ts` along the model's natural seam: this module
  * is the byte-access layer; the session that lays out sections and builds rows from it stays in
  * `hexDiff.ts`.
  */
@@ -22,7 +22,7 @@ const BLOB_PREFETCH_CHUNKS = 16;
 
 /**
  * Anything that can spawn Git for streaming reads; the composition root builds it over the
- * process adapter's `stream` verb (OPTIMIZATION-PLAN A3), so the windowsHide policy, the askpass
+ * process adapter's `stream` verb, so the windowsHide policy, the askpass
  * environment and the no-Git error are the adapter's, not this module's.
  */
 export interface GitStreamSpawner {

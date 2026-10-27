@@ -1,6 +1,6 @@
 /**
- * Working-tree file write operations, ported from `DataSource`'s
- * "Git Action Methods - Uncommitted" and "Git Action Methods - File" (`src/dataSource.ts`).
+ * Working-tree file write operations: the uncommitted-change actions and the per-file
+ * actions, as pure `WriteOp` builders.
  */
 
 import { WriteOp, single } from './op';
@@ -26,8 +26,8 @@ export function resetFileToRevision(params: ResetFileToRevisionParams): WriteOp 
 	return {
 		steps: single(['checkout', params.commitHash, '--', params.filePath]),
 		effects: ['worktree'],
-		// The path sits after `--`, so Git cannot read it as an option; the legacy code checked
-		// only the hash, and that parity is kept here.
+		// The path sits after `--`, so Git cannot read it as an option; only the hash
+		// needs a check.
 		checks: [['commitHash', params.commitHash, 'hash']]
 	};
 }

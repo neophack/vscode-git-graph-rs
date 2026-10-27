@@ -27,7 +27,7 @@ export interface NativeAddon {
 	/** One `{"method", "params"}` call; resolves to the `{"ok"|"error"}` envelope as JSON text. */
 	request(repo: string, requestJson: string, requestId?: number): Promise<string>;
 	/**
-	 * Cancel the request registered under `requestId` (task 2.9): it answers the structured
+	 * Cancel the request registered under `requestId`: it answers the structured
 	 * `cancelled` error at its next checkpoint. Unknown and already-finished ids are no-ops, but
 	 * a cancellation ahead of a request that later runs under the same id is honored.
 	 */
@@ -321,7 +321,7 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * How a call reaches the addon. `requestId` names the request for `cancel` (task 2.9);
+ * How a call reaches the addon. `requestId` names the request for `cancel`;
  * `load` substitutes the binary loader, so tests can drive the adapter against a fake addon —
  * the seam is injectable rather than mocked at the `require` of the `.node` binary.
  */
@@ -333,7 +333,7 @@ export interface AddonCallOptions {
 }
 
 /**
- * Cancel the request registered under `requestId` (task 2.9): the engine's long-running loops
+ * Cancel the request registered under `requestId`: the engine's long-running loops
  * unwind with the structured `cancelled` error. Safe at any time — before the request reaches
  * the engine (the cancellation is remembered), while it runs, and after it finished (a no-op for
  * that request). Unknown ids affect no other request.

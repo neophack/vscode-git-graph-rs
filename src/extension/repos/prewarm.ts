@@ -2,13 +2,13 @@ import type { GitBackend, LogOptions, RefReadOptions } from '../git/read/backend
 import { hostScheduler } from '../graphView/scheduler';
 
 /**
- * Prewarming (REFACTOR-PLAN §3.8.2 D11, task 4.9): starting 2 s idle after activation, open
+ * Prewarming: starting 2 s idle after activation, open
  * engine handles for the recently-opened repositories (at most 3) and prefetch the first page,
  * so a later open of the Git Graph View on those repositories is a hot open instead of a cold
  * one. The switch (`git-graph-rs.prewarm`, default on) changes only speed, never functionality,
  * and the controller yields to user actions at every step boundary: interactive work always
  * wins, and every handle opened here is non-current by definition, so it is closed again after
- * 10 minutes idle (respecting the memory caps of §3.8.1).
+ * 10 minutes idle (respecting the engine's memory caps).
  *
  * The module has NO vscode import: every host capability (time, the reader, the recently-opened
  * list, the live view's port, logging) arrives as an injected dependency, which is what makes
@@ -19,7 +19,7 @@ import { hostScheduler } from '../graphView/scheduler';
 /** The idle window after activation (or after a deferred attempt) before prewarming starts. */
 export const PREWARM_IDLE_DELAY_MS = 2000;
 
-/** How many recently-opened repositories one cycle covers at most (§3.8.2 D11). */
+/** How many recently-opened repositories one cycle covers at most. */
 export const PREWARM_MAX_REPOS = 3;
 
 /** How long a prewarmed handle of a non-current repository stays open before it is closed. */
@@ -58,7 +58,7 @@ const PREWARM_REPO_INFO_OPTIONS: RefReadOptions = { showRemoteBranches: true, sh
 const PREWARM_LOG_OPTIONS: LogOptions = { maxCommits: PREWARM_MAX_COMMITS, showTags: true, showRemoteBranches: true };
 
 /**
- * The live view's 2-method port the controller yields to (OPTIMIZATION-PLAN A2): which
+ * The live view's 2-method port the controller yields to: which
  * repository the Git Graph view is showing, and whether a user action is in flight. The
  * composition root's PanelRegistry satisfies it structurally — the controller depends on this
  * port, never on the panel class.
@@ -284,9 +284,9 @@ export function createPrewarmController(deps: PrewarmDependencyOptions): Prewarm
 /**
  * The production reader the controller prefetches through (the composition root's wiring): the
  * handle is opened directly (cheap, and the controller tracks it), while the two prefetch reads
- * run as background jobs of the host scheduler (task 4.8) — one at a time, and yielded
- * (abandoned) by any interactive request the view is making, which is exactly the prewarm policy
- * of §3.8.2 D11. The backend arrives as the composition root's swappable reader, so a Git switch
+ * run as background jobs of the host scheduler — one at a time, and yielded
+ * (abandoned) by any interactive request the view is making, which is exactly the prewarm policy:
+ * interactive work always wins. The backend arrives as the composition root's swappable reader, so a Git switch
  * (or a trust transition) re-aims an already-built reader too.
  */
 export function createScheduledPrewarmReader(backend: GitBackend): PrewarmReader {

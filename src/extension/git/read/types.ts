@@ -51,7 +51,7 @@ export type {
 } from '../../../shared/engine/protocol';
 
 /**
- * The answer of a refs-only re-annotation (task 4.8, the engine's `annotate` request): a fresh
+ * The answer of a refs-only re-annotation (the engine's `annotate` request): a fresh
  * HEAD together with the refs of each given commit — everything a full page load would have
  * attached to it, without the history walk.
  */
@@ -117,7 +117,7 @@ export interface RefReadOptions {
 }
 
 /**
- * The options a refs-only re-annotation accepts (task 4.8): the ref-reading options (which refs
+ * The options a refs-only re-annotation accepts: the ref-reading options (which refs
  * to attach) plus whether tags are annotated — the same "Show Tags" flag a page load receives.
  * An omitted field means "the usual".
  */

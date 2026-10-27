@@ -11,11 +11,11 @@ import type { ViewPort } from './handlers/context';
 import type { PanelRefreshIds } from './panelContext';
 
 /**
- * The ViewState of the Git Graph view (OPTIMIZATION-PLAN A5, extracted from GitGraphView): the
+ * The ViewState of the Git Graph view: the
  * serialization/restore state one rendered page consumes — the "load view to" request stashed for
  * the next render (the registry's `open` on a hidden view, a repo-set change), the snapshot a
  * serializer revival or an orphaned-tab replacement reopens on, and the merged open-path read
- * (task 4.7) the panel begins whenever the page's HTML is (re)generated and pushes once the page
+ * the panel begins whenever the page's HTML is (re)generated and pushes once the page
  * reports `ready`. The panel (panel.ts) owns the page and hands each rendered page's one-shot
  * state to this module.
  */
@@ -155,7 +155,7 @@ export function createViewState(deps: ViewStateDeps): ViewState {
 		pageRendered: (renderedTo: LoadGitGraphViewTo) => {
 			loadViewTo = null;
 			restoredSnapshot = null;
-			// The open path (task 4.7): begin the merged read for the repository this page boots on,
+			// The open path: begin the merged read for the repository this page boots on,
 			// so it is (nearly) complete by the time the page reports `ready` and gets pushed.
 			beginViewLoad(computeBootRepo(renderedTo));
 		},

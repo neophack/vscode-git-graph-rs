@@ -7,18 +7,18 @@ import type { ErrorInfo } from '../../shared/protocol/messages';
 import type { GitCommitDetails as CommitDetailsView, GitCommitStash, GitFileChange as FileChangeView, GitStash, GitTagDetails as TagDetailsView, GitLineCounts, GitRepoConfig, GitRepoConfigBranches } from '../../shared/model/git';
 import { GitConfigKey } from '../git/write/ops/config';
 
-/** The response shape of the commitDetails handler (the legacy `GitCommitDetailsData`). */
+/** The response shape of the commitDetails handler. */
 export interface CommitDetailsData { readonly commitDetails: CommitDetailsView | null; readonly error: ErrorInfo }
-/** The response shape of the compareCommits handler (the legacy `GitCommitComparisonData`). */
+/** The response shape of the compareCommits handler. */
 export interface CommitComparisonData { readonly fileChanges: ReadonlyArray<FileChangeView>; readonly error: ErrorInfo }
-/** The response shape of the commitFileCounts handler (the legacy `GitCommitFileCountsData`). */
+/** The response shape of the commitFileCounts handler. */
 export interface CommitFileCountsData { readonly counts: { [path: string]: GitLineCounts }; readonly error: ErrorInfo }
-/** The response shape of the tagDetails handler (the legacy `GitTagDetailsData`). */
+/** The response shape of the tagDetails handler. */
 export interface TagDetailsData { readonly details: TagDetailsView | null; readonly error: ErrorInfo }
 
 /**
- * The read-side helpers of the graph view over the new git layer (REFACTOR-PLAN task 3.6): the
- * response mappings and small compositions the legacy `DataSource` performed around backend
+ * The read-side helpers of the graph view over the git layer: the
+ * response mappings and small compositions around backend
  * reads, ported onto the structural `GitBackend` — no vscode, no processes.
  */
 
@@ -38,7 +38,7 @@ export type RepoInfoData = {
 export type RepoConfigData = { readonly config: GitRepoConfig | null; readonly error: ErrorInfo };
 
 /**
- * Read the repository info of a `loadRepoInfo` request, with the legacy error mapping: a failed
+ * Read the repository info of a `loadRepoInfo` request, with the error mapping: a failed
  * read answers the empty lists plus the error message, never a rejection (the handler clears the
  * error when the repository no longer exists).
  */
@@ -93,7 +93,7 @@ export async function verifyCommitSignature(read: GitBackend, hasGit: boolean, r
 
 /**
  * The stash/commit details read of the Commit Details View: the backend read plus the signature
- * verification follow-up, with the legacy `{ commitDetails, error }` response shape.
+ * verification follow-up, with the `{ commitDetails, error }` response shape.
  */
 export async function readCommitDetails(
 	read: GitBackend,
@@ -143,7 +143,7 @@ export async function readTagDetails(read: GitBackend, hasGit: boolean, repo: st
 	}
 }
 
-/** The Commit Comparison view's file list, with the legacy argument checks and error mapping. */
+/** The Commit Comparison view's file list, with the argument-injection checks and error mapping. */
 export async function readCommitComparison(read: GitBackend, t: Localize, repo: string, fromHash: string, toHash: string): Promise<CommitComparisonData> {
 	const unsafe = checkUnsafeGitArgs(t,
 		['fromHash', fromHash === UNCOMMITTED ? null : fromHash, 'hash'],
@@ -183,7 +183,7 @@ export function readStashDetails(read: GitBackend, hasGit: boolean, repo: string
 /**
  * The remotes of a repository whose branches contain the given commit (`git branch -r --contains`,
  * the preflight of `pushTag` and of the earlier-commit `editCommitMessage`): the read backend has
- * no dedicated method, so the runner asks the CLI, exactly as the legacy private helper did.
+ * no dedicated method, so the runner asks the CLI directly.
  * @returns The known remotes that contain the commit; the empty list on a failed read means
  *          "unknown" and must not be mistaken for "none" by callers that guard on it.
  */
@@ -200,7 +200,7 @@ export async function getRemotesContainingCommit(runner: GitRunnerPort, repo: st
 }
 
 /**
- * The composed repository configuration read of the Settings widget (the legacy `loadConfig`):
+ * The composed repository configuration read of the Settings widget (the `loadConfig` request):
  * the backend's config snapshot (remotes with URLs, push default, diff tools), the branch
  * remote/pushRemote map and the user identity from the local and global config lists, and the
  * author list — one response, cached per repository.
@@ -268,7 +268,7 @@ function configValue(configs: { [key: string]: string }, key: string): string | 
 }
 
 /**
- * The per-repository configuration cache of the legacy `DataSource.getConfig`: the composed read
+ * The per-repository configuration cache: the composed read
  * costs several Git reads, so identical requests (same remote set) are served from it, an error
  * result is not cached (it may be transient), and `invalidate` drops one repository or all.
  */
@@ -297,7 +297,7 @@ export class RepoConfigCache {
 	}
 }
 
-/** The failure message of a rejected backend read, as the legacy mappings surfaced it. */
+/** The failure message of a rejected backend read. */
 function errorText(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }

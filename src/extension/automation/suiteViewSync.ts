@@ -161,7 +161,7 @@ export async function syncViewAfterReseed(server: AutomationServer, repo: string
 		+ 'if(b===null)throw new Error("refresh button missing");'
 		+ 'b.click();'
 		+ 'return new Promise(function(resolve,reject){var n=0;var t=function(){'
-		// The hard refresh anchors the rebuild on the commit the view was reading (task 5.10's
+		// The hard refresh anchors the rebuild on the commit the view was reading (the
 		// pre-collapse anchor): after a read phase that scrolled deep (Load More Commits), the
 		// reloaded list renders back around that DEEP position and the newest row never enters
 		// the windowed DOM. The wait needs the TOP of the list, so every tick pins the scroll

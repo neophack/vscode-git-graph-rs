@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The Workspace Trust gate (OPTIMIZATION-PLAN V2) over the compat probe: absent the API
+ * The Workspace Trust gate over the compat probe: absent the API
  * (VS Code < 1.56, test stubs) the gate is permanently trusted and never fires — the pre-1.56
  * behaviour — while a present API is mirrored, transitions included.
  */

@@ -7,17 +7,16 @@
  * environment assembly (askpass injection), cancellation, output limits, `windowsHide` and the
  * error shape are decided once.
  *
- * Behaviour parity with the legacy `DataSource` spawns (`src/dataSource.ts`): the executable is
- * spawned as `spawn(gitPath, args, { cwd, env })` with `env = Object.assign({}, process.env,
- * askpassEnv, extraEnv)`; there are no `-c` preamble arguments (dev1.1's `COMMON_CONFIG` is not
- * part of this tree's legacy behaviour, so it is not reproduced here).
+ * The executable is spawned as `spawn(gitPath, args, { cwd, env })` with
+ * `env = Object.assign({}, process.env, askpassEnv, extraEnv)`; there are no `-c` preamble
+ * arguments.
  */
 
 import * as cp from 'child_process';
 
 import { GitError } from './errors';
 
-/** A located Git executable, as discovered by the host (legacy `utils/findGit.ts`). */
+/** A located Git executable, as discovered by the host (`executable/findGit.ts`). */
 export interface GitExecutable {
 	readonly path: string;
 	readonly version: string;
@@ -132,7 +131,7 @@ export class GitProcess {
 		private readonly spawnFn: GitSpawnFn = cp.spawn as unknown as GitSpawnFn,
 		private readonly askpass: AskpassEnvProvider = () => ({}),
 		/**
-		 * Awaited before every {@link run}: the background Git resolution of OPTIMIZATION-PLAN V1,
+		 * Awaited before every {@link run}: the background Git resolution,
 		 * so a write or CLI read issued while the `git --version` validation is still in flight
 		 * waits for it instead of failing with "no Git" (undefined keeps runs immediate).
 		 */
@@ -161,8 +160,8 @@ export class GitProcess {
 
 	/**
 	 * Spawn Git for a streaming read, the entry the composition root wires into the views'
-	 * `GitStreamSpawner` port (same behaviour as {@link stream}; kept under its historical name
-	 * so the wiring does not move with this refactor).
+	 * `GitStreamSpawner` port (same behaviour as {@link stream}, exposed under the port-facing
+	 * name so the wiring stays stable).
 	 */
 	spawnStream(args: ReadonlyArray<string>, cwd: string): SpawnedStream {
 		return this.stream(args, cwd);
@@ -190,7 +189,7 @@ export class GitProcess {
 	 * the run was cancelled (`cancelled`), or the output exceeded `maxBuffer` (`tooLarge`).
 	 */
 	async run(args: ReadonlyArray<string>, options: RunOptions): Promise<RunResult> {
-		// Git-CLI-dependent paths await the background resolution first (OPTIMIZATION-PLAN V1):
+		// Git-CLI-dependent paths await the background resolution first:
 		// a run issued while the executable is still being validated waits for it here rather
 		// than reporting "no Git" for the few dozen milliseconds the validation takes.
 		if (this.awaitReady !== undefined) await this.awaitReady();
@@ -205,7 +204,7 @@ export class GitProcess {
 		const maxBuffer = options.maxBuffer !== undefined ? options.maxBuffer : DEFAULT_MAX_BUFFER;
 
 		return new Promise<RunResult>((resolve, reject) => {
-			// Same environment assembly as the legacy DataSource spawns: the process environment,
+			// Environment assembly: the process environment,
 			// then the askpass variables, then the caller's extras last (they win).
 			const env: { [name: string]: string } = Object.assign({}, process.env, this.askpass());
 			if (options.env !== undefined) Object.assign(env, options.env);
@@ -255,8 +254,8 @@ export class GitProcess {
 				}));
 			});
 
-			// stdin is always closed (with the input when there is one), exactly like the legacy
-			// spawns: a Git command waiting on an editor or an unclosed stdin must not hang. The
+			// stdin is always closed (with the input when there is one):
+			// a Git command waiting on an editor or an unclosed stdin must not hang. The
 			// write may still fail (EPIPE) when the command exits before consuming its input —
 			// the batched object checks read their answer from the exit — so that error is
 			// ignored (an unhandled stream 'error' would take the host down).

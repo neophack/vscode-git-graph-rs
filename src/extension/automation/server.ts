@@ -220,7 +220,7 @@ export class AutomationServer {
 		// (dialogs answered with their primary action, error toasts captured and suppressed)
 		// for the whole run window below — through the handler itself and the post-run steps.
 		// Notifications that route through the host's UiPort land in the INSTALLED SCRIPTED PORT
-		// instead (the suite runner installs one for the whole run, task 4.10): its records are
+		// instead (the suite runner installs one for the whole run): its records are
 		// sliced from this baseline and merged with the window-level capture, so every raised
 		// notification is seen exactly once regardless of which path took it.
 		const scriptedBaseline = activeScriptedUiPort()?.recordedCalls().length ?? 0;

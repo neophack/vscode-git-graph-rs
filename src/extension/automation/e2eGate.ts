@@ -5,7 +5,7 @@ import { HostBridge } from './hostBridge';
 import { AutomationServer } from './server';
 
 /**
- * The E2E entry's in-host eyes and hands (plan tasks 0.6/1.10, §6.8.1). The entry
+ * The E2E entry's in-host eyes and hands. The entry
  * (test/e2e/entry.ts) runs in the same extension host as the bundled extension, but in its own
  * module registry: it cannot import these modules directly without creating a SECOND copy of the
  * automation subsystem — a copy whose GraphViewPort no view ever publishes to, so every view
@@ -52,7 +52,7 @@ export interface E2eProbe {
 
 /**
  * Snapshot the live editor for the E2E entry: the view/repository state (through the same
- * GraphViewPort the engine reads), the extension's log file tail (failure evidence §6.8.6), and
+ * GraphViewPort the engine reads), the extension's log file tail (the failure evidence), and
  * the editor version. Purely observational — never drives anything.
  */
 export function e2eProbe(logger: Logger): E2eProbe {

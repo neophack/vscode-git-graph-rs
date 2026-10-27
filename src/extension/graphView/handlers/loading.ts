@@ -36,7 +36,7 @@ export const loadCommits: Handler<'loadCommits'> = {
 export const loadView: Handler<'loadView'> = {
 	mutates: MUTATING_COMMANDS.loadView,
 	handle: (msg, ctx) => {
-		// The merged open path (task 4.7): the panel began this read at creation and pushes the
+		// The merged open path: the panel began this read at creation and pushes the
 		// result on `ready`; a request arriving here (e.g. an automation replay) answers with a
 		// fresh merged read. Both route through the loader, which owns the cancellation.
 		ctx.view.noteRefreshId('loadCommits', msg.refreshId);

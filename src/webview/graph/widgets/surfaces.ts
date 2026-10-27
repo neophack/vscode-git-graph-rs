@@ -1,5 +1,5 @@
 /**
- * The call surfaces of the on-demand widgets (REFACTOR-PLAN task 5.9): what the rest of the view
+ * The call surfaces of the on-demand widgets: what the rest of the view
  * may invoke on the Find widget, the Settings widget, the Reflog view, the Worktree dialog and
  * the Statistics view. Each widget class implements its surface (checked at compile time), and
  * the view's context holds LAZY facades implementing the same surface - the module loads through
@@ -14,7 +14,7 @@ import type { FindWidgetState, SettingsWidgetState } from '../state/types';
 
 /**
  * The Find widget's surface (see {@link FindWidget} for the implementation). The widget joins
- * the view lazily (task 5.9's on-demand split), so a not-yet-loaded widget answers every
+ * the view lazily, so a not-yet-loaded widget answers every
  * existence question as "not open, not searching": no query can exist before the module does.
  */
 export interface FindWidgetSurface {

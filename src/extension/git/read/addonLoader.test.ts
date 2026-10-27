@@ -19,7 +19,7 @@ import {
 import { GitBackendError } from './types';
 
 /**
- * Cancellation paths of the engine adapter (REFACTOR-PLAN task 2.9): how `requestId` and
+ * Cancellation paths of the engine adapter: how `requestId` and
  * `cancel()` travel through the single request seam, and how the engine's structured
  * `cancelled` envelope surfaces as a `GitBackendError`. Everything runs against a fake addon
  * injected through the loader option - no `.node` binary is ever loaded, so these tests pass on

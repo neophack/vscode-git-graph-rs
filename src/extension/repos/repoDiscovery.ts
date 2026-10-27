@@ -5,10 +5,10 @@ import { evalPromises } from '../git/process/childProcess';
 import { getPathFromUri, pathWithTrailingSlash, realpath } from '../platform/paths';
 
 /**
- * The repository discovery seam of the repository manager (REFACTOR-PLAN §3.3 / Appendix A):
+ * The repository discovery seam of the repository manager:
  * the directory search that finds repositories in (and below) workspace folders, the submodule
- * scan of a known repository, and the file-system predicates the search rests on. Extracted
- * from the former flat src/repoManager.ts; the search takes its repository lookups as
+ * scan of a known repository, and the file-system predicates the search rests on. The search
+ * takes its repository lookups as
  * dependencies so the recursion can be tested without a Git backend.
  */
 
@@ -21,8 +21,8 @@ export interface RepoRootReader {
 }
 
 /**
- * Resolve the root of the repository containing the specified path over the read backend (the
- * port of the legacy `DataSource.repoRoot`): the answer is normalised, and on Windows a UNC
+ * Resolve the root of the repository containing the specified path over the read backend
+ * (GitBackend's `repoRoot` read): the answer is normalised, and on Windows a UNC
  * root Git substituted for a mapped network drive is mapped back onto the drive letter, walking
  * the asked path's ancestors so a symlinked directory still resolves to the known spelling.
  * @param read The read backend (or any structural stand-in) answering `repoRoot`.
@@ -68,8 +68,8 @@ export interface SubmoduleReader {
 }
 
 /**
- * List the submodules of a repository, normalised to the extension's path spelling (the port of
- * the legacy `DataSource.getSubmodules`): the backends return native-separator paths on Windows,
+ * List the submodules of a repository, normalised to the extension's path spelling (GitBackend's
+ * `getSubmodules` read): the backends return native-separator paths on Windows,
  * while every repository path these are compared against is normalised. A failed read answers
  * the empty list (no submodule of a repository that cannot be read).
  */

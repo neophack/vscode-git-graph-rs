@@ -14,8 +14,8 @@ import { Disposable, toDisposable } from '../../../shared/util/disposable';
  * view with its difference navigation, or the picture view with its pixel difference.
  *
  * The native diff editor cannot show binary files (both panes would be empty), so the Commit
- * Comparison View's "open diff" button sends binary files here instead. The host is the controller
- * (REFACTOR-PLAN task 6.1): it owns the panel lifecycle and the typed message handling, serves an
+ * Comparison View's "open diff" button sends binary files here instead. The host is the controller:
+ * it owns the panel lifecycle and the typed message handling, serves an
  * external-script HTML shell, and tells the frontend which of its two views to enter through the
  * `ready` / `init` boot pair; the frontend itself lives in src/webview/binaryCompare (bundled into
  * media/binaryCompare.min.js) and is exactly the same code the Commit Comparison View embeds.
@@ -102,7 +102,7 @@ export class BinaryCompareView extends Disposable {
 	/**
 	 * The page shell: a slim header naming the file and the two revisions, and the comparison area
 	 * filling the rest. The stylesheet and the page's bundle are external files under a nonce - the
-	 * CSP allows no inline scripts or styles at all (task 6.1).
+	 * CSP allows no inline scripts or styles at all.
 	 */
 	private getHtml(filePath: string, file: GitFileChange) {
 		const nonce = getNonce();

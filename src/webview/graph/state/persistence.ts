@@ -17,12 +17,12 @@ export interface PersistedWidgets {
 }
 
 /**
- * The schema version stamped onto the persisted webview state (REFACTOR-PLAN §3.7.2 "User
- * data"): the WebViewState FIELDS are a frozen public contract (§2.2, the same as v1.0), so
- * the version travels as an extra field on the persisted record rather than as a reshape.
- * Readers written before versioning existed answer the same record without the stamp.
+ * The schema version stamped onto the persisted webview state: the WebViewState FIELDS are a
+ * frozen public contract (the same as v1.0), so the version travels as an extra field on the
+ * persisted record rather than as a reshape. Readers written before versioning existed
+ * answer the same record without the stamp.
  *
- * Version 2 added the `firstPaint` snapshot field (3.8.2 D10, task 5.9).
+ * Version 2 added the `firstPaint` snapshot field.
  */
 export const WEBVIEW_STATE_VERSION = 2;
 
@@ -38,12 +38,12 @@ export type VersionedWebViewState = WebViewState & { readonly version: number };
  */
 export const WEBVIEW_STATE_MIGRATIONS: ReadonlyArray<(state: Record<string, unknown>) => Record<string, unknown>> = [
 	(state) => state,
-	// v1 -> v2 (task 5.9): the first-paint snapshot field arrives - a v1 record simply has none
+	// v1 -> v2: the first-paint snapshot field arrives - a v1 record simply has none
 	(state) => ({ ...state, firstPaint: state.firstPaint === undefined ? null : state.firstPaint })
 ];
 
 /**
- * Leniently decode a persisted webview state to the current schema (§3.7.2): a record
+ * Leniently decode a persisted webview state to the current schema: a record
  * without a version stamp is treated as version 0 and migrated; a record written by a NEWER
  * version is kept as-is (unknown fields and its own version preserved), so a downgraded
  * extension never destroys what a newer one saved. Non-record data answers NULL - the
@@ -68,7 +68,7 @@ export function decodePersistedWebViewState(raw: unknown): VersionedWebViewState
 	return { ...state, version: WEBVIEW_STATE_VERSION } as VersionedWebViewState;
 }
 
-/** Stamp a state for persisting (strict write, §3.7.2). */
+/** Stamp a state for persisting (strict write). */
 export function encodePersistedWebViewState(state: WebViewState): VersionedWebViewState {
 	return { ...state, version: WEBVIEW_STATE_VERSION };
 }

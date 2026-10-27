@@ -1,6 +1,6 @@
 /**
- * Table-driven argv tests for the write operations: every operation, every option branch, with
- * the argv the legacy `DataSource` (`src/dataSource.ts`) built for it. The tests run against the
+ * Table-driven argv tests for the write operations: every operation, every option branch,
+ * asserting the exact argv it builds. The tests run against the
  * pure op functions only — no process, no config, no vscode.
  */
 
@@ -255,7 +255,7 @@ describe('remote operations', () => {
 		expect(argvOf(editRemote({ nameOld: 'o', nameNew: 'o', urlOld: 'u', urlNew: 'u', pushUrlOld: null, pushUrlNew: null }))).toEqual([]);
 		expect(argvOf(editRemote({ nameOld: 'o', nameNew: 'p', urlOld: null, urlNew: null, pushUrlOld: null, pushUrlNew: null })))
 			.toEqual([['remote', 'rename', 'o', 'p']]);
-		// URL replaced, set and removed (the legacy new-then-old argument order).
+		// URL replaced, set and removed (the new-then-old argument order).
 		expect(argvOf(editRemote({ nameOld: 'o', nameNew: 'o', urlOld: 'a', urlNew: 'b', pushUrlOld: null, pushUrlNew: null })))
 			.toEqual([['remote', 'set-url', 'o', 'b', 'a']]);
 		expect(argvOf(editRemote({ nameOld: 'o', nameNew: 'o', urlOld: null, urlNew: 'b', pushUrlOld: null, pushUrlNew: null })))

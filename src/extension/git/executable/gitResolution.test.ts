@@ -4,7 +4,7 @@ import { createGitResolution, type GitExecutableCache } from './gitResolution';
 import type { GitExecutable } from './findGit';
 
 /**
- * The deferred Git resolution (OPTIMIZATION-PLAN V1) is tested with an injected `find` (no real
+ * The deferred Git resolution is tested with an injected `find` (no real
  * `git --version` spawn) and a plain record standing in for the globalState cache: the contract
  * under test is that nothing waits for the spawn — `current()` answers the persisted record
  * immediately — while `ready()` and `onResolved` answer with the validated result, and that an

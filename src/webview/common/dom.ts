@@ -147,14 +147,14 @@ export function makeKeyboardActivatableCollection(root: ParentNode, selector: st
  * Initialise the scroll position of an element and observe its scrolling: `onScroll` runs on
  * every scroll, `onScrolled` once the scrolling has rested for 250 ms (when the position should
  * be saved).
- * @param group When given (a component's listener store, F3), the scroll listener is registered
+ * @param group When given (a component's listener store), the scroll listener is registered
  * there and removed with it; otherwise it lives on the element itself.
  */
 export function observeElemScroll(elem: HTMLElement | null, initialScrollTop: number, onScroll: (scrollTop: number) => void, onScrolled: () => void, group?: ListenerGroup) {
 	if (elem === null) return;
 	let timeout: number | null = null;
 	elem.scroll(0, initialScrollTop);
-	// Passive (task 5.10): the handler never prevents the default scroll
+	// Passive: the handler never prevents the default scroll
 	const listener = () => {
 		onScroll(elem.scrollTop);
 		if (timeout !== null) window.clearTimeout(timeout);

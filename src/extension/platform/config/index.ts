@@ -1,5 +1,5 @@
 /**
- * The ONE configuration module (REFACTOR-PLAN 3.3 + OPTIMIZATION-PLAN A4), split by role:
+ * The ONE configuration module, split by role:
  *
  * - `schema.ts` — the checked-in `ConfigSnapshot` interface and the typed
  *   `field -> { key, type, default }` table mirroring `package.json#contributes.configuration`

@@ -21,11 +21,11 @@ import { doesFileExist } from './paths';
 import { getGitExecutableFromPaths } from '../git/executable/findGit';
 import type { GitExecutable } from '../git/process/gitProcess';
 
-// The platform adapter instances of this module (task 4.10), built on first use: merely
+// The platform adapter instances of this module, built on first use: merely
 // importing this module never touches the vscode module surface (test fakes inject minimal
 // `vscode` mocks), while every native-UI access still dispatches through one captured window.
 // Property lookups happen at call time, so the automation suite's runtime monkey-patching of
-// `vscode.window` keeps working until it is replaced by the ScriptedUiPort (plan 6.8.2). This
+// `vscode.window` keeps working until it is replaced by the ScriptedUiPort. This
 // is the interim production binding of {@link uiPort} until src/extension/platform/uiPort.ts
 // gains its own implementation (INVENTORY.md #3/#5/#13-#24): when it ships, only this lazily
 // built instance is rebound and no call site changes.
@@ -51,12 +51,12 @@ function isMessageOptions<T extends MessageChoice>(value: MessageOptionsLike | T
 }
 
 /**
- * The scripted-UiPort override (REFACTOR-PLAN task 4.10 / §6.8.2): the automation and E2E builds
+ * The scripted-UiPort override: the automation and E2E builds
  * install a ScriptedUiPort over this seam so every native dialog the host raises is answered from
  * a per-scenario script and recorded for assertions — the replacement for both the suite runner's
  * `nativeSaveDialog` skip and the command-mode `vscode.window` monkey-patching. Production never
  * installs one (this stays NULL and every method below takes its normal path), so the seam costs
- * one null check per dialog; the implementation lives in src/automation/scriptedUiPort.ts and is
+ * one null check per dialog; the implementation lives in src/extension/automation/scriptedUiPort.ts and is
  * absent from the default bundle entirely.
  */
 let scriptedUiPort: UiPort | null = null;
@@ -74,7 +74,7 @@ export function setScriptedUiPort(port: UiPort | null): UiPort | null {
 
 /**
  * Where the editor group newly opened editors and diffs land in comes from: the composition
- * root points this at the configuration service's current snapshot (OPTIMIZATION-PLAN A4 — the
+ * root points this at the configuration service's current snapshot (the
  * `openNewTabEditorGroup` setting is not re-read per operation; the source answers from the
  * held snapshot). Unwired (a bare unit test) it answers the manifest default, the Active group.
  */
@@ -117,7 +117,7 @@ function showMessage<T extends MessageChoice>(method: 'showInformationMessage' |
 }
 
 /**
- * The interim production UiPort (task 4.10): the modal/dialog/input/pick surface of the host,
+ * The interim production UiPort: the modal/dialog/input/pick surface of the host,
  * typed against src/extension/platform/uiPort.ts so the E2E build can inject a ScriptedUiPort
  * over the same seam. The plain message forms delegate to the platform Notifications adapter.
  */
@@ -179,8 +179,8 @@ class WindowUiPort implements UiPort {
 }
 
 /**
- * The host's native-UI port (task 4.10): every modal, input, pick and dialog flow of the host
- * runs through this instance, so the flows are replayable by a scripted port and the 4.10 ESLint
+ * The host's native-UI port: every modal, input, pick and dialog flow of the host
+ * runs through this instance, so the flows are replayable by a scripted port and the ESLint
  * rule can keep direct `vscode.window.show*` calls out of the host modules.
  */
 export const uiPort: UiPort = new WindowUiPort();
@@ -456,7 +456,7 @@ export function viewScm(): Thenable<ErrorInfo> {
 
 /**
  * Show a Visual Studio Code Information Message Dialog with the specified message.
- * Delegates to the platform notifications adapter (task 4.10, INVENTORY.md #9); every remaining
+ * Delegates to the platform notifications adapter (INVENTORY.md #9); every remaining
  * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */
@@ -466,7 +466,7 @@ export function showInformationMessage(message: string) {
 
 /**
  * Show a Visual Studio Code Error Message Dialog with the specified message.
- * Delegates to the platform notifications adapter (task 4.10, INVENTORY.md #10); every remaining
+ * Delegates to the platform notifications adapter (INVENTORY.md #10); every remaining
  * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */
@@ -477,7 +477,7 @@ export function showErrorMessage(message: string) {
 let restrictedModeNoticeShown = false;
 
 /**
- * The Restricted Mode notice (OPTIMIZATION-PLAN V2, decision D-1): shown once per session, on
+ * The Restricted Mode notice: shown once per session, on
  * activation and again on every transition into an untrusted workspace. The per-session flag
  * lives here because the notice is a native-UI presentation, not composition state.
  * @param logger The log the notice is mirrored to.
@@ -491,7 +491,7 @@ export function showRestrictedModeNoticeOnce(logger: { log(message: string): voi
 }
 
 /**
- * The `git.path` setting changed (OPTIMIZATION-PLAN V1): re-resolve a Git executable over the
+ * The `git.path` setting changed: re-resolve a Git executable over the
  * configured paths, hand the result to the host's executable event, and rescan the workspace.
  * Both outcomes are announced: the found executable with a localized "now using" notice, the
  * failure with one naming the paths that were tried.
@@ -527,7 +527,7 @@ function readManifestVersion(extensionPath: string): string {
 }
 
 /**
- * Show an informational message once per extension version (OPTIMIZATION-PLAN V1): the flag is
+ * Show an informational message once per extension version: the flag is
  * keyed by the extension version in globalState, so an update shows the message again while a
  * plain reload does not. The "no engine for this platform" and "running without Git" notices
  * both go through here — their information lives on in the Settings widget's backend section

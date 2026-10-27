@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BackgroundChangePoller } from './poller';
 
 /**
- * Background poller tests (REFACTOR-PLAN task 4.4): the signature comparison that detects
+ * Background poller tests: the signature comparison that detects
  * changes the file watcher missed, the baseline discipline across ticks and repository
  * switches, and the hostile-input paths (momentarily unreadable repository, throwing read).
  */

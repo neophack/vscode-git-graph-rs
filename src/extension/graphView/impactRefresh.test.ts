@@ -11,7 +11,7 @@ import type { RequestLoadCommits, ResponseLoadCommits } from '../../shared/proto
 import type { ResponseMessage } from '../../shared/protocol/messages';
 
 /**
- * Impact refresh tests (REFACTOR-PLAN task 4.8, §3.8.3): the minimal refresh per effect class
+ * Impact refresh tests: the minimal refresh per effect class
  * over a REAL CommitLoader (the ImpactRefreshView), recording every read the engine would see
  * —
  * - a refs-only write sends EXACTLY `Refs` + `Annotate` to the engine and NO traversal request;

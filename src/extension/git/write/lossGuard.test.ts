@@ -1,5 +1,5 @@
 /**
- * Tests for the data-loss guards: the exact legacy sequences over a scripted text runner —
+ * Tests for the data-loss guards: the exact sequences over a scripted text runner —
  * which probes run, in which order, which failures are swallowed, and which warning comes out.
  */
 

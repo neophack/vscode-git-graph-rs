@@ -2,10 +2,8 @@ import type { GitCommitData } from '../git/read/types';
 
 /**
  * Whether the complete (remote-refs-included) response of the remote-refs follow-up differs from
- * the deferred (local-only) response already sent, and is therefore worth sending as a follow-up
- * (task 4.3). Ported verbatim from src/gitGraphView.ts, whose characterization tests
- * (tests/gitGraphView.test.mjs) pin this behavior; the same cases are mirrored in
- * commitLoader.test.ts.
+ * the deferred (local-only) response already sent, and is therefore worth sending as a follow-up.
+ * The behavior is pinned by the cases mirrored in commitLoader.test.ts.
  *
  * Comparing only each commit's `remotes` labels (as an earlier version did) misses two real
  * differences: a commit can differ at the same index without any `remotes` label changing (the

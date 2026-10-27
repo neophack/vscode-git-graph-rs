@@ -1,5 +1,5 @@
 /**
- * The pinned-commit jump (OPTIMIZATION-PLAN §6 F2): jumping to a commit that is not in the
+ * The pinned-commit jump: jumping to a commit that is not in the
  * loaded page. A sub-machine that only OBSERVES load completions (`checkPending` runs inside the
  * commit page's finalisation) plus its own one-shot countCommitsBefore probe — kept OUT of the
  * load machine's transition table on purpose (see the loadMachine module docs): folding it in

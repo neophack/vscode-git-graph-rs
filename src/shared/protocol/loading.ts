@@ -1,7 +1,7 @@
 /**
- * The loading-domain messages of the Git Graph view protocol (REFACTOR-PLAN task 4.1):
+ * The loading-domain messages of the Git Graph view protocol:
  * the boot handshake, the repository/config/commit loads, the commit-body, reflog and
- * statistics reads, and the avatar fetch. Split out of src/types/messages.ts verbatim;
+ * statistics reads, and the avatar fetch. Split out of the base protocol module verbatim;
  * the domain mirrors the host handlers in src/extension/graphView/handlers/loading.ts.
  */
 
@@ -139,7 +139,7 @@ export interface ResponseReflog extends ResponseWithErrorInfo {
 }
 
 /**
- * The merged open-path request (REFACTOR-PLAN task 4.7): one round trip carrying the repository
+ * The merged open-path request: one round trip carrying the repository
  * info AND the first commit page. The host begins this read itself when the panel is created and
  * pushes the result as soon as the page reports `ready` — the webview's initial boot sends no
  * loadRepoInfo/loadCommits requests of its own. The request form stays in the protocol for a
