@@ -22,12 +22,13 @@
  *                                                      # `link.exe` is on the PATH.
  *
  * A target of a foreign OS family is built through `napi build --cross-compile`, which uses
- * cargo-zigbuild (Linux and macOS targets; `zig` must be on the PATH) or cargo-xwin (Windows
- * targets), installing either on first use. A target of the host's own OS family uses the
- * platform's own cross linker (the Visual Studio "C++ ARM64 build tools" component on Windows,
- * gcc-aarch64-linux-gnu on Linux). The binaries that ship come from
- * `.github/workflows/native-build.yml`, which builds the common targets on native runners; the
- * niche ones it skips fall back to the `git` CLI backend.
+ * cargo-xwin (Windows targets) — Linux targets never reach the napi path at all, because every
+ * Linux build goes through `cargo zigbuild` below. Windows arm64 on a machine without the VS
+ * "C++ ARM64 build tools" component builds through the forced same-family cross path, where the
+ * linker lookup would otherwise fall through to whatever `link.exe` is on the PATH.
+ *
+ * The binaries that ship come from `.github/workflows/native-build.yml`, which builds the
+ * common targets on native runners; the niche ones it skips fall back to the `git` CLI backend.
  *
  * Binary compatibility floors (REFACTOR-PLAN §3.7.4, task 2.8 — see docs/adr/adr-0002):
  *

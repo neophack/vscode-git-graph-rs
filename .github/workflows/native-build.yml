@@ -152,13 +152,12 @@ jobs:
         if: runner.os == 'Linux'
         run: pip install ziglang
 
-      # The only target that needs anything beyond the Rust toolchain.
-      - name: Install the cross-linker for arm64 Linux
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc' >> "$GITHUB_ENV"
+      # No target needs a linker beyond the Rust toolchain: every Linux build goes
+      # through cargo zigbuild, whose zig is also the linker - a target-specific
+      # CARGO_TARGET_*_LINKER (the gcc-aarch64 cross linker this job once installed)
+      # would override zig and pin the glibc floor to the runner's own libc instead
+      # of the 2.17 the .2.17 target suffix promises (the arm64 leg's first real
+      # binary-compat run caught exactly that).
 
       - name: Build the addon
         run: node scripts/build-addon.mjs --release --target ${{ matrix.target }}

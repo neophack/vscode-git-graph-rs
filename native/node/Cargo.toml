@@ -26,8 +26,10 @@ doc_markdown = "warn"
 
 [dependencies]
 git-graph-core = { path = "../core" }
-napi = { version = "3", default-features = false, features = ["napi3", "dyn-symbols"] }
-napi-derive = "3"
+# cargo-deny's wildcard ban (deny.toml) rejects single-component version reqs: name at
+# least major.minor. The caret semantics are unchanged (^3.12 still takes 3.13+).
+napi = { version = "3.12", default-features = false, features = ["napi3", "dyn-symbols"] }
+napi-derive = "3.6"
 
 [build-dependencies]
-napi-build = "2"
+napi-build = "2.4"
