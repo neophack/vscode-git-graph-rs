@@ -72,16 +72,16 @@ describe('BufferedQueue', () => {
 	});
 });
 
-	it('dispose on an idle queue with a drained buffer is a clean no-op', async () => {
-		// The dispose callback's no-pending-timer side: everything flushed, the timeout fired
-		// and nulled, and the queue torn down afterwards.
-		const processed: string[] = [];
-		const queue = new BufferedQueue(async (item: string) => {
-			processed.push(item);
-			return true;
-		}, () => {}, 10);
-		queue.enqueue('x');
-		await waitFor(() => processed.length === 1);
-		queue.dispose();
-		expect(processed).toEqual(['x']);
-	});
+it('dispose on an idle queue with a drained buffer is a clean no-op', async () => {
+	// The dispose callback's no-pending-timer side: everything flushed, the timeout fired
+	// and nulled, and the queue torn down afterwards.
+	const processed: string[] = [];
+	const queue = new BufferedQueue(async (item: string) => {
+		processed.push(item);
+		return true;
+	}, () => {}, 10);
+	queue.enqueue('x');
+	await waitFor(() => processed.length === 1);
+	queue.dispose();
+	expect(processed).toEqual(['x']);
+});
