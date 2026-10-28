@@ -702,6 +702,41 @@ fn reads_stashes_with_their_selectors_and_base_commits() {
 }
 
 #[test]
+fn a_branch_filter_still_walks_the_base_of_a_stash() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "base");
+    repo.git(&["checkout", "-q", "-b", "feature"]);
+    let feature = repo.commit_file("b.txt", "2", "feature work");
+    repo.git(&["checkout", "-q", "main"]);
+    let main_head = repo.commit_file("a.txt", "3", "main work");
+    // A stash taken on main: its base (main's head) is reachable from no selected branch.
+    repo.write("a.txt", "stashed change");
+    repo.git(&["stash", "push", "--quiet", "-m", "the stash"]);
+    let stash = open(&repo).stashes().unwrap()[0].hash.clone();
+
+    let mut options = view_options(100);
+    options.branches = Some(vec!["feature".to_string()]);
+    let page = load(&repo, &options);
+
+    // The CLI reference walks the stash bases as tips whichever branches are selected
+    // (cli/log.ts appends them after its own branch selection), so the engine must too.
+    let hashes: Vec<&str> = page.commits.iter().map(|c| c.hash.as_str()).collect();
+    assert!(
+        hashes.contains(&feature.as_str()),
+        "the selected branch: {hashes:?}"
+    );
+    assert!(
+        hashes.contains(&main_head.as_str()),
+        "the stash's base commit, off the selected branch: {hashes:?}"
+    );
+    assert!(
+        hashes.contains(&stash.as_str()),
+        "the stash's own row: {hashes:?}"
+    );
+}
+
+#[test]
 fn records_the_untracked_files_of_a_stash_taken_with_them() {
     require_git!();
     let mut repo = TestRepo::new();

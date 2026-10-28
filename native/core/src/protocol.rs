@@ -218,7 +218,7 @@ protocol! {
     };
     /// A file's text at a revision: a commit-ish, `:index` for the staged copy or `*` for the
     /// working tree. Binary or non-UTF-8 files answer `contents: null`.
-    "fileContents" => FileContents(FileParams) -> CommitFile = |ctx, p| file_contents(&*ctx.repo()?, &p.revision, &p.path);
+    "fileContents" => FileContents(FileParams) -> CommitFile = |ctx, p| crate::read::blob::file(&*ctx.repo()?, &p.revision, &p.path);
     /// The unified diff of one file in one commit, against its first parent.
     "fileDiff" => FileDiff(FileParams) -> String = |ctx, p| crate::read::blob::commit_file_diff(&*ctx.repo()?, &p.revision, &p.path);
 
@@ -354,23 +354,11 @@ pub fn decode_request(request_json: &str) -> Result<Request> {
 }
 
 /// A file's raw bytes at one revision (a commit-ish, or `:index` for the staged copy), or `None`
-/// when the path does not exist there. The binary channel: the Node binding hands the bytes to
-/// JavaScript as a `Buffer`, never through a text encoding.
+/// when the path does not exist there. The binary channel, exercised by the crate's tests; the
+/// JSON protocol the Node binding speaks carries text answers only (`fileContents`), so nothing
+/// in the product reaches this entry point yet.
 pub fn file_bytes(repo_path: &str, revision: &str, path: &str) -> Result<Option<Vec<u8>>> {
     file_bytes_answer(repo_path, revision, path, &Cancel::none())
-}
-
-/// [`file_bytes`], named by a request id the host can cancel through. A single blob read has no
-/// loop to unwind mid-flight, but a cancellation that raced ahead of the read is honored rather
-/// than answered with bytes nobody is waiting for any more.
-pub fn file_bytes_with_id(
-    repo_path: &str,
-    revision: &str,
-    path: &str,
-    request_id: u32,
-) -> Result<Option<Vec<u8>>> {
-    let guard = Registry::global().register(request_id);
-    file_bytes_answer(repo_path, revision, path, &guard.token())
 }
 
 fn file_bytes_answer(
@@ -391,26 +379,6 @@ fn file_bytes_answer(
         }
     }))
     .unwrap_or_else(|panic| Err(Error::internal(panic_message(&panic))))
-}
-
-fn file_contents(repo: &Repo, revision: &str, path: &str) -> Result<CommitFile> {
-    if revision == crate::engine::WORKING_TREE {
-        let bytes = std::fs::read(repo.root().join(path))
-            .map_err(|e| Error::git(format!("{path}: {e}")))?;
-        let contents = String::from_utf8(bytes).ok();
-        let binary = match &contents {
-            None => true,
-            Some(text) => text.as_bytes()[..text.len().min(8000)].contains(&0),
-        };
-        return Ok(CommitFile {
-            contents: if binary { None } else { contents },
-            binary,
-        });
-    }
-    if revision == crate::engine::INDEX {
-        return crate::read::blob::index_file(repo, path);
-    }
-    crate::read::blob::commit_file(repo, revision, path)
 }
 
 /// Serialise an engine answer. The engine's own types cannot fail to serialise, but a failure

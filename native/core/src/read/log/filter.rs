@@ -8,19 +8,27 @@ use crate::error::{Result, ResultExt};
 use crate::model::CommitRecord;
 use crate::repository::Shallow;
 
+/// Pre-lowercase the author patterns once per walk: the per-commit match below runs for every
+/// commit a filtered walk reads (up to its safety limit), and formatting `"name <"` per author
+/// per commit is two fresh allocations inside that loop.
+pub(super) fn prepare_author_patterns(authors: &[String]) -> Vec<String> {
+    authors
+        .iter()
+        .map(|author| format!("{} <", author.to_lowercase()))
+        .collect()
+}
+
 /// `git log --author=<name>` runs as `--author=<name> <`, so the CLI backend matches a literal
 /// "Name <" prefix of "Name <email>" rather than "Name" as a free-floating substring — without the
 /// trailing "<", a name that is a textual prefix of another author's name (e.g. "Bob" inside
 /// "Bobby <bobby@x.com>") would match commits it should not. This mirrors that exactly, case-
 /// insensitively (case sensitivity is the one place this still deviates from a bare `git log`).
-pub(super) fn commit_matches_author(commit: &gix::Commit<'_>, authors: &[String]) -> Result<bool> {
+pub(super) fn commit_matches_author(commit: &gix::Commit<'_>, patterns: &[String]) -> Result<bool> {
     let author = commit
         .author()
         .git_ctx("Could not decode the commit author")?;
     let haystack = format!("{} <{}>", author.name, author.email).to_lowercase();
-    Ok(authors
-        .iter()
-        .any(|author| haystack.contains(&format!("{} <", author.to_lowercase()))))
+    Ok(patterns.iter().any(|pattern| haystack.contains(pattern)))
 }
 
 /// Did this commit change anything below one of `paths`?

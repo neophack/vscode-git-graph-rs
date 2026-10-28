@@ -92,12 +92,10 @@ pub fn order_records(
     }
 
     let mut ordered: Vec<CommitRecord> = Vec::with_capacity(limit.min(records.len()));
-    let mut taken = vec![false; records.len()];
     while let Some(next) = ready.pop() {
         if ordered.len() == limit {
             break;
         }
-        taken[next.index] = true;
         for parent in &records[next.index].parents {
             let Some(&parent_index) = index_of.get(parent.as_str()) else {
                 continue;
@@ -113,6 +111,8 @@ pub fn order_records(
                 sequence += 1;
             }
         }
+        // A commit enters the ready set exactly once (its pending count reaches zero exactly
+        // once), so no taken-mask is needed before the push.
         ordered.push(records[next.index].clone());
     }
 

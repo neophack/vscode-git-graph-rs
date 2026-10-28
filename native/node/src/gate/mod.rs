@@ -169,8 +169,11 @@ impl Gate {
             }
         }
         // The slot is ours: run the engine work right here on the libuv thread, holding no lock,
-        // exactly as the binding did before the gate existed.
-        let output = run();
+        // exactly as the binding did before the gate existed. The panic guard matters here even
+        // more than on a worker: an unwinding panic would cross napi's async-work C boundary,
+        // and the skipped in_flight decrement would leak the slot — two of those wedge every
+        // later engine request behind a gate that never frees a slot again.
+        let output = run_guarded(run);
         let mut state = self.lock();
         state.in_flight -= 1;
         self.work_ready.notify_all();
@@ -330,6 +333,16 @@ impl Gate {
     }
 }
 
+/// Run one engine compute so that a panic which slips past the engine's own protocol-boundary
+/// guards costs one error answer instead of the thread, its compute slot, and every promise
+/// behind it. The worker threads and the inline fast path of [`Gate::submit`] share it.
+fn run_guarded(run: impl FnOnce() -> EngineOutput) -> EngineOutput {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or_else(|_| {
+		r#"{"error":{"kind":"internal","message":"the engine compute panicked before the protocol boundary"}}"#
+			.to_owned()
+	})
+}
+
 /// One gate worker: take the oldest queued job a compute slot is free for, run it, complete it,
 /// forever.
 fn worker_loop() {
@@ -356,15 +369,7 @@ fn worker_loop() {
                 state = next;
             }
         };
-        let output = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or_else(
-			// The engine's entry points catch their own panics at the protocol boundary; this
-			// guard is for whatever slips past them, so a bug costs one error answer instead
-			// of the worker thread, its slot, and every promise behind it.
-			|_| {
-				r#"{"error":{"kind":"internal","message":"the engine compute panicked before the protocol boundary"}}"#
-					.to_owned()
-			},
-		);
+        let output = run_guarded(run);
         gate.complete(id, output);
     }
 }

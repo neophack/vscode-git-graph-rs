@@ -7,11 +7,13 @@ use gix::ObjectId;
 
 use crate::cancel::Cancel;
 use crate::error::{Result, ResultExt};
-use crate::model::CommitRecord;
+use crate::model::{CommitOrdering, CommitRecord};
 use crate::repository::{Repo, Shallow};
 use crate::text::{self, CommitEncoding};
 
-use super::filter::{commit_matches_author, rewrite_parents, touches_paths};
+use super::filter::{
+    commit_matches_author, prepare_author_patterns, rewrite_parents, touches_paths,
+};
 use super::window::{window_size, FILTERED_WALK_LIMIT};
 use super::WalkResult;
 
@@ -26,6 +28,10 @@ pub struct WalkOptions {
     pub authors: Option<Vec<String>>,
     /// Keep only commits that changed one of these repository-relative paths.
     pub filter_paths: Vec<String>,
+    /// The ordering the page is shown in: the window this walk cuts is ranked by the same date
+    /// git's traversal ranks by (`--author-date-order` ranks the ready set by author date, not
+    /// committer date), so the cut keeps the commits the ordering will show.
+    pub commit_ordering: CommitOrdering,
     /// The request's cancellation state, checked every [`crate::cancel::CHECK_INTERVAL`]
     /// iterations; [`Cancel::none`] (the default) makes the walk uncancellable, as before.
     pub cancel: Cancel,
@@ -51,6 +57,7 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
         .authors
         .as_deref()
         .filter(|authors| !authors.is_empty());
+    let author_patterns = authors.map(prepare_author_patterns);
     let filtering = !filter_paths.is_empty();
     // An author filter has the same problem as a path filter: matches can be sparse, so a fixed
     // window can run dry and silently return fewer commits than asked for (and hide "Load More"
@@ -112,8 +119,8 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
             // its tree — so the message and the dates of the commits about to be dropped are never
             // decoded. On a filtered walk through a large repository that is nearly every commit it
             // reads.
-            let author_ok = match authors {
-                Some(authors) => commit_matches_author(&commit, authors)?,
+            let author_ok = match &author_patterns {
+                Some(patterns) => commit_matches_author(&commit, patterns)?,
                 None => true,
             };
             if filtering {
@@ -154,6 +161,7 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
             window,
             options.first_parent_only,
             &options.cancel,
+            options.commit_ordering,
         )?;
     }
 
@@ -168,7 +176,9 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
     Ok(WalkResult { window: records })
 }
 
-/// The plain page's window: the first `window` commits of git's `--date-order`.
+/// The plain page's window: the first `window` commits of git's `--date-order` (or, under
+/// [`CommitOrdering::AuthorDate`], `--author-date-order` — the same topological walk with the
+/// ready set ranked by author date instead).
 ///
 /// `--date-order` is topological. A commit is shown only once every child of it has been shown,
 /// and among the commits whose children are all shown — the ready set — the newest committer
@@ -192,6 +202,7 @@ fn walk_date_order_window(
     window: usize,
     first_parent_only: bool,
     cancel: &Cancel,
+    ordering: CommitOrdering,
 ) -> Result<Vec<CommitRecord>> {
     let shallow = Shallow::of(git);
 
@@ -210,7 +221,7 @@ fn walk_date_order_window(
         let commit = git
             .find_commit(*tip)
             .git_ctx("Could not walk the commit graph")?;
-        dates.insert(*tip, committer_date(&commit));
+        dates.insert(*tip, rank_date(&commit, ordering));
         for parent in shallow_parents(&commit, &shallow, first_parent_only) {
             *waiting.entry(parent).or_insert(0) += 1;
             stack.push(parent);
@@ -218,22 +229,22 @@ fn walk_date_order_window(
         reachable += 1;
     }
     while let Some(id) = stack.pop() {
-        if dates.contains_key(&id) {
-            continue;
-        }
-        // A commit that cannot be read — a corrupt pack — ends its line, the way the filtered
-        // walk's truncation does; there is nothing to count past it.
-        let Some(commit) = git.find_commit(id).ok() else {
-            continue;
-        };
-        reachable += 1;
-        // The cancellation checkpoint: a relaxed flag read every CHECK_INTERVAL-th
-        // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
-        cancel.check(reachable)?;
-        dates.insert(id, committer_date(&commit));
-        for parent in shallow_parents(&commit, &shallow, first_parent_only) {
-            *waiting.entry(parent).or_insert(0) += 1;
-            stack.push(parent);
+        // One entry lookup decides both "already discovered" and where the date goes.
+        if let std::collections::hash_map::Entry::Vacant(date) = dates.entry(id) {
+            // A commit that cannot be read — a corrupt pack — ends its line, the way the filtered
+            // walk's truncation does; there is nothing to count past it.
+            let Some(commit) = git.find_commit(id).ok() else {
+                continue;
+            };
+            reachable += 1;
+            // The cancellation checkpoint: a relaxed flag read every CHECK_INTERVAL-th
+            // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
+            cancel.check(reachable)?;
+            date.insert(rank_date(&commit, ordering));
+            for parent in shallow_parents(&commit, &shallow, first_parent_only) {
+                *waiting.entry(parent).or_insert(0) += 1;
+                stack.push(parent);
+            }
         }
     }
 
@@ -281,9 +292,11 @@ fn walk_date_order_window(
         for parent in shallow_parents(&commit, shallow_ref, first_parent_only) {
             let entry = waiting.entry(parent).or_insert(0);
             *entry = entry.saturating_sub(1);
-            if *entry == 0 && dates.contains_key(&parent) {
-                ready.push((dates[&parent], Reverse(sequence), parent));
-                sequence += 1;
+            if *entry == 0 {
+                if let Some(&date) = dates.get(&parent) {
+                    ready.push((date, Reverse(sequence), parent));
+                    sequence += 1;
+                }
             }
         }
     }
@@ -291,9 +304,24 @@ fn walk_date_order_window(
     Ok(records)
 }
 
+/// The date the ready set is ranked by: git's `--date-order` ranks by committer date, its
+/// `--author-date-order` by author date. Topological order ranks by insertion and re-ranks the
+/// window afterwards (`order_records`), so the walk keeps committer-date ranking for it.
+fn rank_date(commit: &gix::Commit<'_>, ordering: CommitOrdering) -> i64 {
+    if ordering == CommitOrdering::AuthorDate {
+        return commit
+            .author()
+            .ok()
+            .and_then(|author| author.time().ok().map(|time| time.seconds))
+            .unwrap_or(0);
+    }
+    committer_date(commit)
+}
+
 /// The committer date a commit is ranked and displayed by (zero when the header will not decode,
-/// matching what `read_commit` records).
-fn committer_date(commit: &gix::Commit<'_>) -> i64 {
+/// matching what `read_commit` records). The incremental cache's boundary walk ranks its queue
+/// by the same date.
+pub(crate) fn committer_date(commit: &gix::Commit<'_>) -> i64 {
     commit
         .committer()
         .ok()

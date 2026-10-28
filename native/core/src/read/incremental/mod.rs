@@ -53,7 +53,7 @@ use gix::ObjectId;
 
 use crate::error::Result;
 use crate::model::{CommitOrdering, CommitRecord, LogOptions};
-use crate::read::log::{self, WalkOptions};
+use crate::read::log::{self, committer_date, WalkOptions};
 use crate::repository::{Repo, Shallow};
 
 /// The memory budget of the traversal cache, process-wide: entries are evicted
@@ -99,13 +99,17 @@ impl CacheKey {
 }
 
 /// Can a load with these options be served incrementally at all? See the module docs for why
-/// filtered, Gerrit-pinned, reflog and first-parent walks cannot.
+/// filtered, Gerrit-pinned, reflog and first-parent walks cannot. An author-date-ordered page
+/// cannot either: this cache's windows and merge are ranked by COMMITTER date (git's
+/// `--date-order`), and feeding the author-date ranking a commit-time-cut window could answer
+/// a different page than the full walk of the same repository state would.
 pub fn eligible(options: &LogOptions) -> bool {
     options.authors.as_deref().unwrap_or_default().is_empty()
         && options.filter_paths.iter().all(|path| path.is_empty())
         && options.gerrit_refs.is_none()
         && !options.only_follow_first_parent
         && !options.include_commits_mentioned_by_reflogs
+        && options.commit_ordering != crate::model::CommitOrdering::AuthorDate
 }
 
 /// One cached traversal: what the next load needs to answer without re-walking history.
@@ -309,11 +313,6 @@ impl Store {
         state.total_bytes = state.total_bytes.saturating_sub(dropped);
     }
 
-    /// Drop every cached traversal of every repository.
-    pub fn clear(&self) {
-        self.lock().clear();
-    }
-
     /// The next LRU tick.
     fn tick(&self) -> u64 {
         self.clock.fetch_add(1, Ordering::Relaxed) + 1
@@ -332,14 +331,6 @@ impl Store {
 impl Default for Store {
     fn default() -> Store {
         Store::with_budget(DEFAULT_BUDGET_BYTES)
-    }
-}
-
-impl StoreState {
-    /// Drop every entry, zeroing the byte total with them.
-    fn clear(&mut self) {
-        self.slots.clear();
-        self.total_bytes = 0;
     }
 }
 
@@ -398,7 +389,7 @@ fn boundary_walk(
             let Some(commit) = git.find_commit(*tip).ok() else {
                 return Ok(None);
             };
-            queue.push((commit_time(&commit), *tip));
+            queue.push((committer_date(&commit), *tip));
         }
     }
 
@@ -443,7 +434,7 @@ fn boundary_walk(
                 let time = git
                     .find_commit(parent)
                     .ok()
-                    .map(|parent| commit_time(&parent))
+                    .map(|parent| committer_date(&parent))
                     .unwrap_or_default();
                 queue.push((time, parent));
             }
@@ -468,18 +459,8 @@ fn boundary_walk(
     }
     let mut window = new_records;
     window.extend(cached.window.iter().take(keep).cloned());
-    Store::global().hits.fetch_add(1, Ordering::Relaxed);
+    // The hit is counted once, by the caller (try_walk) — the same place a fallback is counted.
     Ok(Some(window))
-}
-
-/// The committer date of a commit, as the walk's queue ranks by (`0` where the header is absent,
-/// matching what [`crate::model::CommitRecord::date`] records).
-fn commit_time(commit: &gix::Commit<'_>) -> i64 {
-    commit
-        .committer()
-        .ok()
-        .and_then(|committer| committer.time().ok().map(|time| time.seconds))
-        .unwrap_or(0)
 }
 
 /// Keep `window` (in walk order, from either a full or an incremental traversal) as the

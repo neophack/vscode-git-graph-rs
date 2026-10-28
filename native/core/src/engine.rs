@@ -144,11 +144,6 @@ impl Engine {
         self.repo.root()
     }
 
-    /// The git directory (`.git`, or the repository itself when bare).
-    pub fn git_dir(&self) -> &Path {
-        self.repo.git_dir()
-    }
-
     pub fn is_bare(&self) -> bool {
         self.repo.is_bare()
     }
@@ -232,26 +227,7 @@ impl Engine {
     /// A file's contents at a revision: a commit-ish, [`INDEX`] for the staged copy, or
     /// [`WORKING_TREE`] for the file on disk. Binary files come back with `contents: None`.
     pub fn file(&self, revision: &str, path: &str) -> Result<CommitFile> {
-        if revision == WORKING_TREE {
-            let bytes = std::fs::read(self.repo.root().join(path))
-                .map_err(|e| crate::Error::git(format!("{path}: {e}")))?;
-            // The same contract blob::commit_file honors: a file that is binary OR not valid
-            // UTF-8 comes back with `contents: None` (a lossy decode would show mojibake text
-            // where the committed side of the same bytes reports "binary").
-            let contents = String::from_utf8(bytes).ok();
-            let binary = match &contents {
-                None => true,
-                Some(text) => text.as_bytes()[..text.len().min(8000)].contains(&0),
-            };
-            return Ok(CommitFile {
-                contents: if binary { None } else { contents },
-                binary,
-            });
-        }
-        if revision == INDEX {
-            return crate::read::blob::index_file(&self.repo, path);
-        }
-        crate::read::blob::commit_file(&self.repo, revision, path)
+        crate::read::blob::file(&self.repo, revision, path)
     }
 
     /// The unified diff of one file in one commit, against its first parent.

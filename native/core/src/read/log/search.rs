@@ -45,8 +45,15 @@ pub fn search_history(repo: &Repo, query: &str, cancel: Cancel) -> Result<Vec<Gi
         ));
     }
 
-    // A repository with no refs at all has nothing to search; git's `--all` simply matches nothing.
-    let mut tips = all_tips(repo, true, true).unwrap_or_default();
+    // A repository with no refs at all has nothing to search; git's `--all` simply matches
+    // nothing. A ref store that could not be READ is not an empty repository, though — that
+    // failure propagates (exactly as the graph's own ref scan propagates it) instead of
+    // masquerading as "no matches found".
+    let mut tips = match all_tips(repo, true, true) {
+        Ok(tips) => tips,
+        Err(error) if error.kind == crate::error::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
     if let Some(stash) = stash_tip(repo) {
         if !tips.contains(&stash) {
             tips.push(stash);

@@ -91,3 +91,40 @@ fn the_engine_facade_covers_the_host_workflow() {
 
     engine.close();
 }
+
+#[test]
+fn a_working_tree_read_stays_inside_the_repository() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "one\n", "first commit");
+    let engine = Engine::open(repo.path()).unwrap();
+
+    // A plain path of the working tree reads normally.
+    assert_eq!(
+        engine
+            .file(WORKING_TREE, "a.txt")
+            .unwrap()
+            .contents
+            .as_deref(),
+        Some("one\n")
+    );
+
+    // The path names a file of a change the engine reported, but it still crosses the engine
+    // boundary: a climb out of the working tree, an absolute path (which `join` would follow out
+    // of the root wholesale) and a Windows drive-relative path are all refused, not read.
+    for escape in [
+        "../outside.txt",
+        "sub/../../outside.txt",
+        "/etc/hostname",
+        "C:/Windows/win.ini",
+        "C:Windows/win.ini",
+    ] {
+        let error = engine.file(WORKING_TREE, escape).unwrap_err();
+        assert!(
+            error.to_string().contains("escapes the working tree"),
+            "'{escape}' was not refused: {error}"
+        );
+    }
+
+    engine.close();
+}

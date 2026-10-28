@@ -27,7 +27,7 @@
 //! at its first checkpoint rather than doing unwanted work. A request that finishes clears its
 //! entry — the id can then be reused, and answers normally.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -40,6 +40,14 @@ use crate::error::{Error, Result};
 /// millisecond on the repositories this engine serves — while the per-iteration amortised cost
 /// stays far below the traversal-time budget the plan sets (≤ 2%).
 pub const CHECK_INTERVAL: usize = 256;
+
+/// How many cancellations that raced AHEAD of their request are remembered.
+///
+/// A well-behaved host's cancel leads its request by microseconds, so a short FIFO of the most
+/// recent ones is far more than the contract ever needs — while a caller that mints a fresh id
+/// per cancel (or cancels ids that never run) cannot grow the registry without bound: its own
+/// older pre-cancellations are the first entries evicted.
+const PRE_CANCELLED_LIMIT: usize = 64;
 
 /// The cancellation state of one request, as the traversal loops see it.
 ///
@@ -83,6 +91,10 @@ impl Cancel {
 #[derive(Debug, Default)]
 pub struct Registry {
     entries: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+    /// The ids cancelled before any request registered them, oldest first (bounded to
+    /// [`PRE_CANCELLED_LIMIT`]; in-flight entries are removed by their guards, so only this
+    /// half of the registry needs a bound).
+    pre_cancelled: Mutex<VecDeque<u32>>,
 }
 
 impl Registry {
@@ -97,15 +109,23 @@ impl Registry {
     ///
     /// When the request is in flight its flag is set and the next checkpoint in its loop unwinds
     /// with `Cancelled`. When no request has registered the id yet — the cancellation raced ahead
-    /// of the request — a pre-set flag is remembered, and the request that later runs under this
-    /// id observes it at once (see [`Registry::register`]). Cancelling an id that is neither in
-    /// flight nor about to start is a no-op apart from that remembered flag.
+    /// of the request — the id is remembered, and the request that later runs under this id
+    /// observes the cancellation at once (see [`Registry::register`]); only the most recent
+    /// [`PRE_CANCELLED_LIMIT`] such ids are remembered. Cancelling an id that is neither in flight
+    /// nor about to start is a no-op apart from that remembered id.
     pub fn cancel(&self, id: u32) {
-        let mut entries = self.lock();
-        match entries.get(&id) {
-            Some(flag) => flag.store(true, Ordering::Relaxed),
-            None => {
-                entries.insert(id, Arc::new(AtomicBool::new(true)));
+        {
+            let entries = self.lock();
+            if let Some(flag) = entries.get(&id) {
+                flag.store(true, Ordering::Relaxed);
+                return;
+            }
+        }
+        let mut pending = self.lock_pre_cancelled();
+        if !pending.contains(&id) {
+            pending.push_back(id);
+            while pending.len() > PRE_CANCELLED_LIMIT {
+                pending.pop_front();
             }
         }
     }
@@ -119,12 +139,26 @@ impl Registry {
     /// in-flight request, and the caller that reuses it mid-flight simply detaches the older
     /// request's cancellation.
     pub fn register(&self, id: u32) -> Guard {
-        let mut entries = self.lock();
-        let pre_cancelled = entries
-            .remove(&id)
-            .is_some_and(|flag| flag.load(Ordering::Relaxed));
-        let flag = Arc::new(AtomicBool::new(pre_cancelled));
-        entries.insert(id, Arc::clone(&flag));
+        let mut pre_cancelled = {
+            let mut pending = self.lock_pre_cancelled();
+            let known = pending.contains(&id);
+            if known {
+                pending.retain(|other| *other != id);
+            }
+            known
+        };
+        let flag = {
+            let mut entries = self.lock();
+            if entries
+                .remove(&id)
+                .is_some_and(|flag| flag.load(Ordering::Relaxed))
+            {
+                pre_cancelled = true;
+            }
+            let flag = Arc::new(AtomicBool::new(pre_cancelled));
+            entries.insert(id, Arc::clone(&flag));
+            flag
+        };
         Guard {
             id,
             token: Cancel { flag: Some(flag) },
@@ -141,6 +175,12 @@ impl Registry {
         // A poisoned lock means a panic while holding it; the registry is a cache of flags, not a
         // consistency-critical structure, so recovering beats failing every later request.
         self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_pre_cancelled(&self) -> std::sync::MutexGuard<'_, VecDeque<u32>> {
+        self.pre_cancelled
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -217,5 +257,25 @@ mod tests {
         Registry::global().cancel(u32::MAX);
         let guard = Registry::global().register(4);
         assert!(!guard.token().is_cancelled());
+    }
+
+    #[test]
+    fn pre_cancelled_ids_are_bounded_and_the_oldest_is_evicted_first() {
+        // A caller that cancels ids no request ever runs must not grow the registry: beyond the
+        // limit, its own OLDEST remembered cancellations are the ones dropped.
+        let base: u32 = 1_000_000;
+        for id in base..(base + PRE_CANCELLED_LIMIT as u32 + 10) {
+            Registry::global().cancel(id);
+        }
+        let evicted = Registry::global().register(base);
+        assert!(
+            !evicted.token().is_cancelled(),
+            "the oldest pre-cancellation was evicted by the flood"
+        );
+        let remembered = Registry::global().register(base + PRE_CANCELLED_LIMIT as u32 + 9);
+        assert!(
+            remembered.token().is_cancelled(),
+            "the most recent pre-cancellation is still remembered"
+        );
     }
 }

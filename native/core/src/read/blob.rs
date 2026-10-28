@@ -17,10 +17,68 @@ use crate::repository::Repo;
 /// bytes marks the blob binary, everything else is diffed as text.
 const BINARY_SNIFF_LEN: usize = 8000;
 
+/// The size a single blob or working-tree read refuses: the CLI backend's `git show` channel is
+/// capped at the same 100 MiB (`MAX_BUFFER` in read/cli/process.ts), so one read of a
+/// multi-gigabyte blob must not materialize in the extension host — and the two backends answer
+/// such a file the same way, with an error rather than one surviving where the other dies.
+const MAX_READ_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Refuse a blob above [`MAX_READ_BYTES`] BEFORE its data is read: the object header carries the
+/// size, so the check costs one header decode instead of the blob itself.
+fn check_blob_size(git: &gix::Repository, id: gix::ObjectId) -> Result<()> {
+    let size = git
+        .find_header(id)
+        .git_ctx("Could not read the blob header")?
+        .size();
+    if size > MAX_READ_BYTES {
+        return Err(Error::git(format!(
+            "the blob is {} bytes, above the {} MiB limit of a single file read",
+            size,
+            MAX_READ_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
 /// The context lines shown around each hunk, matching `git diff`'s default of three.
 const CONTEXT_LINES: u32 = 3;
 
 /* ---------- File content at a revision ---------- */
+
+/// A file at any of the three revisions the view reads: a commit-ish, the index's staged copy,
+/// or the working tree — the single dispatch behind both the Engine façade (`Engine::file`) and
+/// the protocol's `fileContents` method.
+pub fn file(repo: &Repo, revision: &str, file_path: &str) -> Result<CommitFile> {
+    if revision == crate::engine::WORKING_TREE {
+        return working_tree_file(repo, file_path);
+    }
+    if revision == crate::engine::INDEX {
+        return index_file(repo, file_path);
+    }
+    commit_file(repo, revision, file_path)
+}
+
+/// The text/binary contract every file reader honors: a file that is binary (git's NUL-byte
+/// sniff) or not valid UTF-8 comes back with `contents: None` — a lossy decode would show
+/// mojibake where the committed side of the same bytes reports "binary".
+fn text_or_binary(data: Vec<u8>) -> CommitFile {
+    if is_binary(&data) {
+        return CommitFile {
+            contents: None,
+            binary: true,
+        };
+    }
+    match String::from_utf8(data) {
+        Ok(contents) => CommitFile {
+            contents: Some(contents),
+            binary: false,
+        },
+        Err(_) => CommitFile {
+            contents: None,
+            binary: true,
+        },
+    }
+}
 
 /// Read one file of a commit's tree.
 ///
@@ -38,25 +96,7 @@ pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFil
 
     let data = blob_at(&git, &tree, file_path)?
         .ok_or_else(|| Error::not_found(format!("'{file_path}' is not in commit {hash}")))?;
-
-    // git's own notion of binary comes first: a NUL byte is valid UTF-8 but still not text a
-    // user wants to read, so the sniff decides before the UTF-8 check does.
-    if is_binary(&data) {
-        return Ok(CommitFile {
-            contents: None,
-            binary: true,
-        });
-    }
-    match String::from_utf8(data) {
-        Ok(contents) => Ok(CommitFile {
-            contents: Some(contents),
-            binary: false,
-        }),
-        Err(_) => Ok(CommitFile {
-            contents: None,
-            binary: true,
-        }),
-    }
+    Ok(text_or_binary(data))
 }
 
 /// Read one file's raw bytes at a commit, whatever they are — unlike [`commit_file`], a binary
@@ -74,6 +114,47 @@ pub fn commit_file_bytes(repo: &Repo, hash: &str, file_path: &str) -> Result<Opt
         .tree()
         .git_ctx("Could not read the commit tree")?;
     blob_at(&git, &tree, file_path)
+}
+
+/// Read one file from the working tree on disk, under the same binary/UTF-8 contract as
+/// [`commit_file`] and the same size cap (checked from the file's metadata, before a byte is
+/// read).
+pub fn working_tree_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
+    let path = working_tree_path(repo, file_path)?;
+    let size = std::fs::metadata(&path)
+        .map_err(|e| Error::git(format!("{file_path}: {e}")))?
+        .len();
+    if size > MAX_READ_BYTES {
+        return Err(Error::git(format!(
+            "'{file_path}' is {} bytes, above the {} MiB limit of a single file read",
+            size,
+            MAX_READ_BYTES / (1024 * 1024)
+        )));
+    }
+    let data = std::fs::read(path).map_err(|e| Error::git(format!("{file_path}: {e}")))?;
+    Ok(text_or_binary(data))
+}
+
+/// The on-disk path of a file path, kept inside the repository's working tree.
+///
+/// The path names a file of a change the engine itself reported, but it still crosses the
+/// engine boundary, so the read is constrained to the working tree: `Path::join` follows an
+/// absolute argument out of the root wholesale (and a Windows drive-relative `C:file` replaces
+/// the joined path entirely), and `..` components climb out — all three spellings are refused
+/// instead of read.
+fn working_tree_path(repo: &Repo, file_path: &str) -> Result<std::path::PathBuf> {
+    let root = repo.root();
+    let joined = root.join(file_path);
+    let escapes = !joined.starts_with(root)
+        || joined
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir));
+    if escapes {
+        return Err(Error::git(format!(
+            "'{file_path}' escapes the working tree"
+        )));
+    }
+    Ok(joined)
 }
 
 /* ---------- Single-file unified diff ---------- */
@@ -100,28 +181,14 @@ pub fn index_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
         });
     }
 
-    let data = git
-        .find_blob(entry.id)
-        .git_ctx("Could not read the blob")?
-        .data
-        .to_vec();
-
-    if is_binary(&data) {
-        return Ok(CommitFile {
-            contents: None,
-            binary: true,
-        });
-    }
-    match String::from_utf8(data) {
-        Ok(contents) => Ok(CommitFile {
-            contents: Some(contents),
-            binary: false,
-        }),
-        Err(_) => Ok(CommitFile {
-            contents: None,
-            binary: true,
-        }),
-    }
+    let data = {
+        check_blob_size(&git, entry.id)?;
+        git.find_blob(entry.id)
+            .git_ctx("Could not read the blob")?
+            .data
+            .to_vec()
+    };
+    Ok(text_or_binary(data))
 }
 
 /// The same as [`commit_file_bytes`], for the staged copy: `None` when the path is not in the
@@ -132,6 +199,7 @@ pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>>
     let Some(entry) = index.entry_by_path(file_path.as_bytes().into()) else {
         return Ok(None);
     };
+    check_blob_size(&git, entry.id)?;
     let data = git
         .find_blob(entry.id)
         .git_ctx("Could not read the blob")?
@@ -253,6 +321,7 @@ fn blob_at(git: &gix::Repository, tree: &gix::Tree<'_>, path: &str) -> Result<Op
         .git_ctx("Could not look up the path in the tree")?;
     match entry {
         Some(entry) if entry.mode().is_blob() => {
+            check_blob_size(git, entry.id().detach())?;
             let data = git
                 .find_blob(entry.id())
                 .git_ctx("Could not read the blob")?
@@ -293,12 +362,15 @@ fn entry_data(
         Some((mode, id)) if mode.is_commit() => {
             Ok(Some(format!("Subproject commit {id}\n").into_bytes()))
         }
-        Some((_, id)) => Ok(Some(
-            git.find_blob(id)
-                .git_ctx("Could not read the blob")?
-                .data
-                .to_vec(),
-        )),
+        Some((_, id)) => {
+            check_blob_size(git, id)?;
+            Ok(Some(
+                git.find_blob(id)
+                    .git_ctx("Could not read the blob")?
+                    .data
+                    .to_vec(),
+            ))
+        }
     }
 }
 

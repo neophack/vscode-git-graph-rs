@@ -41,6 +41,7 @@ pub use ordering::order_records;
 pub use search::{authors, count_commits_before, search_history};
 pub(crate) use tips::stash_tip;
 pub use tips::{all_tips, resolve_tips};
+pub(crate) use walk::committer_date;
 pub use walk::{read_commit, walk_windowed, WalkOptions};
 pub use window::pin_commits;
 pub(crate) use window::window_size;

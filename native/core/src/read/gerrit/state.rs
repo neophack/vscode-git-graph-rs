@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::model::{GerritChangeEvent, GerritChangeState};
 
-use super::meta::{parse_meta_commit, regex_commit_multiline, MetaCommitRecord};
+use super::meta::{parse_meta_commit, regex_commit_footer, MetaCommitRecord};
 
 /// Parse the full `NoteDb` meta history of a change into its state.
 ///
@@ -76,7 +76,7 @@ pub(crate) fn parse_meta_history(
             // Fall back to any commit hash found in the history
             let mut fallback = None;
             for record in records {
-                if let Some(m) = regex_commit_multiline().captures(&record.message) {
+                if let Some(m) = regex_commit_footer().captures(&record.message) {
                     fallback = Some(m[1].to_string());
                     break;
                 }
