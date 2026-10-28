@@ -1121,3 +1121,48 @@ Three commits closing every queued item; all gates green after each.
   context engine — no TypeScript reader was ever needed, which is why the A4 "no consumer"
   flag looked true. No decision required; the schema row stays for manifest parity, which is
   exactly the contract the parity test holds.
+
+### Wave 6: the coverage ratchet ∥ the dependency baseline drained (branch `task/m0-gates`, 2026-10-28)
+
+Four commits: the coverage matrix stops being counting-only, the depcruise baseline reaches
+zero, and four matrix dimensions hold at full catalog coverage. All gates green (the check
+chain now includes `lint:coverage`); 157 files / 1738 tests.
+
+- **The coverage ratchet (G9's stepping stone)** — `check-coverage-matrix.mjs` turns the
+  extractor into a gate: `docs/coverage-baseline.json` records the 1458 uncovered items per
+  dimension; a NEW uncovered item fails CI, stale entries must shrink via `--update` (which
+  refuses to absorb growth), and exemptions are capped at five with written reasons — the same
+  shrink-only ratchet as the depcruise baseline and the size gate's KNOWN list. From here,
+  coverage may only grow; the long tail (settings 168, webview-controls 44, ui-languages 1179
+  uncovered at the recording) is later waves' burn-down under the ratchet.
+- **The dependency baseline: 19 → 0** — the git layer takes localizers, the terminal port and
+  the askpass input as injected parameters (the A4 pattern extended); the repos watchers and
+  the status bar go through new platform adapters (`workspace.ts`, `statusBar.ts`) that are the
+  only vscode importers; `globalSettings`/`orphanedTabs`/`panelContext` route through
+  `config/write.ts`, `vscodeCompat.tabGroups` and the actions seams; `repoManager` shrank
+  600 → 581. The four automation modules keep their direct vscode imports by a documented
+  rule carve-out (the child_process rule's dev-only rationale) — a deliberate decision, not an
+  inversion: tooling that drives whole VS Code instances does not go through platform
+  adapters. DoD row 2 flips to held.
+- **Four dimensions at 100% catalog coverage** — 32 new catalog entries (146 → 178): the six
+  remaining palette commands with their zhCn SCM twins, twenty-two protocol-request entries
+  (host and commit-details groups) driving the real pipeline with documented refusal branches,
+  and the UiPort surface via the command entries plus the three archive flows that genuinely
+  raise a save dialog (`nativeSaveDialog` declared in the catalog types). Three justified
+  exemptions (of G9's five): `removeGitRepository` (its only drive path unregisters the active
+  repository mid-run), the `ready` boot handshake (a lifecycle message, not a control), and
+  `withProgress` (no host call site routes through the port yet — the same seam gap
+  actions.ts documents). Write-operations improved as a side effect (17 → 13 uncovered).
+  The registry test got stronger: its reachability model no longer normalizes `.zhCn` ids
+  away.
+
+Found, not fixed (the next queue):
+
+- The coverage long tail: settings (168), webview-controls (44), ui-languages (1179) — each
+  needs catalog entries or justified exemptions, under the ratchet now.
+- `withProgress` still has no host call site through the port (its exemption's root cause);
+  routing the host's own progress reporting through `uiPort` drains the exemption.
+- DoD rows 8/9/11 keep their "defined but not yet observed by Actions" status — e2e.yml, the
+  C3–C6 workflows and the release-matrix legs need a pushed branch to run; the loader's
+  libc/armhf selection and the C3 container smoke landed in wave 3, so row 11's prose is
+  partly stale (the vsce platform targets remain unexercised).

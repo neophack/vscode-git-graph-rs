@@ -15,7 +15,7 @@ first green run, read "held" as "held by a job that is defined but not yet obser
 | # | Item | Status | Evidence |
 |---|---|---|---|
 | 1 | One `npm run build`; `dist/` the only artifact; VSIX manifest test green | **held** | `integration` job builds dist and runs `test/tooling/distBuild.test.ts` (allowlist contract); `package` job assembles the artifact |
-| 2 | Dependency rules at `error`, no cycles | **ratcheted** (15 baselined) | `static` job → `npm run lint:deps` fails on a new violation and on a stale baseline entry. Baseline: 7 git-layer imports of `src/types/*`, 7 vscode imports outside `platform/`, 1 webview import of `src/types` (the flat-root pocket, OPTIMIZATION-PLAN A1) |
+| 2 | Dependency rules at `error`, no cycles | **held** | `static` job → `npm run lint:deps` fails on a new violation and on a stale baseline entry. The baseline is empty since the wave-6 drain: the git layer takes localizers/terminals/askpass input as injected parameters, the repos watchers and status bar go through platform adapters, and the automation modules keep direct vscode imports by a documented dev-only carve-out (the child_process rule's rationale) |
 | 3 | No non-generated file > 600 lines | **held** | `static` job: `npm run lint:size` holds both languages. Its `KNOWN` list is empty since the A5 splits — no production file is over the limit, and the list may only shrink (ESLint `max-lines` was dropped: a bulk suppression counts violations, not lines, so suppressed files grew unchecked). Rust has no entries since the R8a splits and the incremental-store split (31 production `.rs` files, none over 600) |
 | 4 | `dataSource.ts`, `gitGraphView.ts`, `contract.test.mjs`, `check-i18n-parity.cjs`, `package-src.js`, `package-web.js` deleted | **held locally** | `git ls-files` lists none of them; no gate would stop one coming back, and none is needed |
 | 5 | Handler table + engine enum compiler-complete; `src/shared/engine/` generated, drift-checked | **held** | `satisfies` table checked by `npm run typecheck`; `static` job → `npm run check:generated` regenerates and runs `git diff --exit-code -- src/shared/engine` |
@@ -51,3 +51,9 @@ first green run, read "held" as "held by a job that is defined but not yet obser
   generated i18n subset brought the VSIX back to +0.42%.
 - `npm run check:generated` additionally regenerates and diffs the webview i18n subset, so the
   single-file pages' string table cannot drift from the shared dictionaries.
+- The comments gate (`check-comments.mjs`, A7): plan task numbers, plan names, `DataSource` and
+  section markers are rejected in src/** and native/** alike; generated files are exempt.
+- The coverage ratchet (`check-coverage-matrix.mjs`, G9): docs/coverage-baseline.json records
+  the uncovered items per matrix dimension; a new uncovered item fails `npm run check`, stale
+  baseline entries must shrink via `--update` (which refuses to absorb growth), and exemptions
+  are capped at five with written reasons.

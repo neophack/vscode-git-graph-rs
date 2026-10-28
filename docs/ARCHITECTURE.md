@@ -197,7 +197,7 @@ lands it.
 - Budgets are calibrated for the S tier only (ADR-0007); the M/L tiers, the in-editor T0–T5
   sums and the CI-Linux numbers are pending (P2). The host bundle stays one entry on
   measured evidence: module evaluation ~6 ms, inside the 20 ms budget (P3).
-- `repoManager.ts` and `hexView.ts` sit at exactly 600 lines — no headroom; the next edit
-  either shrinks them or re-enters the size gate's KNOWN list.
+- `hexView.ts` sits at exactly 600 lines — no headroom; the next edit either shrinks it or
+  re-enters the size gate's KNOWN list.
 - `noUncheckedIndexedAccess` is off: enabling it reports 332 host and 886 webview errors
   (decision D-6).
