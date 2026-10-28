@@ -100,6 +100,7 @@ jobs:
 
       - name: Build the PR tree (release addon, production dist, vendor libs)
         run: |
+          which rustc cargo cargo-zigbuild || true
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js

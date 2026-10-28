@@ -1,4 +1,4 @@
-import type { AbortLike } from '../git/process/gitProcess';
+import { createAbortController, type AbortControllerLike, type AbortLike } from '../git/process/gitProcess';
 
 /**
  * The host request scheduler.
@@ -46,7 +46,7 @@ export type JobPriority = 'interactive' | 'background';
 interface ScheduledJob {
 	readonly kind: string;
 	readonly priority: JobPriority;
-	readonly controller: AbortController;
+	readonly controller: AbortControllerLike;
 	state: 'pending' | 'queued' | 'running' | 'settled';
 	/** Opens the start gate; background jobs wait on it until the scheduler runs them. */
 	openGate: (() => void) | null;
@@ -82,7 +82,7 @@ export class HostScheduler {
 		const job: ScheduledJob = {
 			kind: kind,
 			priority: priority,
-			controller: new AbortController(),
+			controller: createAbortController(),
 			state: 'pending',
 			openGate: null,
 			abandon: null

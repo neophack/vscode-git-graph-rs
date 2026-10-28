@@ -49,10 +49,12 @@ jobs:
       - uses: actions/checkout@v4
 
       # The action bundles cargo-deny and runs `cargo deny check` with the
-      # arguments below, against cargo-deny.toml at the repo root. The action places
-      # `arguments` before the command, so everything after `check` rides in `command`:
-      # --hide-inclusion-graph is a `check` subcommand flag (the global one is gone in
-      # current cargo-deny and errors out).
+      # arguments below, against deny.toml at the repo root — the one config name
+      # cargo-deny actually reads (a cargo-deny.toml is silently ignored, and every
+      # license then fails against an empty allow list, as the first CI run showed).
+      # The action places `arguments` before the command, so everything after `check`
+      # rides in `command`: --hide-inclusion-graph is a `check` subcommand flag (the
+      # global one is gone in current cargo-deny and errors out).
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check --hide-inclusion-graph advisories bans licenses sources

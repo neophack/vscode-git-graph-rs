@@ -107,7 +107,14 @@ function usage() {
 function hostTarget() {
 	const output = spawnSync('rustc', ['-vV'], { encoding: 'utf8' });
 	if (output.status !== 0) {
-		throw new Error('Could not run `rustc`. Is a Rust toolchain installed and on the PATH?');
+		const why = output.error
+			? `spawn ${output.error.code ?? output.error}`
+			: `exit ${output.status}`;
+		const stderr = (output.stderr ?? '').split('\n').find((line) => line.trim() !== '');
+		throw new Error(
+			'Could not run `rustc`. Is a Rust toolchain installed and on the PATH?\n' +
+				`  (probe: ${why}${stderr ? `; ${stderr.trim()}` : ''})`
+		);
 	}
 	const match = /^host:\s*(.+)$/m.exec(output.stdout);
 	if (match === null) throw new Error('Could not determine the host target from `rustc -vV`');
@@ -187,7 +194,10 @@ function buildLinuxViaZigbuild(options, target, directory) {
 		return;
 	}
 
-	const probe = spawnSync('cargo', ['zigbuild', '--version'], { encoding: 'utf8' });
+	// The binary directly, not `cargo zigbuild --version`: as a cargo subcommand, zigbuild's
+	// argument parser rejects a --version flag (exit 2), which a probe cannot tell apart from
+	// the tool being missing.
+	const probe = spawnSync('cargo-zigbuild', ['--version'], { encoding: 'utf8' });
 	if (probe.error || probe.status !== 0) {
 		console.error(
 			'! `cargo zigbuild` is required to build Linux targets: it is what pins the glibc\n' +
