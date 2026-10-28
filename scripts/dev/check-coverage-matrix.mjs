@@ -30,7 +30,25 @@ const baselinePath = path.join(root, 'docs', 'coverage-baseline.json');
 /** The G9 cap: exemptions with written justification, total across dimensions. */
 const MAX_EXEMPTIONS = 5;
 
-/** One dimension's verdict: what regressed, what went stale, which exemptions no longer apply. */
+/**
+ * Types (JSDoc — this is an .mjs): one recorded exemption, the baseline shape, and the
+ * comparison result. The gate's test imports these functions, so the annotations below are
+ * what keeps the root typecheck honest about the shapes it indexes.
+ *
+ * @typedef {{ id: string, reason: string }} CoverageExemption
+ * @typedef {{ exemptions?: Record<string, CoverageExemption[]>, uncovered?: Record<string, string[]> }} CoverageBaseline
+ * @typedef {{ regressed: Record<string, string[]>, stale: Record<string, string[]>, staleExemptions: Record<string, string[]> }} CoverageMaps
+ * @typedef {{ ok: boolean, exemptionCount: number, shrunkBaseline: { exemptions: Record<string, CoverageExemption[]>, uncovered: Record<string, string[]> } } & CoverageMaps} CoverageComparison
+ */
+
+/**
+ * Compare one dimension: what regressed, what went stale, which exemptions no longer apply.
+ *
+ * @param {readonly string[]} currentUncovered
+ * @param {readonly string[]} recordedUncovered
+ * @param {readonly CoverageExemption[]} exemptions
+ * @returns {{ regressed: string[], stale: string[], staleExemptions: string[] }}
+ */
 export function compareDimension(currentUncovered, recordedUncovered, exemptions) {
 	const exempt = new Set(exemptions.map((entry) => entry.id));
 	const effective = currentUncovered.filter((id) => !exempt.has(id));
@@ -49,6 +67,13 @@ export function compareDimension(currentUncovered, recordedUncovered, exemptions
  * ({ exemptions: { [dimension]: [{ id, reason }] }, uncovered: { [dimension]: string[] } }).
  * Returns { ok, regressed, stale, staleExemptions, exemptionCount, shrunkBaseline } where the
  * maps have an entry per failing dimension and shrunkBaseline is the baseline --update writes.
+ */
+/**
+ * Compare a full matrix ({ dimension: { uncovered: string[] } }) against a baseline.
+ *
+ * @param {Record<string, { total?: number, covered?: number, uncovered: readonly string[] }>} dimensions
+ * @param {CoverageBaseline} baseline
+ * @returns {CoverageComparison}
  */
 export function compareMatrixToBaseline(dimensions, baseline) {
 	const exemptions = baseline.exemptions || {};
