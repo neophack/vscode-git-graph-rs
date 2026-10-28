@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | M0 complete; waves 1–3 (§12) landed R1–R8, V1–V4, S2–S7, G1–G5, D, F2–F7, A1–A3, the automation rows of A5, P1–P2 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore) |
+| Status | M0 complete; waves 1–4 (§12) landed R1–R8, V1–V5, S2–S7, G1–G5, D, F1–F7, A1–A7, P1–P3 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore). The size gate's KNOWN list is empty — no production file is over the 600-line limit |
 
 ---
 
@@ -1011,3 +1011,84 @@ watcher's purposeful log line stays, and `externalChange.contract.test.ts` pins 
 head-in-its-own-list invariant at the reader seam. Full smoke: 23 passed, 0 failed,
 2 skipped (VS Code 1.143.1, engine backend) — the scenario green for the first time since the
 F2 wiring.
+
+### Wave 4b/4c: the A5 splits ∥ F4 ∥ V5 ∥ A7 (branch `task/m0-gates`, 2026-10-28)
+
+Eight parallel agents over disjoint file domains (five host splits, two webview split pairs,
+the diagnostics command), then F4 on the integrated tree, then the A7 burn-down after
+everything else landed (it touches every file). Twelve commits. Every gate green after
+integration: `npm run check` (now including the comments gate), the full suite 156 files /
+1727 tests, and the size gate with an EMPTY known-exceptions list — the first time no
+production file is over the 600-line limit.
+
+Landed: **A5** (all nine rows), **F4**, **V5**, **A7**, the **A4 shim deletion**
+(`platform/config/legacy.ts` — the exit condition its own header stated, taken when
+repoManager migrated to the snapshot), and the **P3 harness repair** (below).
+
+- **A5** — the nine files and their new shapes: `commitLoader` → `openPath.ts` +
+  `followUpStages.ts` (facade keeps the run state private through closure contexts);
+  `repoManager` → `repoRegistry.ts` + `repoSettingsStore.ts` (both vscode-free; the facade
+  keeps the 14-member public surface); `panel` → `messageRouter.ts` + `viewState.ts` (the
+  fuzz suite's scope note follows the dispatch path); `storage` → per-store modules over a
+  `VersionedStateKv`; `gitReader` → `backend.ts` (the contract) + `nativeBackend.ts` (the
+  adapter) behind a 16-line re-export; `settingsWidget` → a 228-line shell + seven section
+  modules; `commitDetails` → shell + summary/fileView/codeReview panes + `panelGeometry`;
+  `contextMenuActions` → six per-menu modules behind a barrel (one on-demand chunk still);
+  `commitTable` → `rowModel.ts` + `rowPatcher.ts`. All public surfaces unchanged — the
+  importers needed zero edits (tsc-proven), and the moved code is verbatim.
+- **F4** — 65 of the 71 layout reads outside `render/measure.ts` now go through read helpers
+  (`measureClientSize`, `measureOffsetHeight/Top`, `measureBoundingClientRect`); a
+  `no-restricted-syntax` rule rejects the geometry reads anywhere in src/webview except
+  measure.ts. The 12 remaining reads are suppressed with reasons: the standalone
+  comparison/binaryCompare bundles must not depend on the graph view's render modules, and
+  `common/` sits below `graph/` in the layering — draining them needs a shared measure home
+  in common/ (a layering decision, queued). The P3 no-forced-reflow check ran interleaved
+  pre/post on this Windows box (7-sample runs): longtasks-10k medians {2,2,4} vs {3,2,3} and
+  scroll-p99 overlap within the machine's spread (t2t5 on identical binaries ranged 48–114 ms),
+  so no directional regression is observable here; the nightly on the reference runner stays
+  the referee — and the harness had to be repaired first: `p3-webview.mjs` still loaded the
+  A4-deleted `platform/config.ts`/`getConfig`; it now takes a real snapshot and maps it
+  through the production `getWebviewConfig` (the harness can no longer drift from the real
+  mapping). Note for the nightly owner: scroll-p99 on this dev box measures 138–185 ms against
+  the 16 ms absolute budget on BOTH sides of F4 — pre-existing and environmental here.
+- **V5** — `git-graph-rs.showDiagnostics` collects environment versions, the backend in use
+  with the engine version or failure class, the Git executable, the last 20 traces (the ring
+  buffer built as this seam), and the non-default settings (schema-row diff, structural
+  equality, GitLab token redacted) into an untitled markdown document. The pure half is
+  unit-tested; no telemetry.
+- **A7** — 788 stale-history references rewritten across 488 scanned files (the count had
+  grown from the plan's 323: the later waves' comments cited their own task numbers).
+  Citations deleted, facts kept; `DataSource` sentences now name what the code is; "legacy X
+  did Y" became present-tense descriptions; ~dozens of stale descriptions fixed on the way
+  (dead `src/` paths, wrong module owners, comments describing deleted code). The gate
+  (`scripts/dev/check-comments.mjs`, wired into `npm run check`) rejects task numbers, both
+  plan names, `DataSource`, and `§N` markers in src/** — one deliberate extension beyond the
+  plan's three patterns: OPTIMIZATION-PLAN citations and bare section markers are the same
+  category and the later waves were adding more of them. Inert test titles carrying the
+  patterns were edited (nothing filters on titles — verified); generated files are exempt.
+
+Deviations from the plan text (all deliberate, all recorded in the commits):
+
+- `followUps.ts` is named `followUpStages.ts` (distinct from the existing `followUpChange.ts`
+  predicate module); `panel.ts` keeps the PanelHost body rather than gaining a vscode-importing
+  `panelHost.ts` sibling (the depcruise vscode grant names panel.ts exactly); the gitReader
+  contract lives in `backend.ts` because re-exporting the adapter through `gitReader.ts` would
+  close a cycle; `settingsWidget` needed seven modules, not the plan's four (the global-settings
+  column and the commit-author identity model are independent seams); `commitDetails` extracted
+  `panelGeometry` beyond the three-way seam to fit 600; the menus gained `viewIssueAction.ts`
+  for the shared builder.
+- `repoManager.ts` sits at exactly 600 lines — no headroom; the next edit either shrinks it or
+  re-enters KNOWN.
+
+Found, not fixed (wave 5's queue):
+
+- `src/extension/platform/INVENTORY.md` is a finished-migration survey whose numbered entries
+  17 code comments still cite; fold into docs/ or re-anchor the comments (needs a small
+  decision, not mechanical).
+- The 12 suppressed layout reads (F4, above) need a `common/` measure home — a layering
+  decision, not a mechanical move.
+- The Rust doc comments still carry `task N.N` references (e.g. the `annotate` request) — they
+  surface in the generated `src/shared/engine/` types, which the comments gate exempts by
+  design; cleaning them means a Rust-side pass plus regeneration.
+- The manifest key `sourceCodeProviderIntegrationLocation` still has no consumer (carried
+  from wave 4's A4 finding, kept for parity, still flagged).

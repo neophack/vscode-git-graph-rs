@@ -194,14 +194,14 @@ lands it.
 - The remaining wide constructors are the view controllers (`views/binaryCompare/hexDiff.ts`
   9, `views/comparison/viewController.ts` 8, `views/binaryCompare/viewController.ts` 7),
   built via their own `open` factories rather than the composition root (A2 leftover).
-- Two configuration readers coexist: `takeSnapshot()` and the legacy `getConfig()` (A4).
-- 10 TypeScript production files exceed 600 lines (the Rust backlog is empty); the
-  `KNOWN` list in `scripts/dev/check-file-size.mjs` holds each at its recorded size (A5).
-- 323 comments still reference plan task numbers or deleted code (A7).
-- The webview store is ~30 public mutable fields with no change sets (F1), and layout reads
-  bypass `render/measure.ts` (F4).
+- 12 layout reads in the standalone comparison/binaryCompare bundles and
+  `common/helpTooltip.ts` bypass `render/measure.ts` behind documented suppressions, pending
+  a shared measure home in `common/` — a layering decision (F4 leftover).
 - Budgets are calibrated for the S tier only (ADR-0007); the M/L tiers, the in-editor T0–T5
-  sums and the CI-Linux numbers are pending (P2), and the host bundle has not been re-split
-  on measured evidence (P3).
+  sums and the CI-Linux numbers are pending (P2). The host bundle stays one entry on
+  measured evidence: module evaluation ~6 ms, inside the 20 ms budget (P3).
+- `src/extension/platform/INVENTORY.md` is a finished-migration survey whose numbered entries
+  17 code comments still cite (A7 leftover, needs a small decision); the Rust doc comments
+  still carry plan task numbers, surfacing in the generated `src/shared/engine/` types.
 - `noUncheckedIndexedAccess` is off: enabling it reports 332 host and 886 webview errors
   (decision D-6).
