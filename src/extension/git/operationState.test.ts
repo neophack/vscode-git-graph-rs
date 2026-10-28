@@ -26,7 +26,10 @@ function envOf(existing: ReadonlyArray<string>, ints: { [file: string]: number }
 
 describe('resolveGitDir', () => {
 	it('keeps an absolute path, joins a relative one onto the repository', () => {
-		expect(resolveGitDir('/repo', 'C:\\data\\.git')).toBe('C:\\data\\.git');
+		// path.resolve over a rooted segment is absolute on every platform, which is the
+		// property under test (a literal C:\... here is only absolute on Windows).
+		const absolute = path.resolve('/data/.git');
+		expect(resolveGitDir('/repo', absolute)).toBe(absolute);
 		expect(resolveGitDir('/repo', '.git')).toBe(path.join('/repo', '.git'));
 	});
 });

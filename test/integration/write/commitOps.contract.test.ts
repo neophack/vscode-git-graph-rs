@@ -157,6 +157,11 @@ describe('getOperationState / continueOperation / abortOperation', () => {
 	beforeAll(() => {
 		process.env.GIT_CONFIG_NOSYSTEM = '1';
 		process.env.HOME = repo.path;
+		// The continue/abort flows spawn git through the product's own write layer, whose
+		// environment inherits this process: an editor opening there hangs the run (the
+		// first CI run died exactly that way - vi on the ubuntu leg, notepad on windows).
+		process.env.GIT_EDITOR = ':';
+		process.env.GIT_SEQUENCE_EDITOR = ':';
 		writeAndCommit('line1\n', 'base');
 	});
 

@@ -112,6 +112,10 @@ export class RepoBuilder {
 			...process.env,
 			GIT_CONFIG_NOSYSTEM: '1',
 			GIT_TERMINAL_PROMPT: '0',
+			// Continue-style git calls can open a commit-message editor; headless under
+			// test that is a hang (or, on a CI runner, whatever editor the image ships).
+			GIT_EDITOR: ':',
+			GIT_SEQUENCE_EDITOR: ':',
 			HOME: this.repoPath
 		};
 		if (options.authorDate !== undefined) env.GIT_AUTHOR_DATE = options.authorDate;

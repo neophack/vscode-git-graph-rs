@@ -96,19 +96,19 @@ jobs:
       # budget); either failing fails the job. Scheduled/manual dispatch runs one tier.
       - name: Run the E2E smoke tier
         if: github.event_name != 'schedule' && inputs.tier != 'full'
-        run: xvfb-run -a npm run test:e2e -- --tier smoke --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --tier smoke --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
         env:
           E2E_BASE_REF: origin/${{ github.event_name == 'pull_request' && github.base_ref || 'dev-refactor' }}
 
       - name: Run the E2E affected tier
         if: github.event_name == 'pull_request' && inputs.tier == ''
-        run: xvfb-run -a npm run test:e2e -- --tier affected --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --tier affected --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
         env:
           E2E_BASE_REF: origin/${{ github.base_ref }}
 
       - name: Run the E2E full tier
         if: github.event_name == 'schedule' || inputs.tier == 'full'
-        run: xvfb-run -a npm run test:e2e -- --tier full --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --tier full --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
 
       # The measurement tier (OPTIMIZATION-PLAN D-2: hidden -> visible restore, retained vs
       # re-created webview context). NON-BLOCKING by design: a measurement, not a gate. Runs
@@ -117,7 +117,7 @@ jobs:
       - name: Run the E2E perf tier (D-2 measurement, non-blocking)
         if: github.event_name == 'schedule' || inputs.tier == 'perf'
         continue-on-error: true
-        run: xvfb-run -a npm run test:e2e -- --tier perf --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --tier perf --vscode ${{ inputs.vscode || 'stable' }} --backend ${{ inputs.backend || 'engine' }}
 
       - name: Upload E2E results
         if: always()

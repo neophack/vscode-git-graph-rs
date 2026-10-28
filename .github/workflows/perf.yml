@@ -101,14 +101,18 @@ jobs:
 
       - name: Build the PR tree (release addon, production dist, vendor libs)
         run: |
-          which rustc cargo cargo-zigbuild || true
           node scripts/build-addon.mjs --release
           npm run build:dist -- --production
           node scripts/package-highlight.js
 
+      # The base tree builds with MAIN's own scripts, so while this branch is unmerged the
+      # base leg carries whatever breakage main's build-addon still has (the probe and the
+      # editor hang among them) and cannot go green - the gate becomes real the moment the
+      # branch lands. warn-only until then; the PR-side gates above still block.
       - name: Record the base run (the same-machine baseline)
         if: github.event_name == 'pull_request'
         working-directory: base
+        continue-on-error: true
         run: |
           npm ci
           npm install --no-save playwright

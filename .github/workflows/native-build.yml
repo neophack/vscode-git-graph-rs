@@ -320,18 +320,55 @@ jobs:
   # call, so a symbol the engine references but the host libc lacks fails here and not on a
   # user's machine.
   #
-  # The musl artifact only exists in `full` runs (the build matrix ships the four common engines
-  # by default), so that leg builds its own engine with the same script and the same cache the
-  # build matrix uses. The smoke does not gate packaging: a Docker Hub hiccup should not block a
-  # release, but the job fails visibly on every pull request.
+  # The musl engine is not in the default build matrix (the four common engines ship by
+  # default), so the musl-engine job builds it on the runner with the same script, the same
+  # pinned toolchain and the same zigbuild route the matrix uses. The smoke does not gate
+  # packaging: a Docker Hub hiccup should not block a release, but the job fails visibly on
+  # every pull request.
   #
   # Images are pinned to version-frozen tags: `centos:centos7` was last pushed when CentOS 7 was
   # retired and is never rebuilt, and the `-alpine3.20` variant tag of the Docker Official Images
   # only ever rebuilds within that Alpine minor. Pin both by manifest-list digest as the
   # follow-up: `docker buildx imagetools inspect <image>`, paste the digest into the matrix.
+  # The musl engine the alpine leg loads: built on the runner through the same zigbuild
+  # route as the build matrix (the first CI run showed an in-container build pulling a
+  # toolchain, zig and pip into node:20-alpine and still failing on the cdylib - the
+  # container's job is to LOAD the binary against musl libc, not to build it).
+  musl-engine:
+    name: Build the musl engine for the container smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
+        with:
+          toolchain: '1.97.1'
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: x86_64-unknown-linux-musl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm ci
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-zigbuild@0.24.0
+      - name: Install zig
+        run: pip install ziglang
+      - name: Build the musl engine
+        run: node scripts/build-addon.mjs --release --target x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x64-musl
+          path: native/linux-x64-musl/git-graph.node
+          if-no-files-found: error
+
   container-smoke:
     name: Container smoke (${{ matrix.name }})
-    needs: build
+    needs: [build, musl-engine]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -343,7 +380,7 @@ jobs:
             directory: linux-x64-musl
             image: node:20-alpine3.20
             node: node
-            buildsEngine: true
+            buildsEngine: false
             legacyNode: ''
           # CentOS 7 is the oldest glibc the gnu engines promise (2.17). Official Node needs
           # glibc 2.28 from version 18 on, so this leg brings the last line built for 2.17
@@ -358,38 +395,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The musl engine, built exactly as the build matrix builds it (same script, same cache).
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
-        if: matrix.buildsEngine
-        with:
-          toolchain: '1.97.1'
-          targets: x86_64-unknown-linux-musl
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: matrix.buildsEngine
-        with:
-          key: x86_64-unknown-linux-musl
-      - uses: actions/setup-node@v4
-        if: matrix.buildsEngine
-        with:
-          node-version: 24
-      - name: Install cargo-zigbuild
-        if: matrix.buildsEngine
-        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
-        with:
-          tool: cargo-zigbuild@0.24.0
-      - name: Install zig
-        if: matrix.buildsEngine
-        run: pip install ziglang
-      - name: Build the musl engine
-        if: matrix.buildsEngine
-        run: node scripts/build-addon.mjs --release --target x86_64-unknown-linux-musl
-
-      # The gnu engine comes straight from the build matrix; Node 16 rides along for the old glibc.
+      # Each leg downloads the engine built on the runner: the gnu engine from the build
+      # matrix, the musl engine from the musl-engine job above.
       - uses: actions/download-artifact@v4
-        if: matrix.buildsEngine != true
         with:
-          name: native-linux-x64-gnu
-          path: native/linux-x64-gnu
+          name: native-${{ matrix.directory }}
+          path: native/${{ matrix.directory }}
       - name: Fetch Node ${{ matrix.legacyNode }} for the old-glibc container
         if: matrix.buildsEngine != true
         run: |
@@ -424,7 +435,7 @@ jobs:
                 console.error(error);
                 process.exit(1);
               });
-            ' native/${{ matrix.directory }}/git-graph.node
+            ' /work/${{ matrix.directory }}/git-graph.node
         shell: bash
 
   # Everything in one place, ready to be dropped into a VSIX.
