@@ -32,7 +32,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { withAutomationExcluded } from './automation-packaging.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,7 +44,9 @@ const vsceEntry = createRequire(import.meta.url).resolve('@vscode/vsce/vsce');
 
 // Directory name under native/ -> the `vsce --target` identifier
 // (https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions).
-const VSCE_TARGET = {
+// Exported for the tooling test, which holds this table against the engine table the loader
+// ships (`addonLoader.ts`) and against vsce's documented platform identifiers.
+export const VSCE_TARGET = {
 	'win32-x64-msvc': 'win32-x64',
 	'win32-arm64-msvc': 'win32-arm64',
 	'linux-x64-gnu': 'linux-x64',
@@ -58,23 +60,24 @@ const VSCE_TARGET = {
 
 const binaryName = 'git-graph.node';
 
-// Platform directories named as positional arguments (any `-`-prefixed flag is ignored) narrow
-// the packaging to just those engines; each must already be built under native/.
-const requestedPlatforms = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
-
 // Matches the `vscode` entry of the `engines` block only, so the rewrite below never touches the
 // `@types/vscode` devDependency (whose value also ends in `"vscode": "..."`).
 const ENGINES_VSCODE = /("engines"\s*:\s*\{[\s\S]*?"vscode"\s*:\s*")([^"]+)(")/;
 
-function findBuiltPlatforms() {
-	if (!fs.existsSync(nativeDir)) return [];
-	return fs.readdirSync(nativeDir).filter((entry) => {
-		const binPath = path.join(nativeDir, entry, binaryName);
+// The engine directories carrying a built `git-graph.node` under the given root's `native/`.
+// The root is injectable so the tooling test can point this at a sandbox.
+export function findBuiltPlatforms(root = nativeDir) {
+	if (!fs.existsSync(root)) return [];
+	return fs.readdirSync(root).filter((entry) => {
+		const binPath = path.join(root, entry, binaryName);
 		return fs.existsSync(binPath) && fs.statSync(binPath).isFile();
 	});
 }
 
 async function main() {
+	// Platform directories named as positional arguments (any `-`-prefixed flag is ignored)
+	// narrow the packaging to just those engines; each must already be built under native/.
+	const requestedPlatforms = process.argv.slice(2).filter((arg) => !arg.startsWith('-'));
 	const built = findBuiltPlatforms();
 	if (built.length === 0) {
 		console.log('No native/<platform>/git-graph.node found - nothing to package per-platform.');
@@ -186,4 +189,9 @@ async function main() {
 	console.log(`Done: ${produced.join(', ')}`);
 }
 
-main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exit(1); });
+// Only the direct invocation `node scripts/package-platforms.mjs` packages anything; an import
+// (the tooling test holds the target table against the loader's engine table) gets the exports
+// without side effects, mirroring scripts/automation-packaging.mjs.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+	main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exit(1); });
+}
