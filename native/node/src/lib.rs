@@ -10,7 +10,7 @@
 //! of them. Serialising once in Rust and calling `JSON.parse` once in JavaScript is faster, and it
 //! keeps the ABI stable while the engine's types evolve.
 //!
-//! Cancellation (task 2.9): a call named by a `requestId` can be stopped from JavaScript with
+//! Cancellation: a call named by a `requestId` can be stopped from JavaScript with
 //! [`cancel`] — the engine's long-running loops unwind with `{"error": {"kind": "cancelled"}}`.
 //! An omitted id behaves exactly as before.
 //!
@@ -114,7 +114,7 @@ pub fn engine_version() -> String {
     git_graph_core::VERSION.to_string()
 }
 
-/// Cancel the request registered under `requestId` (task 2.9). The request answers the error
+/// Cancel the request registered under `requestId`. The request answers the error
 /// envelope `{"kind": "cancelled"}` at its next checkpoint; its repository handles and caches
 /// are left intact. Cancelling an unknown id, or one whose request already finished, costs
 /// nothing and affects no other request — but the cancellation is remembered for a request that

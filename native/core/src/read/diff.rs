@@ -117,7 +117,7 @@ fn diff_against_worktree(repo: &Repo, from: &str) -> Result<Vec<GitFileChange>> 
 
     // Everything uncommitted on top of HEAD is only visible to the working-tree scan.
     // The working-tree half of this comparison is bounded by the tree, and the tree diff
-    // above dominates it; its scan runs uncancellable, as before task 2.9.
+    // above dominates it; its scan runs uncancellable.
     for change in crate::read::status::uncommitted_changes(repo, Cancel::none())? {
         // An uncommitted rename of a path the revision range also touched cannot stay one record:
         // relative to the revision, its source is gone and its destination is new.

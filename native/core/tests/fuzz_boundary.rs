@@ -1,4 +1,4 @@
-//! Always-on boundary fuzzing (optimization plan R7): deterministic, seeded property tests
+//! Always-on boundary fuzzing: deterministic, seeded property tests
 //! that drive the two hostile-input decoders of the engine and assert the one property that
 //! matters at the boundary — a panic on any input is a bug, because `catch_unwind` at the
 //! N-API layer would turn it into a silent CLI fallback.

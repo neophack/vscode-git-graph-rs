@@ -1,4 +1,4 @@
-//! Engine microbenchmarks (refactor plan, task 2.11) over generated fixtures.
+//! Engine microbenchmarks over generated fixtures.
 //!
 //! What is measured, per fixture size — S is 1k commits, M is 10k (a 100k fixture is generated
 //! just as fast by `git fast-import`, but its bench runtime belongs to CI, not a laptop):
@@ -6,7 +6,7 @@
 //! - `traversal/first_page` — a cold-cache load of the first 300 commits. The incremental cache
 //!   is invalidated every iteration, so this is the walk itself.
 //! - `traversal/load_more` — the same, for a 900-commit page (what "Load More" asks for).
-//! - `traversal/incremental_refresh` — the §3.8.3 refresh: one commit arrived on top of the
+//! - `traversal/incremental_refresh` — the incremental refresh: one commit arrived on top of the
 //!   cached traversal. The ref move and the restore run outside the timed section; the timed
 //!   call is the load the host issues.
 //! - `loadView`, `refs`, `commitDetails`, `status`, `statistics/*` — the other read paths the
@@ -263,7 +263,7 @@ fn bench_engine(c: &mut Criterion) {
         });
     }
 
-    // The commit-graph comparison of task 2.10: the same first-page traversal, with the
+    // The commit-graph comparison: the same first-page traversal, with the
     // repository carrying a commit-graph file (gix reads it automatically) and without.
     let plain = Fixture::build("M_10k (no commit-graph)", 10_000, false);
     let with_graph = Fixture::build("M_10k (commit-graph)", 10_000, true);

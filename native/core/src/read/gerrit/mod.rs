@@ -35,8 +35,8 @@ use state::parse_meta_history;
 /// the meta commit's own signature (who wrote the record, when); the returned event, when the
 /// message is a recognised review event, carries the derived kind, patchset and labels.
 ///
-/// This is the engine-facing entry for the boundary fuzzing of optimization plan R7: the
-/// always-on property tests and the cargo-fuzz target drive exactly this function with
+/// This is the engine-facing entry for the boundary fuzzing: the always-on property
+/// tests and the cargo-fuzz target drive exactly this function with
 /// pseudo-random bytes, so a panic here is found before it reaches a user's repository data.
 pub fn parse_meta_message(
     committer: &str,

@@ -1,4 +1,4 @@
-//! Cooperative cancellation (refactor plan, task 2.9), end to end through the protocol.
+//! Cooperative cancellation, end to end through the protocol.
 //!
 //! The long-running requests — the graph walk above all — must unwind promptly when the host
 //! cancels them, and a cancellation must cost nothing that outlives it: the repository handles
@@ -137,7 +137,7 @@ fn a_cancelled_request_reissues_identically_and_the_id_is_reusable() {
 
     let handles_before = protocol::request(root, r#"{"method":"openCount","params":{}}"#);
 
-    // The reference load above cached its traversal (task 2.10): a repeat load of unchanged
+    // The reference load above cached its traversal: a repeat load of unchanged
     // refs is answered from that cache in milliseconds and legitimately completes before any
     // cancellation could arrive. This test's subject is cancelling a real walk, so the cached
     // traversal is dropped first.

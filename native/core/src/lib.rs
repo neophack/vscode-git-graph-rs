@@ -5,7 +5,7 @@
 //! It knows nothing about VS Code: it takes plain requests and returns plain data, so it can be
 //! exercised by `cargo test` without Node in the picture.
 //!
-//! **The public surface** is four things, per the refactor plan (§3.5):
+//! **The public surface** is four things:
 //!
 //! - [`engine::Engine`] — one type exposing everything a Rust host needs (graph pages, commit
 //!   details, diffs, file contents at a revision, working-tree status, configuration,
@@ -48,7 +48,7 @@ pub(crate) mod text;
 pub use engine::{Engine, GraphOptions};
 pub use error::{Error, ErrorKind, Result};
 
-/// The control surface of the incremental-traversal cache (task 2.10): [`IncrementalStore::invalidate`]
+/// The control surface of the incremental-traversal cache: [`IncrementalStore::invalidate`]
 /// forces the next load of a repository to traverse in full, and [`IncrementalStore::stats`]
 /// reports how often the cache answered a refresh and how often it fell back.
 ///
@@ -62,8 +62,8 @@ pub use error::{Error, ErrorKind, Result};
 pub use read::incremental::Store as IncrementalStore;
 
 /// The pure Gerrit `NoteDb` meta message parser (`read::gerrit::parse_meta_message`), so the
-/// boundary fuzzing of optimization plan R7 — the always-on property tests in this crate and
-/// the cargo-fuzz target under `native/core/fuzz` — can feed it arbitrary bytes without a
+/// boundary fuzzing — the always-on property tests in this crate and the cargo-fuzz
+/// target under `native/core/fuzz` — can feed it arbitrary bytes without a
 /// repository. The `parse_gerrit_metas` protocol method reads meta refs and serves every
 /// record to the same parser, so a panic found here is a panic the view would have hit on
 /// real repository data. Hidden from the docs; may change between minor versions.

@@ -2,7 +2,7 @@
 // Regenerate with `cargo test -p git-graph-core --test protocol`.
 /* eslint-disable */
 /**
- * The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
+ * The parameters of the `annotate` request: the commits to re-annotate — the list
  * the caller already holds on screen — plus which refs to annotate them with.
  */
 export type AnnotateParams = { 

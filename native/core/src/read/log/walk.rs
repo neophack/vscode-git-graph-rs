@@ -99,7 +99,7 @@ pub fn walk_windowed(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> R
             if visited > window {
                 break;
             }
-            // The cancellation checkpoint (task 2.9): a relaxed flag read every CHECK_INTERVAL-th
+            // The cancellation checkpoint: a relaxed flag read every CHECK_INTERVAL-th
             // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
             options.cancel.check(visited)?;
 
@@ -227,7 +227,7 @@ fn walk_date_order_window(
             continue;
         };
         reachable += 1;
-        // The cancellation checkpoint (task 2.9): a relaxed flag read every CHECK_INTERVAL-th
+        // The cancellation checkpoint: a relaxed flag read every CHECK_INTERVAL-th
         // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
         cancel.check(reachable)?;
         dates.insert(id, committer_date(&commit));
@@ -272,7 +272,7 @@ fn walk_date_order_window(
             Err(_) => continue,
         };
         records.push(read_commit(&commit, shallow_ref)?);
-        // The cancellation checkpoint (task 2.9): a relaxed flag read every CHECK_INTERVAL-th
+        // The cancellation checkpoint: a relaxed flag read every CHECK_INTERVAL-th
         // commit, so a cancelled traversal unwinds promptly without costing the walk measurably.
         cancel.check(records.len())?;
 

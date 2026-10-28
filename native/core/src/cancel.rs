@@ -1,8 +1,8 @@
-//! Cooperative cancellation of long-running requests (refactor plan, task 2.9).
+//! Cooperative cancellation of long-running requests.
 //!
 //! A host that issues a full-graph traversal cannot leave the user waiting for it: when the view
 //! switches repository, or a newer request of the same kind supersedes an older one (the host
-//! scheduler of task 4.8), the older request's work is unwanted while it is still running. The
+//! scheduler), the older request's work is unwanted while it is still running. The
 //! engine therefore lets the host name each request — a `requestId` it picks — and cancel it by
 //! that name at any time.
 //!

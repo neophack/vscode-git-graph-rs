@@ -222,8 +222,7 @@ impl Shallow {
 }
 
 /// How long a handle may sit unused before the next `get` drops it: the object cache of an
-/// unused repository is pure memory cost, and re-opening costs one index read (10 minutes, per
-/// the eviction the refactor plan's resource-budget section calls for).
+/// unused repository is pure memory cost, and re-opening costs one index read (10 minutes).
 pub const IDLE_LIMIT: Duration = Duration::from_secs(10 * 60);
 
 /// How many path→git-directory redirects the memo holds before it resets. Hosts normally pass

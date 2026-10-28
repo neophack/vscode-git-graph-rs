@@ -96,7 +96,7 @@ impl RefOptions {
     }
 }
 
-/// The parameters of the `annotate` request (task 2.10): the commits to re-annotate — the list
+/// The parameters of the `annotate` request: the commits to re-annotate — the list
 /// the caller already holds on screen — plus which refs to annotate them with.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(TS))]

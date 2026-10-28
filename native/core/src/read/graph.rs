@@ -83,9 +83,9 @@ pub fn load_view(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Gi
     })
 }
 
-/// Re-annotate a commit list the caller already holds with freshly read refs (task 2.10).
+/// Re-annotate a commit list the caller already holds with freshly read refs.
 ///
-/// The refs-only refresh of §3.8.3: after an operation that moves refs but rewrites no history —
+/// The refs-only refresh: after an operation that moves refs but rewrites no history —
 /// a fetch, a checkout, a branch or tag added elsewhere — the commits on screen are still the
 /// right commits, and only their labels are stale. One ref scan answers every label; no commit
 /// is walked. Each commit carries exactly the labels a full `loadCommits` of the same options
@@ -198,7 +198,7 @@ fn load_page(repo: &Repo, options: &LogOptions, cancel: Cancel) -> Result<Page> 
         cancel: cancel.clone(),
     };
 
-    // The incremental traversal (task 2.10): when the previous load of the same repository and
+    // The incremental traversal: when the previous load of the same repository and
     // options only needs commits added on top of what it already walked, walk just the new part
     // and re-order it together with the cached window — `records` ends up the same list either
     // way. Guard failures (history rewritten, fetched old dates, filtered walks) answer `None`

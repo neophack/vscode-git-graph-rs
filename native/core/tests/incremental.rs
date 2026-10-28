@@ -1,4 +1,4 @@
-//! The incremental traversal and the refs re-annotation (refactor plan, task 2.10).
+//! The incremental traversal and the refs re-annotation.
 //!
 //! The property at the heart of the incremental cache: after **any** operation a user or a fetch
 //! can perform, the page the engine answers from the cache must be *identical* — commit order,

@@ -43,7 +43,7 @@ use crate::read::status;
 use crate::repository::{Repo, RepoManager};
 
 /// What a handler sees: the repository path the request names, a warm handle on demand, and the
-/// request's cancellation state (task 2.9) for the handlers whose work loops.
+/// request's cancellation state for the handlers whose work loops.
 pub(crate) struct Context<'a> {
     repo_path: &'a str,
     cancel: Cancel,
@@ -176,7 +176,7 @@ protocol! {
     "loadRefs" => LoadRefs(RefOptions) -> GitRefData = |ctx, options| {
         crate::read::refs::read_refs(&*ctx.repo()?, &options.to_read_options()).map(|snapshot| snapshot.ref_data)
     };
-    /// Re-read the repository's refs — the refs-only refresh of the operate path (§3.8.3). One
+    /// Re-read the repository's refs — the refs-only refresh of the operate path. One
     /// scan, no commits walked and no stashes read; answers the branch/tag name lists and the
     /// checked-out branch alongside the raw ref data, where `loadRefs` answers the raw data alone.
     "refs" => Refs(RefOptions) -> RefSnapshot = |ctx, options| crate::read::refs::read_refs(&*ctx.repo()?, &options.to_read_options());
@@ -266,7 +266,7 @@ pub fn request(repo_path: &str, request_json: &str) -> String {
     answer(repo_path, request_json, Cancel::none())
 }
 
-/// Answer one JSON request the host can cancel by its request id (task 2.9).
+/// Answer one JSON request the host can cancel by its request id.
 ///
 /// The id is registered for the duration of the call — the Node binding's `cancel(requestId)`
 /// flips the flag from any thread, and the loops inside the traversal, status, statistics and

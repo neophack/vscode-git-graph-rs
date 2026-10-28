@@ -1,4 +1,4 @@
-//! The incremental traversal cache (refactor plan, task 2.10, §3.8.3).
+//! The incremental traversal cache.
 //!
 //! A view refresh after a commit, a fetch or a branch change re-walks the same repository from
 //! tips that moved only slightly. The engine therefore keeps the previous traversal — per

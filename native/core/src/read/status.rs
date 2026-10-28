@@ -99,7 +99,7 @@ fn scan(
         let item = item.git_ctx("Could not read the working tree status")?;
         scanned += 1;
         // The scan's cost grows with the working tree, not with the history, so it is a
-        // cancellation checkpoint too (task 2.9) — a large tree stays cancellable.
+        // cancellation checkpoint too — a large tree stays cancellable.
         cancel.check(scanned)?;
         match item {
             gix::status::Item::TreeIndex(change) => {
