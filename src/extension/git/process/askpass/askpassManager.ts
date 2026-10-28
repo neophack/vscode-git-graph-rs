@@ -34,7 +34,7 @@ export interface AskpassResponder {
 	end(body?: string): void;
 }
 
-// The native input port of the askpass responder (INVENTORY.md #21). The port TYPES come from
+// The native input port of the askpass responder. The port TYPES come from
 // the shared uiPort (src/extension/platform/uiPort.ts); the production binding is captured on
 // first use here rather than injected, because merely importing this module must never touch
 // the vscode module surface (keeping minimal test vscode mocks usable).
@@ -57,8 +57,7 @@ function nativeInput(): Pick<UiPort, 'showInputBox'> {
 /**
  * Prompt for one credential through the native input port and write the answer onto the askpass
  * HTTP response. A dismissed prompt answers '' (git treats that as no input given); a failed
- * prompt rejects with HTTP 500, so git surfaces the failure instead of hanging (INVENTORY.md #21:
- * the answer feeds `res.end`, so this promise plumbing must not be broken up).
+ * prompt rejects with HTTP 500, so git surfaces the failure instead of hanging.
  * @param input The native input port (production: {@link askpassUi}; tests: a fake).
  * @param request What git asks for (username, password, ...).
  * @param host The host the credential is for.

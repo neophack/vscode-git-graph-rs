@@ -1,7 +1,7 @@
 /**
  * The workspace code review commands: the review pickers run through the
  * injected UiPort, and their branch behavior must be unchanged - cancelling the pick is a no-op
- * (INVENTORY.md #13), picking a review ends it, and resuming one re-opens the view on its
+ *, picking a review ends it, and resuming one re-opens the view on its
  * commits. Plain messages run against a recording fake of the `vscode` module; the GitGraphView
  * module is mocked so no webview is created.
  */

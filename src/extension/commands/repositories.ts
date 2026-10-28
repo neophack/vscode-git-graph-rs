@@ -16,7 +16,7 @@ import type { CommandHost } from './context';
 /**
  * The method run when the `git-graph-rs.addGitRepository` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the folder picker runs through (INVENTORY.md #24);
+ * @param ui The native-UI port the folder picker runs through;
  * defaults to the production port, injectable for tests.
  */
 export function addGitRepository(host: CommandHost, ui: UiPort = uiPort) {
@@ -47,7 +47,7 @@ export function addGitRepository(host: CommandHost, ui: UiPort = uiPort) {
 /**
  * The method run when the `git-graph-rs.removeGitRepository` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the repository picker runs through (INVENTORY.md #19);
+ * @param ui The native-UI port the repository picker runs through;
  * defaults to the production port, injectable for tests.
  */
 export function removeGitRepository(host: CommandHost, ui: UiPort = uiPort) {

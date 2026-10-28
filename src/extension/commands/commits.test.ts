@@ -2,7 +2,7 @@
  * The commit-search command: the repo/query/commit pickers run through
  * the injected UiPort with their branch behavior unchanged - a dismissed repo pick never
  * reaches the query input, an empty query never searches, an empty result reports, and a
- * picked commit opens the view on it (INVENTORY.md #15-#17). Plain messages run against a
+ * picked commit opens the view on it. Plain messages run against a
  * recording fake of the `vscode` module; the GitGraphView module is mocked.
  */
 

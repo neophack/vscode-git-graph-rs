@@ -13,7 +13,7 @@ import type { CommandHost } from './context';
  * The method run when the `git-graph-rs.searchCommits` command is invoked.
  * @param host The services the command runs with.
  * @param ui The native-UI port the repo/query/commit pickers run through
- * (INVENTORY.md #15-#17); defaults to the production port, injectable for tests.
+ *; defaults to the production port, injectable for tests.
  */
 export async function searchCommits(host: CommandHost, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {

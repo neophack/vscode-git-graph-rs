@@ -25,10 +25,9 @@ import type { GitExecutable } from '../git/process/gitProcess';
 // importing this module never touches the vscode module surface (test fakes inject minimal
 // `vscode` mocks), while every native-UI access still dispatches through one captured window.
 // Property lookups happen at call time, so the automation suite's runtime monkey-patching of
-// `vscode.window` keeps working until it is replaced by the ScriptedUiPort. This
-// is the interim production binding of {@link uiPort} until src/extension/platform/uiPort.ts
-// gains its own implementation (INVENTORY.md #3/#5/#13-#24): when it ships, only this lazily
-// built instance is rebound and no call site changes.
+// `vscode.window` keeps working until it is replaced by the ScriptedUiPort. This lazily built
+// instance is the production binding of {@link uiPort}; tests rebind it with fakes and no
+// call site changes.
 interface PlatformAdapters {
 	readonly window: typeof vscode.window;
 	readonly notifications: Notifications;
@@ -173,7 +172,7 @@ class WindowUiPort implements UiPort {
 	public withProgress<R>(options: ProgressOptionsLike, task: (progress: ProgressLike, token: import('./uiPort').CancellationTokenLike) => Thenable<R>): Promise<R> {
 		if (scriptedUiPort !== null) return scriptedUiPort.withProgress(options, task);
 		// No degradation path here (unlike the dialogs): no host call site routes through the
-		// port yet (INVENTORY.md #27 stays with its owner), so an absent API should surface.
+		// port yet, so an absent API should surface.
 		return Promise.resolve(adapters().window.withProgress(options as vscode.ProgressOptions, task));
 	}
 }
@@ -456,7 +455,7 @@ export function viewScm(): Thenable<ErrorInfo> {
 
 /**
  * Show a Visual Studio Code Information Message Dialog with the specified message.
- * Delegates to the platform notifications adapter (INVENTORY.md #9); every remaining
+ * Delegates to the platform notifications adapter; every remaining
  * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */
@@ -466,7 +465,7 @@ export function showInformationMessage(message: string) {
 
 /**
  * Show a Visual Studio Code Error Message Dialog with the specified message.
- * Delegates to the platform notifications adapter (INVENTORY.md #10); every remaining
+ * Delegates to the platform notifications adapter; every remaining
  * importer keeps this wrapper as its seam.
  * @param message The message to show.
  */

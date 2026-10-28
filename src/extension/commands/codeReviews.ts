@@ -25,7 +25,7 @@ export function endAllWorkspaceCodeReviews(host: CommandHost) {
 /**
  * The method run when the `git-graph-rs.endSpecificWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the review picker runs through (INVENTORY.md #13);
+ * @param ui The native-UI port the review picker runs through;
  * defaults to the production port, injectable for tests.
  */
 export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {
@@ -37,7 +37,7 @@ export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = u
 
 	// The review items load asynchronously; resolve them before the port's pick (the port takes
 	// the materialized list), with the shared rejection handler catching both stages, exactly as
-	// the native pick forwarded a rejected item list before (INVENTORY.md #13).
+	// the native pick forwarded a rejected item list before.
 	getCodeReviewQuickPickItems(host, codeReviews).then((items) => {
 		return ui.showQuickPick(items, {
 			placeHolder: t('selectCodeReviewToEnd'),
@@ -60,7 +60,7 @@ export function endSpecificWorkspaceCodeReview(host: CommandHost, ui: UiPort = u
 /**
  * The method run when the `git-graph-rs.resumeWorkspaceCodeReview` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the review picker runs through (INVENTORY.md #14);
+ * @param ui The native-UI port the review picker runs through;
  * defaults to the production port, injectable for tests.
  */
 export function resumeWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort) {
@@ -71,7 +71,7 @@ export function resumeWorkspaceCodeReview(host: CommandHost, ui: UiPort = uiPort
 	}
 
 	// As in the end-review flow: materialize the items, then pick; one rejection handler covers
-	// both stages (INVENTORY.md #14).
+	// both stages.
 	getCodeReviewQuickPickItems(host, codeReviews).then((items) => {
 		return ui.showQuickPick(items, {
 			placeHolder: t('selectCodeReviewToResume'),

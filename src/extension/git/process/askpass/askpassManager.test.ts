@@ -1,5 +1,5 @@
 /**
- * The askpass credential prompt (INVENTORY.md #21): the
+ * The askpass credential prompt: the
  * promptForCredential flow must keep its exact HTTP contract - a dismissed prompt answers ''
  * over 200 (git treats that as "no input given"), a typed answer is returned JSON-encoded, and
  * a failed prompt rejects with HTTP 500 so git surfaces the failure instead of hanging. The

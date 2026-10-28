@@ -103,7 +103,7 @@ export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) 
  * @param repo The path of the repository.
  * @param confirm Ask the user to confirm the amend before performing it (used by the push flow,
  * where amending is a side effect of another action, rather than the action itself).
- * @param ui The native-UI port the confirm dialog runs through (INVENTORY.md #2).
+ * @param ui The native-UI port the confirm dialog runs through.
  * @returns The error of the operation (NULL => HEAD already had a Change-Id, or one was amended),
  *          the Change-Id of HEAD, and whether it was newly amended.
  */

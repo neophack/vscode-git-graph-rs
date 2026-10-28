@@ -110,7 +110,7 @@ export interface NotificationsPort {
 
 /**
  * The full native-UI surface the host routes through (the ESLint rule makes every
- * `vscode.window.show*` call outside platform/ illegal; INVENTORY.md lists the sites to absorb).
+ * `vscode.window.show*` call outside platform/ illegal).
  */
 export interface UiPort extends NotificationsPort {
 	// --- Notifications (the full vscode surface: plain and options-bearing overloads) ---

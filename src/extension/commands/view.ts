@@ -91,7 +91,7 @@ function getUrisFromCommandArg(arg: unknown): vscode.Uri[] {
 /**
  * The method run when the `git-graph-rs.fetch` command is invoked.
  * @param host The services the command runs with.
- * @param ui The native-UI port the repository picker runs through (INVENTORY.md #20);
+ * @param ui The native-UI port the repository picker runs through;
  * defaults to the production port, injectable for tests.
  */
 export function fetch(host: CommandHost, ui: UiPort = uiPort) {
