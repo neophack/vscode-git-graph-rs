@@ -1,4 +1,4 @@
-import type { AbortLike } from '../git/process/gitProcess';
+import type { AbortControllerLike, AbortLike } from '../git/process/gitProcess';
 import type { AnnotateReadOptions, GitAnnotation, GitCommitData, GitRefSnapshot, RefReadOptions } from '../git/read/types';
 import type { HostScheduler } from './scheduler';
 import type { CommitOrdering } from '../../shared/model/webview';
@@ -6,6 +6,7 @@ import type { ErrorInfo } from '../../shared/protocol/messages';
 import type { GerritChangeState } from '../../shared/model/gerrit';
 import type { GitOperationState, GitStash } from '../../shared/model/git';
 import type { RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView } from '../../shared/protocol/loading';
+import { createAbortController } from '../git/process/gitProcess';
 import { CommitPageCache, commitPageCacheKey } from './caches/commitPageCache';
 import type { GerritCacheEntry } from './caches/gerritCache';
 import { GerritCacheStore } from './caches/gerritCache';
@@ -188,13 +189,13 @@ export class CommitLoader implements CommitLoaderPort {
 	private readonly uncommittedZeroConfirmMs: number;
 	private readonly uncommittedRecheckMs: number;
 	/** The run of the CURRENT loadCommits request; a new request aborts it (see the header). */
-	private currentRun: AbortController | null = null;
+	private currentRun: AbortControllerLike | null = null;
 	/**
 	 * The in-flight read of each repository, keyed by repo path: a newer load of the same kind
 	 * (loadCommits or the merged loadView) cancels the older one's in-flight engine walk through
 	 * its signal — the cooperative cancellation seam of the read backend.
 	 */
-	private readonly activeLoads: Map<string, AbortController> = new Map();
+	private readonly activeLoads: Map<string, AbortControllerLike> = new Map();
 	/**
 	 * The last load each repository was served: the request and the page (and the
 	 * Gerrit states) the newest delivered response carried. The write-path impact refresh
@@ -463,10 +464,10 @@ export class CommitLoader implements CommitLoaderPort {
 	 * path: aborts the previous run, cancels the repository's in-flight read and registers the
 	 * new run as its active load.
 	 */
-	private startRun(repo: string): AbortController {
+	private startRun(repo: string): AbortControllerLike {
 		this.abortCurrentRun();
 		this.cancelActiveLoad(repo);
-		const run = new AbortController();
+		const run = createAbortController();
 		this.currentRun = run;
 		this.activeLoads.set(repo, run);
 		return run;

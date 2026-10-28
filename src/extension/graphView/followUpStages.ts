@@ -1,3 +1,4 @@
+import type { AbortControllerLike } from '../git/process/gitProcess';
 import type { GitCommitData } from '../git/read/types';
 import { JobAbandonedError } from './scheduler';
 import type { GerritChangeState } from '../../shared/model/gerrit';
@@ -60,7 +61,7 @@ const UNCOMMITTED_HASH = '*';
  * interactive arrival (a newer page load of the same repository supersedes the run the chain
  * belongs to anyway, so an abandonment is silently dropped, never surfaced as an error).
  */
-export function launchFollowUps(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortController, send: (response: ResponseLoadCommits) => void, chain: () => Promise<void>): void {
+export function launchFollowUps(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortControllerLike, send: (response: ResponseLoadCommits) => void, chain: () => Promise<void>): void {
 	const scheduler = ctx.deps.scheduler;
 	const started = scheduler === undefined ? chain() : scheduler.run('followUp:' + msg.repo, 'background', () => chain());
 	void started.catch((error) => {
@@ -93,7 +94,7 @@ export function sendLoadError(ctx: FollowUpContext, msg: RequestLoadCommits, sen
  * remote annotations did not change (the responses are idempotent) - `remoteRefsFollowUpChanged`
  * decides, catching the cases a plain remotes-label diff missed (see its doc comment).
  */
-export async function sendRemoteRefsFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortController, send: (response: ResponseLoadCommits) => void, gerritRefs: ReadonlyArray<string> | null, commitData: GitCommitData, gerritStates: GerritChangeState[] | null, deferUncommittedChanges: boolean, forceFresh: boolean): Promise<GitCommitData> {
+export async function sendRemoteRefsFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortControllerLike, send: (response: ResponseLoadCommits) => void, gerritRefs: ReadonlyArray<string> | null, commitData: GitCommitData, gerritStates: GerritChangeState[] | null, deferUncommittedChanges: boolean, forceFresh: boolean): Promise<GitCommitData> {
 	if (!msg.showRemoteBranches || commitData.error !== null) return commitData;
 	const complete = await ctx.getCommitsCached(msg, gerritRefs, deferUncommittedChanges, forceFresh, false);
 	if (run.signal.aborted) return complete; // superseded by a newer load request
@@ -127,7 +128,7 @@ export async function sendRemoteRefsFollowUp(ctx: FollowUpContext, msg: RequestL
  * changes in place. The confirm loop is bounded: a status read that keeps failing gives up
  * after twice the confirm window, leaving the row at its last delivered state.
  */
-export async function sendUncommittedChangesFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortController, send: (response: ResponseLoadCommits) => void, commitData: GitCommitData, gerritStates: GerritChangeState[] | null = null): Promise<void> {
+export async function sendUncommittedChangesFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortControllerLike, send: (response: ResponseLoadCommits) => void, commitData: GitCommitData, gerritStates: GerritChangeState[] | null = null): Promise<void> {
 	// Match the page loader: only prepend the row when HEAD is among the loaded commits (with
 	// a filter or cutoff excluding HEAD, the row would have no parent in the graph).
 	if (!ctx.deps.getConfig().showUncommittedChanges || commitData.head === null || commitData.error !== null) return;
@@ -235,7 +236,7 @@ async function readUncommittedChanges(ctx: FollowUpContext, repo: string): Promi
  *          response carried (NULL when the pipeline failed or was superseded), and the commit
  *          data of that response - which stage 1 may have reloaded with fresher change refs.
  */
-export async function loadCommitsGerritFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortController, send: (response: ResponseLoadCommits) => void, previousRefs: string[] | null, pendingCommitData: GitCommitData): Promise<{ states: GerritChangeState[] | null, commitData: GitCommitData }> {
+export async function loadCommitsGerritFollowUp(ctx: FollowUpContext, msg: RequestLoadCommits, run: AbortControllerLike, send: (response: ResponseLoadCommits) => void, previousRefs: string[] | null, pendingCommitData: GitCommitData): Promise<{ states: GerritChangeState[] | null, commitData: GitCommitData }> {
 	const cache = await ctx.gerritPipeline.loadGerritData(msg.repo, msg.gerritStatusFilter, ctx.gerritFetchLimitOf(msg), msg.hard === true);
 	if (run.signal.aborted) return { states: null, commitData: pendingCommitData }; // superseded by a newer load request
 

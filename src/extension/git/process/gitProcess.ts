@@ -32,6 +32,52 @@ export interface AbortLike {
 	removeEventListener(type: 'abort', listener: () => void): void;
 }
 
+/** The writable side of {@link AbortLike}: what a load run's owner holds and aborts. */
+export interface AbortControllerLike {
+	readonly signal: AbortLike;
+	abort(): void;
+}
+
+/**
+ * A run token for the read pipeline: the real `AbortController` where the runtime has one
+ * (Node 15+), the structural minimum where it does not — the VS Code 1.38 floor's extension
+ * host is Node 10.11, whose global scope predates the class, and `new AbortController()` there
+ * is a ReferenceError that kills every read. Consumers read the signal structurally (the
+ * {@link AbortLike} reads in `run`/`collect`/`stream`), so either form satisfies them.
+ */
+export function createAbortController(): AbortControllerLike {
+	return typeof AbortController === 'function' ? new AbortController() : createStructuralAbortController();
+}
+
+/**
+ * The no-`AbortController` form of {@link createAbortController}: an `aborted` flag and a
+ * listener list with the real class's contract — `abort` fires each listener once, a listener
+ * registered after the abort never fires, re-aborting is a no-op. Exported so the fallback is
+ * testable on a runtime that has the global.
+ */
+export function createStructuralAbortController(): AbortControllerLike {
+	let aborted = false;
+	const listeners: Array<() => void> = [];
+	const signal: AbortLike = {
+		get aborted() { return aborted; },
+		addEventListener(_type: 'abort', listener: () => void): void {
+			if (!aborted) listeners.push(listener);
+		},
+		removeEventListener(_type: 'abort', listener: () => void): void {
+			const at = listeners.indexOf(listener);
+			if (at >= 0) listeners.splice(at, 1);
+		}
+	};
+	return {
+		signal,
+		abort(): void {
+			if (aborted) return;
+			aborted = true;
+			for (const listener of listeners.splice(0)) listener();
+		}
+	};
+}
+
 /** The slice of `child_process.ChildProcess` the adapter consumes, so fakes stay small. */
 export interface SpawnedGit {
 	stdout: NodeJS.ReadableStream;

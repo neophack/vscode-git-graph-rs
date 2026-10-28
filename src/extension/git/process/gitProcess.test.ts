@@ -324,3 +324,32 @@ describe('GitError', () => {
 		expect(error.stderr).toBe('fatal: not a git repository');
 	});
 });
+
+describe('createAbortController', () => {
+	it('returns the runtime AbortController where one exists', async () => {
+		const { createAbortController } = await import('./gitProcess');
+		const run = createAbortController();
+		expect(typeof AbortController).toBe('function');
+		const fired: string[] = [];
+		run.signal.addEventListener('abort', () => fired.push('a'));
+		run.abort();
+		expect(run.signal.aborted).toBe(true);
+		expect(fired).toEqual(['a']);
+	});
+
+	it('the structural fallback matches the real contract: fire once, late listeners stay silent, re-abort is a no-op', async () => {
+		const { createStructuralAbortController } = await import('./gitProcess');
+		const run = createStructuralAbortController();
+		const fired: string[] = [];
+		const first = (): void => { fired.push('first'); };
+		run.signal.addEventListener('abort', first);
+		expect(run.signal.aborted).toBe(false);
+		run.abort();
+		run.abort();
+		expect(run.signal.aborted).toBe(true);
+		expect(fired).toEqual(['first']);
+		run.signal.removeEventListener('abort', first);
+		run.signal.addEventListener('abort', () => { fired.push('late'); });
+		expect(fired).toEqual(['first']);
+	});
+});

@@ -1,3 +1,4 @@
+import type { AbortControllerLike } from '../git/process/gitProcess';
 import type { GitCommitData } from '../git/read/types';
 import type { RequestLoadCommits, RequestLoadView, ResponseLoadCommits, ResponseLoadView } from '../../shared/protocol/loading';
 import { launchFollowUps, sendRemoteRefsFollowUp, sendUncommittedChangesFollowUp } from './followUpStages';
@@ -30,7 +31,7 @@ export interface OpenPathContext extends FollowUpContext {
 	 * Begin the run of a new load of the repository (the facade's `startRun`): aborts the previous
 	 * run and cancels its in-flight engine walk through its signal, then registers the new run.
 	 */
-	startRun(repo: string): AbortController;
+	startRun(repo: string): AbortControllerLike;
 	/** Whether the webview is currently rendering a commit list (the remote-refs deferral's input). */
 	isRenderingCommits(): boolean;
 }

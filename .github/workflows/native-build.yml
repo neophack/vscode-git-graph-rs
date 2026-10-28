@@ -43,14 +43,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
         with:
+          toolchain: '1.97.1'
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -69,7 +70,9 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
+        with:
+          toolchain: '1.97.1'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Test
@@ -120,8 +123,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
         with:
+          toolchain: '1.97.1'
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -129,7 +133,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # @napi-rs/cli, which the build script drives.
       - name: Install dependencies
@@ -165,7 +169,7 @@ jobs:
       - name: Check the binary compatibility floors
         env:
           BINARY_COMPAT_REQUIRED: '1'
-        run: node scripts/build/check-binary-compat.mjs native/${{ matrix.directory }}
+        run: node scripts/build/check-binary-compat.mjs native
         shell: bash
 
       # R6 (optimization plan): a per-crate breakdown of the release addon's size, published as
@@ -225,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - uses: actions/download-artifact@v4
         with:
@@ -271,7 +275,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -356,9 +360,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # The musl engine, built exactly as the build matrix builds it (same script, same cache).
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # the pinned dev toolchain (rust-toolchain.toml), not whatever stable is
         if: matrix.buildsEngine
         with:
+          toolchain: '1.97.1'
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: matrix.buildsEngine
@@ -367,7 +372,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: matrix.buildsEngine
         with:
-          node-version: 20
+          node-version: 24
       - name: Install cargo-zigbuild
         if: matrix.buildsEngine
         uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
@@ -432,7 +437,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - uses: actions/download-artifact@v4
         with:

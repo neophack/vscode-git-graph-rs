@@ -196,6 +196,14 @@ function buildLinuxViaZigbuild(options, target, directory) {
 				'    cargo install cargo-zigbuild\n' +
 				'    pip install ziglang      # or a zig from https://ziglang.org/download/ on the PATH'
 		);
+		// The probe's own outcome names WHICH half failed — cargo missing from the PATH, the
+		// zigbuild subcommand unresolvable, or a rustup toolchain error — without it a CI leg
+		// that has both tools installed still fails with no clue where to look.
+		const why = probe.error
+			? `spawn ${probe.error.code ?? probe.error}`
+			: `exit ${probe.status}`;
+		const stderr = (probe.stderr ?? '').split('\n').find((line) => line.trim() !== '');
+		console.error(`  (probe: ${why}${stderr ? `; ${stderr.trim()}` : ''})`);
 		process.exit(1);
 	}
 
