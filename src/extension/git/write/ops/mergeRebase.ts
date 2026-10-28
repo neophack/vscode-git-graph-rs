@@ -81,7 +81,11 @@ export interface OperationStepParams {
 
 /** Continue an in-progress merge, rebase, cherry-pick or revert. */
 export function continueOperation(params: OperationStepParams): WriteOp {
-	return { steps: single([params.type, '--continue']), effects: ['commits', 'head', 'worktree'] };
+	// `core.editor=true` runs the shell no-op as the editor: a continue whose stopped commit
+	// wants a message edit must not open an interactive editor inside the headless extension
+	// host — that hangs it (the contract tests caught exactly that on CI, notepad on the
+	// windows runner, vi on ubuntu). Git reuses the existing message as-is.
+	return { steps: single(['-c', 'core.editor=true', params.type, '--continue']), effects: ['commits', 'head', 'worktree'] };
 }
 
 /** Abort an in-progress merge, rebase, cherry-pick or revert. */

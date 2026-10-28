@@ -185,7 +185,7 @@ describe('merge and rebase operations', () => {
 
 	it('continue and abort every operation type', () => {
 		for (const type of [GitOperationType.Merge, GitOperationType.Rebase, GitOperationType.CherryPick, GitOperationType.Revert]) {
-			expect(argvOf(continueOperation({ type }))).toEqual([[type, '--continue']]);
+			expect(argvOf(continueOperation({ type }))).toEqual([['-c', 'core.editor=true', type, '--continue']]);
 			expect(argvOf(abortOperation({ type }))).toEqual([[type, '--abort']]);
 		}
 	});
