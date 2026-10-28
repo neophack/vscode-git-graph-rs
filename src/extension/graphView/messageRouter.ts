@@ -165,10 +165,14 @@ export function createMessageRouter(deps: MessageRouterDeps): MessageRouter {
 	 */
 	const refreshAfterWriteOf = (command: string, msg: unknown): void => {
 		const repo = typeof msg === 'object' && msg !== null ? (msg as { repo?: unknown }).repo : undefined;
-		if (typeof repo !== 'string' || repo !== deps.currentRepo()) return; // the view shows another (or no) repository
-		const table = Object.prototype.hasOwnProperty.call(WRITE_EFFECTS, command) ? WRITE_EFFECTS[command as RequestCommand] : undefined;
+		if (typeof repo !== 'string') return;
+		// The dispatched request's effects are consumed here whichever way this ends: an entry
+		// left behind by an early return would outlive its request and pollute the next mutating
+		// command of that repository (e.g. turn its cheap refs-only refresh into a full reload).
 		const observed = observedEffects.get(repo);
 		observedEffects.delete(repo);
+		if (repo !== deps.currentRepo()) return; // the view shows another (or no) repository
+		const table = Object.prototype.hasOwnProperty.call(WRITE_EFFECTS, command) ? WRITE_EFFECTS[command as RequestCommand] : undefined;
 		let effects: ReadonlyArray<WriteEffect> | null;
 		if (observed === undefined || observed.size === 0) {
 			// No writer event (a refused write, a flow that ran outside the writer) or an op that
