@@ -341,7 +341,9 @@ describe('the in-page automation shim (assertion ops)', () => {
 
 	it('expectSize fails a genuinely unrendered element where a layout engine exists', async () => {
 		const { window, posted } = makeLayoutWindow('<body><button id="ctl"></button></body>', { ctl: { width: 0, height: 0 } });
-		const result = await runSteps(window, posted, [{ op: 'expectSize', selector: '#ctl', minW: 20 }]);
+		// timeoutMs 0: the genuinely-unrendered case must fail immediately, not ride out the
+		// layout race the poll exists for.
+		const result = await runSteps(window, posted, [{ op: 'expectSize', selector: '#ctl', minW: 20, timeoutMs: 0 }]);
 		assert.equal(result.ok, false);
 		assert.ok(result.error.indexOf('0x0') !== -1, result.error);
 	});

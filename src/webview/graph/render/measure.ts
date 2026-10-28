@@ -72,6 +72,37 @@ export function measureGraphColumn(graphColElem: HTMLElement, viewElem: HTMLElem
 	return { graphColumnWidth: graphColElem.offsetWidth, viewWidth: viewElem.clientWidth };
 }
 
+/** The measurements the tablet toolbar's overflow needs, taken with every control in the bar. */
+export interface ToolbarOverflowMetrics {
+	/** The bar's client width (0 while it is unmeasured: a hidden background tab, or jsdom). */
+	readonly barWidth: number;
+	/** How far the actions are pushed past the end of the bar's content box (≤ 0 when they fit). */
+	readonly excess: number;
+	/** The width each item gives back when it leaves the bar: its own width, plus the flex gap for a direct child of the bar. */
+	readonly itemWidths: number[];
+	/** The width the ⋯ button takes in the bar (that of the always-shown Find button, its twin). */
+	readonly moreWidth: number;
+}
+
+/**
+ * Read the tablet toolbar's overflow measurements in one batch, before the caller hides anything:
+ * the hidden items' widths then follow from these reads alone, with no read after the writes.
+ */
+export function measureToolbarOverflow(controls: HTMLElement, controlBtns: HTMLElement, items: HTMLElement[], findBtn: HTMLElement | null): ToolbarOverflowMetrics {
+	const style = getComputedStyle(controls);
+	const gap = parseFloat(style.columnGap) || 0;
+	const end = controls.getBoundingClientRect().right - (parseFloat(style.paddingRight) || 0) - (parseFloat(style.borderRightWidth) || 0);
+	return {
+		barWidth: controls.clientWidth,
+		excess: controlBtns.getBoundingClientRect().right - end,
+		itemWidths: items.map((item) => {
+			const width = item.getBoundingClientRect().width;
+			return width > 0 && item.parentElement === controls ? width + gap : width;
+		}),
+		moreWidth: findBtn !== null ? findBtn.getBoundingClientRect().width : 0
+	};
+}
+
 /** Reads for the windowed render: the view's scroll geometry, in one batch. */
 export interface ScrollMetrics {
 	readonly scrollTop: number;

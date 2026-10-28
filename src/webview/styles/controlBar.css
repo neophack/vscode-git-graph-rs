@@ -474,8 +474,8 @@ body.touchMode .contextMenu .mobileMenuSwitch.on::after{
 }
 /* ===== Tablet layout: the toolbar (merged from styles/tablet/toolbar.css) =====
  * One 48px row: [repo ▾] [branch ▾] [author ▾] (Remote) .................. (⌖)(⌕)(⏚)(▤)(>_)(⚙)(⤓)(⟳)
- * The phone keeps only the essentials in its app bar; a tablet has the width for every control,
- * so nothing moves into an overflow sheet. Left: the filters as capsules (the phone's capsule
+ * The phone keeps only the essentials in its app bar; a tablet keeps every control its width has
+ * room for, and only the rest moves into the ⋯ menu. Left: the filters as capsules (the phone's capsule
  * language at tablet density - leading icon, chevron, no border). Right: the actions as round
  * icon buttons in one flex row (the wide layout positions them absolutely). Flat and solid,
  * separated from the list by a hairline. */
@@ -543,19 +543,17 @@ body.tabletMode #repoControl{
 body.tabletMode #authorControl{
 	min-width:104px;
 }
-/* The compact toolbar, as on the phone: while the side pane is open (and in a narrow window) the
-   author filter, the Remote chip and every action but Find / Refresh move into the ⋯ overflow
-   menu (controlBar.ts showMobileOverflowMenu), which triggers the hidden buttons. An active path
-   filter keeps its button in the bar as the indicator. */
-body.tabletMode.sidePaneOpen #authorControl, body.tabletMode.sidePaneOpen #showRemoteBranchesControl,
-body.tabletMode.sidePaneOpen #controls #controlBtns > div,
-body.tabletMode.sidePaneOpen #controls.fetchSupported #controlBtns > #fetchBtn{
+/* The overflowing toolbar: controlBar.ts updateToolbarOverflow measures the bar and moves the
+   controls it has no room for - the less-used actions first, then the Remote chip and the author
+   filter; never Find / Refresh, nor an active path filter - into the ⋯ overflow menu
+   (showMobileOverflowMenu), which triggers the hidden buttons. Each rule out-ranks the one that
+   shows its control (the fetch button's has three ids). */
+body.tabletMode #controls [data-overflowed],
+body.tabletMode #controls #controlBtns > [data-overflowed],
+body.tabletMode #controls.fetchSupported #controlBtns > #fetchBtn[data-overflowed]{
 	display:none;
 }
-body.tabletMode.sidePaneOpen #controls #controlBtns > #findBtn,
-body.tabletMode.sidePaneOpen #controls #controlBtns > #refreshBtn,
-body.tabletMode.sidePaneOpen #controls #controlBtns > #mobileMoreBtn,
-body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
+body.tabletMode #controls[data-overflowing] #controlBtns > #mobileMoreBtn{
 	display:flex;
 }
 body.tabletMode #mobileMoreBtn svg{
@@ -717,23 +715,6 @@ body.tabletMode .pinnedChip{
 	border-radius:13px;
 }
 
-/* Last in the file: equal-specificity rules above (the actions' display) must lose to it. Below
-   this width the full toolbar (three filters, the Remote chip and eight actions, about 870px at
-   its floors) no longer fits without clipping the capsules' text. */
-@media screen and (max-width: 920px){
-	body.tabletMode #authorControl, body.tabletMode #showRemoteBranchesControl,
-	body.tabletMode #controls #controlBtns > div,
-	body.tabletMode #controls.fetchSupported #controlBtns > #fetchBtn{
-		display:none;
-	}
-	body.tabletMode #controls #controlBtns > #findBtn,
-	body.tabletMode #controls #controlBtns > #refreshBtn,
-	body.tabletMode #controls #controlBtns > #mobileMoreBtn,
-	body.tabletMode #controls #controlBtns > #filterBtn.active{
-		display:flex;
-	}
-}
-
 /* The side pane open in a window this narrow leaves the list well under 480px (the pane takes at
    least 320px): the toolbar tightens to the phone's floors so the capsules keep readable text
    beside the actions */
@@ -758,10 +739,7 @@ body.tabletMode .pinnedChip{
 	body.tabletMode.sidePaneOpen #controls .dropdownCurrentValue::before{
 		display:none;
 	}
-	body.tabletMode.sidePaneOpen #controls #controlBtns > #findBtn,
-	body.tabletMode.sidePaneOpen #controls #controlBtns > #refreshBtn,
-	body.tabletMode.sidePaneOpen #controls #controlBtns > #mobileMoreBtn,
-	body.tabletMode.sidePaneOpen #controls #controlBtns > #filterBtn.active{
+	body.tabletMode.sidePaneOpen #controls #controlBtns > div{
 		width:28px;
 		height:28px;
 		margin:0;

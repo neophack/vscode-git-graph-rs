@@ -5,7 +5,7 @@
  * takes over every control the narrow app bar has no room for.
  */
 
-import { alterClass, CLASS_ACTIVE, makeKeyboardActivatable } from '../../common/dom';
+import { alterClass, CLASS_ACTIVE, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, makeKeyboardActivatable } from '../../common/dom';
 import { html, SafeHtml, setHtml } from '../../common/html';
 import { formatStr, strings } from '../../common/i18n/index';
 import { SVG_ICONS } from '../../common/icons';
@@ -13,12 +13,27 @@ import * as GG from '../../common/protocol';
 import { getRepoName, getSortedRepositoryPaths, getSubRepoPath, SHOW_ALL_BRANCHES } from '../../common/util';
 import { GraphContext } from '../context';
 import { fetchFromRemotesAction } from '../actions/dialogActions';
+import { measureToolbarOverflow } from '../render/measure';
 import { getShowRemoteBranches } from '../state/repoSettings';
 import { DialogInputType } from '../widgets/dialog';
 import { Dropdown, DropdownOption } from '../widgets/dropdown';
 
 const CLASS_REFRESHING = 'refreshing';
 const CLASS_FETCH_SUPPORTED = 'fetchSupported';
+
+/**
+ * The tablet toolbar's overflow state, as data attributes rather than classes: the observers that
+ * re-measure the toolbar watch class changes, and must not be woken by their own result.
+ * ATTR_OVERFLOWED marks an item moved into the ⋯ menu, ATTR_OVERFLOWING the bar that shows ⋯.
+ */
+const ATTR_OVERFLOWED = 'data-overflowed';
+const ATTR_OVERFLOWING = 'data-overflowing';
+
+/**
+ * The tablet toolbar's items that move into the ⋯ menu as the bar runs out of room, the first to
+ * go first: the less-used actions, then the filters. Find and Refresh always stay in the bar.
+ */
+const TOOLBAR_OVERFLOW_ORDER = ['statisticsBtn', 'terminalBtn', 'settingsBtn', 'currentBtn', 'filterBtn', 'fetchBtn', 'showRemoteBranchesControl', 'authorControl'];
 
 /**
  * The options of the repository dropdown: a short name for every repository (the closest path
@@ -125,6 +140,8 @@ export class ControlBar {
 	public authorDropdown!: Dropdown;
 	public showRemoteBranchesElem!: HTMLInputElement;
 	private refreshBtnElem!: HTMLElement;
+	/** Disconnect the observers that re-measure the tablet toolbar's overflow. */
+	private stopObservingOverflow: (() => void) | null = null;
 
 	constructor(private readonly ctx: () => GraphContext) { }
 
@@ -135,13 +152,18 @@ export class ControlBar {
 
 	/**
 	 * Tear the control bar's own components down (F3): the dropdowns. They own the bar's only
-	 * page-level listeners (the document-level capture handlers); the toolbar buttons' handlers
-	 * sit on the host-rendered skeleton, which lives and dies with the page itself.
+	 * page-level listeners (the document-level capture handlers) besides the toolbar's overflow
+	 * observers; the toolbar buttons' handlers sit on the host-rendered skeleton, which lives and
+	 * dies with the page itself.
 	 */
 	public dispose() {
 		this.repoDropdown.dispose();
 		this.branchDropdown.dispose();
 		this.authorDropdown.dispose();
+		if (this.stopObservingOverflow !== null) {
+			this.stopObservingOverflow();
+			this.stopObservingOverflow = null;
+		}
 	}
 
 	/** Create the dropdowns and wire the controls (once the rest of the view exists). */
@@ -246,7 +268,8 @@ export class ControlBar {
 			statisticsBtn.addEventListener('click', () => ctx.widgets.statistics.show());
 		}
 		// The mobile layout's app bar keeps only Find and Refresh: every other control (and the
-		// "Show Remote Branches" checkbox) moves into this overflow menu. Hidden in the wide layout.
+		// "Show Remote Branches" checkbox) moves into this overflow menu. The tablet toolbar moves
+		// only what its width has no room for (updateToolbarOverflow). Hidden in the wide layout.
 		const controlBtns = controls.querySelector<HTMLElement>('#controlBtns');
 		let moreBtn: HTMLElement | null = null;
 		if (controlBtns !== null) {
@@ -270,37 +293,111 @@ export class ControlBar {
 			btn.setAttribute('role', 'button');
 			makeKeyboardActivatable(btn);
 		});
+
+		this.observeToolbarOverflow();
 	}
 
 	/**
-	 * The mobile app bar's overflow menu (a bottom action sheet): the toolbar buttons the app bar
-	 * has no room for, each triggering its hidden button so the two can never disagree, and the
-	 * "Show Remote Branches" checkbox as a switch.
+	 * Re-measure the tablet toolbar's overflow (once per animation frame) whenever its room or its
+	 * contents may have changed: the bar's own size (a window resize, the side pane opening), the
+	 * layout classes on <body>, and the classes inside the bar (a single repository hiding the
+	 * repository filter, the fetch button appearing, the path filter turning active).
+	 */
+	private observeToolbarOverflow() {
+		const controls = this.ctx().dom.controls;
+		let rafId: number | null = null;
+		const schedule = () => {
+			if (rafId !== null) return;
+			rafId = requestAnimationFrame(() => {
+				rafId = null;
+				this.updateToolbarOverflow();
+			});
+		};
+		const disconnects: Array<() => void> = [];
+		if (typeof ResizeObserver !== 'undefined') {
+			const resizeObserver = new ResizeObserver(schedule);
+			resizeObserver.observe(controls);
+			disconnects.push(() => resizeObserver.disconnect());
+		} else {
+			window.addEventListener('resize', schedule);
+			disconnects.push(() => window.removeEventListener('resize', schedule));
+		}
+		const classObserver = new MutationObserver(schedule);
+		classObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+		classObserver.observe(controls, { attributes: true, attributeFilter: ['class'], subtree: true });
+		disconnects.push(() => classObserver.disconnect());
+		this.stopObservingOverflow = () => {
+			disconnects.forEach((disconnect) => disconnect());
+			if (rafId !== null) cancelAnimationFrame(rafId);
+		};
+		schedule();
+	}
+
+	/**
+	 * Fit the tablet toolbar to its width: measure the bar with every control in it, and while the
+	 * actions are pushed past the bar's end (the filter capsules already shrunk to their floors),
+	 * move the next item of TOOLBAR_OVERFLOW_ORDER into the ⋯ menu. An active path filter keeps
+	 * its button in the bar as the indicator. The other layouts keep every item in place (the
+	 * phone's app bar hides its own set in CSS).
+	 */
+	public updateToolbarOverflow() {
+		const controls = this.ctx().dom.controls;
+		const items = TOOLBAR_OVERFLOW_ORDER.map((id) => this.byId(id)).filter((item): item is HTMLElement => item !== null);
+		items.forEach((item) => item.removeAttribute(ATTR_OVERFLOWED));
+		controls.removeAttribute(ATTR_OVERFLOWING);
+
+		const controlBtns = this.byId('controlBtns');
+		if (controlBtns === null || !document.body.classList.contains(CLASS_TABLET_MODE)) return;
+		const metrics = measureToolbarOverflow(controls, controlBtns, items, this.byId('findBtn'));
+		// An unmeasured bar (a hidden background tab) is left whole until it is shown
+		if (metrics.barWidth === 0 || metrics.excess <= 0.5) return;
+
+		controls.setAttribute(ATTR_OVERFLOWING, '');
+		let needed = metrics.excess + metrics.moreWidth;
+		for (let i = 0; i < items.length && needed > 0.5; i++) {
+			// A control not shown in the bar (no remotes to fetch from) frees nothing
+			if (metrics.itemWidths[i] === 0 || (items[i].id === 'filterBtn' && items[i].classList.contains(CLASS_ACTIVE))) continue;
+			items[i].setAttribute(ATTR_OVERFLOWED, '');
+			needed -= metrics.itemWidths[i];
+		}
+	}
+
+	/** Is a toolbar control in the ⋯ menu rather than the bar: all but the essentials on a phone, the overflowed ones on a tablet. */
+	private isInOverflowMenu(id: string) {
+		const elem = this.byId(id);
+		return elem !== null && (document.body.classList.contains(CLASS_MOBILE_MODE) || elem.hasAttribute(ATTR_OVERFLOWED));
+	}
+
+	/**
+	 * The mobile app bar's overflow menu (a bottom action sheet; a popover on a tablet): the
+	 * toolbar buttons the bar has no room for, each triggering its hidden button so the two can
+	 * never disagree, and the "Show Remote Branches" checkbox as a switch.
 	 */
 	private showMobileOverflowMenu(event: MouseEvent) {
 		const ctx = this.ctx(), store = ctx.store;
 		const controls = this.ctx().dom.controls;
 		const click = (id: string) => () => { const btn = controls.querySelector<HTMLElement>('#' + id); if (btn !== null) btn.click(); };
+		const inMenu = (id: string) => this.isInOverflowMenu(id);
 		const item = (icon: SafeHtml, label: string): SafeHtml => html`<span class="mobileMenuIcon">${icon}</span><span class="mobileMenuLabel">${label}</span>`;
 		const filterLabel = store.commitPathFilter !== null ? formatStr(strings.filterTitleActive, store.commitPathFilter) : strings.filterTitle;
 		ctx.contextMenu.show([
 			[
-				{ title: item(SVG_ICONS.current, strings.mobileGoToHead), visible: store.commitHead !== null, onClick: click('currentBtn') },
-				{ title: item(SVG_ICONS.download, store.config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle), visible: store.gitRemotes.length > 0, onClick: click('fetchBtn') },
-				{ title: item(SVG_ICONS.filter, filterLabel), visible: controls.querySelector<HTMLElement>('#filterBtn') !== null, onClick: click('filterBtn') },
-				{ title: item(SVG_ICONS.person, strings.mobileFilterAuthors), visible: store.gitConfig !== null && store.gitConfig.authors.length > 0, onClick: () => this.showMobileAuthorFilter() }
+				{ title: item(SVG_ICONS.current, strings.mobileGoToHead), visible: store.commitHead !== null && inMenu('currentBtn'), onClick: click('currentBtn') },
+				{ title: item(SVG_ICONS.download, store.config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle), visible: store.gitRemotes.length > 0 && inMenu('fetchBtn'), onClick: click('fetchBtn') },
+				{ title: item(SVG_ICONS.filter, filterLabel), visible: inMenu('filterBtn'), onClick: click('filterBtn') },
+				{ title: item(SVG_ICONS.person, strings.mobileFilterAuthors), visible: store.gitConfig !== null && store.gitConfig.authors.length > 0 && inMenu('authorControl'), onClick: () => this.showMobileAuthorFilter() }
 			],
 			[
 				{
 					title: html`${item(SVG_ICONS.branch, strings.mobileShowRemoteBranches)}<span class="mobileMenuSwitch${this.showRemoteBranchesElem.checked ? ' on' : ''}"></span>`,
-					visible: true,
+					visible: inMenu('showRemoteBranchesControl'),
 					onClick: () => this.showRemoteBranchesElem.click()
 				}
 			],
 			[
-				{ title: item(SVG_ICONS.graph, strings.statisticsTitle), visible: controls.querySelector<HTMLElement>('#statisticsBtn') !== null, onClick: click('statisticsBtn') },
-				{ title: item(SVG_ICONS.terminal, strings.terminalTitle), visible: true, onClick: click('terminalBtn') },
-				{ title: item(SVG_ICONS.gear, strings.settingsTitle), visible: true, onClick: click('settingsBtn') }
+				{ title: item(SVG_ICONS.graph, strings.statisticsTitle), visible: inMenu('statisticsBtn'), onClick: click('statisticsBtn') },
+				{ title: item(SVG_ICONS.terminal, strings.terminalTitle), visible: inMenu('terminalBtn'), onClick: click('terminalBtn') },
+				{ title: item(SVG_ICONS.gear, strings.settingsTitle), visible: inMenu('settingsBtn'), onClick: click('settingsBtn') }
 			]
 		], false, null, event, ctx.dom.view, null, 'mobileOverflowMenu');
 	}

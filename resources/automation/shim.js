@@ -200,7 +200,10 @@ function postToHost(message) {
 				// A 0x0 box the moment the page settles is usually layout still catching up —
 				// the dropdowns take their real width only once their data has landed (the
 				// first CI run measured 0x0 and the evidence capture 138px a beat later) —
-				// so measure a few times before declaring the element genuinely unrendered.
+				// so measure repeatedly (step.timeoutMs, the same knob waitFor takes; 8s
+				// default) before declaring the element genuinely unrendered, and name the
+				// display chain when it truly never renders.
+				var attempts = Math.max(1, Math.ceil((step.timeoutMs === undefined ? 8000 : step.timeoutMs) / 200));
 				var attemptSize = function (remaining) {
 					var box = find(step.selector).getBoundingClientRect();
 					if ((box.width !== 0 || box.height !== 0) || remaining <= 0) return Promise.resolve(box);
@@ -208,9 +211,17 @@ function postToHost(message) {
 						return attemptSize(remaining - 1);
 					});
 				};
-				return attemptSize(40).then(function (box) {
+				return attemptSize(attempts).then(function (box) {
 					var width = box.width, height = box.height;
-					if (width === 0 && height === 0) throw new Error('"' + step.selector + '" is not rendered (0x0 box)');
+					if (width === 0 && height === 0) {
+						var chain = '';
+						var el = find(step.selector);
+						while (el && el.nodeType === 1) {
+							chain += ' <' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '>=' + getComputedStyle(el).display;
+							el = el.parentElement;
+						}
+						throw new Error('"' + step.selector + '" is not rendered (0x0 box); ancestors:' + chain);
+					}
 					if (step.minW !== undefined && width < step.minW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected >= ' + step.minW + 'px');
 					if (step.maxW !== undefined && width > step.maxW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected <= ' + step.maxW + 'px');
 					if (step.minWVw !== undefined || step.maxWVw !== undefined) {
