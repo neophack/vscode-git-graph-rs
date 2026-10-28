@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
 import { Logger } from '../platform/logger';
-import { getPathFromUri } from '../platform/paths';
+import { watchFiles } from '../platform/workspace';
+import type { PatternWatcher } from '../platform/workspace';
 
 const FILE_CHANGE_REGEX = /(^\.git\/(config|index|packed-refs|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
 
@@ -24,8 +24,8 @@ export class RepoFileWatcher {
 	private readonly repoChangeCallback: (commitsAffected: boolean) => void;
 	private readonly repoConfigChangeCallback: (() => void) | null;
 	private repo: string | null = null;
-	private fsWatcher: vscode.FileSystemWatcher | null = null;
-	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
+	private fsWatcher: PatternWatcher | null = null;
+	private fsWatcherGit: PatternWatcher | null = null;
 	private refreshTimeout: NodeJS.Timeout | null = null;
 	private pendingCommitsAffected: boolean = false;
 	/**
@@ -67,15 +67,15 @@ export class RepoFileWatcher {
 
 		this.repo = repo;
 		// Create a File System Watcher for all events within the specified repository
-		this.fsWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '**'));
-		this.fsWatcher.onDidCreate(uri => this.refresh(uri));
-		this.fsWatcher.onDidChange(uri => this.refresh(uri));
-		this.fsWatcher.onDidDelete(uri => this.refresh(uri));
+		this.fsWatcher = watchFiles('**', repo);
+		this.fsWatcher.onDidCreate(path => this.refresh(path));
+		this.fsWatcher.onDidChange(path => this.refresh(path));
+		this.fsWatcher.onDidDelete(path => this.refresh(path));
 
-		this.fsWatcherGit = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '.git/**'));
-		this.fsWatcherGit.onDidCreate(uri => this.refresh(uri));
-		this.fsWatcherGit.onDidChange(uri => this.refresh(uri));
-		this.fsWatcherGit.onDidDelete(uri => this.refresh(uri));
+		this.fsWatcherGit = watchFiles('.git/**', repo);
+		this.fsWatcherGit.onDidCreate(path => this.refresh(path));
+		this.fsWatcherGit.onDidChange(path => this.refresh(path));
+		this.fsWatcherGit.onDidDelete(path => this.refresh(path));
 
 		this.logger.log('Started watching repo: ' + repo);
 	}
@@ -138,11 +138,11 @@ export class RepoFileWatcher {
 
 	/**
 	 * Handle a file event triggered by the File System Watcher.
-	 * @param uri The URI of the file that the event occurred on.
+	 * @param path The normalised path of the file that the event occurred on.
 	 */
-	private refresh(uri: vscode.Uri) {
+	private refresh(path: string) {
 		if (this.repo === null) return;
-		const relativePath = getPathFromUri(uri).replace(this.repo + '/', '');
+		const relativePath = path.replace(this.repo + '/', '');
 		if (relativePath === '.git/config') {
 			// Config modifications must invalidate caches even while muted (Git actions run by the
 			// Git Graph View itself may change the config), otherwise stale data could be served

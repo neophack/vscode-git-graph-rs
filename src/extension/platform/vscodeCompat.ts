@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { TerminalsLike } from './terminal';
 
 /**
  * The only sanctioned form of post-1.38 VS Code API access: each wrapper
@@ -17,11 +18,19 @@ import * as vscode from 'vscode';
 export interface TabGroupsLike {
 	readonly all: ReadonlyArray<TabGroupLike>;
 	close?(tab: unknown, preserveFocus?: boolean): Thenable<boolean>;
+	/**
+	 * The tab-change subscription (the orphaned-tab watcher's only event source). Optional like
+	 * `close`: the read side alone is enough for some consumers, and callers feature-detect it
+	 * separately.
+	 */
+	onDidChangeTabs?(listener: () => void): vscode.Disposable;
 }
 
-/** One tab group: its tabs (and, for callers that need it, the column it lives in). */
+/** One tab group: its tabs (and, for callers that need it, the column and active tab it holds). */
 export interface TabGroupLike {
 	readonly viewColumn?: unknown;
+	readonly isActive?: boolean;
+	readonly activeTab?: unknown;
 	readonly tabs: ReadonlyArray<unknown>;
 }
 
@@ -51,6 +60,27 @@ export interface WorkspaceTrustLike {
 	readonly isTrusted: boolean;
 	/** Fires whenever the workspace's trust level changes. */
 	onDidChangeWorkspaceTrust(listener: () => void, thisArg?: unknown): { dispose(): void };
+}
+
+/**
+ * The terminal-creation surface of `vscode.window`, for the callers that drive the integrated
+ * terminal through the platform Terminals adapter (so vscode-free modules can build the adapter
+ * without importing vscode). Read at call time, so merely importing this module never touches
+ * the vscode module surface beyond the import itself.
+ */
+export function terminalsWindow(): TerminalsLike {
+	return vscode.window;
+}
+
+/**
+ * The shell of the default integrated-terminal profile, as Visual Studio Code reports it
+ * (`vscode.env.shell`, VS Code 1.62+); '' when the host does not report one, in which case the
+ * caller falls back to its platform default.
+ */
+export function defaultShellPath(): string {
+	// The shape is probed through a structural cast (the field is newer than the oldest supported
+	// editor), matching the feature-detection pattern of the rest of this module.
+	return String((<{ shell?: string }>(<unknown>vscode.env)).shell ?? '');
 }
 
 /**

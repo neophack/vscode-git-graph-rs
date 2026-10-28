@@ -17,7 +17,7 @@ import type { CommandHost } from './context';
  */
 export async function searchCommits(host: CommandHost, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 	const repos = host.repoManager.getRepos();

@@ -21,7 +21,7 @@ import type { CommandHost } from './context';
  */
 export function addGitRepository(host: CommandHost, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 
@@ -52,7 +52,7 @@ export function addGitRepository(host: CommandHost, ui: UiPort = uiPort) {
  */
 export function removeGitRepository(host: CommandHost, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 

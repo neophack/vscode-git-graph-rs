@@ -23,6 +23,8 @@ import { vscodeMockOf } from '../../support/fakeVscode';
 import { StatusBarItem } from '../../../src/extension/statusBar';
 import { DiffDocProvider, encodeDiffDocUri, decodeDiffDocUri } from '../../../src/extension/views/diffDocProvider';
 import { AskpassManager } from '../../../src/extension/git/process/askpass/askpassManager';
+import { uiPort } from '../../../src/extension/platform/actions';
+import { getNonce } from '../../../src/extension/platform/format';
 import { EventEmitter } from '../../../src/shared/util/event';
 import { GitFileStatus } from '../../../src/shared/model/git';
 import { t } from '../../../src/extension/platform/i18n';
@@ -166,7 +168,11 @@ describe('DiffDocProvider', () => {
 describe('askpass bridge', () => {
 	let manager: AskpassManager;
 
-	beforeAll(() => { manager = new AskpassManager(); });
+	beforeAll(() => {
+		// The production collaborators (the platform nonce generator and uiPort) — the same wiring
+		// the composition root performs.
+		manager = new AskpassManager({ nonce: getNonce, input: () => uiPort });
+	});
 	afterAll(() => manager.dispose());
 
 	it('exposes the environment Git needs to reach the extension host', () => {

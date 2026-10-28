@@ -21,7 +21,7 @@ import { resolveRepoFromCommandArg, type CommandHost } from './context';
  */
 export async function amendLastCommit(host: CommandHost, arg: unknown) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 
@@ -46,7 +46,7 @@ export async function amendLastCommit(host: CommandHost, arg: unknown) {
  */
 export async function resetCurrentBranchToRemote(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 

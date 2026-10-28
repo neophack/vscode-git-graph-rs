@@ -1,15 +1,21 @@
 // View-side process helpers: bounded-parallelism promise evaluation, shell quoting and
 // detection, and the integrated git terminal. Generic process spawning lives in `spawn.ts`
-// (the one process seam).
+// (the one process seam). The terminal surface and the localizer arrive as parameters (the
+// platform Terminals adapter and `t` in production, passed by callers in layers allowed to
+// import platform/**), so this module carries no vscode or platform imports.
 
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { Terminals } from '../../platform/terminal';
-import { t } from '../../platform/i18n';
+import type { TerminalOptionsLike } from '../../platform/terminal';
+import type { TextMessageKey } from '../../../shared/i18n';
 
-/**
- * Open a new terminal, set up the Git executable, and optionally run a command.
- * @param cwd The working directory for the terminal.
+/** The localizer the terminal name is formatted through (the platform `t` in production). */
+export type TerminalLocalize = (key: TextMessageKey, ...args: Array<string | number>) => string;
+
+/** The integrated-terminal surface the git terminal flow drives (the platform Terminals adapter in production). */
+export interface GitTerminalPort {
+	run(options: TerminalOptionsLike, command: string | null): unknown;
+}
+
 /**
  * Open a new terminal, set up the Git executable, and optionally run a command.
  * @param cwd The working directory for the terminal.
@@ -18,8 +24,11 @@ import { t } from '../../platform/i18n';
  * @param name The name for the terminal.
  * @param shellPath The configured `git-graph-rs.integratedTerminalShell` (the caller answers
  * from the configuration snapshot; empty means VS Code's default shell).
+ * @param localize The localizer the terminal name is formatted through.
+ * @param terminals The terminal-creation surface (built at call time by the caller, so merely
+ * importing this module never touches a vscode surface).
  */
-export function openGitTerminal(cwd: string, gitPath: string, command: string | null, name: string, shellPath: string) {
+export function openGitTerminal(cwd: string, gitPath: string, command: string | null, name: string, shellPath: string, localize: TerminalLocalize, terminals: GitTerminalPort) {
 	const sep = isWindows() ? ';' : ':';
 	let p = process.env['PATH'] || '';
 	if (p !== '' && !p.endsWith(sep)) p += sep;
@@ -27,15 +36,14 @@ export function openGitTerminal(cwd: string, gitPath: string, command: string | 
 
 	const options: { cwd: string, name: string, env: { [key: string]: string }, shellPath?: string } = {
 		cwd: cwd,
-		name: t('terminalName', name),
+		name: localize('terminalName', name),
 		env: { 'PATH': p }
 	};
 	if (shellPath !== '') options.shellPath = shellPath;
 
-	// The platform adapter creates the terminal, optionally sends
-	// the command into it and shows it. Built at call time, so merely importing this
-	// module never touches the vscode module surface (minimal test mocks stay usable).
-	new Terminals(vscode.window).run(options, command === null ? null : 'git ' + command);
+	// The caller-injected adapter creates the terminal, optionally sends
+	// the command into it and shows it.
+	terminals.run(options, command === null ? null : 'git ' + command);
 }
 
 /**
@@ -52,11 +60,12 @@ export type ShellKind = 'cmd' | 'powershell' | 'fish' | 'posix';
 /**
  * Identify the shell kind of the terminal that openGitTerminal creates: the configured
  * `git-graph-rs.integratedTerminalShell` (answered by the caller from the configuration
- * snapshot), falling back to the profile default VS Code reports (only
- * available in newer versions — otherwise the platform default is assumed).
+ * snapshot), falling back to the profile default the caller passes (read from
+ * `vscode.env.shell` through the platform compat module in production — only available in
+ * newer versions, so an empty value means the platform default is assumed).
  */
-export function detectTerminalShellKind(configuredShell: string): ShellKind {
-	const shellPath = configuredShell !== '' ? configuredShell : String((<{ shell?: string }>(<unknown>vscode.env)).shell ?? '');
+export function detectTerminalShellKind(configuredShell: string, defaultShell: string): ShellKind {
+	const shellPath = configuredShell !== '' ? configuredShell : defaultShell;
 	return shellKindFromPath(shellPath);
 }
 

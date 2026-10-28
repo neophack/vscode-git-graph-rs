@@ -3,8 +3,9 @@ import type { CommitAuthor } from '../../shared/model/webview';
 
 /**
  * The pure decision functions of the global-settings module: the commitAuthors
- * validator and the global-author write/clear decisions. The module imports 'vscode'
- * for its save flow, so the mock only stands in for that.
+ * validator and the global-author write/clear decisions. The save flow goes through the
+ * platform layer (the configuration write and the confirmation dialogs), so the mock stands in
+ * for those modules' vscode reads.
  */
 
 vi.mock('vscode', () => ({

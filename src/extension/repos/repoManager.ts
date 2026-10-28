@@ -1,18 +1,20 @@
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import type { GitRunnerPort } from '../graphView/gitRunner';
 import { addRemoteTagsRefspec } from '../git/write/ops/config';
 import { ErrorInfo } from '../../shared/protocol/messages';
 import { GitRepoState } from '../../shared/model/repoState';
-import { getPathFromUri, realpath } from '../platform/paths';
+import { realpath } from '../platform/paths';
 import { BufferedQueue } from '../../shared/util/bufferedQueue';
 import { evalPromises } from '../git/process/childProcess';
 import { Disposable, toDisposable } from '../../shared/util/disposable';
 import { GgEvent } from '../../shared/util/event';
-import { takeSnapshot } from '../platform/config';
-import type { ConfigSnapshot, WorkspaceConfigurationLike, WorkspaceLike } from '../platform/config';
+import { takeScopedSnapshot } from '../platform/config';
+import { uiPort } from '../platform/actions';
 import { ExtensionState } from '../platform/storage';
 import { Logger } from '../platform/logger';
+import { onDidChangeWorkspaceFolders, watchFiles, workspaceFolders } from '../platform/workspace';
+import type { PatternWatcher } from '../platform/workspace';
 import { pinsEqual } from './repoConfigFile';
 import { RepoRegistry } from './repoRegistry';
 import { RepoSettingsStore } from './repoSettingsStore';
@@ -29,24 +31,6 @@ import {
 // re-exported here so the repository manager's importers keep their single import path.
 export type { RepoChangeEvent } from './repoRegistry';
 export { MAX_RECENT_REPOS, bumpRecentRepos, recentReposList } from './repoRegistry';
-
-/**
- * One snapshot of the extension's settings, resolved against the given repository's folder when
- * one is given (the exact scope the per-repository read needs; the settings the manager reads
- * are window-scoped, so the scoped and unscoped values agree). Defaults come from the
- * configuration schema table through the snapshot — nothing here defines one.
- * @param repo An optional path of a repository (for workspace-folder-scoped resolution).
- * @returns The configuration snapshot.
- */
-function configSnapshotOf(repo?: string): ConfigSnapshot {
-	let workspace: WorkspaceLike = vscode.workspace;
-	if (repo !== undefined) {
-		workspace = {
-			getConfiguration: (section?: string): WorkspaceConfigurationLike => vscode.workspace.getConfiguration(section, vscode.Uri.file(repo))
-		};
-	}
-	return takeSnapshot(workspace);
-}
 
 /**
  * The collaborators the RepoManager is constructed with: the service's explicit dependency
@@ -80,8 +64,8 @@ export class RepoManager extends Disposable {
 
 	private maxDepthOfRepoSearch: number;
 
-	private readonly folderWatchers: { [workspace: string]: vscode.FileSystemWatcher } = {};
-	private readonly configWatcher: vscode.FileSystemWatcher;
+	private readonly folderWatchers: { [workspace: string]: PatternWatcher } = {};
+	private readonly configWatcher: PatternWatcher;
 
 	private readonly onWatcherCreateQueue: BufferedQueue<string>;
 	private readonly onWatcherChangeQueue: BufferedQueue<string>;
@@ -96,11 +80,11 @@ export class RepoManager extends Disposable {
 		this.git = deps.git;
 		this.logger = deps.logger;
 		this.registry = new RepoRegistry({ state: deps.state, logger: deps.logger, backend: deps.repo.read });
-		this.maxDepthOfRepoSearch = configSnapshotOf().maxDepthOfRepoSearch;
-		// Wrapped (not passed as the method itself), so the vscode.window read is deferred to prompt time
-		this.settings = new RepoSettingsStore(this.registry, (message, ...items) => vscode.window.showInformationMessage(message, ...items));
+		this.maxDepthOfRepoSearch = takeScopedSnapshot().maxDepthOfRepoSearch;
+		// Wrapped (not passed as the method itself), so the native prompt surface is read at prompt time
+		this.settings = new RepoSettingsStore(this.registry, (message, ...items) => uiPort.showInformationMessage(message, ...items));
 
-		this.configWatcher = vscode.workspace.createFileSystemWatcher('**/.vscode/git-graph-rs.json');
+		this.configWatcher = watchFiles('**/.vscode/git-graph-rs.json');
 		this.configWatcher.onDidCreate(this.onConfigWatcherCreateOrChange.bind(this));
 		this.configWatcher.onDidChange(this.onConfigWatcherCreateOrChange.bind(this));
 
@@ -114,18 +98,18 @@ export class RepoManager extends Disposable {
 			// - search added folders for repositories
 			// - remove repositories within deleted folders
 			// - apply changes to the order of workspace folders
-			vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+			onDidChangeWorkspaceFolders(async (e) => {
 				let changes = false, path;
 				if (e.added.length > 0) {
 					for (let i = 0; i < e.added.length; i++) {
-						path = getPathFromUri(e.added[i].uri);
+						path = e.added[i];
 						if (await this.searchDirectoryForRepos(path, this.maxDepthOfRepoSearch)) changes = true;
 						this.startWatchingFolder(path);
 					}
 				}
 				if (e.removed.length > 0) {
 					for (let i = 0; i < e.removed.length; i++) {
-						path = getPathFromUri(e.removed[i].uri);
+						path = e.removed[i];
 						if (this.registry.removeReposWithinFolder(path)) changes = true;
 						this.stopWatchingFolder(path);
 					}
@@ -181,7 +165,7 @@ export class RepoManager extends Disposable {
 	 * Apply the new value of `git-graph-rs.maxDepthOfRepoSearch` to the RepoManager.
 	 */
 	private maxDepthOfRepoSearchChanged() {
-		const newDepth = configSnapshotOf().maxDepthOfRepoSearch;
+		const newDepth = takeScopedSnapshot().maxDepthOfRepoSearch;
 		if (newDepth > this.maxDepthOfRepoSearch) {
 			this.maxDepthOfRepoSearch = newDepth;
 			this.searchWorkspaceForRepos();
@@ -205,7 +189,7 @@ export class RepoManager extends Disposable {
 		this.settings.checkReposForNewConfig();
 		await this.checkReposForNewSubmodules();
 		await Promise.all(this.registry.repoPaths().map(repo => {
-			if (configSnapshotOf(repo).repositoryTrackRemoteTags) {
+			if (takeScopedSnapshot(repo).repositoryTrackRemoteTags) {
 				return this.trackRemoteTags(repo);
 			}
 			return Promise.resolve();
@@ -425,11 +409,11 @@ export class RepoManager extends Disposable {
 	 */
 	public async searchWorkspaceForRepos() {
 		this.logger.log('Searching workspace for new repos ...');
-		const rootFolders = vscode.workspace.workspaceFolders;
+		const rootFolders = workspaceFolders();
 		let changes = false;
 		if (typeof rootFolders !== 'undefined') {
 			for (let i = 0; i < rootFolders.length; i++) {
-				if (await this.searchDirectoryForRepos(getPathFromUri(rootFolders[i].uri), this.maxDepthOfRepoSearch)) changes = true;
+				if (await this.searchDirectoryForRepos(rootFolders[i].path, this.maxDepthOfRepoSearch)) changes = true;
 			}
 		}
 		this.logger.log('Completed searching workspace for new repos');
@@ -482,10 +466,10 @@ export class RepoManager extends Disposable {
 	 * Start watching each of the folders in the current workspace for changes.
 	 */
 	private startWatchingFolders() {
-		const rootFolders = vscode.workspace.workspaceFolders;
+		const rootFolders = workspaceFolders();
 		if (typeof rootFolders !== 'undefined') {
 			for (let i = 0; i < rootFolders.length; i++) {
-				this.startWatchingFolder(getPathFromUri(rootFolders[i].uri));
+				this.startWatchingFolder(rootFolders[i].path);
 			}
 		}
 	}
@@ -500,7 +484,7 @@ export class RepoManager extends Disposable {
 		// entry would orphan the previous watcher, whose handlers keep firing for the rest of
 		// the session — every event in the folder processed twice.
 		if (this.folderWatchers[path] !== undefined) return;
-		const watcher = vscode.workspace.createFileSystemWatcher(path + '/**');
+		const watcher = watchFiles(path + '/**');
 		watcher.onDidCreate(this.onWatcherCreate.bind(this));
 		watcher.onDidChange(this.onWatcherChange.bind(this));
 		watcher.onDidDelete(this.onWatcherDelete.bind(this));
@@ -520,10 +504,9 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Handle a file system creation event.
-	 * @param uri The URI of the creation event.
+	 * @param path The normalised path of the creation event.
 	 */
-	private onWatcherCreate(uri: vscode.Uri) {
-		let path = getPathFromUri(uri);
+	private onWatcherCreate(path: string) {
 		if (path.indexOf('/.git/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
 		this.onWatcherCreateQueue.enqueue(path);
@@ -531,10 +514,9 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Handle a file system change event.
-	 * @param uri The URI of the change event.
+	 * @param path The normalised path of the change event.
 	 */
-	private onWatcherChange(uri: vscode.Uri) {
-		let path = getPathFromUri(uri);
+	private onWatcherChange(path: string) {
 		if (path.indexOf('/.git/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
 		this.onWatcherChangeQueue.enqueue(path);
@@ -542,10 +524,9 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Handle a file system deletion event.
-	 * @param uri The URI of the deletion event.
+	 * @param path The normalised path of the deletion event.
 	 */
-	private onWatcherDelete(uri: vscode.Uri) {
-		let path = getPathFromUri(uri);
+	private onWatcherDelete(path: string) {
 		if (path.indexOf('/.git/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
 		if (this.registry.removeReposWithinFolder(path)) this.sendRepos();
@@ -583,10 +564,10 @@ export class RepoManager extends Disposable {
 
 	/**
 	 * Handle a file system create or change event for a configuration file.
-	 * @param uri The URI of the create or change event.
+	 * @param path The normalised path of the configuration file.
 	 */
-	private onConfigWatcherCreateOrChange(uri: vscode.Uri) {
-		this.settings.onConfigWatcherCreateOrChange(getPathFromUri(uri));
+	private onConfigWatcherCreateOrChange(path: string) {
+		this.settings.onConfigWatcherCreateOrChange(path);
 	}
 
 	/**

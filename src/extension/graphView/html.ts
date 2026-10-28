@@ -203,7 +203,7 @@ export function renderGraphViewHtml(inputs: GraphViewHtmlInputs): string {
 	if (!canLoadGraphView(inputs.gitCliAvailable, inputs.extensionPath)) {
 		body = `<body class="unableToLoad">
 		<h2>${t('unableToLoadGitGraph')}</h2>
-		<p class="unableToLoadMessage">${unableToFindGitMsg()}</p>
+		<p class="unableToLoadMessage">${unableToFindGitMsg(t)}</p>
 		</body>`;
 	} else if (numRepos > 0) {
 		const stickyClassAttr = initialState.config.stickyHeader ? ' class="sticky"' : '';

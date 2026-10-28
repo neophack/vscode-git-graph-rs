@@ -6,15 +6,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ExtensionState } from '../../platform/storage';
-import { t } from '../../platform/i18n';
 import { spawnOutput } from '../process/spawn';
 
 /**
+ * The localizer the executable module's message helper takes (the platform `t`, which the
+ * callers — layers allowed to import platform/i18n — pass in, keeping this layer vscode-free).
+ */
+export type GitLocalize = (key: 'unableToFindGit') => string;
+
+/**
  * Get the localised "unable to find a Git executable" message.
+ * @param localize The localizer (the platform `t` in production).
  * @returns The localised message.
  */
-export function unableToFindGitMsg(): string {
-	return t('unableToFindGit');
+export function unableToFindGitMsg(localize: GitLocalize): string {
+	return localize('unableToFindGit');
 }
 
 export interface GitExecutable {

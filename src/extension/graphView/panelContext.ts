@@ -1,21 +1,22 @@
-import * as vscode from 'vscode';
 import type { AvatarManager } from '../integrations/avatars/avatarManager';
 import type { ExtensionState } from '../platform/storage';
 import { gerritOf, viewColumnOfEditorGroup } from '../platform/config';
 import type { ConfigProvider, ConfigSnapshot } from '../platform/config';
+import { updateGlobalConfigValue } from '../platform/config';
 import { t } from '../platform/i18n';
 import type { Logger } from '../platform/logger';
 import { unableToFindGitMsg } from '../git/executable/findGit';
 import { detectTerminalShellKind, openGitTerminal, quoteForShell } from '../git/process/childProcess';
+import { Terminals } from '../platform/terminal';
+import { defaultShellPath, terminalsWindow } from '../platform/vscodeCompat';
 import {
-	copyFilePathToClipboard, copyToClipboard, createPullRequest, openExtensionSettings,
-	openExternalUrl, resolveDiffFromHash, showErrorMessage, uiPort, viewDiff, viewFileAtRevision, viewScm
+	archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, openExtensionSettings,
+	openExternalUrl, openFile, openTextFileInEditor, resolveDiffFromHash, showErrorMessage, viewDiff, viewFileAtRevision, viewScm
 } from '../platform/actions';
 import { doesFileExist } from '../platform/paths';
 import type { RepoManager } from '../repos/repoManager';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { GitConfigKey, setConfigValue, unsetConfigValue } from '../git/write/ops/config';
-import { archive as archiveOp } from '../git/write/ops/commits';
 import { isSafeRefName, isValidCommitHash } from '../git/write/argSafety';
 import type { LogOptions, RefReadOptions } from '../git/read/types';
 import { UNCOMMITTED } from '../git/read/types';
@@ -156,8 +157,8 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 				return viewDiff(repo, hash, UNCOMMITTED, filePath, newFilePath, type);
 			},
 			viewFileAtRevision: (repo, hash, filePath) => viewFileAtRevision(repo, hash, filePath),
-			openFile: (repo, filePath, hash) => openFileResolvingRenames(deps.repo, deps.config.current, repo, filePath, hash),
-			createArchive: (repo, ref) => createArchive(deps.repo, repo, ref),
+			openFile: (repo, filePath, hash) => openFile(repo, filePath, hash, deps.repo.read, viewColumnOfEditorGroup(deps.config.current.openNewTabEditorGroup)),
+			createArchive: (repo, ref) => archive(repo, ref, deps.repo.write),
 			createPullRequest: (config, sourceOwner, sourceRepo, sourceBranch) => createPullRequest(config, sourceOwner, sourceRepo, sourceBranch),
 			setInterfaceLanguage: (language) => setInterfaceLanguage(deps.logger, language),
 			openCompareTab: (repo, fromHash, toHash, singleCommit) => {
@@ -172,7 +173,7 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 			},
 			openGitTerminal: (repo, command, name) => openTerminalAt(deps.git, deps.config.current.integratedTerminalShell, repo, command, name),
 			openExternalDirDiff: (repo, fromHash, toHash, isGui) => openExternalDirDiff(deps.git, deps.logger, deps.config.current, repo, fromHash, toHash, isGui),
-			quoteForTerminal: (obj) => quoteForShell(obj, detectTerminalShellKind(deps.config.current.integratedTerminalShell))
+			quoteForTerminal: (obj) => quoteForShell(obj, detectTerminalShellKind(deps.config.current.integratedTerminalShell, defaultShellPath()))
 		},
 		avatars: {
 			fetchAvatarImage: (email, repo, remote, commits) => deps.avatarManager.fetchAvatarImage(email, repo, remote, commits),
@@ -239,7 +240,7 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
 export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): AuxiliaryViewsPort {
 	const gitStream: GitStreamSpawner = {
 		spawnGitStream: (args, repo) => {
-			if (process.git === null) throw new Error(unableToFindGitMsg());
+			if (process.git === null) throw new Error(unableToFindGitMsg(t));
 			return process.spawnStream(args, repo);
 		}
 	};
@@ -392,34 +393,13 @@ function logOptionsOf(query: CommitLoadQuery, config: ConfigSnapshot): LogOption
 
 /* ---------- The ui port's platform flows ---------- */
 
-/** Open a file of the repository, resolving a rename through the backend when the file is gone. */
-async function openFileResolvingRenames(repo: ProductionGitRepository, config: ConfigSnapshot, repoPath: string, filePath: string, hash: string): Promise<ErrorInfo> {
-	let newFilePath = filePath;
-	let fileExists = await doesFileExist(repoPath + '/' + newFilePath);
-	if (!fileExists) {
-		const renamedFilePath = await repo.read.getNewPathOfRenamedFile(repoPath, hash, filePath).catch(() => null);
-		if (renamedFilePath !== null && await doesFileExist(repoPath + '/' + renamedFilePath)) {
-			newFilePath = renamedFilePath;
-			fileExists = true;
-		}
-	}
-	if (fileExists) {
-		return vscode.commands.executeCommand('vscode.open', vscode.Uri.file(repoPath + '/' + newFilePath), {
-			preview: true,
-			viewColumn: viewColumnOfEditorGroup(config.openNewTabEditorGroup)
-		}).then(
-			() => null,
-			() => t('openFileFailed', newFilePath)
-		);
-	}
-	return t('fileNotInRepo', newFilePath);
-}
-
 /** Open the integrated terminal at `repo`, optionally running a Git command. */
 async function openTerminalAt(git: GitRunnerPort, shellPath: string, repo: string, command: string | null, name: string): Promise<ErrorInfo> {
 	const gitPath = git.gitPath();
-	if (gitPath === null) return unableToFindGitMsg();
-	openGitTerminal(repo, gitPath, command, name, shellPath);
+	if (gitPath === null) return unableToFindGitMsg(t);
+	// The terminal adapter is built at call time over the compat-captured window, so the
+	// vscode surface is only read when a terminal is actually opened.
+	openGitTerminal(repo, gitPath, command, name, shellPath, t, new Terminals(terminalsWindow()));
 	return new Promise<ErrorInfo>((resolve) => setTimeout(() => resolve(null), 1000));
 }
 
@@ -428,7 +408,7 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, config: ConfigS
 	return new Promise<ErrorInfo>((resolve) => {
 		const gitPath = git.gitPath();
 		if (gitPath === null) {
-			resolve(unableToFindGitMsg());
+			resolve(unableToFindGitMsg(t));
 			return;
 		}
 		const args = ['difftool', '--dir-diff'];
@@ -454,32 +434,11 @@ function openExternalDirDiff(git: GitRunnerPort, logger: Logger, config: ConfigS
 				}
 			});
 		} else {
-			openGitTerminal(repo, gitPath, args.join(' '), t('openExternalDirDiffTerminalName'), config.integratedTerminalShell);
+			openGitTerminal(repo, gitPath, args.join(' '), t('openExternalDirDiffTerminalName'), config.integratedTerminalShell, t, new Terminals(terminalsWindow()));
 		}
 		// The tool may block until the user closes it: resolve once it has launched.
 		setTimeout(() => resolve(null), 1500);
 	});
-}
-
-/**
- * The save-dialog + `git archive` flow, over the pure op. The dialog
- * goes through the host's UiPort (platform/actions.ts's uiPort), so the automation/E2E build's
- * ScriptedUiPort answers it from the scenario script.
- */
-async function createArchive(repo: ProductionGitRepository, repoPath: string, ref: string): Promise<ErrorInfo> {
-	try {
-		const uri = await uiPort.showSaveDialog({
-			defaultUri: vscode.Uri.file(repoPath),
-			saveLabel: t('archiveSaveLabel'),
-			filters: { [t('archiveTarFilter')]: ['tar'], [t('archiveZipFilter')]: ['zip'] }
-		});
-		if (uri === undefined) return t('archiveNoFileName');
-		const extension = uri.fsPath.substring(uri.fsPath.lastIndexOf('.') + 1).toLowerCase();
-		if (extension !== 'tar' && extension !== 'zip') return t('archiveInvalidExtension', extension);
-		return repo.write.run(repoPath, archiveOp({ ref: ref, outputFilePath: uri.fsPath, type: extension }));
-	} catch (_) {
-		return t('archiveNoSaveDialog');
-	}
 }
 
 /** The "Uncommitted Changes" zero-confirmation window and re-check interval (see UncommittedCountStabiliser). */
@@ -551,7 +510,7 @@ export function createViewPort(deps: ViewPortDeps): ViewPort {
 async function setInterfaceLanguage(logger: Logger, language: 'auto' | 'en' | 'zh-cn'): Promise<ErrorInfo> {
 	if (language !== 'auto' && language !== 'en' && language !== 'zh-cn') return t('interfaceLanguageInvalid');
 	try {
-		await vscode.workspace.getConfiguration('git-graph-rs').update('interfaceLanguage', language, vscode.ConfigurationTarget.Global);
+		await updateGlobalConfigValue('interfaceLanguage', language);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		logger.log('Saving the interface language failed: ' + message);
@@ -571,8 +530,7 @@ async function openLogFile(logger: Logger): Promise<ErrorInfo> {
 		return t('noLogRecorded');
 	}
 	try {
-		const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logFile));
-		await vscode.window.showTextDocument(document, { preview: false });
+		await openTextFileInEditor(logFile);
 		return null;
 	} catch (error) {
 		return error instanceof Error ? error.message : String(error);

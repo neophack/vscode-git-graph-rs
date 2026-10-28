@@ -20,9 +20,8 @@ const vscodeMock = vi.hoisted(() => {
 	return {
 		env: { language: 'en', uriScheme: 'vscode' },
 		Uri: { file: (p: string) => ({ fsPath: p }) },
-		// The live config module builds its ViewColumn table at import time, and the child-process
-		// helpers capture vscode.window for the terminal adapter (which degrades to NULL on a
-		// missing or malformed window)
+		// The live config module builds its ViewColumn table at import time, so the enum map must
+		// be present even though nothing in these tests opens a view
 		ViewColumn: { Active: 1, Beside: -2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 },
 		window: null as unknown,
 		workspace: {

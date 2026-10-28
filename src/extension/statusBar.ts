@@ -1,13 +1,16 @@
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import { t } from './platform/i18n';
 import type { ConfigProvider } from './platform/config';
 import { Logger } from './platform/logger';
 import { RepoChangeEvent } from './repos/repoManager';
+import { createStatusBarItem } from './platform/statusBar';
 import { Disposable } from '../shared/util/disposable';
 import { GgEvent } from '../shared/util/event';
 
 /**
  * Manages the Git Graph Status Bar Item, which allows users to open the Git Graph View from the Visual Studio Code Status Bar.
+ * The item itself is created through the platform adapter (the single vscode seam); this class
+ * drives it structurally.
  */
 export class StatusBarItem extends Disposable {
 	private readonly logger: Logger;
@@ -29,7 +32,7 @@ export class StatusBarItem extends Disposable {
 		this.logger = logger;
 		this.config = config;
 
-		const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
+		const statusBarItem = createStatusBarItem();
 		statusBarItem.text = 'Git Graph RS';
 		statusBarItem.tooltip = t('viewGitGraphRs');
 		statusBarItem.command = 'git-graph-rs.view';

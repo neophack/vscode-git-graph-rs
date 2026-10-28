@@ -1,7 +1,9 @@
 /**
  * The view-side process helpers (ported from legacy/tests/utils.test.mjs): bounded-parallelism
- * promise evaluation, shell quoting and detection, and the integrated Git terminal. The `vscode`
- * module is faked with a recording stub so the terminal the wrapper opens can be inspected.
+ * promise evaluation, shell quoting and detection, and the integrated Git terminal. The localizer
+ * and the terminal adapter are passed to the wrapper the way the production callers pass them
+ * (the platform `t` and a Terminals built over the fake `vscode` module's window, whose terminal
+ * factory records what the wrapper opens).
  * (Generic process spawning is covered by `spawn.test.ts`.)
  */
 
@@ -45,7 +47,11 @@ const vscodeMock = vi.hoisted(() => {
 vi.mock('vscode', () => vscodeMock);
 
 import { t } from '../../platform/i18n';
+import { Terminals } from '../../platform/terminal';
 import { detectTerminalShellKind, evalPromises, openGitTerminal, quoteForShell } from './childProcess';
+
+/** The terminal adapter the way the production callers build it (over the faked window). */
+const terminals = () => new Terminals(vscodeMock.window);
 
 describe('evalPromises', () => {
 	it('resolves an empty and a single-element input', async () => {
@@ -90,13 +96,11 @@ describe('quoteForShell', () => {
 	});
 
 	it('detects the shell kind from the configured integrated terminal shell (answered by the caller)', () => {
-		expect(detectTerminalShellKind('C:\\Program Files\\PowerShell\\7\\pwsh.exe')).toBe('powershell');
-		expect(detectTerminalShellKind('/usr/bin/fish')).toBe('fish');
-		expect(detectTerminalShellKind('/bin/zsh')).toBe('posix');
-		// No shell configured: the profile default VS Code reports decides
-		vscodeMock.env.shell = '/bin/bash';
-		expect(detectTerminalShellKind('')).toBe('posix');
-		vscodeMock.env.shell = '';
+		expect(detectTerminalShellKind('C:\\Program Files\\PowerShell\\7\\pwsh.exe', '')).toBe('powershell');
+		expect(detectTerminalShellKind('/usr/bin/fish', '')).toBe('fish');
+		expect(detectTerminalShellKind('/bin/zsh', '')).toBe('posix');
+		// No shell configured: the profile default the caller passes decides
+		expect(detectTerminalShellKind('', '/bin/bash')).toBe('posix');
 	});
 });
 
@@ -105,7 +109,7 @@ describe('openGitTerminal', () => {
 		vscodeMock.terminals.length = 0;
 		const sep = process.platform === 'win32' ? ';' : ':';
 
-		openGitTerminal('/repo', '/opt/git/bin/git', 'rebase -i HEAD~3', 'Rebase', '');
+		openGitTerminal('/repo', '/opt/git/bin/git', 'rebase -i HEAD~3', 'Rebase', '', t, terminals());
 		const terminal = vscodeMock.terminals[0];
 		expect(terminal.options.cwd).toBe('/repo');
 		expect(terminal.options.name).toBe(t('terminalName', 'Rebase'));
@@ -116,7 +120,7 @@ describe('openGitTerminal', () => {
 
 		vscodeMock.settings['git-graph-rs.integratedTerminalShell'] = '/bin/zsh';
 		try {
-			openGitTerminal('/repo', '/opt/git/bin/git', null, 'Shell', '/bin/zsh');
+			openGitTerminal('/repo', '/opt/git/bin/git', null, 'Shell', '/bin/zsh', t, terminals());
 		} finally {
 			delete vscodeMock.settings['git-graph-rs.integratedTerminalShell'];
 		}

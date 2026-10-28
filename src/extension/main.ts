@@ -32,7 +32,8 @@ import { createPrewarmController, createScheduledPrewarmReader } from './repos/p
 import { StatusBarItem } from './statusBar';
 import { createTrustGate } from './platform/workspaceTrust';
 import { findGit, unableToFindGitMsg } from './git/executable/findGit';
-import { followGitPathSetting, showErrorMessage, showInformationMessageOncePerVersion, showRestrictedModeNoticeOnce } from './platform/actions';
+import { followGitPathSetting, showErrorMessage, showInformationMessageOncePerVersion, showRestrictedModeNoticeOnce, uiPort } from './platform/actions';
+import { getNonce } from './platform/format';
 import { setInterfaceLanguageSource } from './platform/i18n';
 import { EventEmitter } from '../shared/util/event';
 import type { ExtensionServices } from './services';
@@ -80,8 +81,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (executable === null && hasEngineForPlatform(context.extensionPath)) {
 				showInformationMessageOncePerVersion(context, logger, 'noGitRunsOnEngine', t('noGitRunsOnEngine'));
 			} else if (executable === null) {
-				void showErrorMessage(unableToFindGitMsg());
-				logger.logError(unableToFindGitMsg());
+				void showErrorMessage(unableToFindGitMsg(t));
+				logger.logError(unableToFindGitMsg(t));
 			}
 		},
 		log: (message) => logger.log(message)
@@ -97,8 +98,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	const applyGitExecutable = () => { gitCell.executable = gitResolution.current(); };
 	// The one process adapter (askpass, cancellation, output limits, error shape), shared by the
 	// writer and the runner; every run awaits the Git resolution first, so a spawn issued
-	// while validation is still in flight waits instead of failing with "no Git".
-	const askpass = new AskpassManager();
+	// while validation is still in flight waits instead of failing with "no Git". The askpass
+	// server takes its collaborators as parameters (the platform nonce generator and uiPort),
+	// keeping the git layer free of vscode and platform imports.
+	const askpass = new AskpassManager({ nonce: getNonce, input: () => uiPort });
 	const gitProcess = new GitProcess(() => gitCell.executable, undefined, () => ({ ...askpass.getEnv() }), () => gitResolution.ready());
 	// The read backend, rebuilt when the Git executable changes or trust transitions; the
 	// host holds the swappable forwarder, so a rebuild re-aims every consumer without rebinding.

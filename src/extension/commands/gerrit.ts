@@ -22,7 +22,7 @@ import { resolveRepoFromCommandArg, type CommandHost } from './context';
  */
 export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort = uiPort) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 
@@ -78,7 +78,7 @@ export async function gerritPushRef(host: CommandHost, arg: unknown, ui: UiPort 
  */
 export async function gerritFetchCommitMsgHook(host: CommandHost, arg: unknown) {
 	if (host.gitExecutable === null) {
-		showErrorMessage(unableToFindGitMsg());
+		showErrorMessage(unableToFindGitMsg(t));
 		return;
 	}
 

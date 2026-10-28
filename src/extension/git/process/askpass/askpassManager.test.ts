@@ -8,9 +8,10 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-// The module captures `vscode.window` at import time; a stub is enough for the extracted
-// responder under test (the AskpassManager class itself starts an HTTP server and is not
-// constructed here). ViewColumn satisfies the platform config module's module-scope enum map.
+// The module itself no longer reads vscode; the stub backs the transitive platform imports and
+// is enough for the extracted responder under test (the AskpassManager class itself starts an
+// HTTP server and is constructed only in the integration suite). ViewColumn satisfies the
+// platform config module's module-scope enum map.
 const vscodeMock = vi.hoisted(() => ({
 	version: '1.90.0',
 	ViewColumn: { Active: 1, Beside: 2, One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 },

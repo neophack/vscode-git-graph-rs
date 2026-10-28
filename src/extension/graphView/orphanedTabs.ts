@@ -1,9 +1,11 @@
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
+import { tabGroups as readTabGroups } from '../platform/vscodeCompat';
+import type { TabGroupsLike } from '../platform/vscodeCompat';
 
 /**
  * The orphaned-tab replacement of the graph view. The Tab Groups API it reads is a post-1.38
- * API; platform/vscodeCompat.ts cannot express `onDidChangeTabs`, so the local feature
- * detection below probes its own narrow shape of that API.
+ * API; platform/vscodeCompat.ts owns the feature detection (`tabGroups()`), including the
+ * `onDidChangeTabs` event subscription this watcher needs.
  */
 
 /** How long a Git Graph tab may be shown without a live view before it is treated as left behind by an Extension Host restart. */
@@ -16,9 +18,7 @@ const ORPHANED_TAB_GRACE_MS = 1500;
 const ORPHANED_TAB_STARTUP_GRACE_MS = 5000;
 
 /** The slice of the Tab Groups API the watcher reads (VS Code 1.67+; absent on older versions). */
-interface TabGroupsLike {
-	readonly all: ReadonlyArray<{ viewColumn?: unknown, isActive?: boolean, activeTab?: unknown, tabs: ReadonlyArray<unknown> }>;
-	close?(tab: unknown, preserveFocus?: boolean): Thenable<boolean>;
+interface WatchableTabGroups extends TabGroupsLike {
 	onDidChangeTabs(listener: () => void): vscode.Disposable;
 }
 
@@ -46,10 +46,13 @@ export interface OrphanedTabDeps {
  * @returns A disposable that stops watching.
  */
 export function watchForOrphanedTabs(deps: OrphanedTabDeps): vscode.Disposable {
-	const tabGroups = (vscode.window as { readonly tabGroups?: unknown }).tabGroups as TabGroupsLike | undefined;
-	if (tabGroups === undefined || typeof tabGroups.onDidChangeTabs !== 'function' || !Array.isArray(tabGroups.all)) {
+	const candidate = readTabGroups();
+	if (candidate === null || typeof candidate.onDidChangeTabs !== 'function') {
 		return { dispose: () => { } }; // The Tab API is unavailable (VS Code < 1.67)
 	}
+	// The guard above proved the optional event member present; the assertion only carries that
+	// into the object's type (TypeScript cannot narrow a member onto the whole object).
+	const tabGroups = candidate as WatchableTabGroups;
 	const isGitGraphTab = (tab: unknown) => {
 		const input = (tab as { input?: { readonly viewType?: unknown } } | undefined)?.input;
 		return tab !== undefined && input !== undefined && typeof input.viewType === 'string'

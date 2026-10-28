@@ -11,6 +11,8 @@
  * - `cooked.ts` — the derived (webview-model) views over a snapshot, pure functions.
  * - `service.ts` — the `ConfigService` long-lived consumers hold (`.current`, subscription
  *   managed internally).
+ * - `write.ts` — the Global (User) settings write the settings page and the interface-language
+ *   switch perform.
  */
 
 export { CONFIG_SECTION } from './snapshot';
@@ -23,9 +25,10 @@ export { CONFIG_SCHEMA } from './schema';
 export type {
 	ConfigurationChangeEventLike, DisposableLike, ObservableWorkspaceLike, WorkspaceConfigurationLike, WorkspaceLike
 } from './snapshot';
-export { gitPathsOf, onConfigChange, takeSnapshot } from './snapshot';
+export { gitPathsOf, onConfigChange, takeSnapshot, takeScopedSnapshot } from './snapshot';
 export { CONFIG_MIGRATIONS, readWithMigrations } from './migrations';
 export type { ConfigurationReader } from './migrations';
+export { updateGlobalConfigValue } from './write';
 export {
 	commitAuthorsOf, commitDetailsViewOf, commitOrderingOf, contextMenuActionsVisibilityOf, cookConfig,
 	customBranchGlobPatternsOf, customEmojiShortcodeMappingsOf, customPullRequestProvidersOf, dateFormatOf,

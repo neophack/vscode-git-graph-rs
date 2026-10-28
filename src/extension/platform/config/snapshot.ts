@@ -83,6 +83,24 @@ export function takeSnapshot(workspace: WorkspaceLike): ConfigSnapshot {
 }
 
 /**
+ * Take a snapshot of the production workspace, resolved against the given repository's folder
+ * when one is given — the exact scope a per-repository read needs. The settings the repository
+ * manager reads are window-scoped, so the scoped and unscoped values agree; the scope only
+ * matters to the readers that resolve per-folder values.
+ * @param repo An optional path of a repository (for workspace-folder-scoped resolution).
+ * @returns The configuration snapshot.
+ */
+export function takeScopedSnapshot(repo?: string): ConfigSnapshot {
+	let workspace: WorkspaceLike = vscode.workspace;
+	if (repo !== undefined) {
+		workspace = {
+			getConfiguration: (section?: string): WorkspaceConfigurationLike => vscode.workspace.getConfiguration(section, vscode.Uri.file(repo))
+		};
+	}
+	return takeSnapshot(workspace);
+}
+
+/**
  * Subscribe to configuration changes affecting the extension's settings: the callback fires with
  * a FRESH snapshot ({@link takeSnapshot} is re-run on every relevant event). Debouncing is
  * deliberately NOT provided - it is a consumer concern (the extension host coalesces editor-level

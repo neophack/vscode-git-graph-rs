@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { evalPromises } from '../git/process/childProcess';
-import { getPathFromUri, pathWithTrailingSlash, realpath } from '../platform/paths';
+import { getPathFromUriForm, pathWithTrailingSlash, realpath } from '../platform/paths';
+import { workspaceFolders } from '../platform/workspace';
+import type { WorkspaceFolderInfo } from '../platform/workspace';
 
 /**
  * The repository discovery seam of the repository manager:
@@ -33,7 +34,7 @@ export async function resolveRepoRoot(read: RepoRootReader, pathOfPotentialRepo:
 	let pathReturnedByGit: string;
 	try {
 		const root = await read.repoRoot(pathOfPotentialRepo);
-		pathReturnedByGit = getPathFromUri(vscode.Uri.file(path.normalize(root)));
+		pathReturnedByGit = getPathFromUriForm(path.normalize(root));
 	} catch (_) {
 		return null; // null => path is not in a repo
 	}
@@ -75,7 +76,7 @@ export interface SubmoduleReader {
  */
 export async function listSubmodules(read: SubmoduleReader, repo: string): Promise<string[]> {
 	return read.getSubmodules(repo).then(
-		(submodules) => submodules.map((submodule) => getPathFromUri(vscode.Uri.file(path.normalize(submodule)))),
+		(submodules) => submodules.map((submodule) => getPathFromUriForm(path.normalize(submodule))),
 		() => [] as string[]
 	);
 }
@@ -157,7 +158,7 @@ export async function searchRepoForSubmodules(repo: string, deps: SubmoduleSearc
 
 /** The workspace-folder mapping used to decide whether a repository is inside the workspace. */
 export interface WorkspaceFolderInclusionInfo {
-	workspaceFolders: vscode.WorkspaceFolder[];
+	workspaceFolders: WorkspaceFolderInfo[];
 	rootsExact: string[];
 	rootsFolder: string[];
 }
@@ -167,15 +168,14 @@ export interface WorkspaceFolderInclusionInfo {
  * @returns The Workspace Folder Information.
  */
 export function getWorkspaceFolderInfoForRepoInclusionMapping(): WorkspaceFolderInclusionInfo {
-	const rootsExact: string[] = [], rootsFolder: string[] = [], workspaceFolders = vscode.workspace.workspaceFolders || [];
-	let path;
-	for (let i = 0; i < workspaceFolders.length; i++) {
-		path = getPathFromUri(workspaceFolders[i].uri);
-		rootsExact.push(path);
-		rootsFolder.push(pathWithTrailingSlash(path));
+	const rootsExact: string[] = [], rootsFolder: string[] = [], folders = workspaceFolders() ?? [];
+	for (let i = 0; i < folders.length; i++) {
+		const folderPath = folders[i].path;
+		rootsExact.push(folderPath);
+		rootsFolder.push(pathWithTrailingSlash(folderPath));
 	}
 	return {
-		workspaceFolders: workspaceFolders,
+		workspaceFolders: folders,
 		rootsExact: rootsExact,
 		rootsFolder: rootsFolder
 	};

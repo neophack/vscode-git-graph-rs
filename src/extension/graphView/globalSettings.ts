@@ -1,20 +1,21 @@
-import * as vscode from 'vscode';
 import type { ProductionGitRepository } from '../git/gitRepository';
 import { GitConfigKey } from '../git/write/ops/config';
 import { setConfigValue, unsetConfigValue } from '../git/write/ops/config';
 import { GitConfigLocation } from '../../shared/model/git';
 import type { CommitAuthor } from '../../shared/model/webview';
 import type { ErrorInfo } from '../../shared/protocol/messages';
-import { commitAuthorsOf } from '../platform/config';
+import { commitAuthorsOf, updateGlobalConfigValue } from '../platform/config';
 import type { ConfigProvider } from '../platform/config';
 import { t } from '../platform/i18n';
+import { uiPort } from '../platform/actions';
 import type { Logger } from '../platform/logger';
 
 /**
  * The global (User) settings the graph view's Settings Widget may write, together with the
  * save flow and the global-author side effects of 'commitAuthors'. The pure decision functions
  * stay exported for their unit tests (globalSettings.test.ts); the read side (the settings
- * snapshot, the parsed `commitAuthors` value) lives in platform/config.
+ * snapshot, the parsed `commitAuthors` value) lives in platform/config, the write side (the
+ * Global configuration update) and the confirmation dialogs go through the platform layer.
  */
 
 /**
@@ -192,7 +193,7 @@ export async function saveGlobalSetting(deps: GlobalSettingDeps, setting: string
 		? (Array.isArray(previousValue) ? previousValue : commitAuthorsOf(deps.config.current))
 		: [];
 	try {
-		await vscode.workspace.getConfiguration('git-graph-rs').update(setting, value, vscode.ConfigurationTarget.Global);
+		await updateGlobalConfigValue(setting, value);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		deps.logger.log('Saving the setting "' + setting + '" failed: ' + message);
@@ -235,7 +236,7 @@ async function applyDefaultGlobalAuthor(deps: GlobalSettingDeps, repo: string, a
 	if (decision.action === 'none' || decision.author === null) return;
 	const author = decision.author;
 	if (decision.action === 'confirmOverwrite') {
-		const overwrite = await vscode.window.showInformationMessage(
+		const overwrite = await uiPort.showInformationMessage(
 			t('globalAuthorTakeOverConfirm', formatGlobalAuthor(global), formatGlobalAuthor(author)),
 			{ modal: true },
 			t('globalAuthorTakeOverButton', formatGlobalAuthor(author))
@@ -280,7 +281,7 @@ async function clearGlobalAuthor(deps: GlobalSettingDeps, repo: string, previous
 	// answers 'none' for an unset configuration), but the compiler cannot see through it: narrow here.
 	if (decision === 'none' || global === null) return;
 	if (decision === 'confirmClear') {
-		const remove = await vscode.window.showInformationMessage(
+		const remove = await uiPort.showInformationMessage(
 			t('globalAuthorRemoveConfirm', formatGlobalAuthor(global)),
 			{ modal: true },
 			t('globalAuthorRemoveButton', formatGlobalAuthor(global))

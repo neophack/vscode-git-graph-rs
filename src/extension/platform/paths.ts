@@ -25,6 +25,18 @@ export function getPathFromStr(str: string) {
 }
 
 /**
+ * Normalise a path through the file-URI form: the round trip `vscode.Uri.file` applies to a
+ * native path (separator and drive-letter normalisation included). Callers that only need
+ * backslash replacement use {@link getPathFromStr}; this is the exact form a URI-sourced path
+ * would carry, which is what comparisons against repository paths need.
+ * @param value The path.
+ * @returns The normalised path.
+ */
+export function getPathFromUriForm(value: string) {
+	return getPathFromUri(vscode.Uri.file(value));
+}
+
+/**
  * Get the path with a trailing slash.
  * @param path The path.
  * @returns The path with a trailing slash.

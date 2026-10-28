@@ -10,9 +10,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { InputBoxOptionsLike, UiPort } from '../../../platform/uiPort';
-import { getNonce } from '../../../platform/format';
+import type { UiPort } from '../../../platform/uiPort';
 import { Disposable, toDisposable } from '../../../../shared/util/disposable';
 
 export interface AskpassEnvironment {
@@ -34,31 +32,24 @@ export interface AskpassResponder {
 	end(body?: string): void;
 }
 
-// The native input port of the askpass responder. The port TYPES come from
-// the shared uiPort (src/extension/platform/uiPort.ts); the production binding is captured on
-// first use here rather than injected, because merely importing this module must never touch
-// the vscode module surface (keeping minimal test vscode mocks usable).
-let askpassUi: Pick<UiPort, 'showInputBox'> | null = null;
-
-function nativeInput(): Pick<UiPort, 'showInputBox'> {
-	if (askpassUi === null) {
-		// The captured window (call-time property lookups) is this port's single native seam.
-		const window = vscode.window;
-		askpassUi = {
-			showInputBox(options?: InputBoxOptionsLike): Promise<string | undefined> {
-				const showInputBox = window.showInputBox;
-				return typeof showInputBox === 'function' ? Promise.resolve(showInputBox(options)) : Promise.resolve(undefined);
-			}
-		};
-	}
-	return askpassUi;
+/**
+ * The collaborators the askpass server needs from its host (the composition root wires them, so
+ * this module carries no vscode or platform imports). The port TYPES come from the shared uiPort
+ * (src/extension/platform/uiPort.ts); the production binding is injected — a lazy getter, so the
+ * first prompt is the first time the native input surface is read.
+ */
+export interface AskpassManagerDeps {
+	/** The random token the IPC handle path embeds (the platform nonce generator in production). */
+	readonly nonce: () => string;
+	/** The native input port a credential prompt goes through (the platform uiPort in production). */
+	readonly input: () => Pick<UiPort, 'showInputBox'>;
 }
 
 /**
  * Prompt for one credential through the native input port and write the answer onto the askpass
  * HTTP response. A dismissed prompt answers '' (git treats that as no input given); a failed
  * prompt rejects with HTTP 500, so git surfaces the failure instead of hanging.
- * @param input The native input port (production: {@link askpassUi}; tests: a fake).
+ * @param input The native input port (production: the injected uiPort getter's answer; tests: a fake).
  * @param request What git asks for (username, password, ...).
  * @param host The host the credential is for.
  * @param res The askpass HTTP response.
@@ -74,13 +65,18 @@ export function promptForCredential(input: Pick<UiPort, 'showInputBox'>, request
 }
 
 export class AskpassManager extends Disposable {
+	private readonly deps: AskpassManagerDeps;
 	private ipcHandlePath: string;
 	private server: http.Server;
 	private enabled = true;
 
-	constructor() {
+	/**
+	 * @param deps The host collaborators (see {@link AskpassManagerDeps}).
+	 */
+	constructor(deps: AskpassManagerDeps) {
 		super();
-		this.ipcHandlePath = getIPCHandlePath(getNonce());
+		this.deps = deps;
+		this.ipcHandlePath = getIPCHandlePath(deps.nonce());
 		this.server = http.createServer((req, res) => this.onRequest(req, res));
 		try {
 			this.server.listen(this.ipcHandlePath);
@@ -128,7 +124,7 @@ export class AskpassManager extends Disposable {
 				res.end();
 				return;
 			}
-			promptForCredential(nativeInput(), data.request, data.host, res);
+			promptForCredential(this.deps.input(), data.request, data.host, res);
 		});
 	}
 

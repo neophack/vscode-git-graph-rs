@@ -125,9 +125,6 @@
   "src/extension/graphView/globalSettings.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 8
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/extension/graphView/handlers/loading.test.ts": {
@@ -194,9 +191,6 @@
       "count": 2
     },
     "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
       "count": 1
     }
   },

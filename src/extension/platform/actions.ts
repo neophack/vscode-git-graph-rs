@@ -278,6 +278,16 @@ export function createPullRequest(config: PullRequestConfig, sourceOwner: string
 }
 
 /**
+ * Open a text file in an editor tab (non-preview): surfaces the user reads rather than edits,
+ * like the session log.
+ * @param filePath The path of the file to open.
+ * @returns A Thenable rejecting when the document cannot be opened or shown.
+ */
+export function openTextFileInEditor(filePath: string): Thenable<unknown> {
+	return vscode.workspace.openTextDocument(vscode.Uri.file(filePath)).then((document) => vscode.window.showTextDocument(document, { preview: false }));
+}
+
+/**
  * Open the Visual Studio Code Settings Editor to the Git Graph Extension Settings.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
