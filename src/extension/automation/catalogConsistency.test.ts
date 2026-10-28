@@ -182,10 +182,16 @@ describe('the automation catalog against its sources', () => {
 		// The shared dictionary: the messages live in src/shared/i18n (both interface languages).
 		const i18n = sourceFiles('src/shared/i18n/en.ts', 'src/shared/i18n/zh-cn.ts').map((file) => file.text).join('\n');
 		const deterministic = CATALOG.filter((a: any) => a.group === 'menu-vscode' && a.mutable && a.expectNotifications !== undefined);
-		// The two designed refusals of the fixture: the local-path remote offers no Gerrit server to
+		// The designed refusals of the fixture: the local-path remote offers no Gerrit server to
 		// fetch the commit-msg hook from, and main == origin/main after the reseed pushes the
-		// "already pushed, no Change-Id" refusal.
-		assert.deepEqual(deterministic.map((a: any) => a.id), ['menu-vscode/scm-gerrit-fetch-commit-msg-hook', 'menu-vscode/scm-gerrit-push-ref']);
+		// "already pushed, no Change-Id" refusal — each under its English-titled command and its
+		// Simplified-Chinese-titled `.zhCn` twin (the same handler).
+		assert.deepEqual(deterministic.map((a: any) => a.id), [
+			'menu-vscode/scm-gerrit-fetch-commit-msg-hook',
+			'menu-vscode/scm-gerrit-fetch-commit-msg-hook-zh-cn',
+			'menu-vscode/scm-gerrit-push-ref',
+			'menu-vscode/scm-gerrit-push-ref-zh-cn'
+		]);
 		for (const action of deterministic as any[]) {
 			assert.ok(action.expectNotifications.length > 0, action.id + ': expectNotifications must not be empty');
 			// The captured text is the localized message: every needle must occur in the i18n sources

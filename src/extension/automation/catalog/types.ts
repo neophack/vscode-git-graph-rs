@@ -92,6 +92,14 @@ export interface AutomationAction {
 	 * mode, once the requests are injected).
 	 */
 	readonly noHostTraffic?: boolean;
+	/**
+	 * TRUE => the flow raises the editor's NATIVE save dialog (the host-side uiPort.showSaveDialog
+	 * of e.g. the createArchive flows). The suite runner's scripted UiPort answers it from its
+	 * lenient default (a generated save path), so the action RUNS in every mode; the flag marks
+	 * the entry for the coverage matrix's UiPort dimension (the nativeSaveDialog alias of
+	 * showSaveDialog) and for anyone auditing which entries open native dialogs.
+	 */
+	readonly nativeSaveDialog?: boolean;
 	readonly ui?: readonly UiStep[];
 	/** The VS Code command a contributed menu item runs (command mode), with the argument shape that menu passes. */
 	readonly vscodeCommand?: CommandStep;

@@ -6,18 +6,19 @@ import { CATALOG_SNAPSHOT } from './catalog/snapshot';
  * The catalog split's zero-change proof: the domain files under
  * ./catalog/ reassemble into EXACTLY the pre-split single-file catalog (the committed snapshot
  * holds the ordered { id, group, title } triples captured from it before the split), the count
- * is still 146, and every action carries at least one tag — the invariant the load-time
- * assertion in catalog.ts enforces and the affected-tier selection relies on.
+ * is still 178 (146 pre-split actions plus the post-split coverage additions), and every action
+ * carries at least one tag — the invariant the load-time assertion in catalog.ts enforces and
+ * the affected-tier selection relies on.
  */
 
 describe('the split automation catalog', () => {
-	it('assembles to exactly the pre-split snapshot (order included)', () => {
+	it('assembles to exactly the snapshot sequence (order included)', () => {
 		expect(CATALOG.map((action) => ({ id: action.id, group: action.group, title: action.title })))
 			.toEqual([...CATALOG_SNAPSHOT]);
 	});
 
-	it('still holds 146 actions across the 18 original groups', () => {
-		expect(CATALOG).toHaveLength(146);
+	it('still holds 178 actions across the 18 original groups', () => {
+		expect(CATALOG).toHaveLength(178);
 		const groups = new Set(CATALOG.map((action) => action.group));
 		expect([...groups].sort()).toEqual([
 			'cdv', 'control-bar', 'external', 'find', 'host', 'keyboard', 'menu-branch', 'menu-commit',

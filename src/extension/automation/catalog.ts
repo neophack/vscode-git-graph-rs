@@ -197,11 +197,13 @@ export const CATALOG: readonly AutomationAction[] = [
 ];
 
 /**
- * The action count of the pre-split catalog (146 across 18 groups). The load-time assertion
- * below fails the moment a split, merge or edit silently drops or duplicates an action; the
- * snapshot test (catalog.test.ts) pins the exact sequence.
+ * The action count of the assembled catalog: 146 pre-split actions plus the post-split additions
+ * (the zh-cn command twins, the palette command entries and the host-pipeline request replays —
+ * see catalog/snapshot.ts). The load-time assertion below fails the moment a split, merge or edit
+ * silently drops or duplicates an action; the snapshot test (catalog.test.ts) pins the exact
+ * sequence.
  */
-const EXPECTED_ACTION_COUNT = 146;
+const EXPECTED_ACTION_COUNT = 178;
 
 /**
  * Load-time invariant of the split catalog: every expected action present, and every action

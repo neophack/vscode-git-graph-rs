@@ -67,8 +67,10 @@ export const MENUS_BRANCH_ACTIONS: readonly AutomationAction[] = [
 		group: 'menu-branch',
 		tags: ['menu-branch', 'context-menu'],
 		mutable: true,
-		// Confirming opens the editor's native save dialog — answered by the ScriptedUiPort the
-		// suite runner installs, so the action RUNS in every mode.
+		nativeSaveDialog: true,
+		// Confirming opens the editor's native save dialog — the host-side createArchive flow's
+		// uiPort.showSaveDialog, answered by the ScriptedUiPort the suite runner installs, so
+		// the action RUNS in every mode.
 		ui: [
 			scrollUntilVisibleStep('span.gitRef.head[data-name="{{branch}}"]'),
 			{ op: 'contextmenu', selector: 'span.gitRef.head[data-name="{{branch}}"]', item: bi('Create Archive', '创建归档') },

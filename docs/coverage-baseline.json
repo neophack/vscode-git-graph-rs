@@ -1,29 +1,25 @@
 {
-	"exemptions": {},
-	"uncovered": {
+	"exemptions": {
 		"contributed-commands": [
-			"git-graph-rs.addGitRepository",
-			"git-graph-rs.endAllWorkspaceCodeReviews",
-			"git-graph-rs.endSpecificWorkspaceCodeReview",
-			"git-graph-rs.removeGitRepository",
-			"git-graph-rs.resumeWorkspaceCodeReview",
-			"git-graph-rs.showDiagnostics",
-			"git-graph-rs.searchCommits",
-			"git-graph-rs.amendLastCommit.zhCn",
-			"git-graph-rs.resetCurrentBranchToRemote.zhCn",
-			"git-graph-rs.gerritPushRef.zhCn",
-			"git-graph-rs.gerritFetchCommitMsgHook.zhCn"
+			{
+				"id": "git-graph-rs.removeGitRepository",
+				"reason": "The command's only drive path is a repository quick-pick whose lenient scripted answer takes the FIRST item, which on every suite run is the workspace repository the run itself is on (workspace folders sort first) - a catalog entry would unregister the active repository mid-suite and poison every later action, and on a real repository would mark the user's repository ignored. Not honestly drivable until catalog command runs can script a specific quick-pick choice."
+			}
 		],
-		"command-menu-items": [
-			"commandPalette::git-graph-rs.amendLastCommit.zhCn",
-			"commandPalette::git-graph-rs.gerritPushRef.zhCn",
-			"commandPalette::git-graph-rs.gerritFetchCommitMsgHook.zhCn",
-			"commandPalette::git-graph-rs.resetCurrentBranchToRemote.zhCn",
-			"git.pullpush::git-graph-rs.gerritPushRef.zhCn",
-			"scm/title::git-graph-rs.amendLastCommit.zhCn",
-			"scm/title::git-graph-rs.gerritFetchCommitMsgHook.zhCn",
-			"scm/title::git-graph-rs.resetCurrentBranchToRemote.zhCn"
+		"protocol-requests": [
+			{
+				"id": "ready",
+				"reason": "The webview's one-shot boot handshake: the host answers it with the loadView push it began reading at panel creation, never a direct reply. Replaying it mid-session would push a second merged read onto the live page for no user action - it is a lifecycle message the page itself emits exactly once, not a control a catalog entry can honestly drive."
+			}
 		],
+		"ui-port": [
+			{
+				"id": "withProgress",
+				"reason": "No host call site routes through the port's withProgress yet (the only withProgress caller, commands/automation.ts's runAutomationTest, calls vscode.window.withProgress directly), so no catalog action can drive the interface member today."
+			}
+		]
+	},
+	"uncovered": {
 		"settings": [
 			"git-graph-rs.commitDetailsView.autoCenter",
 			"git-graph-rs.commitDetailsView.fileView.fileTree.compactFolders",
@@ -194,31 +190,6 @@
 			"git-graph-rs.stickyHeader",
 			"git-graph-rs.tabIconColourTheme"
 		],
-		"protocol-requests": [
-			"abortOperation",
-			"commitBodies",
-			"commitFileCounts",
-			"continueOperation",
-			"countCommitsBefore",
-			"createPullRequest",
-			"deleteUserDetails",
-			"editUserDetails",
-			"fetchAvatar",
-			"fetchPullRequest",
-			"loadRepos",
-			"loadView",
-			"openExternalUrl",
-			"pruneRemote",
-			"ready",
-			"rescanForRepos",
-			"resetFileToRevision",
-			"setGlobalViewState",
-			"setInterfaceLanguage",
-			"setViewSnapshot",
-			"setWorkspaceViewState",
-			"showErrorMessage",
-			"viewDiffBinary"
-		],
 		"write-operations": [
 			"deleteRemoteTrackingBranch",
 			"commitSquashFromPull",
@@ -228,25 +199,11 @@
 			"setConfigValue",
 			"unsetConfigValue",
 			"addRemoteTagsRefspec",
-			"resetFileToRevision",
 			"commitSquashFromMerge",
-			"continueOperation",
-			"abortOperation",
-			"pruneRemote",
 			"pushBranchToMultipleRemotes",
 			"addWorktree",
 			"removeWorktree",
 			"pruneWorktrees"
-		],
-		"ui-port": [
-			"showInformationMessage",
-			"showWarningMessage",
-			"showErrorMessage",
-			"showInputBox",
-			"showQuickPick",
-			"showSaveDialog",
-			"showOpenDialog",
-			"withProgress"
 		],
 		"webview-controls": [
 			"element:predictedConflicts",
@@ -347,7 +304,6 @@
 			"i18n:riskDropCommit",
 			"i18n:riskDropStash",
 			"i18n:riskResetFile",
-			"i18n:menuCreatePullRequest",
 			"i18n:menuViewIssue",
 			"i18n:settingsSectionGeneral",
 			"i18n:settingsNameLabel",
@@ -418,7 +374,6 @@
 			"i18n:settingsShowRemoteTitle",
 			"i18n:settingsHideRemoteTitle",
 			"i18n:settingsFetchFromRemoteTitle",
-			"i18n:settingsPruneRemoteTitle",
 			"i18n:settingsNoRemotes",
 			"i18n:settingsAddRemoteDialogMessage",
 			"i18n:settingsFetchUrlInput",
@@ -646,7 +601,6 @@
 			"i18n:prHeadCommitLabel",
 			"i18n:prDescriptionSection",
 			"i18n:prOpenOnHost",
-			"i18n:loading",
 			"i18n:commitNotFound",
 			"i18n:unableToResumeCodeReview",
 			"i18n:unableToLoadRepo",
@@ -950,7 +904,6 @@
 			"i18n:yesResetFile",
 			"i18n:resettingFile",
 			"i18n:cdvMenuMarkNotReviewed",
-			"i18n:cdvMenuResetFileToRevision",
 			"i18n:cdvMenuCopyRelativePath",
 			"i18n:openChangesTitleWithSubject",
 			"i18n:externalDiffWithTool",
@@ -998,7 +951,6 @@
 			"i18n:reflogMenuCopySelector",
 			"i18n:worktreeDialogTitle",
 			"i18n:worktreeNoneFound",
-			"i18n:worktreeMainBadge",
 			"i18n:worktreeLocked",
 			"i18n:worktreePrunable",
 			"i18n:worktreePrunableInfo",
@@ -1226,13 +1178,7 @@
 			"i18n:binaryCompareTitle",
 			"nls:displayName",
 			"nls:extension.description",
-			"nls:command.git-graph-rs.addGitRepository.title",
-			"nls:command.git-graph-rs.endAllWorkspaceCodeReviews.title",
-			"nls:command.git-graph-rs.endSpecificWorkspaceCodeReview.title",
 			"nls:command.git-graph-rs.removeGitRepository.title",
-			"nls:command.git-graph-rs.resumeWorkspaceCodeReview.title",
-			"nls:command.git-graph-rs.showDiagnostics.title",
-			"nls:command.git-graph-rs.searchCommits.title",
 			"nls:config.git-graph-rs.commitDetailsView.autoCenter.description",
 			"nls:config.git-graph-rs.commitDetailsView.fileView.fileTree.compactFolders.description",
 			"nls:config.git-graph-rs.commitDetailsView.fileView.type.description",

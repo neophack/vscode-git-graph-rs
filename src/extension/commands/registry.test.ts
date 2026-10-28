@@ -183,12 +183,13 @@ describe('the menu commands vs the automation catalog', () => {
 	}
 
 	it('exercises every menu command, and targets only commands VS Code can reach', () => {
-		// Every command any menu offers has a catalog entry (the .zhCn twins run the same handler as
-		// their base command, so the base id covers them).
+		// Every command any menu offers has a catalog entry executing its REAL id — the .zhCn
+		// twins included, since the zh-CN menus offer exactly those ids (each driving the same
+		// handler as its base command).
 		const menuCommands = new Set<string>();
 		for (const location of menuLocations) {
 			if (location === 'commandPalette') continue;
-			for (const item of menus[location]) menuCommands.add(item.command.replace(/\.zhCn$/, ''));
+			for (const item of menus[location]) menuCommands.add(item.command);
 		}
 		for (const command of menuCommands) {
 			expect(timesCovered.has(command), 'menu command "' + command + '" has no menu-vscode automation entry').toBe(true);
@@ -199,12 +200,13 @@ describe('the menu commands vs the automation catalog', () => {
 		// in the command palette. Every command declared in contributes.commands shows in the palette
 		// BY DEFAULT (VS Code lists them all unless a commandPalette entry hides it with `when:
 		// 'false'`), so the palette side is modelled as "declared and not hidden" rather than the
-		// literal commandPalette array (which only carries overrides).
-		const paletteHidden = new Set(menus.commandPalette.filter((item) => (item.when ?? '') === 'false').map((item) => item.command.replace(/\.zhCn$/, '')));
+		// literal commandPalette array (which only carries overrides). The language-variant gating
+		// (`when: git-graph-rs:interfaceZhCn`) shows each variant under its own interface language,
+		// so the variants stay reachable under their exact ids.
+		const paletteHidden = new Set(menus.commandPalette.filter((item) => (item.when ?? '') === 'false').map((item) => item.command));
 		const reachable = new Set<string>(menuCommands);
 		for (const command of contributed) {
-			const base = command.replace(/\.zhCn$/, '');
-			if (!paletteHidden.has(base)) reachable.add(base);
+			if (!paletteHidden.has(command)) reachable.add(command);
 		}
 		for (const action of commandActions) {
 			expect(reachable.has(action.vscodeCommand!.command), action.id + ' executes "' + action.vscodeCommand!.command + '", which no menu offers and the palette hides').toBe(true);

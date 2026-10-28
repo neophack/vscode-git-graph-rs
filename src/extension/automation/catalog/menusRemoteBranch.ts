@@ -60,9 +60,11 @@ export const MENUS_REMOTE_BRANCH_ACTIONS: readonly AutomationAction[] = [
 		group: 'menu-remote-branch',
 		tags: ['menu-remote-branch', 'context-menu', 'dialog', 'dropdown'],
 		mutable: true,
+		nativeSaveDialog: true,
 		requires: ['remote'],
-		// Confirming opens the editor's native save dialog — answered by the ScriptedUiPort the
-		// suite runner installs, so the action RUNS in every mode.
+		// Confirming opens the editor's native save dialog — the host-side createArchive flow's
+		// uiPort.showSaveDialog, answered by the ScriptedUiPort the suite runner installs, so
+		// the action RUNS in every mode.
 		ui: [
 			...REMOTE_BRANCH_FILTER_STEPS,
 			{ op: 'contextmenu', selector: 'span.gitRef.remote[data-name="{{remote}}/{{remoteBranch}}"]', item: bi('Create Archive', '创建归档') },

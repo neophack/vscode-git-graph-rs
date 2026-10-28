@@ -2,8 +2,13 @@
  * Snapshot of the pre-split catalog: the ordered { id, group, title } triples of
  * all 146 actions of the former single-file catalog.ts, captured before it was split
  * into the tagged domain files that now live alongside this module. Generated from commit 8d730141da0ccfd02f6a1e201d54a34eae5586a5
- * (npx esbuild + require; not hand-written) — do not edit by hand. The assembly test
- * (catalog.test.ts) proves the split catalog is still this exact sequence.
+ * (npx esbuild + require; not hand-written) — the pre-split rows are untouched. The assembly test
+ * (catalog.test.ts) proves the assembled catalog is still exactly this sequence.
+ *
+ * Post-split additions (the coverage burn-down entries the split files gained afterwards — the
+ * zh-cn command twins, the palette command entries, and the host-pipeline request replays) are
+ * appended at their catalog positions below, each matching its entry's { id, group, title }
+ * verbatim; the pre-split 146 rows keep their original order and text.
  */
 
 /** One snapshot row: the identity of one action at its position in the catalog. */
@@ -13,7 +18,7 @@ export interface CatalogSnapshotRow {
 	readonly title: string;
 }
 
-/** The pre-split catalog, in order (146 rows). */
+/** The catalog's assembled sequence (the 146 pre-split rows plus the post-split additions). */
 export const CATALOG_SNAPSHOT: readonly CatalogSnapshotRow[] = [
 	{ id: 'control-bar/author-dropdown', group: 'control-bar', title: 'Authors Dropdown' },
 	{ id: 'control-bar/branch-dropdown', group: 'control-bar', title: 'Branches Dropdown' },
@@ -35,12 +40,22 @@ export const CATALOG_SNAPSHOT: readonly CatalogSnapshotRow[] = [
 	{ id: 'menu-vscode/scm-view-button', group: 'menu-vscode', title: 'Git Graph RS (Source Control view title menu)' },
 	{ id: 'menu-vscode/diff-open-file-button', group: 'menu-vscode', title: 'Open File (diff editor title)' },
 	{ id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook', group: 'menu-vscode', title: 'Fetch commit-msg Hook (Gerrit) (Source Control view title menu)' },
+	{ id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook-zh-cn', group: 'menu-vscode', title: '获取 commit-msg 钩子 (Gerrit) (Source Control view title menu, Simplified Chinese title)' },
 	{ id: 'menu-vscode/scm-gerrit-push-ref', group: 'menu-vscode', title: 'Push to Gerrit Ref for Current Branch (Source Control Pull/Push menu)' },
+	{ id: 'menu-vscode/scm-gerrit-push-ref-zh-cn', group: 'menu-vscode', title: '推送当前分支到 Gerrit 审阅引用 (Source Control Pull/Push menu, Simplified Chinese title)' },
 	{ id: 'menu-vscode/scm-amend-last-commit', group: 'menu-vscode', title: 'Amend Last Commit (Source Control view title menu)' },
+	{ id: 'menu-vscode/scm-amend-last-commit-zh-cn', group: 'menu-vscode', title: '修正上一次提交 (Source Control view title menu, Simplified Chinese title)' },
 	{ id: 'menu-vscode/scm-reset-current-branch-to-remote', group: 'menu-vscode', title: 'Reset Current Branch to Remote (Soft) (Source Control view title menu)' },
+	{ id: 'menu-vscode/scm-reset-current-branch-to-remote-zh-cn', group: 'menu-vscode', title: '将当前分支重置到远程(软重置) (Source Control view title menu, Simplified Chinese title)' },
 	{ id: 'menu-vscode/palette-fetch', group: 'menu-vscode', title: 'Fetch from Remote(s) (command palette)' },
 	{ id: 'menu-vscode/palette-clear-avatar-cache', group: 'menu-vscode', title: 'Clear Avatar Cache (command palette)' },
 	{ id: 'menu-vscode/palette-version', group: 'menu-vscode', title: 'About Git Graph RS (command palette)' },
+	{ id: 'menu-vscode/palette-add-git-repository', group: 'menu-vscode', title: 'Add Git Repository (command palette)' },
+	{ id: 'menu-vscode/palette-end-all-code-reviews', group: 'menu-vscode', title: 'End All Code Reviews in Workspace (command palette)' },
+	{ id: 'menu-vscode/palette-end-specific-code-review', group: 'menu-vscode', title: 'End a specific Code Review in Workspace (command palette)' },
+	{ id: 'menu-vscode/palette-resume-code-review', group: 'menu-vscode', title: 'Resume a specific Code Review in Workspace (command palette)' },
+	{ id: 'menu-vscode/palette-show-diagnostics', group: 'menu-vscode', title: 'Show Diagnostics (command palette)' },
+	{ id: 'menu-vscode/palette-search-commits', group: 'menu-vscode', title: 'Search Commits (command palette)' },
 	{ id: 'row/column-ordering', group: 'row', title: 'Author Timestamp Order' },
 	{ id: 'row/column-toggle-date', group: 'row', title: 'Date' },
 	{ id: 'row/column-toggle-author', group: 'row', title: 'Author' },
@@ -117,6 +132,8 @@ export const CATALOG_SNAPSHOT: readonly CatalogSnapshotRow[] = [
 	{ id: 'cdv/file-view-file-at-revision', group: 'cdv', title: 'View File at this Revision' },
 	{ id: 'cdv/file-view-diff-binary', group: 'cdv', title: 'View Diff (binary file)' },
 	{ id: 'cdv/file-view-diff-image', group: 'cdv', title: 'View Diff (image file)' },
+	{ id: 'cdv/file-view-diff-binary-compare', group: 'cdv', title: 'View Diff (binary file, standalone compare view)' },
+	{ id: 'cdv/file-reset-to-revision', group: 'cdv', title: 'Reset File to this Revision' },
 	{ id: 'cdv/file-view-list', group: 'cdv', title: 'File List View' },
 	{ id: 'cdv/file-view-tree', group: 'cdv', title: 'File Tree View' },
 	{ id: 'settings/add-author', group: 'settings', title: 'Add Author' },
@@ -160,5 +177,25 @@ export const CATALOG_SNAPSHOT: readonly CatalogSnapshotRow[] = [
 	{ id: 'host/open-log-file', group: 'host', title: 'Open Log File' },
 	{ id: 'host/open-terminal', group: 'host', title: 'Open a Terminal for this Repository' },
 	{ id: 'host/view-scm', group: 'host', title: 'Open Source Control View' },
+	{ id: 'host/show-error-message', group: 'host', title: 'Show Error Message' },
+	{ id: 'host/open-external-url', group: 'host', title: 'Open External URL' },
+	{ id: 'host/load-repos', group: 'host', title: 'Load Repositories' },
+	{ id: 'host/rescan-for-repos', group: 'host', title: 'Rescan Workspace for Repositories' },
+	{ id: 'host/load-view', group: 'host', title: 'Load View (the merged open-path read)' },
+	{ id: 'host/commit-bodies', group: 'host', title: 'Fetch Commit Bodies' },
+	{ id: 'host/commit-file-counts', group: 'host', title: 'Fetch File Change Counts' },
+	{ id: 'host/count-commits-before', group: 'host', title: 'Count Commits Before HEAD' },
+	{ id: 'host/fetch-avatar', group: 'host', title: 'Fetch Avatar' },
+	{ id: 'host/fetch-pull-requests', group: 'host', title: 'Fetch Pull Requests' },
+	{ id: 'host/create-pull-request', group: 'host', title: 'Create Pull Request' },
+	{ id: 'host/prune-remote', group: 'host', title: 'Prune Remote' },
+	{ id: 'host/abort-operation', group: 'host', title: 'Abort Operation (merge)' },
+	{ id: 'host/continue-operation', group: 'host', title: 'Continue Operation (rebase)' },
+	{ id: 'host/set-global-view-state', group: 'host', title: 'Persist the Global View State' },
+	{ id: 'host/set-workspace-view-state', group: 'host', title: 'Persist the Workspace View State' },
+	{ id: 'host/set-view-snapshot', group: 'host', title: 'Persist the View Snapshot' },
+	{ id: 'host/set-interface-language', group: 'host', title: 'Set Interface Language' },
+	{ id: 'host/edit-user-details', group: 'host', title: 'Edit User Details (local)' },
+	{ id: 'host/delete-user-details', group: 'host', title: 'Delete User Details (local)' },
 	{ id: 'external/commit-appears', group: 'external', title: 'A commit made outside VS Code appears without any view interaction' }
 ];

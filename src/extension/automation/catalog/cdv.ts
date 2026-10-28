@@ -274,6 +274,36 @@ export const CDV_ACTIONS: readonly AutomationAction[] = [
 		expect: { responses: ['viewDiff'] }
 	},
 	{
+		id: 'cdv/file-view-diff-binary-compare',
+		title: 'View Diff (binary file, standalone compare view)',
+		group: 'cdv',
+		tags: ['cdv', 'context-menu'],
+		mutable: false,
+		requires: ['binaryFile'],
+		// The request the SAME "View Diff" menu item sends when the file is binary and has no
+		// textual diff for the native Diff View (fileActions.ts routes on fileIsBinary): the
+		// standalone Binary Compare tab opens instead, through the same ui surface the Commit
+		// Comparison View uses. The host answers nothing — the tab opening IS the outcome — and
+		// the runner's per-action cleanup closes the auxiliary view again.
+		request: [{ command: 'viewDiffBinary', repo: '{{repo}}', fromHash: '{{binaryCommit}}', toHash: '{{binaryCommit}}', oldFilePath: '{{binaryFile}}', newFilePath: '{{binaryFile}}', type: 'M' }],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'cdv/file-reset-to-revision',
+		title: 'Reset File to this Revision',
+		group: 'cdv',
+		tags: ['cdv', 'context-menu'],
+		mutable: true,
+		requires: ['file'],
+		// The confirmed request the "Reset File to this Revision" menu item's data-loss dialog
+		// sends (the page confirms in the webview and re-sends with the go-ahead): the context
+		// file is checked out from the context commit, and the response's clean error payload
+		// proves the write chain ran.
+		request: [{ command: 'resetFileToRevision', repo: '{{repo}}', commitHash: '{{commit}}', filePath: '{{file}}' }],
+		expect: { responses: ['resetFileToRevision'] }
+	},
+	{
 		id: 'cdv/file-view-list',
 		title: 'File List View',
 		group: 'cdv',

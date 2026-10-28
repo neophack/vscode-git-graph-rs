@@ -116,6 +116,20 @@ export const MENUS_VSCODE_ACTIONS: readonly AutomationAction[] = [
 		expect: { responses: [] }
 	},
 	{
+		id: 'menu-vscode/scm-gerrit-fetch-commit-msg-hook-zh-cn',
+		title: '获取 commit-msg 钩子 (Gerrit) (Source Control view title menu, Simplified Chinese title)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command', 'gerrit'],
+		mutable: true,
+		// The Simplified-Chinese-titled twin (registered under the `.zhCn` id and offered by the
+		// same scm/title group under the `git-graph-rs:interfaceZhCn` context key) runs the very
+		// same handler, so it takes the same designed refusal under the same conditions.
+		vscodeCommand: { command: 'git-graph-rs.gerritFetchCommitMsgHook.zhCn', arg: { kind: 'rootUri' } },
+		expectNotifications: ['commit-msg'],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
 		id: 'menu-vscode/scm-gerrit-push-ref',
 		title: 'Push to Gerrit Ref for Current Branch (Source Control Pull/Push menu)',
 		group: 'menu-vscode',
@@ -125,6 +139,20 @@ export const MENUS_VSCODE_ACTIONS: readonly AutomationAction[] = [
 		// branch, so the command takes its "already pushed" refusal — no amend prompt, no push.
 		// The refusal notification is captured and asserted ("Change-Id" holds in every language).
 		vscodeCommand: { command: 'git-graph-rs.gerritPushRef', arg: { kind: 'rootUri' } },
+		expectNotifications: ['Change-Id'],
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-gerrit-push-ref-zh-cn',
+		title: '推送当前分支到 Gerrit 审阅引用 (Source Control Pull/Push menu, Simplified Chinese title)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command', 'gerrit'],
+		mutable: true,
+		// The Simplified-Chinese-titled twin of the Pull/Push menu entry (git.pullpush under the
+		// `git-graph-rs:interfaceZhCn` context key): same handler, same "already pushed" refusal
+		// right after the reseed.
+		vscodeCommand: { command: 'git-graph-rs.gerritPushRef.zhCn', arg: { kind: 'rootUri' } },
 		expectNotifications: ['Change-Id'],
 		noHostTraffic: true,
 		expect: { responses: [] }
@@ -146,16 +174,44 @@ export const MENUS_VSCODE_ACTIONS: readonly AutomationAction[] = [
 		expect: { responses: [] }
 	},
 	{
+		id: 'menu-vscode/scm-amend-last-commit-zh-cn',
+		title: '修正上一次提交 (Source Control view title menu, Simplified Chinese title)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: true,
+		// The Simplified-Chinese-titled twin of the Amend entry: the same handler, so the same
+		// identity-dependent outcome answered through a notification whose presence is pinned.
+		vscodeCommand: { command: 'git-graph-rs.amendLastCommit.zhCn', arg: { kind: 'rootUri' } },
+		expectAnyNotification: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
 		id: 'menu-vscode/scm-reset-current-branch-to-remote',
 		title: 'Reset Current Branch to Remote (Soft) (Source Control view title menu)',
 		group: 'menu-vscode',
 		tags: ['menu-vscode', 'command'],
 		mutable: true,
-		// The modal confirmation is answered with its primary button (the runner is not
-		// interactive — the same policy as the webview's data-loss warning). The soft reset to
-		// main's upstream keeps the tree identical, so the fixture stays in its seeded shape.
-		// The confirmation modal itself is asserted: the command must reach (and pass) it.
+		// The modal confirmation — a uiPort.showWarningMessage(modal) the scripted port answers
+		// with its primary button (the runner is not interactive — the same policy as the
+		// webview's data-loss warning). The soft reset to main's upstream keeps the tree
+		// identical, so the fixture stays in its seeded shape. The confirmation modal itself is
+		// asserted: the command must reach (and pass) it.
 		vscodeCommand: { command: 'git-graph-rs.resetCurrentBranchToRemote', arg: { kind: 'rootUri' } },
+		expectModal: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/scm-reset-current-branch-to-remote-zh-cn',
+		title: '将当前分支重置到远程(软重置) (Source Control view title menu, Simplified Chinese title)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: true,
+		// The Simplified-Chinese-titled twin of the Reset entry: the same handler, so the same
+		// uiPort.showWarningMessage confirmation modal (auto-answered with "Reset") and the same
+		// tree-identical soft reset.
+		vscodeCommand: { command: 'git-graph-rs.resetCurrentBranchToRemote.zhCn', arg: { kind: 'rootUri' } },
 		expectModal: true,
 		noHostTraffic: true,
 		expect: { responses: [] }
@@ -205,6 +261,94 @@ export const MENUS_VSCODE_ACTIONS: readonly AutomationAction[] = [
 		// deterministic: the command must reach its About dialog.
 		vscodeCommand: { command: 'git-graph-rs.version' },
 		expectModal: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-add-git-repository',
+		title: 'Add Git Repository (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// The command's whole first step is the native folder picker — uiPort.showOpenDialog
+		// without a defaultUri, which the scripted port answers CANCELLED (its lenient default
+		// for a dialog offering no default location), so the run exercises the command-to-picker
+		// path with no repository registered and nothing to assert beyond completion: the
+		// picker is recorded by the scripted port, and the handler ends without a notification.
+		vscodeCommand: { command: 'git-graph-rs.addGitRepository' },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-end-all-code-reviews',
+		title: 'End All Code Reviews in Workspace (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// Ends every in-progress workspace code review and ALWAYS answers with a fully localized
+		// information toast (uiPort.showInformationMessage), whatever the review state was — the
+		// presence of the notification is therefore deterministic on every repository.
+		vscodeCommand: { command: 'git-graph-rs.endAllWorkspaceCodeReviews' },
+		expectAnyNotification: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-end-specific-code-review',
+		title: 'End a specific Code Review in Workspace (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// Two honest branches, neither assertable across both: with no review in progress the
+		// command answers with an error toast (uiPort.showErrorMessage of "no code reviews in
+		// progress"); with one, its quick pick (uiPort.showQuickPick) is auto-answered with the
+		// first item and that review is ended. The suite's fixture is always in the first state
+		// (the cdv code-review flows end their own reviews), but a user's repository may not be,
+		// so the run pins completion only.
+		vscodeCommand: { command: 'git-graph-rs.endSpecificWorkspaceCodeReview' },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-resume-code-review',
+		title: 'Resume a specific Code Review in Workspace (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// Same two branches as the end-specific entry: the "no code reviews in progress" refusal
+		// toast, or the quick pick's first item opening the view on the reviewed commit (the
+		// runner's per-action cleanup closes whatever the branch opened). Completion only.
+		vscodeCommand: { command: 'git-graph-rs.resumeWorkspaceCodeReview' },
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-show-diagnostics',
+		title: 'Show Diagnostics (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// The command formats the diagnostics document and opens it in an untitled editor tab —
+		// the new tab is the whole observable outcome and is asserted (expectTabs). The runner's
+		// per-action cleanup closes the tab again.
+		vscodeCommand: { command: 'git-graph-rs.showDiagnostics' },
+		expectTabs: true,
+		noHostTraffic: true,
+		expect: { responses: [] }
+	},
+	{
+		id: 'menu-vscode/palette-search-commits',
+		title: 'Search Commits (command palette)',
+		group: 'menu-vscode',
+		tags: ['menu-vscode', 'command'],
+		mutable: false,
+		// The search chain the scripted port answers step by step: with several repositories
+		// known, the repository quick pick (uiPort.showQuickPick) is answered with its first
+		// item (either known repository is a valid search subject); the query input box
+		// (uiPort.showInputBox) is answered with the lenient default — the empty string — which
+		// the command treats as a cancelled search and returns without a toast. The run
+		// exercises the command-to-picker-to-input path; completion is the outcome.
+		vscodeCommand: { command: 'git-graph-rs.searchCommits' },
 		noHostTraffic: true,
 		expect: { responses: [] }
 	}
