@@ -186,7 +186,7 @@
 	"config.git-graph-rs.keyboardShortcut.scrollToStash.description": "将 Git Graph 视图滚动到已加载提交中第一个（或下一个）贮藏的键盘快捷键的键绑定。可配合 Shift 修饰键将视图滚动到最后一个（上一个）贮藏。",
 	"config.git-graph-rs.markdown.description": "解析并渲染提交信息和标签详情中常用的一部分内联 Markdown 格式规则（粗体、斜体、粗斜体和行内代码块）。",
 	"config.git-graph-rs.maxDepthOfRepoSearch.description": "指定在工作区中发现仓库时搜索子文件夹的最大深度。注意：搜索子文件夹时不会自动检测子仓库，但可以通过在命令面板中运行 \"Git Graph: 添加 Git 仓库\" 命令手动添加。",
-	"config.git-graph-rs.mobileAdaptation.description": "使用紧凑、适合触屏的手机平板布局。Git Graph 视图宽度不超过 600 像素时使用手机布局：两行式提交行（标题下显示日期、作者和提交哈希）、全屏的提交详情面板，以及通过长按打开的底部操作菜单；更宽时使用平板布局：保留全部列的单行触控提交行、扁平工具栏、列表旁的提交详情侧栏，以及通过长按打开的弹出菜单。关闭时，任何宽度都使用原来的界面。",
+	"config.git-graph-rs.mobileAdaptation.description": "使用紧凑、适合触屏的手机平板布局。窄窗口会自动启用：宽度不超过 600 像素时使用手机布局（两行式提交行，标题下显示日期、作者和提交哈希；全屏的提交详情面板；长按打开的底部操作菜单）；不超过 900 像素时使用平板布局（保留全部列的单行触控提交行、扁平工具栏、列表旁的提交详情侧栏，以及长按打开的弹出菜单）。主指针为手指的屏幕在任意宽度都使用平板布局，启用此设置时同样；更宽的窗口仍使用原来的界面。",
 	"config.git-graph-rs.openNewTabEditorGroup.description": "指定从 Git Graph 视图执行以下操作时打开新标签页所在的编辑器组：查看 Visual Studio Code 差异视图、打开文件、查看文件的特定版本。",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription0": "在当前活动的编辑器组中打开新标签页。",
 	"config.git-graph-rs.openNewTabEditorGroup.enumDescription1": "在当前活动的编辑器组旁边打开新标签页。",

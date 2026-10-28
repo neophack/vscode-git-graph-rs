@@ -71,6 +71,26 @@
 	white-space:nowrap;
 	overflow:hidden;
 /*	flex-grow:1; */
+	/* The subject never collapses under its ref labels (they are flex-shrink:0 above): it keeps a
+	   readable stub and gives way only down to it, so a crowded description degrades instead of
+	   hiding the commit's subject line. The touch layouts set their own floors, which out-rank
+	   this. */
+	flex:1 1 auto;
+	min-width:80px;
+}
+/* ...and when the subject is at its floor, the refs give way before it does: they shrink and
+   ellipsize their names (the tablet layout does the same with its own floors). */
+#commitTable tr.commit td span.description .gitRef{
+	flex-shrink:1;
+	min-width:48px;
+	overflow:hidden;
+}
+#commitTable tr.commit td span.description .gitRef .gitRefName{
+	min-width:0;
+	max-width:100%;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
 }
 
 #commitTable tr.commit span.description .commitbody{
@@ -142,12 +162,23 @@
 	display:block;
 	width:6px;
 	cursor:col-resize;
+	/* a touch drag on the handle must resize, never scroll the list */
+	touch-action:none;
 }
 .resizeCol.left{
 	left:0;
 }
 .resizeCol.right{
 	right:0;
+}
+/* A finger cannot hit a 6px strip: in the touch layouts the header handles widen to a touch
+   target, and the per-row handles (the full-column-height hit area a mouse benefits from) go -
+   a scroll started on one of those invisible strips would otherwise be blocked by touch-action. */
+body.touchMode #tableColHeaders .resizeCol{
+	width:18px;
+}
+body.touchMode #commitTable td .resizeCol{
+	display:none;
 }
 
 table { border-collapse: collapse; }

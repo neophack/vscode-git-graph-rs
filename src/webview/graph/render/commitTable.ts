@@ -71,8 +71,12 @@ export class CommitTable {
 	public updateNarrowWindowLayout() {
 		const ctx = this.ctx(), next = ctx.layout.decide(), previous = ctx.layout.getRenderedLayout();
 		if (next === previous) {
-			// Same layout, new window size: the tablet side pane tracks the window width
+			// Same layout, new window size: the tablet side pane tracks the window width, and a
+			// layout frozen at widths that stopped fitting the new window falls back to the
+			// automatic one (the frozen columns would clip past the table's right edge, which
+			// never scrolls)
 			if (next === 'tablet') ctx.layout.apply(next);
+			if (ctx.columns.fixedLayoutFitChanged()) this.render();
 			return;
 		}
 		// Each layout has its own Commit Details View: a full-screen sheet on a phone, the side pane

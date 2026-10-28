@@ -16,6 +16,29 @@ import { COLUMN_AUTO, COLUMN_HIDDEN } from './layoutMode';
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_LEFT_RIGHT_PADDING = 24;
 const CSS_PROP_LIMIT_GRAPH_WIDTH = '--limitGraphWidth';
+/** The description column's floor while the frozen widths are checked against the view: as much
+ *  room as a drag leaves the narrowest column, so "fits" still means "the subject is readable". */
+const DESCRIPTION_MIN_WIDTH = COLUMN_MIN_WIDTH;
+/** The padding around the stored (content) widths of the fixed columns: the graph cell's 24px
+ *  and ~8px per further cell - an estimate on the safe side, not a layout constant. */
+const FIXED_CELL_PADDING = 8;
+
+/**
+ * Do the frozen column widths still fit the view they are about to be applied to? A layout frozen
+ * on a wide monitor (or with wider columns dragged) must not clip the table's right edge when the
+ * same repository opens on a narrower window - `#view` clips overflow instead of scrolling it, so
+ * the frozen Date/Author/hash columns would simply vanish. When they no longer fit, the render
+ * falls back to the automatic layout (the repository's saved widths are kept for wider windows).
+ */
+function fixedColumnWidthsFit(widths: ReadonlyArray<GG.ColumnWidth>, viewWidth: number): boolean {
+	let fixed = 0, visible = 0;
+	for (let i = 0; i < widths.length; i++) {
+		if (widths[i] === COLUMN_HIDDEN || widths[i] === COLUMN_AUTO) continue;
+		fixed += widths[i];
+		visible++;
+	}
+	return fixed + COLUMN_LEFT_RIGHT_PADDING + visible * FIXED_CELL_PADDING + DESCRIPTION_MIN_WIDTH <= viewWidth;
+}
 
 export class ColumnLayout {
 	/* The elements and repository the .resizeCol handles and listeners were last attached to (see makeTableResizable). */
@@ -23,6 +46,8 @@ export class ColumnLayout {
 	private wiredHeader: HTMLElement | null = null;
 	private wiredRepo: unknown = undefined;
 	private readonly wiredListeners = new ListenerGroup();
+	/** Whether the last render applied the repository's frozen widths (null before the first render). */
+	private appliedFixedLayout: boolean | null = null;
 
 	constructor(private readonly ctx: () => GraphContext) { }
 
@@ -68,6 +93,20 @@ export class ColumnLayout {
 		} else {
 			graphColElem.style.padding = '';
 		}
+	}
+
+	/**
+	 * Has the frozen-widths fit verdict changed since the last render? A resize within one layout
+	 * does not re-render the table (the resize observer only reflows the graph), so the observer
+	 * asks: when the window crossed the width at which the repository's frozen columns fit, the
+	 * table must re-render to switch between the fixed and the automatic layout.
+	 */
+	public fixedLayoutFitChanged(): boolean {
+		const ctx = this.ctx();
+		if (this.appliedFixedLayout === null || !ctx.store.hasCurrentRepo()) return false;
+		const widths = ctx.store.repoState.columnWidths;
+		if (widths === null || widths[0] === COLUMN_AUTO) return this.appliedFixedLayout;
+		return fixedColumnWidthsFit(widths, measureClientSize(ctx.dom.view).width) !== this.appliedFixedLayout;
 	}
 
 	/**
@@ -132,11 +171,19 @@ export class ColumnLayout {
 			columnWidths = [cWidths[0], COLUMN_AUTO, cWidths[1], cWidths[2], cWidths[3]];
 		}
 
-		if (columnWidths[0] !== COLUMN_AUTO) {
+		// The frozen widths render fixed ONLY while they fit the view: once the window is narrower
+		// than what they were frozen at, the automatic layout (whose Date/Author widths shrink with
+		// the window) takes over for as long as they don't. The saved widths are untouched, so a
+		// later render of a wide enough window freezes them right back.
+		const applyFixed = columnWidths[0] !== COLUMN_AUTO && fixedColumnWidthsFit(columnWidths, measureClientSize(ctx.dom.view).width);
+		this.appliedFixedLayout = applyFixed;
+		if (applyFixed) {
 			// Table should have fixed layout
 			makeTableFixedLayout();
 		} else {
-			// Table should have automatic layout
+			// Table should have automatic layout (also while the frozen widths do not fit: clear
+			// any inline widths an earlier fixed render wrote, they would pin the cells in place)
+			for (let i = 0; i < cols.length; i++) cols[i].style.width = '';
 			tableElem.className = 'autoLayout';
 			this.applyGraphColumnAutoLayout();
 		}
@@ -221,18 +268,18 @@ export class ColumnLayout {
 		// Attached inside the wiring guard: the <table> is kept across renders, so an unguarded
 		// attach would stack one listener per renderTable call.
 		if (!wiringChanged) return;
-		this.wiredListeners.add(tableRootElem, 'mousedown', (e) => {
+		this.wiredListeners.add(tableRootElem, 'pointerdown', (e) => {
 			const resizeColElem = e.target !== null ? (<HTMLElement>e.target).closest('.resizeCol') : null;
 			if (resizeColElem === null) return;
 
 			col = parseInt((<HTMLElement>resizeColElem).dataset.col!);
 			while (columnWidths[col] === COLUMN_HIDDEN) col--;
-			mouseX = (<MouseEvent>e).clientX;
+			mouseX = (<PointerEvent>e).clientX;
 			dragMoved = false;
 			for (let i = 0; i < cols.length; i++) {
 				if (parseInt(cols[i].dataset.col!) === col) colIndex = i;
 			}
-			ctx.eventOverlay.create('colResize', processResizingColumn, stopResizingColumn);
+			ctx.eventOverlay.create('colResize', processResizingColumn, stopResizingColumn, (<PointerEvent>e).pointerId);
 		});
 
 		this.wiredListeners.add(colHeadersElem, 'contextmenu', (e) => {

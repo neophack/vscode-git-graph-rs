@@ -22,8 +22,9 @@ export function observeWindowSizeChanges(ctx: GraphContext) {
 		resizeRafId = requestAnimationFrame(() => {
 			resizeRafId = null;
 
-			// A resize that crossed the narrow window (mobileAdaptation) breakpoint changes which
-			// columns are rendered: re-render so the Date/Author/Commit columns appear or disappear
+			// A resize that crossed the layout breakpoint (the phone/tablet/wide switch) changes
+			// which columns are rendered: re-render so the Date/Author/Commit columns appear or
+			// disappear
 			ctx.table.updateNarrowWindowLayout();
 
 			// The visible row count of a windowed render derives from the view height, so a resize

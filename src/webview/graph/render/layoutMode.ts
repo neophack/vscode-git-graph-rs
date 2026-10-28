@@ -1,8 +1,11 @@
 /**
- * The layout the commit table is rendered in. While the `mobileAdaptation` Extension Setting
- * ("Phone and tablet layouts") is off, the view always keeps the wide (desktop) layout. While it
- * is on, the view's width picks one of the two touch layouts: the phone layout up to
- * NARROW_WINDOW_MAX_WIDTH, the tablet layout above it.
+ * The layout the commit table is rendered in. Narrow windows take the touch layouts on their own:
+ * up to NARROW_WINDOW_MAX_WIDTH the phone layout (nothing of the wide layout fits a phone-width
+ * view), up to TABLET_LAYOUT_MAX_WIDTH the tablet layout (the wide toolbar's fixed furniture -
+ * three dropdowns pinned at their 138px minimum plus the absolutely positioned button strip -
+ * needs ~900px to stop covering the centered controls), and a touch-primary screen (a tablet at
+ * any width, `pointer: coarse`) the tablet layout too. The `mobileAdaptation` Extension Setting
+ * opts IN everywhere: with it on, every width above the phone breakpoint gets the tablet layout.
  *
  * The layout is decided once per render, so everything that reasons about the rows in the DOM -
  * their height, the Commit Details View placement - agrees with what is actually on screen, even
@@ -14,10 +17,17 @@ import * as GG from '../../common/protocol';
 import { Store } from '../state/store';
 import { measureClientSize } from './measure';
 
-/** The wide (desktop) layout, or one of the two touch layouts of the `mobileAdaptation` setting. */
+/** The wide (desktop) layout, or one of the two touch layouts (narrow windows, coarse pointers, the setting). */
 export type LayoutKind = 'wide' | 'phone' | 'tablet';
 
 const NARROW_WINDOW_MAX_WIDTH = 600;
+/**
+ * Below this width the wide layout cannot hold together: the centered toolbar controls and the
+ * absolutely positioned button cluster start covering each other, and the Date/Author columns'
+ * shrunk 80-100px widths still leave the description too little room. The tablet layout - which
+ * measures its toolbar and overflows what does not fit into the "More actions" sheet - takes over.
+ */
+const TABLET_LAYOUT_MAX_WIDTH = 900;
 /** The two-line commit row of the phone layout: subject + meta line, above the 48px touch minimum. */
 const MOBILE_ROW_HEIGHT = 52;
 /** The single-line commit row of the tablet layout: compact, yet a comfortable full-width touch target. */
@@ -29,6 +39,18 @@ const CLASS_SIDE_PANE_OPEN = 'sidePaneOpen';
 
 export const COLUMN_HIDDEN = -100;
 export const COLUMN_AUTO = -101;
+
+/** The coarse-pointer media query, resolved once and re-read on every decision (a detachable
+ *  tablet can switch its primary pointer while the view lives). */
+let coarsePointerQuery: MediaQueryList | null | undefined;
+
+/** Is the screen's PRIMARY pointer coarse (a finger: a tablet or phone screen, not mouse desktops)? */
+function isCoarsePrimaryPointer(): boolean {
+	if (coarsePointerQuery === undefined) {
+		coarsePointerQuery = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
+	}
+	return coarsePointerQuery !== null && coarsePointerQuery.matches;
+}
 
 export interface ColumnVisibility {
 	readonly date: boolean;
@@ -53,10 +75,11 @@ export class LayoutMode {
 	 * never the pane it opened itself.
 	 */
 	public decide(): LayoutKind {
-		if (!this.store.config.mobileAdaptation) return 'wide';
 		const width = this.getWindowWidth();
 		if (width <= 0) return 'wide';
-		return width <= NARROW_WINDOW_MAX_WIDTH ? 'phone' : 'tablet';
+		if (width <= NARROW_WINDOW_MAX_WIDTH) return 'phone';
+		if (this.store.config.mobileAdaptation || width <= TABLET_LAYOUT_MAX_WIDTH || isCoarsePrimaryPointer()) return 'tablet';
+		return 'wide';
 	}
 
 	/** Should the commit table use the narrow window (phone) layout? */

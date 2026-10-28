@@ -43,7 +43,7 @@ body {
 /* The single-commit card's subject line: takes whatever width the window leaves between the
    fixed chip/author/date and truncates with an ellipsis, so it always fits. */
 .commitCard .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 0; min-width: 0; opacity: 0.9; }
-.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 0; }
+.commitCard .date { font-size: 11px; opacity: 0.8; margin-left: auto; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .commitCard .toggle { display: inline-block; font-size: 9px; opacity: 0.55; flex-shrink: 0; transition: transform 0.12s ease; }
 #commitCards.expanded .toggle { transform: rotate(90deg); }
 .commitCard .message { margin: 6px 0 0 0; padding-top: 6px; border-top: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.2)); white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 120px; overflow: auto; }
@@ -57,9 +57,17 @@ body {
 .compareDivider .arrow { font-size: 13px; opacity: 0.55; line-height: 1; }
 .compareDivider .count { font-size: 10px; line-height: 14px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit); border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
 .compareDivider .count:empty { display: none; }
+/* A narrow window cannot spare 76px between the cards: the divider narrows to its arrows */
+@media (max-width: 700px) {
+	.compareDivider { width: 44px; }
+	.commitCard { padding: 6px 8px; }
+}
 #body { display: flex; flex: 1; min-height: 0; }
-#sidebar { width: 280px; flex-shrink: 0; overflow: auto; padding: 6px 0; --indent-guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128,128,128,0.3)); }
-#sidebarResizer { flex-shrink: 0; width: 4px; margin-left: -2px; position: relative; z-index: 1; cursor: col-resize; border-right: 1px solid var(--gg-border); }
+/* The sidebar never takes more of a narrow window than its share: without the clamp a fixed 280px
+   leaves ~300px for the whole split diff on a tablet-width view. Chromium 69 fallback (clamp()
+   needs Chrome 79): the fixed width above it. */
+#sidebar { width: 280px; width: clamp(170px, 38vw, 280px); flex-shrink: 0; overflow: auto; padding: 6px 0; --indent-guide-color: var(--vscode-tree-indentGuidesStroke, rgba(128,128,128,0.3)); }
+#sidebarResizer { flex-shrink: 0; width: 4px; margin-left: -2px; position: relative; z-index: 1; cursor: col-resize; border-right: 1px solid var(--gg-border); touch-action: none; }
 #sidebarResizer:hover, #sidebarResizer.resizing { border-right-color: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder)); }
 #sidebar h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; opacity: 0.7; margin: 4px 12px; }
 #sidebar h2 .additions { color: var(--vscode-gitDecoration-addedResourceForeground, #22863a); }

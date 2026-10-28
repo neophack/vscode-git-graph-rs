@@ -66,9 +66,9 @@ export function makeHeightResizable(ctx: GraphContext, surface: PanelSurface, ge
 	// The handle is this panel's own element; the listener is surface-owned (F3)
 	const handles = getScope().querySelectorAll('.cdvHeightResize');
 	for (let i = 0; i < handles.length; i++) {
-		surface.listen(handles[i], 'mousedown', (e) => {
-			prevY = (<MouseEvent>e).pageY;
-			ctx.eventOverlay.create('rowResize', processResizingCdvHeight, stopResizingCdvHeight);
+		surface.listen(handles[i], 'pointerdown', (e) => {
+			prevY = (<PointerEvent>e).pageY;
+			ctx.eventOverlay.create('rowResize', processResizingCdvHeight, stopResizingCdvHeight, (<PointerEvent>e).pointerId);
 		});
 	}
 }
@@ -97,13 +97,13 @@ export function makeDividerDraggable(ctx: GraphContext, surface: PanelSurface, g
 		ctx.eventOverlay.remove();
 	};
 
-	surface.listen(byId(getScope(), 'cdvDivider')!, 'mousedown', () => {
+	surface.listen(byId(getScope(), 'cdvDivider')!, 'pointerdown', (e) => {
 		const contentElem = byId(getScope(), 'cdvContent');
 		if (contentElem === null) return;
 
 		const bounds = measureBoundingClientRect(contentElem);
 		minX = bounds.left;
 		width = bounds.width;
-		ctx.eventOverlay.create('colResize', processDraggingCdvDivider, stopDraggingCdvDivider);
+		ctx.eventOverlay.create('colResize', processDraggingCdvDivider, stopDraggingCdvDivider, (<PointerEvent>e).pointerId);
 	});
 }

@@ -66,6 +66,8 @@ code{
 	top:0;
 	bottom:0;
 	z-index:40;
+	/* a touch drag captured onto the overlay must resize, never scroll what is below it */
+	touch-action:none;
 }
 #eventCaptureElem.rowResize{
 	cursor:row-resize;

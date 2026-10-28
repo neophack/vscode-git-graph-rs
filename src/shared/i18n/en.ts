@@ -367,7 +367,7 @@ export const STRINGS_EN = {
 	settingsStickyHeader: 'Sticky header while scrolling',
 	settingsRenderMarkdown: 'Render Markdown in commit messages',
 	settingsMobileAdaptation: 'Use phone and tablet layouts',
-	settingsMobileAdaptationInfo: 'Switch to compact, touch-friendly layouts. While the view is at most 600 pixels wide, the phone layout: two-line commit rows (with the date, author and commit hash under the subject), the commit details as a full-screen sheet, and context menus as bottom action sheets opened by a long press. Wider views get the tablet layout: single-line touch rows with every column, a flat toolbar, the commit details in a side pane beside the list, and popover menus opened by a long press. When unchecked, the original layout is used at every width.',
+	settingsMobileAdaptationInfo: 'Compact, touch-friendly layouts. Narrow views use them automatically: at most 600 pixels wide, the phone layout (two-line commit rows with the date, author and commit hash under the subject, the commit details as a full-screen sheet, and context menus as bottom action sheets opened by a long press); at most 900 pixels, the tablet layout (single-line touch rows with every column, a flat toolbar, the commit details in a side pane beside the list, and popover menus opened by a long press). A touchscreen gets the tablet layout at any width, as does checking this switch; wider views keep the original layout.',
 	mobileMoreActions: 'More actions',
 	mobileGoToHead: 'Go to HEAD',
 	mobileFilterAuthors: 'Filter by Author',

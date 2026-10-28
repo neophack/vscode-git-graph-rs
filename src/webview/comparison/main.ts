@@ -52,28 +52,35 @@ if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fi
 	const body = document.getElementById('body');
 	if (resizer !== null && body !== null) {
 		const MIN_WIDTH = 170, MAX_WIDTH = 700;
+		const clampWidth = (width: number) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.min(width, Math.floor(window.innerWidth * 0.8))));
 		const savedWidth = (<{ sidebarWidth?: unknown }>bridge.getState() || {}).sidebarWidth;
-		if (typeof savedWidth === 'number') sidebar.style.width = savedWidth + 'px';
-		resizer.addEventListener('mousedown', (e) => {
+		// A width saved on a wider window must not carry over unchanged: clamped to this one, it
+		// would leave the diff area too little room to read (and never shrink on its own again)
+		if (typeof savedWidth === 'number') sidebar.style.width = clampWidth(savedWidth) + 'px';
+		// Pointer events (not mouse events): a finger or stylus drags the divider as well, kept on
+		// the resizer by pointer capture
+		resizer.addEventListener('pointerdown', (e) => {
 			e.preventDefault();
 			resizer.classList.add('resizing');
 			document.body.style.cursor = 'col-resize';
 			document.body.style.userSelect = 'none';
 			const bodyLeft = measureBoundingClientRect(body).left;
-			const onMouseMove = (moveEvent: MouseEvent) => {
-				const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, moveEvent.clientX - bodyLeft));
-				sidebar.style.width = width + 'px';
+			const onPointerMove = (moveEvent: PointerEvent) => {
+				sidebar.style.width = clampWidth(moveEvent.clientX - bodyLeft) + 'px';
 			};
-			const onMouseUp = () => {
-				window.removeEventListener('mousemove', onMouseMove);
-				window.removeEventListener('mouseup', onMouseUp);
+			const onPointerUp = () => {
+				window.removeEventListener('pointermove', onPointerMove);
+				window.removeEventListener('pointerup', onPointerUp);
+				window.removeEventListener('pointercancel', onPointerUp);
 				resizer.classList.remove('resizing');
 				document.body.style.cursor = '';
 				document.body.style.userSelect = '';
 				bridge.setState(Object.assign({}, bridge.getState(), { sidebarWidth: measureBoundingClientRect(sidebar).width }));
 			};
-			window.addEventListener('mousemove', onMouseMove);
-			window.addEventListener('mouseup', onMouseUp);
+			try { resizer.setPointerCapture(e.pointerId); } catch (e) { /* the pointer ended already */ }
+			window.addEventListener('pointermove', onPointerMove);
+			window.addEventListener('pointerup', onPointerUp);
+			window.addEventListener('pointercancel', onPointerUp);
 		});
 	}
 
