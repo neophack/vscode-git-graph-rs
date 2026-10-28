@@ -171,6 +171,16 @@ function buildEnvironmentFor(target) {
 		console.log(`  MACOSX_DEPLOYMENT_TARGET=${MACOS_DEPLOYMENT_TARGET}`);
 		env.MACOSX_DEPLOYMENT_TARGET = MACOS_DEPLOYMENT_TARGET;
 	}
+	if (target.includes('musl')) {
+		// cargo-zigbuild enables crt-static for musl targets by default, and rustc refuses
+		// a cdylib under static CRT outright ("does not support these crate types") - the
+		// shipped engine is the dynamic kind, which is what the binding's dyn-symbols
+		// feature exists for.
+		const key = `CARGO_TARGET_${target.toUpperCase().replace(/-/g, '_')}_RUSTFLAGS`;
+		const flags = `${env[key] ?? ''} -C target-feature=-crt-static`.trim();
+		console.log(`  ${key}=${flags}`);
+		env[key] = flags;
+	}
 	return env;
 }
 

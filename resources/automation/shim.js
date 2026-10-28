@@ -197,23 +197,35 @@ function postToHost(message) {
 				// control-bar dropdowns' 12vw cap, widgets shrunk by max-width:calc(100vw - 56px)):
 				// absolute px bounds on those break as the user resizes the window.
 				if (!hasLayoutEngine()) return Promise.resolve('sizes unassertable (no layout engine)');
-				var box = find(step.selector).getBoundingClientRect();
-				var width = box.width, height = box.height;
-				if (width === 0 && height === 0) throw new Error('"' + step.selector + '" is not rendered (0x0 box)');
-				if (step.minW !== undefined && width < step.minW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected >= ' + step.minW + 'px');
-				if (step.maxW !== undefined && width > step.maxW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected <= ' + step.maxW + 'px');
-				if (step.minWVw !== undefined || step.maxWVw !== undefined) {
-					var vw = document.documentElement.clientWidth;
-					if (!(vw > 0)) vw = document.body.getBoundingClientRect().width; // the same probe hasLayoutEngine trusts
-					if (vw > 0) { // a zero here means the viewport is unmeasurable: skip rather than fail
-						var measuredVw = width * 100 / vw;
-						if (step.minWVw !== undefined && measuredVw < step.minWVw) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide (' + measuredVw.toFixed(1) + 'vw of a ' + vw.toFixed(0) + 'px webview), expected >= ' + step.minWVw + 'vw');
-						if (step.maxWVw !== undefined && measuredVw > step.maxWVw) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide (' + measuredVw.toFixed(1) + 'vw of a ' + vw.toFixed(0) + 'px webview), expected <= ' + step.maxWVw + 'vw');
+				// A 0x0 box the moment the page settles is usually layout still catching up —
+				// the dropdowns take their real width only once their data has landed (the
+				// first CI run measured 0x0 and the evidence capture 138px a beat later) —
+				// so measure a few times before declaring the element genuinely unrendered.
+				var attemptSize = function (remaining) {
+					var box = find(step.selector).getBoundingClientRect();
+					if ((box.width !== 0 || box.height !== 0) || remaining <= 0) return Promise.resolve(box);
+					return new Promise(function (resolve) { setTimeout(resolve, 200); }).then(function () {
+						return attemptSize(remaining - 1);
+					});
+				};
+				return attemptSize(10).then(function (box) {
+					var width = box.width, height = box.height;
+					if (width === 0 && height === 0) throw new Error('"' + step.selector + '" is not rendered (0x0 box)');
+					if (step.minW !== undefined && width < step.minW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected >= ' + step.minW + 'px');
+					if (step.maxW !== undefined && width > step.maxW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected <= ' + step.maxW + 'px');
+					if (step.minWVw !== undefined || step.maxWVw !== undefined) {
+						var vw = document.documentElement.clientWidth;
+						if (!(vw > 0)) vw = document.body.getBoundingClientRect().width; // the same probe hasLayoutEngine trusts
+						if (vw > 0) { // a zero here means the viewport is unmeasurable: skip rather than fail
+							var measuredVw = width * 100 / vw;
+							if (step.minWVw !== undefined && measuredVw < step.minWVw) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide (' + measuredVw.toFixed(1) + 'vw of a ' + vw.toFixed(0) + 'px webview), expected >= ' + step.minWVw + 'vw');
+							if (step.maxWVw !== undefined && measuredVw > step.maxWVw) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide (' + measuredVw.toFixed(1) + 'vw of a ' + vw.toFixed(0) + 'px webview), expected <= ' + step.maxWVw + 'vw');
+						}
 					}
-				}
-				if (step.minH !== undefined && height < step.minH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected >= ' + step.minH + 'px');
-				if (step.maxH !== undefined && height > step.maxH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected <= ' + step.maxH + 'px');
-				return Promise.resolve(width.toFixed(1) + 'x' + height.toFixed(1));
+					if (step.minH !== undefined && height < step.minH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected >= ' + step.minH + 'px');
+					if (step.maxH !== undefined && height > step.maxH) throw new Error('"' + step.selector + '" is ' + height.toFixed(1) + 'px tall, expected <= ' + step.maxH + 'px');
+					return width.toFixed(1) + 'x' + height.toFixed(1);
+				});
 			}
 			case 'expectCount': {
 				var count = document.querySelectorAll(step.selector).length;
