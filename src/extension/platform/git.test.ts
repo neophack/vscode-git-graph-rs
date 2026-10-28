@@ -1,7 +1,7 @@
 /**
- * The Git-facing primitives of src/utils/git.ts (ported from tests/utils.test.mjs): untrusted
- * input validation for commit hashes, reference names and stash selectors, and the version
- * comparison behind every feature's minimum-Git check.
+ * The Git-facing primitives of src/utils/git.ts (ported from tests/utils.test.mjs): the version
+ * comparison behind every feature's minimum-Git check. The untrusted-input validators live in
+ * git/write/argSafety.ts, with their tests (argSafety.test.ts).
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -21,29 +21,11 @@ vi.mock('vscode', () => ({
 }));
 
 import { t } from './i18n';
-import { abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, GitVersionRequirement, isSafeRefName, isSafeStashSelector, isValidCommitHash } from './git';
+import { abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, GitVersionRequirement } from './git';
 
 describe('git helpers', () => {
 	it('abbreviates commit hashes to the first eight characters', () => {
 		expect(abbrevCommit('0123456789abcdef')).toBe('01234567');
-	});
-
-	it('validates untrusted commit hashes, ref names and stash selectors', () => {
-		expect(isValidCommitHash('abcd')).toBe(true);
-		expect(isValidCommitHash('a'.repeat(40))).toBe(true);
-		expect(isValidCommitHash('a'.repeat(64))).toBe(true); // SHA-256 repository hashes
-		expect(isValidCommitHash('abc')).toBe(false);
-		expect(isValidCommitHash('--exec=rm')).toBe(false);
-		expect(isValidCommitHash(<never>42)).toBe(false);
-
-		expect(isSafeRefName('feature/thing')).toBe(true);
-		for (const bad of ['', '-x', '.hidden', 'a/', 'a.', 'a.lock', 'a\nb', 'a..b', 'a@{b', 'a\\b', 'a^b', 'a:b', 'a?b', 'a[b', 'a*b', <never>42]) {
-			expect(isSafeRefName(bad), JSON.stringify(bad)).toBe(false);
-		}
-
-		expect(isSafeStashSelector('refs/stash@{0}')).toBe(true);
-		expect(isSafeStashSelector('stash@{0}')).toBe(false);
-		expect(isSafeStashSelector('refs/stash@{x}')).toBe(false);
 	});
 
 	/* The requirement argument is one of the declared GitVersionRequirement values; versions

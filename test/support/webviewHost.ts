@@ -124,7 +124,6 @@ function webviewConfig() {
 	(config.graph as { rowHeight: number }).rowHeight = ROW_HEIGHT;
 	config.fetchAvatars = false;
 	config.pullRequests.enabled = false;
-	config.showCommitBodyInline = false;
 	config.showBodyInline = false;
 	return config;
 }

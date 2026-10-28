@@ -37,8 +37,6 @@ const HTML_UNESCAPES: { [key: string]: string } = { '&amp;': '&', '&lt;': '<', '
 const HTML_ESCAPER_REGEX = /[&<>"'\/]/g;
 const HTML_UNESCAPER_REGEX = /&lt;|&gt;|&amp;|&quot;|&#x27;|&#x2F;/g;
 
-export const EMPTY_HTML: SafeHtml = new SafeHtmlValue('');
-
 function escapeText(text: string) {
 	return text.replace(HTML_ESCAPER_REGEX, (match) => HTML_ESCAPES[match]);
 }

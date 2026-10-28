@@ -89,7 +89,6 @@ export interface GitGraphViewConfig {
 	readonly pullRequests: PullRequestsConfig;
 	readonly referenceLabels: ReferenceLabelsConfig;
 	readonly repoDropdownOrder: RepoDropdownOrder;
-	readonly showCommitBodyInline: boolean;
 	readonly showRemoteBranches: boolean;
 	readonly showRemoteHeads: boolean;
 	readonly showStashes: boolean;

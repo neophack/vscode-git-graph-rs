@@ -120,7 +120,6 @@ export function getWebviewConfig(config: ConfigSnapshot, hostLanguage: string, a
 		pullRequests: { enabled: config.pullRequestsEnabled },
 		referenceLabels: cooked.referenceLabels,
 		repoDropdownOrder: cooked.repoDropdownOrder,
-		showCommitBodyInline: config.repositoryCommitsShowBodyInline,
 		showRemoteBranches: config.repositoryShowRemoteBranches,
 		showRemoteHeads: config.repositoryShowRemoteHeads,
 		showStashes: config.repositoryShowStashes,

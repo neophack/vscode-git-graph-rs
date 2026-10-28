@@ -3,11 +3,6 @@
 type PrimitiveTypes = string | number | boolean | symbol | bigint | undefined | null;
 
 /**
- * Make all properties in T writeable
- */
-export type Writeable<T> = { -readonly [K in keyof T]: T[K] };
-
-/**
  * Make all properties in T recursively readonly
  */
 export type DeepReadonly<T> = T extends PrimitiveTypes

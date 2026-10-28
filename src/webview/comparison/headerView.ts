@@ -5,16 +5,13 @@
  */
 
 import { escapeHtml, html, joinHtml, raw, setHtml } from '../common/html';
+import { abbrevCommit } from '../common/util';
 import type { ComparisonCommitSummary } from '../../shared/protocol/comparison';
 import { ComparisonFileModel } from './model';
 import { compareMarkup, compareStrings as s, format } from './../binaryCompare/strings';
 
 /** The hash that stands for the working tree in a comparison (the host's UNCOMMITTED). */
 const UNCOMMITTED = '*';
-
-function abbrevCommit(hash: string): string {
-	return hash.substring(0, 8);
-}
 
 /** One commit description card. The role 'single' (the "Open Changes" presentation) carries no
  *  data-role, so the card keeps its standalone borders instead of the joined halves of a

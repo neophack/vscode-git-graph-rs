@@ -42,21 +42,6 @@ export function removeClassFromAll(root: Document | Element, className: string) 
 	for (let i = 0; i < elems.length; i++) elems[i].classList.remove(className);
 }
 
-/**
- * Add an event listener to every element under `root` carrying a class name.
- */
-export function addListenerToClass(root: Document | Element, className: string, event: string, listener: EventListener) {
-	const elems = root.getElementsByClassName(className);
-	for (let i = 0; i < elems.length; i++) elems[i].addEventListener(event, listener);
-}
-
-/**
- * Add an event listener to every element of a collection.
- */
-export function addListenerToCollectionElems(elems: HTMLCollection, event: string, listener: EventListener) {
-	for (let i = 0; i < elems.length; i++) elems[i].addEventListener(event, listener);
-}
-
 /** Insert an element directly after a reference element (as a sibling). */
 export function insertAfter(newNode: Element, referenceNode: Element) {
 	referenceNode.parentNode!.insertBefore(newNode, referenceNode.nextSibling);
@@ -135,12 +120,6 @@ export function makeKeyboardActivatable(elem: HTMLElement, group?: ListenerGroup
 	} else {
 		elem.addEventListener('keydown', listener);
 	}
-}
-
-/** `makeKeyboardActivatable` for every element under `root` matching a selector. */
-export function makeKeyboardActivatableCollection(root: ParentNode, selector: string) {
-	const elems = root.querySelectorAll<HTMLElement>(selector);
-	for (let i = 0; i < elems.length; i++) makeKeyboardActivatable(elems[i]);
 }
 
 /**

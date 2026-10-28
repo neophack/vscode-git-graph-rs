@@ -58,8 +58,6 @@ export interface AutomationE2eProbeRequest {
 	readonly e2eProbe: true;
 }
 
-export type AutomationTestRequest = AutomationE2eSuiteRequest | AutomationE2eEvalRequest | AutomationE2eProbeRequest;
-
 /**
  * Whether the automation modules are present in this build (only the automation build's
  * packaging keeps them).

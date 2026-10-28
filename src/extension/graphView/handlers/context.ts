@@ -273,8 +273,6 @@ export interface HandlerContext {
  * among its own, and `repoConfig.invalidate` is the invalidation hook), so handlers pass `ctx`
  * straight through to the flows.
  */
-export type WriteFlowHost = import('../writeFlows').WriteFlowContext;
-
 /**
  * The slice of the extension configuration the request handlers read, taken once at the start of
  * the request. The Settings-related and merge/pull formats ride along so the handler modules stay

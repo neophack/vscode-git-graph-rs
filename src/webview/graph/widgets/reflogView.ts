@@ -93,11 +93,6 @@ export class ReflogView extends Component implements ReflogViewSurface {
 		setHtml(this.contentElem, html``);
 	}
 
-	/** Re-request the currently shown page, e.g. after a refresh-triggering action. */
-	public refresh() {
-		if (this.isOpen) this.load();
-	}
-
 	private load() {
 		const ctx = this.ctx();
 		setHtml(this.contentElem, html`<div class="reflogLoading">${SVG_ICONS.loading}</div>`);

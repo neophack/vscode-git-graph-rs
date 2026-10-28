@@ -15,53 +15,6 @@ export function abbrevCommit(commitHash: string) {
 	return commitHash.substring(0, 8);
 }
 
-// 4–64 hex characters: full hashes of SHA-1 (40) and SHA-256 (64) repositories, and
-// abbreviations of either.
-const COMMIT_HASH_REGEX = /^[0-9a-fA-F]{4,64}$/;
-
-/**
- * Check whether a commit hash received from an untrusted source (e.g. the webview) is a
- * hexadecimal hash, and therefore cannot be misinterpreted by git as an option (e.g. `--exec`).
- * @param commitHash The commit hash to validate.
- * @returns Whether the commit hash is valid.
- */
-export function isValidCommitHash(commitHash: string): boolean {
-	return typeof commitHash === 'string' && COMMIT_HASH_REGEX.test(commitHash);
-}
-
-/**
- * Check whether a reference name (branch, tag or remote name) received from an untrusted source
- * is safe to be passed to git. Rejects names that could be interpreted as git options
- * (e.g. starting with `-`), or that violate the git ref name format rules.
- * See https://git-scm.com/docs/git-check-ref-format
- * @param name The reference name to validate.
- * @returns Whether the reference name is safe.
- */
-export function isSafeRefName(name: string): boolean {
-	if (typeof name !== 'string' || name.length === 0) return false;
-	if (name[0] === '-' || name[0] === '.') return false;
-	if (name.endsWith('/') || name.endsWith('.') || name.endsWith('.lock')) return false;
-	// Reject ASCII control characters (including newlines), and characters disallowed in ref names
-	if (/[\u0000-\u001f\u007f]/.test(name)) return false;
-	return ['..', '@{', '\\', '^', ':', '?', '[', '*'].every((seq) => name.indexOf(seq) === -1);
-}
-
-const STASH_SELECTOR_REGEX = /^refs\/stash@\{\d+\}$/;
-
-/**
- * Check whether a stash selector received from an untrusted source matches the expected
- * `stash@{N}` format, and therefore cannot be misinterpreted by git as an option.
-
-/**
- * Check whether a stash selector received from an untrusted source matches the expected
- * `stash@{N}` format, and therefore cannot be misinterpreted by git as an option.
- * @param selector The stash selector to validate.
- * @returns Whether the stash selector is safe.
- */
-export function isSafeStashSelector(selector: string): boolean {
-	return typeof selector === 'string' && STASH_SELECTOR_REGEX.test(selector);
-}
-
 export const enum GitVersionRequirement {
 	FetchAndPruneTags = '2.17.0',
 	GpgInfo = '2.4.0',

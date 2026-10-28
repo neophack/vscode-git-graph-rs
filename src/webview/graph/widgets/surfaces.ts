@@ -27,11 +27,8 @@ export interface FindWidgetSurface {
 	/** Set the CSS variables the match highlights read (works before the module loads). */
 	setColour(colour: string): void;
 	getState(): FindWidgetState;
-	getCurrentHash(): string | null;
 	restoreState(state: FindWidgetState): void;
 	isVisible(): boolean;
-	/** Is an incremental search still scanning the loaded commits? */
-	isScanning(): boolean;
 	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
 	dispose(): void;
 }
@@ -53,7 +50,6 @@ export interface ReflogViewSurface {
 	show(): void;
 	close(): void;
 	isVisible(): boolean;
-	refresh(): void;
 	processResponse(msg: GG.ResponseReflog): void;
 	/** Tear the widget down (F3): removes its listeners. The real widgets carry it (Component); the facades forward it once the module has loaded. */
 	dispose(): void;

@@ -2,7 +2,7 @@ import { t } from '../platform/i18n';
 import { extractChangeId, generateChangeId } from '../integrations/gerrit/gerritProtocol';
 import { showErrorMessage, showInformationMessage, openExternalUrl, uiPort } from '../platform/actions';
 import { UiPort } from '../platform/uiPort';
-import { isSafeRefName } from '../platform/git';
+import { isSafeRefName } from '../git/write/argSafety';
 import { unableToFindGitMsg } from '../git/executable/findGit';
 import { ErrorInfo } from '../../shared/protocol/messages';
 import { resolveRepoFromCommandArg, type CommandHost } from './context';

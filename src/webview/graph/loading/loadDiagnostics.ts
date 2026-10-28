@@ -97,8 +97,3 @@ export function noteCommitsApplied(summary: { count: number; head: string | null
 		+ ' first=' + (summary.first === null ? 'null' : summary.first.slice(0, 8))
 		+ ' second=' + (summary.secondSubject === null ? 'null' : summary.secondSubject.slice(0, 40)));
 }
-
-/** The collected counters (the tests' assertion surface; mirrors what the attributes hold). */
-export function loadDiagnosticCounters(): Readonly<typeof counters> {
-	return counters;
-}
