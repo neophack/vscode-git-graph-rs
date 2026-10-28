@@ -6,6 +6,8 @@ import { resolve as resolveUrl } from 'url';
 import { ErrorInfo } from '../../../shared/protocol/messages';
 import { GerritChangeState } from '../../../shared/model/gerrit';
 import { evalPromises } from '../../git/process/childProcess';
+import type { AbortLike } from '../../git/process/gitProcess';
+import { createAbortController } from '../../git/process/gitProcess';
 import { buildKeepPatterns, changeShard, chunkFetchRefspecs, gerritRemoteServer, MetaCommitRecord, parseLsRemoteChanges, parseMetaHistory } from './gerritProtocol';
 
 /**
@@ -22,8 +24,10 @@ import { buildKeepPatterns, changeShard, chunkFetchRefspecs, gerritRemoteServer,
  * composition root and the panel wire in).
  */
 export interface GitRunner {
-	gitOutput: <T>(args: string[], repo: string, resolveValue: { (stdout: string): T }) => Promise<T>;
-	runGitCommand: (args: string[], repo: string) => Promise<ErrorInfo>;
+	/** Spawn Git, resolving the value parsed out of its stdout; rejecting when it fails. The optional signal kills the child on abort. */
+	gitOutput: <T>(args: string[], repo: string, resolveValue: { (stdout: string): T }, signal?: AbortLike) => Promise<T>;
+	/** Run a Git command, resolving the `ErrorInfo` (NULL => success). The optional signal kills the child on abort. */
+	runGitCommand: (args: string[], repo: string, signal?: AbortLike) => Promise<ErrorInfo>;
 	runGitCommandWithInput: (args: string[], repo: string, input: string) => Promise<ErrorInfo>;
 	/**
 	 * The Rust-engine NoteDb meta parser: one native call parses every requested
@@ -147,25 +151,25 @@ export class GerritDataSource {
 	}
 
 	/**
-	 * Race a remote Git operation against a timeout, so that a stalled SSH/HTTP connection to the
-	 * Gerrit remote cannot block the Git Graph View in a loading state indefinitely.
-	 * Note: the underlying Git child process isn't killed, it is left to exit on its own.
-	 * @param promise The promise of the remote operation.
+	 * Run a remote Git operation under the remote timeout: when the timer fires, the operation's
+	 * abort token is tripped, which KILLS the underlying Git child (a stalled SSH/HTTP connection
+	 * to the Gerrit remote must neither block the Git Graph View indefinitely nor leave orphaned
+	 * children — an ssh of every timed-out refresh — running for the rest of the session).
+	 * @param run The remote operation, receiving the run's abort token.
 	 * @param fallback The value to resolve with if the operation times out or fails.
-	 * @returns The promise of the operation, or the fallback after the timeout.
+	 * @returns The promise of the operation, or the fallback after the timeout/failure.
 	 */
-	private withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
-		if (this.remoteTimeoutMs <= 0) return promise;
-		return new Promise<T>((resolve) => {
-			const timer = setTimeout(() => resolve(fallback), this.remoteTimeoutMs);
-			promise.then((value) => {
-				clearTimeout(timer);
-				resolve(value);
-			}, () => {
-				clearTimeout(timer);
-				resolve(fallback);
-			});
-		});
+	private async withTimeout<T>(run: (signal?: AbortLike) => Promise<T>, fallback: T): Promise<T> {
+		if (this.remoteTimeoutMs <= 0) return run();
+		const controller = createAbortController();
+		const timer = setTimeout(() => controller.abort(), this.remoteTimeoutMs);
+		try {
+			return await run(controller.signal);
+		} catch {
+			return fallback;
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	/**
@@ -201,7 +205,7 @@ export class GerritDataSource {
 	 */
 	public listRemoteChanges(repo: string, remote: string) {
 		return this.withTimeout(
-			this.git.gitOutput(['ls-remote', remote, 'refs/changes/*'], repo, (stdout) => parseLsRemoteChanges(stdout)),
+			(signal) => this.git.gitOutput(['ls-remote', remote, 'refs/changes/*'], repo, (stdout) => parseLsRemoteChanges(stdout), signal),
 			new Map<number, number[]>()
 		);
 	}
@@ -215,7 +219,7 @@ export class GerritDataSource {
 		if (refspecs.length === 0) return null;
 		for (const batch of chunkFetchRefspecs(refspecs)) {
 			const error = await this.withTimeout(
-				this.git.runGitCommand(['fetch', '--no-tags', remote].concat(batch), repo),
+				(signal) => this.git.runGitCommand(['fetch', '--no-tags', remote].concat(batch), repo, signal),
 				<ErrorInfo>'Fetching the Gerrit changes from the remote timed out.'
 			);
 			if (error !== null) return error;

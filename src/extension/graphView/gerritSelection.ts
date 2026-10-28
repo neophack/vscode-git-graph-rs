@@ -1,11 +1,9 @@
 import type { GerritChangeState, GerritPatchsetsMode } from '../../shared/model/gerrit';
 
 /**
- * The pure Gerrit ref/state selection math the staged loading pipeline needs. The Gerrit
- * integration keeps a copy of the same math in integrations/gerrit/gerritProtocol.ts (its
- * pure-model half); the two must stay in lockstep - the cases exercised here (through
- * commitLoader.test.ts and this file's own tests) pin this copy against drift from the
- * integration's.
+ * The pure Gerrit ref/state selection math the staged loading pipeline needs — the single copy
+ * (the duplicated half that used to live in integrations/gerrit/gerritProtocol.ts is gone; this
+ * file's tests and commitLoader.test.ts pin its behavior).
  */
 
 /**

@@ -9,10 +9,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
 import {
-	parseChangeRef, changeShard, parseLsRemoteChanges, limitChanges, buildFetchRefspecs, buildKeepPatterns,
-	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory, filterChangeStates, limitChangeStates,
-	selectDisplayedChangeStates,
-	nextGerritSampleWindow, GERRIT_FETCH_WINDOW_FACTOR_MAX
+	parseChangeRef, changeShard, parseLsRemoteChanges, buildKeepPatterns,
+	chunkFetchRefspecs, parseMetaCommit, parseMetaHistory
 } from './gerritProtocol';
 import { GerritDataSource } from './gerrit';
 
@@ -48,29 +46,9 @@ describe('ls-remote output parsing', () => {
 		assert.deepEqual([...changes.entries()], [[1234, [1, 2]], [1235, [1]]]);
 	});
 
-	it('keeps only the most recent changes up to the limit', () => {
-		const changes = new Map([[1, [1]], [5, [1, 2]], [9, [1]], [3, [1]]]);
-		assert.deepEqual([...limitChanges(changes, 2).keys()], [9, 5]);
-		assert.equal(limitChanges(changes, 0), changes); // <= 0 => keep all
-	});
 });
 
 describe('fetch refspecs', () => {
-	it('fetch the latest patchset and the meta ref per change', () => {
-		assert.deepEqual(buildFetchRefspecs(new Map([[1234, [1, 2]]]), 'origin', 'latest'), [
-			'+refs/changes/34/1234/2:refs/remotes/origin/changes/34/1234/2',
-			'+refs/changes/34/1234/meta:refs/remotes/origin/changes/34/1234/meta'
-		]);
-	});
-
-	it('fetch every patchset in the all mode', () => {
-		assert.deepEqual(buildFetchRefspecs(new Map([[5, [1, 2]]]), 'origin', 'all'), [
-			'+refs/changes/05/5/1:refs/remotes/origin/changes/05/5/1',
-			'+refs/changes/05/5/2:refs/remotes/origin/changes/05/5/2',
-			'+refs/changes/05/5/meta:refs/remotes/origin/changes/05/5/meta'
-		]);
-	});
-
 	it('computes the local keep prefixes of a set of changes', () => {
 		assert.deepEqual(buildKeepPatterns([41466, 5], 'origin'), [
 			'refs/remotes/origin/changes/66/41466/',
@@ -232,96 +210,3 @@ describe('NoteDb meta history parsing', () => {
 	});
 });
 
-describe('status filtering', () => {
-	const state = (status: string, wip = false) => ({ change: 1, patchset: 1, codeReview: 0, verified: 0, status, wip, headHash: 'h', events: [], url: null }) as never;
-	const filter = { new: true, merged: false, abandoned: false, wip: false };
-
-	it('keeps open changes and drops merged, abandoned and WIP ones by default', () => {
-		const kept = filterChangeStates([state('new'), state('merged'), state('abandoned'), state('new', true)], filter);
-		assert.deepEqual(kept.map((s) => s.status), ['new']);
-	});
-
-	it('shows WIP changes only under the WIP flag, whatever their status', () => {
-		const wip = state('new', true);
-		assert.equal(filterChangeStates([wip], { ...filter, wip: true }).length, 1);
-		assert.equal(filterChangeStates([wip], { ...filter, new: true, wip: false }).length, 0);
-	});
-
-	it('shows merged and abandoned changes when their flags are on', () => {
-		const kept = filterChangeStates([state('merged'), state('abandoned')], { ...filter, merged: true, abandoned: true });
-		assert.deepEqual(kept.map((s) => s.status), ['merged', 'abandoned']);
-	});
-});
-
-describe('display limiting (the fetch limit counts the changes shown)', () => {
-	const state = (change: number, status: string, wip = false) => ({ change, patchset: 1, codeReview: 0, verified: 0, status, wip, headHash: 'h' + change, events: [], url: null }) as never;
-	const filter = { new: true, merged: false, abandoned: false, wip: false };
-
-	it('keeps the most recent changes PASSING the filter, reaching past newer filtered-out ones', () => {
-		// The most recent changes are merged: an open-only filter must still surface the 2 most recent OPEN ones
-		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'merged'), state(6, 'abandoned'), state(5, 'new'), state(4, 'new')];
-		assert.deepEqual(limitChangeStates(states, filter, 2).map((s) => s.change), [8, 5]);
-	});
-
-	it('returns the passing changes most recent first, whatever the input order', () => {
-		const states = [state(3, 'new'), state(11, 'new'), state(7, 'new')];
-		assert.deepEqual(limitChangeStates(states, filter, 0).map((s) => s.change), [11, 7, 3]);
-	});
-
-	it('applies the limit after the WIP rule of the status filter', () => {
-		const states = [state(9, 'new', true), state(8, 'new', true), state(7, 'new')];
-		assert.deepEqual(limitChangeStates(states, { ...filter, wip: true }, 2).map((s) => s.change), [9, 8]);
-		assert.deepEqual(limitChangeStates(states, filter, 5).map((s) => s.change), [7]);
-	});
-});
-
-describe('badge selection on a loaded page (selectDisplayedChangeStates)', () => {
-	const state = (change: number, status: string, wip = false) => ({ change, patchset: 1, codeReview: 0, verified: 0, status, wip, headHash: 'h' + change, events: [], url: null }) as never;
-	const all = { new: true, merged: true, abandoned: true, wip: true };
-	const onPage = (...changes: number[]) => (hash: string) => changes.some((change) => hash === 'h' + change);
-
-	it('displays the most recent passing changes that have a row on the page, one badge per change', () => {
-		// 9's injected ref did not resolve (no row): its slot goes to the next change
-		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'new'), state(6, 'merged'), state(5, 'new')];
-		assert.deepEqual(selectDisplayedChangeStates(states, all, 2, onPage(8, 6, 5)).map((s) => s.change), [8, 6]);
-		assert.deepEqual(selectDisplayedChangeStates(states, all, 0, onPage(8, 6, 5)).map((s) => s.change), [8, 6, 5]);
-	});
-
-	it('applies the status filter before the page check', () => {
-		const states = [state(9, 'merged'), state(8, 'new')];
-		assert.deepEqual(selectDisplayedChangeStates(states, { ...all, merged: false }, 5, onPage(9, 8)).map((s) => s.change), [8]);
-	});
-
-	it('reduces to limitChangeStates when every selected change is on the page', () => {
-		const states = [state(9, 'merged'), state(8, 'new'), state(7, 'abandoned')];
-		assert.deepEqual(selectDisplayedChangeStates(states, all, 2, () => true), limitChangeStates(states, all, 2));
-	});
-});
-
-describe('the adaptive Gerrit sample window (nextGerritSampleWindow)', () => {
-	it('stops once enough sampled changes pass the filter', () => {
-		assert.equal(nextGerritSampleWindow(80, 20, 20, 1000), null);
-		assert.equal(nextGerritSampleWindow(80, 25, 20, 1000), null);
-	});
-
-	it('doubles the window while too few sampled changes pass the filter', () => {
-		assert.equal(nextGerritSampleWindow(80, 5, 20, 1000), 160);
-		assert.equal(nextGerritSampleWindow(160, 10, 20, 1000), 320);
-	});
-
-	it('stops at the remote size instead of overshooting it', () => {
-		assert.equal(nextGerritSampleWindow(80, 5, 20, 100), 100);
-		assert.equal(nextGerritSampleWindow(100, 5, 20, 100), null); // window already covers the whole remote
-	});
-
-	it('caps the deepening at GERRIT_FETCH_WINDOW_FACTOR_MAX times the fetch limit', () => {
-		const cap = 20 * GERRIT_FETCH_WINDOW_FACTOR_MAX;
-		assert.equal(nextGerritSampleWindow(cap, 5, 20, 10000), null);
-		assert.equal(nextGerritSampleWindow(cap / 2, 5, 20, 10000), cap);
-	});
-
-	it('never stops solely on the cap or remote size once the target is already reached', () => {
-		// passing >= fetchLimit is checked first, so it short-circuits even mid-window
-		assert.equal(nextGerritSampleWindow(20, 20, 20, 10000), null);
-	});
-});

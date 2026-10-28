@@ -85,4 +85,38 @@ describe('GerritCacheStore', () => {
 		const second = store.dedupeFetch('/repo', () => Promise.resolve(entry(1001)));
 		await expect(second).resolves.toEqual(entry(1001)); // no stuck entry from the failed run
 	});
+
+	it('a superseded fetch does not unregister the newer one a clearAll re-registration holds', async () => {
+		const store = new GerritCacheStore();
+		let started = 0;
+		const start = () => {
+			started++;
+			return new Promise<GerritCacheEntry | null>((resolve) => setTimeout(() => resolve(entry(started)), 10));
+		};
+		const old = store.dedupeFetch('/repo', start);
+		store.clearAll(); // the fetch settings changed: the map is emptied, but the fetch still runs
+		const fresh = store.dedupeFetch('/repo', start);
+		expect(fresh).not.toBe(old); // the new load starts its own fetch
+		await old;
+		// the superseded fetch settling must not drop the newer one's registration, or a third
+		// load would start ANOTHER concurrent fetch instead of joining the running one
+		const third = store.dedupeFetch('/repo', start);
+		expect(third).toBe(fresh);
+		expect(started).toBe(2);
+		await Promise.all([fresh, third]);
+	});
+
+	it('unmarkStaleIfCurrent clears the stale flag only under the fetch settings it was fetched under', () => {
+		const store = new GerritCacheStore();
+		store.set('/repo', entry(1001));
+		const staleGeneration = store.currentGeneration;
+		store.clearAll(); // marks /repo stale and bumps the generation
+		expect(store.isStale('/repo')).toBe(true);
+
+		store.unmarkStaleIfCurrent('/repo', staleGeneration); // the superseded fetch settles
+		expect(store.isStale('/repo')).toBe(true); // still stale: the next load must re-fetch
+
+		store.unmarkStaleIfCurrent('/repo', store.currentGeneration); // a fetch under the new settings settles
+		expect(store.isStale('/repo')).toBe(false);
+	});
 });

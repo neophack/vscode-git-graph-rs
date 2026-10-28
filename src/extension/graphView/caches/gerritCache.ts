@@ -76,6 +76,15 @@ export class GerritCacheStore {
 	}
 
 	/**
+	 * Clear the repository's stale flag under the same generation contract as
+	 * {@link setIfCurrent}: a fetch that settled under settings the user has already left must
+	 * not make the cache look fresh — the next load has to re-fetch under the new settings.
+	 */
+	public unmarkStaleIfCurrent(repo: string, generation: number): void {
+		if (generation === this.generation) this.staleRepos.delete(repo);
+	}
+
+	/**
 	 * Serve (or start) the Gerrit fetch of a repository: concurrent loads of the same repository
 	 * share one in-flight fetch; the entry is removed again whichever way it settles.
 	 */
@@ -83,14 +92,23 @@ export class GerritCacheStore {
 		const existing = this.fetches.get(repo);
 		if (existing !== undefined) return existing;
 		const fetch = run().then((entry) => {
-			this.fetches.delete(repo);
+			this.dropFetch(repo, fetch);
 			return entry;
 		}, (error) => {
-			this.fetches.delete(repo);
+			this.dropFetch(repo, fetch);
 			throw error;
 		});
 		this.fetches.set(repo, fetch);
 		return fetch;
+	}
+
+	/**
+	 * Drop the repository's in-flight registration only when it is still THIS fetch's: a
+	 * `clearAll` between its start and its settle has already emptied the map (and a newer fetch
+	 * may have registered itself), and the superseded fetch must not unregister that one.
+	 */
+	private dropFetch(repo: string, fetch: Promise<GerritCacheEntry | null>): void {
+		if (this.fetches.get(repo) === fetch) this.fetches.delete(repo);
 	}
 
 	/**

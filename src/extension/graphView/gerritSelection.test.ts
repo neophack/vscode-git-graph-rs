@@ -6,8 +6,8 @@ import {
 } from './gerritSelection';
 
 /**
- * The pure Gerrit selection math (see the module header for why the copy exists): these tests
- * pin this copy's behavior so drift against the integration's is caught by the mirrored cases.
+ * The pure Gerrit selection math: the single copy's behavior, pinned by these tests and
+ * commitLoader.test.ts.
  */
 
 const ALL = { new: true, merged: true, abandoned: true, wip: true };

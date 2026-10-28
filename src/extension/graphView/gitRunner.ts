@@ -1,5 +1,5 @@
 import { commandFailure } from '../git/write/gitWriter';
-import type { GitProcess, RunResult } from '../git/process/gitProcess';
+import type { AbortLike, GitProcess, RunResult } from '../git/process/gitProcess';
 import type { GerritChangeState } from '../../shared/model/gerrit';
 import type { ErrorInfo } from '../../shared/protocol/messages';
 
@@ -14,16 +14,19 @@ import type { ErrorInfo } from '../../shared/protocol/messages';
  * split on line ends, the trailing empty element dropped).
  */
 export interface GitRunnerPort {
-	/** Spawn Git, resolving the value parsed out of its stdout; rejecting when it fails. */
-	gitOutput<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string) => T): Promise<T>;
+	/**
+	 * Spawn Git, resolving the value parsed out of its stdout; rejecting when it fails. The
+	 * optional signal kills the child when aborted (the Gerrit remote timeout's leash).
+	 */
+	gitOutput<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string) => T, signal?: AbortLike): Promise<T>;
 	/**
 	 * Spawn Git, resolving the value parsed out of its combined stdout AND stderr; rejecting when
 	 * it fails. `git push` writes its human-readable report — including a Gerrit change URL — to
 	 * stderr, so callers that mine both streams need this form.
 	 */
 	gitOutputWithStderr<T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string, stderr: string) => T): Promise<T>;
-	/** Run a Git command, resolving the `ErrorInfo` (NULL => success). */
-	runGitCommand(args: ReadonlyArray<string>, repo: string): Promise<ErrorInfo>;
+	/** Run a Git command, resolving the `ErrorInfo` (NULL => success). The signal kills it on abort. */
+	runGitCommand(args: ReadonlyArray<string>, repo: string, signal?: AbortLike): Promise<ErrorInfo>;
 	/** Run a Git command fed a command stream on stdin (e.g. `update-ref --stdin`). */
 	runGitCommandWithInput(args: ReadonlyArray<string>, repo: string, input: string): Promise<ErrorInfo>;
 	/**
@@ -63,7 +66,7 @@ export type RunnerLocalize = (key: 'unableToFindGit') => string;
  */
 export function createGitRunner(process: GitProcess, engine: GitRunnerParseMetas | null, t: RunnerLocalize): GitRunnerPort {
 	return {
-		gitOutput: <T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string) => T) => process.run(args, { cwd: repo }).then(
+		gitOutput: <T>(args: ReadonlyArray<string>, repo: string, resolveValue: (stdout: string) => T, signal?: AbortLike) => process.run(args, { cwd: repo, signal }).then(
 			(result) => {
 				if (result.code !== 0) throw commandFailure(result);
 				return resolveValue(result.stdout.toString('utf8'));
@@ -77,7 +80,7 @@ export function createGitRunner(process: GitProcess, engine: GitRunnerParseMetas
 			},
 			(error) => { throw isNoGit(error) ? new Error(t('unableToFindGit')) : new Error(spawnFailure(error)); }
 		),
-		runGitCommand: (args, repo) => process.run(args, { cwd: repo }).then(
+		runGitCommand: (args, repo, signal) => process.run(args, { cwd: repo, signal }).then(
 			(result) => result.code === 0 ? null : commandFailure(result),
 			(error) => isNoGit(error) ? t('unableToFindGit') : spawnFailure(error)
 		),

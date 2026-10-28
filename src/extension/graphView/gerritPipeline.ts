@@ -55,12 +55,12 @@ export class GerritPipeline {
 			else this.store.delete(repo); // a hard rebuild that found no local change refs: the old entry (if any) refers to now-dead refs, and serving it again would make the next load fail on them
 		}
 		if (this.store.isStale(repo) || cache === null || cache.fetchLimit !== fetchLimit) {
-			// Reuse a fetch that is already in progress for this repository
+			// Reuse a fetch that is already in progress for this repository. Whether its outcome
+			// clears the stale flag is decided inside, under the generation the fetch captured —
+			// a fetch superseded by a settings change must leave the flag set so the next load
+			// re-fetches under the new settings.
 			const fetched = await this.store.dedupeFetch(repo, () => this.fetchGerritChanges(repo, fetchLimit, statusFilter));
-			if (fetched !== null) {
-				this.store.unmarkStale(repo);
-				cache = fetched;
-			} // on failure, fall back to the local cache (if any) and keep the stale flag so the next load retries the fetch
+			if (fetched !== null) cache = fetched; // on failure, fall back to the local cache (if any) and keep the stale flag so the next load retries the fetch
 		}
 		return cache;
 	}
@@ -152,8 +152,10 @@ export class GerritPipeline {
 				const pruneError = await gerrit.pruneLocalChanges(repo, remote, Array.from(entry.patchsets.keys()));
 				if (pruneError !== null) this.deps.logger.log('Gerrit ref pruning failed (stale change refs may accumulate): ' + pruneError);
 			}
-			// Only cache the result if the fetch settings didn't change while the pipeline was running
+			// Only cache the result if the fetch settings didn't change while the pipeline was
+			// running; the stale flag clears under the same contract (see unmarkStaleIfCurrent)
 			this.store.setIfCurrent(repo, entry, generation);
+			this.store.unmarkStaleIfCurrent(repo, generation);
 			return entry;
 		} catch (errorMessage) {
 			this.deps.logger.log('Fetching the Gerrit changes failed: ' + errorMessage);
