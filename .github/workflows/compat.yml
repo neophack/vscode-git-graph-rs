@@ -1,0 +1,146 @@
+name: Compat
+
+# The C-series compatibility gates that need their own environments (the compat matrix in
+# REFACTOR-PLAN §6.6): C4 runs the E2E smoke tier against the VS Code version floor and recent
+# versions; C5 runs the Reader contract suite's CLI legs and the Writer integration tests
+# against an old Git and the latest one. C1/C2 live in native-build.yml (every PR), C3 is the
+# container-smoke job there; C6's platform legs are release-time (release.yml).
+#
+# Nightly + workflow_dispatch only: these legs are too slow or too environment-specific to sit
+# in the PR path. UNTESTED IN CI: this workflow has never run on GitHub — the first scheduled
+# or manual run is the first observation, and the ledger (docs/dod-status.md) reads rows 9's
+# C4/C5 as not held until these jobs go green.
+#
+# Known compromises, recorded per §6.6's own fallback rules:
+#  - The C4 floor leg (VS Code 1.38.0) may fail to start its Electron on the current runner
+#    image. Until the first runs say otherwise, the old-version legs only warn
+#    (continue-on-error) — per §6.6, an unstartable floor falls back to the oldest startable
+#    version, recorded in docs/compatibility.md, with the Node 10.11 runtime backstopped by C2.
+#  - The C5 old-Git leg uses debian:10 (git 2.20.1): the oldest image whose glibc (2.28) can
+#    still run Node 20 and the actions runtime. The exact floor Git (2.17.1) and the pre-2.4
+#    tiers need the self-built image §6.6 defers; the capability-table cases at those tiers
+#    are covered table-driven at L2 meanwhile.
+
+on:
+  schedule:
+    # 02:40 UTC nightly — ahead of the E2E full tier's 03:20 slot.
+    - cron: '40 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  c4-vscode-versions:
+    name: C4 E2E smoke on VS Code ${{ matrix.vscode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: ${{ matrix.wobbly || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The floor the manifest declares and the transitional versions between it and
+          # current. The two old legs are wobbly until the first runs observe whether their
+          # Electrons start on the runner image (see the header).
+          - vscode: 1.38.0
+            wobbly: true
+          - vscode: 1.40.0
+            wobbly: true
+          - vscode: stable
+          # Insiders failures warn without blocking (§6.6).
+          - vscode: insiders
+            wobbly: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the native addon
+        run: node scripts/build-addon.mjs --release
+
+      - name: Cache the VS Code test download
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ matrix.vscode }}-${{ runner.os }}
+
+      - name: Ensure xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run the E2E smoke tier
+        run: xvfb-run -a npm run test:e2e -- --tier smoke --vscode ${{ matrix.vscode }} --backend engine
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c4-results-vscode-${{ matrix.vscode }}
+          path: test/e2e/results/
+          if-no-files-found: warn
+
+  c5-git-latest:
+    name: C5 contract suite on Git latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Git version on this leg
+        run: git --version
+
+      # The CLI legs of the Reader contract suite plus the Writer integration tests — the C5
+      # scope. Without a built addon the native legs skip cleanly (describe.skipIf); the
+      # integration job in native-build.yml already covers the native legs on modern Git every
+      # PR, and the C3 container-smoke job there covers the engine side in containers.
+      - name: Reader contract suite (CLI legs) and Writer integration tests
+        run: npx vitest run test/integration/reader test/integration/write
+
+  c5-git-old:
+    name: C5 contract suite on Git 2.20 (debian:10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: debian:10
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image predates every runtime the actions need, so it installs its own Node (the
+      # official tarball, pinned) and its own old git; the glibc 2.28 floor is what makes this
+      # the oldest image that can still run Node 20 and this job at all.
+      - name: Install Node 20 and git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl ca-certificates xz-utils git
+          curl -fsSLo /tmp/node.tar.xz https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.xz
+          mkdir -p /opt/node
+          tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+          echo /opt/node/bin >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Git version on this leg
+        run: git --version
+
+      - name: Reader contract suite (CLI legs) and Writer integration tests
+        run: npx vitest run test/integration/reader test/integration/write
