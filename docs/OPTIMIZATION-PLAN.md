@@ -1199,3 +1199,11 @@ Found, not fixed (unchanged): the coverage long tail (settings 168, webview-cont
 ui-languages 1179) and the `withProgress` host seam — both under the ratchet, both later
 waves. Rows 8/9/11 keep their "defined but not yet observed" status until the branch is
 pushed and CI's first run comes back.
+
+Added to the queue by the first CI observations (the branch's first Actions runs, fixed or
+pending as noted): `continueOperation` spawns `<type> --continue` with no editor guard, so
+the commit-message editor git may open hangs a real user the same way it hung the contract
+tests on CI (their env guards landed; the write-layer fix belongs with its env work); the
+first-paint critical JS measured 366 KB against ADR-0005's 360 KB budget on the affected
+tier's build and needs its own burn-down; and the rowCoordinates/scrollWindow windowed-
+render assertions flake under full-suite load — retried once each now, root-caused never.
