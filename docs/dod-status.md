@@ -9,14 +9,16 @@ Where a gate exists but tolerates a recorded backlog, the row says **ratcheted**
 fail CI, and the backlog may only shrink (CONTRIBUTING.md, "Static checks").
 
 The CI jobs named here are defined in `.github/workflows/native-build.yml` (the PR pipeline) and
-`.github/workflows/compat.yml` (the nightly C4/C5 legs). The branch's first Actions runs (PR #13,
-2026-10-28) have now observed the PR pipeline: rust-gates, the static job, the engine builds, the
-x64/win32/darwin build legs with their binary-compat floors, all three old-Node runtime smokes,
-the E2E smoke tier (23/23) and the perf gates hold as written. Still unobserved or still failing
-there: the arm64 build leg's compat floor (fixed after its first catch, next run pending), the
-container smoke (fixed twice over, next run pending), the affected E2E tier's author-dropdown
-case (a toolbar-overflow product fix plus a polling shim landed, next run pending), and every
-nightly (compat.yml's C4/C5 fire on a schedule only the default branch runs).
+`.github/workflows/compat.yml` (the nightly C4/C5 legs). The branch's first Actions runs (PR #13 and the
+dispatches that followed its closure, 2026-10-28) have observed the whole PR pipeline green:
+rust-gates, the static job, the engine builds, every build leg with its binary-compat floor
+(arm64's GLIBC_2.39 catch fixed), the musl engine (the crt-static cdylib catch fixed), the
+container smoke on alpine and centos:7, all three old-Node runtime smokes, the integration
+suite with its coverage floors, packaging, the E2E smoke tier (23/23) and the affected tier
+(author-dropdown's toolbar-overflow catch fixed: the runner's screen now fits the launcher's
+window and the tier pins the desktop layout), and the perf gates. Still unobserved: every
+nightly (compat.yml's C4/C5 and the E2E full tier fire on a schedule only the default branch
+runs).
 
 | # | Item | Status | Evidence |
 |---|---|---|---|
