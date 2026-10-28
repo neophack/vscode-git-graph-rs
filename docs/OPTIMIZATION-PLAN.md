@@ -1233,7 +1233,9 @@ and both ADR-0005 budgets hold again with room to grow.
   **368.4 → 332.7 KB** against ADR-0005's 360 KB, the commitDetails chunk 38.1 KB on demand,
   CSS unchanged at 58.9 KB. Both budgets were over since the F2 wiring pushed the machine into
   the entry (wave 2 measured 360/360 exactly; the wave-7 CI observation caught 366 KB). The
-  ratchet direction ADR-0005 set — the budget only tightens, never reopens — is restored.
+  ratchet direction ADR-0005 set — the budget only tightens, never reopens — is restored, and
+  the perf workflow now ENFORCES the absolute budgets (`--enforce-budgets` on both of its P5
+  invocations; the flag's own condition — the entry inside its 200 KB target — is met).
 - **Verified**: the four typecheck leaves, `npm run check` (the whole static chain), the full
   suite 159 files / 1752 tests (one first-run failure in the known rowCoordinates/scrollWindow
   flake family, green on the rerun and in isolation), P3 booting the real chunked artifact

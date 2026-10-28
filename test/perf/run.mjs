@@ -11,8 +11,8 @@
  *   count items             treated like timing (5% + significance); an all-zero baseline
  *                           skips the check (a percentage of zero is meaningless)
  *   absolute budgets        P5's §3.8.1 budgets are recorded on every run and FAIL the gate
- *                           with --enforce-budgets (today's un-split webview exceeds them by
- *                           design — flip the flag on once the §3.8.2 slimming lands)
+ *                           with --enforce-budgets (enforced since the Commit Details View
+ *                           moved on demand: the split webview holds every budget)
  *
  * Usage:
  *   node test/perf/run.mjs --gate p2,p3,p5 [--samples 21] [--tier s] [--channel msedge]

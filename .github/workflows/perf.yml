@@ -11,9 +11,9 @@
 #
 # The comparison policy is U9: a timing item fails when its median regresses more than 5% AND
 # the Mann-Whitney test confirms the shift (>= 21 samples per item); size items fail at +2%.
-# The absolute size budgets are recorded on every run; failing ON them stays opt-in
-# (--enforce-budgets) until the §3.8.2 first-paint slimming brings the un-split webview entry
-# inside them — flip the flag on that line when it does.
+# The absolute size budgets are ENFORCED (--enforce-budgets): since the Commit Details View
+# joined the on-demand half, the split webview holds both (entry 160.4 KB / 200, first-paint
+# closure 332.7 KB / 360 per ADR-0005).
 #
 # A nightly schedule (OPTIMIZATION-PLAN §7 P2) runs the P2 gate over the M tier — the tier too
 # slow for a PR — plus a fresh S-tier run on the same machine, recorded (not compared: runs on
@@ -129,13 +129,14 @@ jobs:
         continue-on-error: true
         run: |
           cp base/test/perf/results/baseline.json test/perf/results/base-baseline.json
-          node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --compare-to test/perf/results/base-baseline.json
+          node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --compare-to test/perf/results/base-baseline.json --enforce-budgets
 
       # Manual dispatches have no base side: record only, so the run still produces (and
-      # archives) a full set of numbers for the tree it ran on.
+      # archives) a full set of numbers for the tree it ran on. The size budgets are enforced
+      # here too — a dispatch on a tree that exceeds them should be red, baseline or not.
       - name: Run the gates (no comparison — manual dispatch)
         if: github.event_name != 'pull_request'
-        run: node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --record
+        run: node test/perf/run.mjs --gate p2,p3,p5 --samples 21 --tier s --channel chromium --record --enforce-budgets
 
       - name: Append the summary to the job report
         if: always()
