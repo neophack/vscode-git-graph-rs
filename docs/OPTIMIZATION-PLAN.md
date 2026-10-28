@@ -1166,3 +1166,36 @@ Found, not fixed (the next queue):
   C3–C6 workflows and the release-matrix legs need a pushed branch to run; the loader's
   libc/armhf selection and the C3 container smoke landed in wave 3, so row 11's prose is
   partly stale (the vsce platform targets remain unexercised).
+
+### Wave 7: the C-series gets its nightly home ∥ the vsce targets held (branch `task/m0-gates`, 2026-10-28)
+
+Two files and a ledger refresh; all gates green.
+
+- **The per-platform VSIX contract is held, not just described** — `package-platforms.mjs`
+  becomes importable the way `automation-packaging.mjs` already is (`VSCE_TARGET` exported,
+  `findBuiltPlatforms` taking an injectable root, `main()` behind a direct-run guard), and
+  `test/tooling/vsixPlatforms.test.ts` holds the target table against both of the things it
+  must agree with: the loader's engine table (`addonLoader.ts` — every shipped engine has a
+  target, no target names an engine that is not shipped) and vsce's documented platform
+  identifiers (no two engines sharing one). The three Marketplace-specific targets the binary
+  matrix added — `alpine-x64`, `alpine-arm64`, `linux-armhf` — are the row's named concern.
+  The machinery itself was exercised end to end by a real packaging run on the one locally
+  built engine: one VSIX out, exactly one binary inside, the engines bump and the binary
+  stash restored clean.
+- **C4/C5 get a workflow** (`.github/workflows/compat.yml`, nightly at 02:40 UTC + dispatch):
+  C4 runs the E2E smoke tier on the VS Code version matrix — 1.38.0 and 1.40.0 warn-only
+  until the first runs show whether their Electrons start on the runner image, stable
+  blocking, insiders warn-only per the compat section; C5 runs the Reader contract suite's
+  CLI legs plus the Writer integration tests on latest Git and on debian:10's git 2.20.1 —
+  the oldest image whose glibc can still carry Node 20, with the exact 2.17.1 floor and the
+  pre-2.4 tiers left to the self-built image the compat section itself defers. The header
+  records all of it, including the UNTESTED-IN-CI status.
+- **The ledger's stale prose refreshed** — row 11's "still open" list (loader selection, C3
+  smoke, unexercised vsce targets) described work that landed in wave 3 plus this one; the
+  row now says what is actually open: the first Actions observation of all three definitions.
+  Row 9's evidence names compat.yml as C4/C5's home.
+
+Found, not fixed (unchanged): the coverage long tail (settings 168, webview-controls 44,
+ui-languages 1179) and the `withProgress` host seam — both under the ratchet, both later
+waves. Rows 8/9/11 keep their "defined but not yet observed" status until the branch is
+pushed and CI's first run comes back.

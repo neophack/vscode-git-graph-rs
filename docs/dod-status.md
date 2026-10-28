@@ -1,6 +1,6 @@
 # Definition of Done — status
 
-REFACTOR-PLAN §11, item by item, as of 2026-10-27 (`task/m0-gates`). Every evidence command runs
+REFACTOR-PLAN §11, item by item, as of 2026-10-28 (`task/m0-gates`). Every evidence command runs
 on a clean checkout.
 
 **The rule.** A row is **held** only if a CI job fails when it regresses. A property that is true
@@ -8,9 +8,10 @@ today but that nothing would catch breaking is **held locally**. Anything else i
 Where a gate exists but tolerates a recorded backlog, the row says **ratcheted**: new violations
 fail CI, and the backlog may only shrink (CONTRIBUTING.md, "Static checks").
 
-The CI jobs named here are defined in `.github/workflows/native-build.yml`. The `static` job and
-the coverage step were added with this ledger and have not yet run on GitHub Actions; until their
-first green run, read "held" as "held by a job that is defined but not yet observed".
+The CI jobs named here are defined in `.github/workflows/native-build.yml` (the PR pipeline) and
+`.github/workflows/compat.yml` (the nightly C4/C5 legs). None of the branch's workflows has run
+on GitHub Actions yet — the branch is not pushed. Until their first green run, read "held" as
+"held by a job that is defined but not yet observed".
 
 | # | Item | Status | Evidence |
 |---|---|---|---|
@@ -22,9 +23,9 @@ first green run, read "held" as "held by a job that is defined but not yet obser
 | 6 | `child_process` only in `extension/git/process/`; argSafety 1 call site | **held** (child_process) / **ratcheted** (argSafety) | A3 landed (wave 3): the `n/no-restricted-imports` rule enforces `child_process` to `git/process/**` and `automation/**` with zero exceptions; the CLI read path, hex-diff streams and findGit's probes all went through the process adapter. `checkUnsafeGitArgs` has 2 call sites (`gitWriter.ts`, `graphView/writeFlows.ts` — the write flows assemble their own ref checks before the writer runs), down from 19 in 6 files |
 | 7 | Tests layered L0–L4; no artifact imports; no `new Function`; coverage thresholds | **held** for coverage; layering **held locally** | `integration` job (ubuntu) → `npm run test:coverage` fails below the floors in `vitest.config.ts`. The test tree is now typechecked (`npm run typecheck`, root `tsconfig.json`) |
 | 8 | L4 smoke in CI; automation suite green pre-release | **not held** | `.github/workflows/e2e.yml` exists and mirrors the local run (`docs/e2e-baseline.md`), but has not been executed by Actions |
-| 9 | `engines.vscode` ^1.38.0; @types/vscode 1.38.0; C1–C6 pass in release pipeline | **held** for C1/C2; C3–C6 **not held** | es2018/es-check/stylelint/compat gates run in every `build:dist` (`integration` job) and in `npm run check`; `runtime-smoke` job runs Node 10.11/12.4/20; no workflow runs C3–C6 |
+| 9 | `engines.vscode` ^1.38.0; @types/vscode 1.38.0; C1–C6 pass in release pipeline | **held** for C1/C2; C3–C6 **not held** | es2018/es-check/stylelint/compat gates run in every `build:dist` (`integration` job) and in `npm run check`; `runtime-smoke` job runs Node 10.11/12.4/20. C3 is the `container-smoke` job (alpine/centos:7, engine load + one request). C4/C5 now have their nightly home: `compat.yml` runs the E2E smoke tier on the VS Code version matrix (1.38.0/1.40.0/stable/insiders — the old legs warn-only until observed, per the compat section's fallback rule) and the Reader/Writer suites on latest Git and debian:10's git 2.20.1 (the exact 2.17.1 floor stays with the self-built image the compat section defers). Both jobs are defined but unobserved; C6's platform legs are release-time (`release.yml`) |
 | 10 | Host artifacts pass Node 10.11 smoke; webview chrome69 checks | **held** | `runtime-smoke` job (Node 10.11.0); `compat.mjs` + es-check inside `build:dist`; ESLint `compat/compat` at error |
-| 11 | glibc ≤2.17, musl/armhf binaries; every engine-unavailability class falls back visibly | **held** for glibc on the built targets; musl/armhf **ratcheted** (matrix defined, first Actions run pending) | `build` job runs `check-binary-compat.mjs` with `BINARY_COMPAT_REQUIRED=1`; the musl x64/arm64 and armhf targets are in the build and release matrices since R8b (zigbuild install added to the job — a pre-existing gap that also affected the linux-gnu legs). Still open: the loader cannot select the new binaries (libc/armv7 detection), the C3 container smoke, and `package-platforms.mjs`'s three new vsce targets are unexercised |
+| 11 | glibc ≤2.17, musl/armhf binaries; every engine-unavailability class falls back visibly | **held** for glibc on the built targets; musl/armhf **ratcheted** (matrix defined, first Actions run pending) | `build` job runs `check-binary-compat.mjs` with `BINARY_COMPAT_REQUIRED=1`; the musl x64/arm64 and armhf targets are in the build and release matrices since R8b (zigbuild install added to the job — a pre-existing gap that also affected the linux-gnu legs). The loader selects the new binaries (`addonLoader.ts`: spawn-free libc/armv7 detection, the gnu/musl fallback order, a present-but-unloadable binary hands over to the next candidate), the `container-smoke` job loads the addon in alpine and centos:7, and the vsce target table (`package-platforms.mjs`) is held against the loader's engine table by `test/tooling/vsixPlatforms.test.ts` and exercised end to end by a local packaging run. All three of these definitions await their first Actions observation |
 
 ## Gates added with this ledger (OPTIMIZATION-PLAN M0)
 
