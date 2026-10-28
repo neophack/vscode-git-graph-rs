@@ -8,7 +8,7 @@
 import { EventOverlay } from '../common/eventOverlay';
 import { HostBridge } from '../common/host/bridge';
 import type { ActionRunner } from './actions/runAction';
-import type { CommitDetails } from './commitDetails/commitDetails';
+import type { CommitDetailsSurface } from './commitDetails/detailsSurface';
 import type { ControlBar } from './controlBar/controlBar';
 import type { PinnedRow } from './controlBar/pinnedRow';
 import type { CommitBodies } from './loading/commitBodies';
@@ -77,7 +77,11 @@ export interface GraphContext {
 	readonly viewport: Viewport;
 	readonly loader: RepoLoader;
 	readonly commitBodies: CommitBodies;
-	readonly details: CommitDetails;
+	/**
+	 * The Commit Details View joins the page lazily like the widgets (widgets/lazy.ts): the
+	 * context holds the facade; the real module loads on the first commit a user expands.
+	 */
+	readonly details: CommitDetailsSurface;
 	readonly controls: ControlBar;
 	readonly pinned: PinnedRow;
 	readonly widgets: Widgets;

@@ -14,7 +14,6 @@ import { HostBridge } from '../common/host/bridge';
 import { ensureInterfaceLanguage } from '../common/i18n/index';
 import * as GG from '../common/protocol';
 import { ActionRunner } from './actions/runAction';
-import { CommitDetails } from './commitDetails/commitDetails';
 import { ControlBar } from './controlBar/controlBar';
 import { PinnedRow } from './controlBar/pinnedRow';
 import { GraphContext, ViewDom } from './context';
@@ -40,7 +39,7 @@ import { TextFormatter } from './text/textFormatter';
 import { ConflictBanner } from './widgets/conflictBanner';
 import { ContextMenu } from './widgets/contextMenu';
 import { Dialog } from './widgets/dialog';
-import { LazyFindWidget, LazyReflogView, LazySettingsWidget, LazyStatisticsView, LazyWorktreeDialog, prefetchOnIdle } from './widgets/lazy';
+import { LazyCommitDetails, LazyFindWidget, LazyReflogView, LazySettingsWidget, LazyStatisticsView, LazyWorktreeDialog, prefetchOnIdle } from './widgets/lazy';
 
 /* The state the extension host renders into the page (inline script, before this bundle) */
 declare const initialState: GG.GitGraphViewInitialState;
@@ -136,7 +135,10 @@ function createView(dom: ViewDom, prevState: WebViewState | null): GraphContext 
 	observeFirstPaint(store);
 	ctx.loader = new RepoLoader(getContext);
 	ctx.commitBodies = new CommitBodies(getContext);
-	ctx.details = new CommitDetails(getContext);
+	// The Commit Details View rides the widgets' lazy split: its facade loads the real module on
+	// the first commit a user expands, so the view shell, the panes and the file tree sit outside
+	// the first-paint bundle (widgets/lazy.ts)
+	ctx.details = new LazyCommitDetails(getContext);
 	ctx.controls = new ControlBar(getContext);
 	ctx.pinned = new PinnedRow(getContext);
 
@@ -283,15 +285,16 @@ window.addEventListener('load', () => {
 		void loadContextMenuActions().catch(() => undefined);
 
 		// The on-demand modules and the widgets' stylesheet chunk prefetch while the user is idle
-		// after the first paint: the first open of any widget, the first dialog, the
-		// first context menu, the first commit details view - or the first Markdown-rendering
-		// commit body - then resolves from the browser's module cache, not the network
+		// after the first paint: the first open of any widget, the first commit details view, the
+		// first context menu - or the first Markdown-rendering commit body - then resolves from
+		// the browser's module cache, not the network
 		prefetchOnIdle([
 			() => import('./widgets/findWidget'),
 			() => import('./widgets/settings/settingsWidget'),
 			() => import('./widgets/reflogView'),
 			() => import('./widgets/worktreeDialog'),
 			() => import('./widgets/statisticsView'),
+			() => import('./commitDetails/commitDetails'),
 			() => import('../styles/onDemand'),
 			loadMarkdown
 		]);

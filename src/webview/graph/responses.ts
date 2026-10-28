@@ -163,7 +163,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		},
 		commitDetails: (msg) => {
 			if (msg.commitDetails !== null) {
-				ctx.details.showDetails(msg.commitDetails, ctx.details.createFileTree(msg.commitDetails.fileChanges, msg.codeReview), msg.avatar, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
+				ctx.details.showDetails(msg.commitDetails, msg.avatar, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
 			} else {
 				ctx.details.close(true);
 				dialog.showError(strings.errCommitDetails, msg.error, null, null);
@@ -171,7 +171,7 @@ export function createResponseRouter(ctx: GraphContext): (msg: GG.ResponseMessag
 		},
 		compareCommits: (msg) => {
 			if (msg.error === null) {
-				ctx.details.showComparison(msg.commitHash, msg.compareWithHash, msg.fileChanges, ctx.details.createFileTree(msg.fileChanges, msg.codeReview), msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
+				ctx.details.showComparison(msg.commitHash, msg.compareWithHash, msg.fileChanges, msg.codeReview, msg.codeReview !== null ? msg.codeReview.lastViewedFile : null, msg.refresh);
 			} else {
 				ctx.details.closeComparison(true);
 				dialog.showError(strings.errCommitComparison, msg.error, null, null);

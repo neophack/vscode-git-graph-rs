@@ -114,7 +114,7 @@ reporting form (20 runs per scenario, per task 0.5). The size row is measured: s
 | Find | Typing → highlights updated (over the loaded commits) | ≤ 50 ms | ≤ 50 ms | ≤ 100 ms | pending — measured by P3 + P4 |
 | Scrolling | Frame-time P99 with 10 K rows loaded; long tasks > 50 ms | ≤ 16 ms; 0 | same | same | pending — measured by P3 (`PerformanceObserver` + rAF intervals) |
 | Memory | webview (10 K rows loaded) / host increment (opening one repo) | ≤ 150 MB / ≤ 40 MB | ≤ 150 MB / ≤ 60 MB | ≤ 250 MB / ≤ 120 MB | pending — measured by P3 (JS heap) + P4 (host increment) |
-| Size | First-paint critical JS / critical CSS (minified, not gzipped) | ≤ 360 KB / ≤ 60 KB (JS per [ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md); entry chunk ≤ 200 KB) | — | — | **measured 2026-10-25 after the 5.9 split: entry 195.1 KB, closure (entry + static chunks) 343.8 KB, critical CSS 44.4 KB — all inside budget** (gate P5). Commands below |
+| Size | First-paint critical JS / critical CSS (minified, not gzipped) | ≤ 360 KB / ≤ 60 KB (JS per [ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md); entry chunk ≤ 200 KB) | — | — | **measured 2026-10-28 after the Commit Details View joined the on-demand half: entry 160.4 KB, closure (entry + static chunks) 332.7 KB, critical CSS 58.9 KB — all inside budget** (gate P5). Commands below |
 
 Rules (§3.8.1, verbatim):
 
@@ -137,7 +137,8 @@ SIZE half is calibrated: the first-paint critical-JS budget was recalibrated onc
 code-split layout's measured floor (200 KB → 360 KB over the entry's static-import closure,
 with the entry chunk keeping its own 200 KB target) — the decomposition evidence and the cost
 of every alternative are in [ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md); the
-CSS budget needed no change (44.4 KB measured against 60 KB).
+CSS budget needed no change (44.4 KB measured against 60 KB at the calibration; 58.9 KB today,
+still inside, after the mobile stylesheets merged into the component sheets).
 
 ## Measured evidence today
 
@@ -148,11 +149,11 @@ Every number below was produced by the command next to it on this repository.
 | Engine first page (200 commits) | 12.6 ms (median of 5) | measured on the v1.0 code and recorded in REFACTOR-PLAN §0.7; the current-tree equivalent is the P2 host gate, re-measured 2026-10-27 (next row) |
 | P2 S-tier pipeline, 21 samples (2026-10-27, [ADR-0007](adr/adr-0007-timing-budget-calibration.md)) | engine medians: open-hard 116.1 ms, open-cached 95.0, load-more 18.9, commit-details 0.8, refs-only-refresh 3.6, head-change-refresh 16.4; git-CLI medians: 392.6 / 196.7 / 252.2 / 161.7 / 146.9 / 247.0 | `node test/perf/p2-host.mjs --samples 21 --tier s --backend engine,cli --work-dir test/perf/fixtures/s` (full distribution in `test/perf/results/p2-s.json`) |
 | D-2 hidden → visible restore (2026-10-27, [ADR-0007](adr/adr-0007-timing-budget-calibration.md)) | retained 52 ms; non-retained 227 ms (page disposed, full page boot) — **keep the `retainContextWhenHidden: true` default** | `npm run test:e2e -- --tier perf` (scenario `perf/D2-restore`; detail in the run's `report.json`) |
-| Webview entry chunk | `media/out.min.js` 199823 B (195.1 KB), budget 200 KB | `npm run build:dist -- --production` then `node test/perf/p5-size.mjs` (item `webview-entry-js`); §3.8.2's slimming target for what the entry itself carries |
-| First-paint critical JS (closure) | 352021 B (343.8 KB) = the entry + the 9 chunks it imports statically, budget 360 KB ([ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md)) | same build, same run (item `first-paint-js-total`); the string table, the inline icons and the data-URI assets are first paint by necessity — the ADR carries the decomposition |
-| First-paint critical CSS | 45419 B (44.4 KB) = `media/out.min.css`, budget 60 KB | same build, same run (item `webview-entry-css`); the widget/dialog/details styles ride on-demand chunks (46.1 KB, item `webview-ondemand-js:onDemand`) |
-| On-demand chunks (never first paint) | findWidget 15.3 KB, settingsWidget 56.1 KB, markdown-it 101.2 KB, zh-cn 87.3 KB, reflog 7.4 KB, worktree 6.7 KB, statistics 5.7 KB, styles 46.1 KB, shared 4.1 KB | same run (items `webview-ondemand-js:*`); loaded at first use, idle-prefetched after the first paint |
-| Host bundle | `dist/extension.js` 442437 B (432.1 KB) | same build, same run (item `host-extension-js`); P5 also gates host-bundle growth (≤ 2% per PR without justification) |
+| Webview entry chunk | `media/out.min.js` 164206 B (160.4 KB), budget 200 KB | `npm run build:dist -- --production` then `node test/perf/p5-size.mjs` (item `webview-entry-js`); §3.8.2's slimming target for what the entry itself carries. Measured 2026-10-28, after the Commit Details View's module moved behind the lazy facade (`widgets/lazy.ts`) — the F2 load-machine wiring had pushed the entry to 212.9 KB and the closure to 368.4 KB, over both budgets |
+| First-paint critical JS (closure) | 340712 B (332.7 KB) = the entry + the 12 chunks it imports statically, budget 360 KB ([ADR-0005](adr/adr-0005-critical-js-budget-recalibration.md)) | same build, same run (item `first-paint-js-total`); the string table, the inline icons and the data-URI assets are first paint by necessity — the ADR carries the decomposition |
+| First-paint critical CSS | 60315 B (58.9 KB) = `media/out.min.css`, budget 60 KB | same build, same run (item `webview-entry-css`); the widget/dialog/details styles ride on-demand chunks (56.5 KB, item `webview-ondemand-js:onDemand`) |
+| On-demand chunks (never first paint) | commitDetails 38.1 KB, findWidget 19.2 KB, settingsWidget 66.6 KB, markdown-it 101.2 KB, zh-cn 88.5 KB, reflog 11.8 KB, worktree 11.2 KB, statistics 11.4 KB, styles 56.5 KB | same run (items `webview-ondemand-js:*`); loaded at first use, idle-prefetched after the first paint |
+| Host bundle | `dist/extension.js` 456148 B (445.5 KB) | same build, same run (item `host-extension-js`); P5 also gates host-bundle growth (≤ 2% per PR without justification) |
 | Universal VSIX | 519125 B (507 KiB) | `npm run package` (no Rust toolchain needed) — pre-split measurement, re-measure when packaging next runs |
 
 The pre-split size measurements (578.7 KiB JS / 101.2 KiB CSS, the evidence ADR-0004 recorded)

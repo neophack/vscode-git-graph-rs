@@ -22,8 +22,9 @@ import { UNCOMMITTED } from '../../common/util';
 import { Component } from '../component';
 import { GraphContext } from '../context';
 import { measureBoundingClientRect, measureClientSize, measureOffsetTop } from '../render/measure';
-import { ExpandedCommit, FileTreeFolder } from '../state/types';
+import { ExpandedCommit } from '../state/types';
 import { renderExternalDiffBtn, startCodeReview, updateFileState, wireCodeReviewBtn, wireExternalDiffBtn } from './codeReviewPane';
+import { CommitDetailsSurface } from './detailsSurface';
 import { makeFileViewInteractive } from './fileActions';
 import { createFileTree, generateFileViewHtml, haveFilesChanged } from './fileTree';
 import { getFileViewOptions, getFileViewType, renderFileViewTypeBtns, toggleFolder, wireFileViewControls, wireFileViewScroll } from './fileViewPane';
@@ -47,7 +48,7 @@ const CLASS_COMMIT_DETAILS_OPEN = 'commitDetailsOpen';
  * listeners (rewired independently when only the file view changes) live in their own group.
  * Every DOM lookup runs under #cdv; the document is touched only to create or place it.
  */
-export class CommitDetails extends Component {
+export class CommitDetails extends Component implements CommitDetailsSurface {
 	public readonly lineCounts: LineCounts;
 
 	/** The open view's element (#cdv), or NULL while the view is closed. */
@@ -227,14 +228,18 @@ export class CommitDetails extends Component {
 		this.ctx().persistence.saveState();
 	}
 
-	/** The details of a commit arrived: show them (a `commitDetails` response). */
-	public showDetails(commitDetails: GG.GitCommitDetails, fileTree: FileTreeFolder, avatar: string | null, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean) {
+	/**
+	 * The details of a commit arrived: show them (a `commitDetails` response). The file tree is
+	 * built here, from the response's own file changes, only when the files changed since the
+	 * open view's data — an unchanged set keeps the built tree (and its folder toggles) as is.
+	 */
+	public showDetails(commitDetails: GG.GitCommitDetails, avatar: string | null, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean) {
 		const expandedCommit = this.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitElem === null || expandedCommit.commitHash !== commitDetails.hash || expandedCommit.compareWithHash !== null) return;
 
 		const filesChanged = haveFilesChanged(expandedCommit.fileChanges, commitDetails.fileChanges);
 		this.store.slices.details.applyResponseData(filesChanged ? {
-			commitDetails: commitDetails, fileChanges: commitDetails.fileChanges, fileTree: fileTree,
+			commitDetails: commitDetails, fileChanges: commitDetails.fileChanges, fileTree: createFileTree(this.store.currentRepo, this.store.repos, commitDetails.fileChanges, codeReview),
 			avatar: avatar, codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
 		} : {
 			commitDetails: commitDetails, avatar: avatar, codeReview: codeReview,
@@ -248,12 +253,6 @@ export class CommitDetails extends Component {
 		this.ctx().persistence.saveState();
 
 		this.render(refresh);
-	}
-
-	/** Build the file tree of a commit's file changes in the current repository. */
-	public createFileTree(gitFiles: ReadonlyArray<GG.GitFileChange>, codeReview: GG.CodeReview | null) {
-		const store = this.store;
-		return createFileTree(store.currentRepo, store.repos, gitFiles, codeReview);
 	}
 
 	/** Open the Commit Comparison of two commits inline. */
@@ -300,14 +299,17 @@ export class CommitDetails extends Component {
 		}
 	}
 
-	/** The changes between two commits arrived: show them (a `compareCommits` response). */
-	public showComparison(commitHash: string, compareWithHash: string, fileChanges: ReadonlyArray<GG.GitFileChange>, fileTree: FileTreeFolder, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean) {
+	/**
+	 * The changes between two commits arrived: show them (a `compareCommits` response). As with
+	 * the details response, the file tree is built here and only when the files changed.
+	 */
+	public showComparison(commitHash: string, compareWithHash: string, fileChanges: ReadonlyArray<GG.GitFileChange>, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean) {
 		const expandedCommit = this.store.expandedCommit;
 		if (expandedCommit === null || expandedCommit.commitElem === null || expandedCommit.compareWithElem === null || expandedCommit.commitHash !== commitHash || expandedCommit.compareWithHash !== compareWithHash) return;
 
 		const filesChanged = haveFilesChanged(expandedCommit.fileChanges, fileChanges);
 		this.store.slices.details.applyResponseData(filesChanged ? {
-			fileChanges: fileChanges, fileTree: fileTree,
+			fileChanges: fileChanges, fileTree: createFileTree(this.store.currentRepo, this.store.repos, fileChanges, codeReview),
 			codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false
 		} : {
 			codeReview: codeReview, lastViewedFile: refresh ? undefined : lastViewedFile, loading: false

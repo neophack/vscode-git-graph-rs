@@ -6,7 +6,7 @@
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
 | Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
-| Status | M0 complete; waves 1–4 (§12) landed R1–R8, V1–V5, S2–S7, G1–G5, D, F1–F7, A1–A7, P1–P3 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore). The size gate's KNOWN list is empty — no production file is over the 600-line limit |
+| Status | M0 complete; waves 1–4 (§12) landed R1–R8, V1–V5, S2–S7, G1–G5, D, F1–F7, A1–A7, P1–P3 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore). The size gate's KNOWN list is empty — no production file is over the 600-line limit. Wave 8 closed the first Actions run's size finding: the Commit Details View is on demand, and both ADR-0005 first-paint budgets hold again (entry 160.4/200 KB, closure 332.7/360 KB) |
 
 ---
 
@@ -1207,3 +1207,43 @@ tests on CI (their env guards landed; the write-layer fix belongs with its env w
 first-paint critical JS measured 366 KB against ADR-0005's 360 KB budget on the affected
 tier's build and needs its own burn-down; and the rowCoordinates/scrollWindow windowed-
 render assertions flake under full-suite load — retried once each now, root-caused never.
+
+### Wave 8: the first-paint burn-down (branch `task/m0-gates`, 2026-10-28)
+
+One commit closing the queue's size item: the Commit Details View joins the on-demand half,
+and both ADR-0005 budgets hold again with room to grow.
+
+- **The move** — `CommitDetails` never renders before a user expands a commit, yet its whole
+  module group (the shell, the panes, the file tree, the line counts, the code-review pane —
+  37.5 KB minified) sat inside the entry chunk because `main.ts` constructed it at boot. It now
+  rides the widgets' lazy mechanism end to end: a `CommitDetailsSurface`
+  (`commitDetails/detailsSurface.ts`) types what the rest of the view may call, `LazyCommitDetails`
+  (`widgets/lazy.ts`) stands in from boot, the context holds the facade, and
+  `import('./commitDetails/commitDetails')` loads on the first `load()` — idle-prefetched with
+  the widgets, so the first expand resolves from the module cache. The surface's not-loaded
+  semantics follow the widgets' rule (not loaded = not open: `isOpen` FALSE, `openElem` NULL,
+  close/refresh no-ops, responses dropped); what makes the synchronous reads safe is the
+  store's own invariant — `expandedCommit` is written only by the loaded module's open path, so
+  every caller reading an open-view fact (`openElem`, a re-request) already implies the module
+  is in. One signature tightening rode along: `createFileTree` left the surface (the response
+  router forwarded a view-side product it had no business building); `showDetails` /
+  `showComparison` build the file tree inside, and only when the files actually changed.
+- **The numbers** (P5, `npm run build:dist -- --production`): the entry chunk
+  **212.9 → 160.4 KB** against the 200 KB §3.8.2 target, the first-paint closure
+  **368.4 → 332.7 KB** against ADR-0005's 360 KB, the commitDetails chunk 38.1 KB on demand,
+  CSS unchanged at 58.9 KB. Both budgets were over since the F2 wiring pushed the machine into
+  the entry (wave 2 measured 360/360 exactly; the wave-7 CI observation caught 366 KB). The
+  ratchet direction ADR-0005 set — the budget only tightens, never reopens — is restored.
+- **Verified**: the four typecheck leaves, `npm run check` (the whole static chain), the full
+  suite 159 files / 1752 tests (one first-run failure in the known rowCoordinates/scrollWindow
+  flake family, green on the rerun and in isolation), P3 booting the real chunked artifact
+  in headless Chromium (t2t5 medians unchanged on this box), and the E2E smoke tier in real
+  VS Code: 23 passed / 0 failed / 2 skipped (the two designed skips; 1.143.1, engine backend) —
+  including S3 (expand details + open a file's diff) and row/compare-rows, the two scenarios
+  that walk the lazy path. The jsdom harness needed no edits: its `pump` loop already awaits
+  the request chains a lazy open produces.
+
+Remaining in the queue: the coverage long tail (settings 168, webview-controls 44,
+ui-languages 1179), the `withProgress` host seam, the rowCoordinates/scrollWindow flake
+root cause, and the nightly observations (compat.yml C4/C5 and the E2E full tier fire on the
+default branch's schedule only).

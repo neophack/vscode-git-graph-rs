@@ -1,8 +1,11 @@
 /**
- * The lazy facades of the on-demand widgets: the Settings widget, the
+ * The lazy facades of the on-demand widgets and the Commit Details View: the Settings widget, the
  * Reflog view, the Worktree dialog and the Statistics view sit OUTSIDE the first-paint bundle —
  * their modules load through dynamic import() on first use, and the facades stand in from boot
- * with the exact call surface the rest of the view uses (widgets/surfaces.ts).
+ * with the exact call surface the rest of the view uses (widgets/surfaces.ts). The Commit Details
+ * View rides the same mechanism (commitDetails/detailsSurface.ts): its panel only exists once a
+ * user expands a commit, so its module — the view shell, the panes, the file tree — is not part
+ * of what the browser must fetch before the first paint either.
  *
  * The split this buys: a widget that was never opened is never even downloaded, and one that is
  * opened pays only the module fetch (warm after the idle prefetch — scheduleIdlePrefetch). The
@@ -16,6 +19,7 @@
 
 import { modifyColourOpacity } from '../../common/util';
 import type * as GG from '../../common/protocol';
+import type { CommitDetailsSurface } from '../commitDetails/detailsSurface';
 import type { GraphContext } from '../context';
 import type { FindWidgetState, SettingsWidgetState } from '../state/types';
 import type { FindWidgetSurface, ReflogViewSurface, SettingsWidgetSurface, StatisticsViewSurface, WorktreeDialogSurface } from './surfaces';
@@ -272,6 +276,114 @@ export class LazyStatisticsView extends LazyWidget<StatisticsViewSurface> implem
 	public processResponse(msg: GG.ResponseRepoStatistics): void {
 		const w = this.loaded();
 		if (w !== null) w.processResponse(msg);
+	}
+}
+
+/**
+ * The Commit Details View, loaded on first use. The semantics of the not-yet-loaded state are the
+ * surface's own (commitDetails/detailsSurface.ts); the one subtlety beyond the widgets is
+ * `openElem`: it is read only for an open view (the callers guard on `store.expandedCommit`, which
+ * only the loaded module's open path ever sets), so the facade's NULL is never consulted.
+ */
+export class LazyCommitDetails extends LazyWidget<CommitDetailsSurface> implements CommitDetailsSurface {
+	public readonly lineCounts: CommitDetailsSurface['lineCounts'];
+
+	constructor(getContext: () => GraphContext) {
+		super(() => import('../commitDetails/commitDetails').then((m) => new m.CommitDetails(getContext)));
+		this.lineCounts = {
+			apply: (msg) => {
+				const w = this.loaded();
+				if (w !== null) w.lineCounts.apply(msg);
+			},
+			scheduleVisible: () => {
+				const w = this.loaded();
+				if (w !== null) w.lineCounts.scheduleVisible();
+			}
+		};
+	}
+
+	/** The open view's element, or NULL while the view is closed or the module is loading. */
+	public get openElem(): HTMLElement | null {
+		const w = this.loaded();
+		return w !== null ? w.openElem : null;
+	}
+
+	public load(commitElem: HTMLElement): void {
+		this.ensureAndCall((w) => w.load(commitElem));
+	}
+
+	public loadComparison(commitElem: HTMLElement, compareWithElem: HTMLElement): void {
+		this.ensureAndCall((w) => w.loadComparison(commitElem, compareWithElem));
+	}
+
+	public close(saveAndRender: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.close(saveAndRender);
+	}
+
+	public closeComparison(saveAndRequestCommitDetails: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.closeComparison(saveAndRequestCommitDetails);
+	}
+
+	public isOpen(commitHash: string, compareWithHash: string | null): boolean {
+		const w = this.loaded();
+		return w !== null && w.isOpen(commitHash, compareWithHash);
+	}
+
+	public showDetails(commitDetails: GG.GitCommitDetails, avatar: string | null, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.showDetails(commitDetails, avatar, codeReview, lastViewedFile, refresh);
+	}
+
+	public showComparison(commitHash: string, compareWithHash: string, fileChanges: ReadonlyArray<GG.GitFileChange>, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.showComparison(commitHash, compareWithHash, fileChanges, codeReview, lastViewedFile, refresh);
+	}
+
+	public requestCommitDetails(hash: string, refresh: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.requestCommitDetails(hash, refresh);
+	}
+
+	public requestCommitComparison(hash: string, compareWithHash: string, refresh: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.requestCommitComparison(hash, compareWithHash, refresh);
+	}
+
+	public openCompareTab(hash: string, compareWithHash: string, singleCommit?: boolean): void {
+		this.ensureAndCall((w) => w.openCompareTab(hash, compareWithHash, singleCommit));
+	}
+
+	public getFilesScrollElemId(): string {
+		const w = this.loaded();
+		// Only the loaded view's own panes ask (they scroll the open panel's file list)
+		return w !== null ? w.getFilesScrollElemId() : '';
+	}
+
+	public renderExternalDiffBtn(): void {
+		const w = this.loaded();
+		if (w !== null) w.renderExternalDiffBtn();
+	}
+
+	public closeContextMenuIfOpen(expandedCommit: Parameters<CommitDetailsSurface['closeContextMenuIfOpen']>[0]): void {
+		const w = this.loaded();
+		if (w !== null) w.closeContextMenuIfOpen(expandedCommit);
+	}
+
+	public toggleFolder(folderElem: HTMLElement): void {
+		const w = this.loaded();
+		if (w !== null) w.toggleFolder(folderElem);
+	}
+
+	public updateFileState(file: GG.GitFileChange, fileElem: HTMLElement, isReviewed: boolean | null, fileWasViewed: boolean): void {
+		const w = this.loaded();
+		if (w !== null) w.updateFileState(file, fileElem, isReviewed, fileWasViewed);
+	}
+
+	public startCodeReview(commitHash: string, compareWithHash: string | null, codeReview: GG.CodeReview): void {
+		const w = this.loaded();
+		if (w !== null) w.startCodeReview(commitHash, compareWithHash, codeReview);
 	}
 }
 

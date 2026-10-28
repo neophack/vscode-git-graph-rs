@@ -240,7 +240,7 @@ export class CommitTable {
 				if (expandedCommit.compareWithHash === null) {
 					// Commit Details View is open
 					if (!expandedCommit.loading && expandedCommit.commitDetails !== null && expandedCommit.fileTree !== null) {
-						details.showDetails(expandedCommit.commitDetails, expandedCommit.fileTree, expandedCommit.avatar, expandedCommit.codeReview, expandedCommit.lastViewedFile, true);
+						details.showDetails(expandedCommit.commitDetails, expandedCommit.avatar, expandedCommit.codeReview, expandedCommit.lastViewedFile, true);
 						if (expandedCommit.commitHash === UNCOMMITTED) {
 							details.requestCommitDetails(expandedCommit.commitHash, true);
 						}
@@ -250,7 +250,7 @@ export class CommitTable {
 				} else {
 					// Commit Comparison is open
 					if (!expandedCommit.loading && expandedCommit.fileChanges !== null && expandedCommit.fileTree !== null) {
-						details.showComparison(expandedCommit.commitHash, expandedCommit.compareWithHash, expandedCommit.fileChanges, expandedCommit.fileTree, expandedCommit.codeReview, expandedCommit.lastViewedFile, true);
+						details.showComparison(expandedCommit.commitHash, expandedCommit.compareWithHash, expandedCommit.fileChanges, expandedCommit.codeReview, expandedCommit.lastViewedFile, true);
 						if (expandedCommit.commitHash === UNCOMMITTED || expandedCommit.compareWithHash === UNCOMMITTED) {
 							details.requestCommitComparison(expandedCommit.commitHash, expandedCommit.compareWithHash, true);
 						}
