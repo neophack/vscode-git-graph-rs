@@ -936,8 +936,9 @@ evidence** (no entry split), and the **600-line gate consolidation**.
   manifest ↔ schema parity in both directions plus the snapshot/cooked/service semantics.
   The migration drained the last 2 `git-layer-isolation` depcruise violations (`findGit` and
   `childProcess` take the paths/values as parameters instead of reading platform config).
-  Found, undecided: the manifest key `sourceCodeProviderIntegrationLocation` has no consumer
-  (kept for parity, flagged for a separate decision).
+  Found, later resolved as a false alarm: the manifest key
+  `sourceCodeProviderIntegrationLocation` IS consumed — by the `scm/title` `when` clauses in
+  the manifest itself (see wave 5's record).
 - **F1** — the store is six slices (`repos`, `refs`, `commits`, `details`, `ui`,
   `integrations`) behind `state/slices/`, changed only through named actions, each emitting a
   typed `SliceChange` (`state/changes.ts`; row-scoped changes carry `hashes`, the keyed
@@ -1080,7 +1081,7 @@ Deviations from the plan text (all deliberate, all recorded in the commits):
 - `repoManager.ts` sits at exactly 600 lines — no headroom; the next edit either shrinks it or
   re-enters KNOWN.
 
-Found, not fixed (wave 5's queue):
+Found, not fixed (wave 5's queue) — **all four closed by wave 5** (below):
 
 - `src/extension/platform/INVENTORY.md` is a finished-migration survey whose numbered entries
   17 code comments still cite; fold into docs/ or re-anchor the comments (needs a small
@@ -1092,3 +1093,31 @@ Found, not fixed (wave 5's queue):
   design; cleaning them means a Rust-side pass plus regeneration.
 - The manifest key `sourceCodeProviderIntegrationLocation` still has no consumer (carried
   from wave 4's A4 finding, kept for parity, still flagged).
+
+### Wave 5: the queue closed (branch `task/m0-gates`, 2026-10-28)
+
+Three commits closing every queued item; all gates green after each.
+
+- **The Rust comment pass + the gate's second tree** — 29 citations removed from 16 engine
+  files (the plan's grep had shown 21 `task N.N`; the sweep also caught `§N` and lowercase
+  plan-name forms). The generated `src/shared/engine/protocol.ts` regenerated with the one
+  expected doc delta, and `check-comments.mjs` now walks `native/**.rs` with the same five
+  patterns (`native/core/tests` exempt, mirroring the size gate). Fixing the script's
+  exemption paths to repo-relative forward slashes also repaired a Windows quirk: the
+  `subset.generated.ts` exemption had silently never matched under backslash paths.
+- **The inventory retired** — the 24 citation tags leave the code comments (the interim-binding
+  note in `actions.ts` restated in the present tense), `INVENTORY.md` deleted: the migration it
+  surveyed is complete and the ESLint rule holds it, so the document was spent history.
+- **The common measure home** — the generic element-geometry reads live in
+  `webview/common/measure.ts` now (the layering-valid home for the standalone bundles and
+  `common/helpTooltip`); `graph/render/measure.ts` re-exports them and keeps the graph-specific
+  batches. The 12 suppressed reads route through it and the suppressions drain; the rule names
+  the two homes and nothing sits behind it. (`hexView.ts` landed at exactly 600 — same
+  no-headroom note as `repoManager.ts`.)
+- **The manifest key resolved as NOT a defect** — `sourceCodeProviderIntegrationLocation` has a
+  consumer all along: its own manifest. The `scm/title` `when` clauses
+  (`config.git-graph-rs.sourceCodeProviderIntegrationLocation == 'Inline' | 'More Actions'`)
+  place the view button in the navigation group or the overflow group, evaluated by VS Code's
+  context engine — no TypeScript reader was ever needed, which is why the A4 "no consumer"
+  flag looked true. No decision required; the schema row stays for manifest parity, which is
+  exactly the contract the parity test holds.
