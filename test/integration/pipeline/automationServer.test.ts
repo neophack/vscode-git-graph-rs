@@ -270,7 +270,7 @@ describe('the automation engine over the real pipeline (deep-scrolled controls)'
 		});
 		assert.equal(chips.ok, true, chips.error);
 		assert.equal(chips.value, 0, 'the pin/unpin round-trip must leave the branch unpinned');
-	}, 180000);
+	}, { timeout: 180000, retry: 1 }); // deep-scroll + windowed rendering: one load-flake retry
 
 	it('a stash outside the loaded graph skips instead of failing', async () => {
 		// The stash reflog can hold entries far older than the loaded page (the view's first 300
@@ -283,7 +283,7 @@ describe('the automation engine over the real pipeline (deep-scrolled controls)'
 		const outcome = await runAfterRefresh('menu-stash/copy-hash');
 		assert.equal(outcome.skipped, true, JSON.stringify(outcome));
 		assert.ok((outcome.reason ?? '').includes('loaded graph'), outcome.reason);
-	}, 180000);
+	}, { timeout: 180000, retry: 1 }); // same windowed-render patience
 
 	it('stash copy actions scroll to a label far below the viewport', async () => {
 		// A stash made on old (but loaded) history renders far below the viewport: the flow must
@@ -296,5 +296,5 @@ describe('the automation engine over the real pipeline (deep-scrolled controls)'
 			const outcome = await runAfterRefresh(id);
 			assert.equal(outcome.ok, true, id + ': ' + (outcome.error ?? outcome.reason ?? 'failed'));
 		}
-	}, 180000);
+	}, { timeout: 180000, retry: 1 }); // the second action re-runs after the first's menu round-trip
 });

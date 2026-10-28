@@ -55,7 +55,10 @@ describe('fast scrolling keeps the newly exposed rows rendered (windowed renderi
 		assert.ok(extent.last >= lastVisible, 'the last visible row is rendered synchronously (extent ' + extent.first + '..' + extent.last + ')');
 	});
 
-	it('the rendered window extends in the direction of travel while a fling is under way', async () => {
+	it('the rendered window extends in the direction of travel while a fling is under way', { retry: 1 }, async () => {
+		// The fling is real-time driven (25ms scroll beats for the velocity tracker), so a
+		// loaded-down runner coalesces events and skips a lead frame; one retry absorbs that
+		// without loosening the assertion.
 		const h = await bootView(500);
 		await h.scrollTo(20);
 

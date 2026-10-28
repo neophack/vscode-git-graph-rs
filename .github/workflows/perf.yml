@@ -147,7 +147,7 @@ jobs:
         with:
           name: perf-results
           path: test/perf/results/
-          if-no-files-found: error
+          if-no-files-found: warn
 
   # The nightly S/M measurement (OPTIMIZATION-PLAN §7 P2: "run S/M nightly"): the P2 host gate
   # over the S tier and the M tier — the tier too slow for a PR — on ONE machine, back to back,

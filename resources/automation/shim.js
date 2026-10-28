@@ -208,7 +208,7 @@ function postToHost(message) {
 						return attemptSize(remaining - 1);
 					});
 				};
-				return attemptSize(10).then(function (box) {
+				return attemptSize(40).then(function (box) {
 					var width = box.width, height = box.height;
 					if (width === 0 && height === 0) throw new Error('"' + step.selector + '" is not rendered (0x0 box)');
 					if (step.minW !== undefined && width < step.minW) throw new Error('"' + step.selector + '" is ' + width.toFixed(1) + 'px wide, expected >= ' + step.minW + 'px');

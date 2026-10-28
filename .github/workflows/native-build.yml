@@ -402,7 +402,7 @@ jobs:
           name: native-${{ matrix.directory }}
           path: native/${{ matrix.directory }}
       - name: Fetch Node ${{ matrix.legacyNode }} for the old-glibc container
-        if: matrix.buildsEngine != true
+        if: matrix.legacyNode != ''
         run: |
           curl -fsSLO "https://nodejs.org/dist/v${{ matrix.legacyNode }}/node-v${{ matrix.legacyNode }}-linux-x64.tar.xz"
           curl -fsSLO "https://nodejs.org/dist/v${{ matrix.legacyNode }}/SHASUMS256.txt"
@@ -435,7 +435,7 @@ jobs:
                 console.error(error);
                 process.exit(1);
               });
-            ' /work/${{ matrix.directory }}/git-graph.node
+            ' /work/native/${{ matrix.directory }}/git-graph.node
         shell: bash
 
   # Everything in one place, ready to be dropped into a VSIX.
