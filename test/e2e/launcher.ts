@@ -114,7 +114,12 @@ function prepareWorkspace(options: E2eOptions): string {
 	const settings: Record<string, unknown> = {
 		'git-graph-rs.interfaceLanguage': options.lang,
 		'git-graph-rs.enableLog': true,
-		'git-graph-rs.repository.commits.initialLoad': 300
+		'git-graph-rs.repository.commits.initialLoad': 300,
+		// The catalog asserts the desktop control bar; a runner's webview pane can sit under
+		// the touch breakpoint (the first CI run rendered tablet mode on a 1280px X server and
+		// the author dropdown went 0x0 inside the overflow menu). The touch layouts keep their
+		// own coverage: the mobileAdaptation unit tests and the theme audit's narrow pages.
+		'git-graph-rs.mobileAdaptation': false
 	};
 	fs.writeFileSync(path.join(workspace, '.vscode', 'settings.json'), JSON.stringify(settings, null, '\t') + '\n');
 	return workspace;

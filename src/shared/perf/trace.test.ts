@@ -270,3 +270,39 @@ describe('the P1 trace API', () => {
 		vi.resetModules();
 	});
 });
+
+describe('the webview-origin mark', () => {
+	beforeEach(() => {
+		trace.resetForTests();
+	});
+
+	afterEach(() => {
+		trace.resetForTests();
+	});
+
+	it('records into the open trace with the webview origin, and no-ops when disabled', () => {
+		trace.markWebview('T0');
+		assert.equal(trace.hasOpenTrace(), false);
+
+		trace.setEnabled(true);
+		trace.begin('boot');
+		trace.markWebview('T0');
+		trace.end();
+
+		const traces = trace.traces();
+		assert.equal(traces.length, 1);
+		assert.deepEqual(traces[0]!.marks.map((m) => m.name), ['T0']);
+		assert.equal(traces[0]!.marks[0]!.origin, 'webview');
+	});
+
+	it('auto-opens the session trace when the webview mark arrives without a begin', () => {
+		trace.setEnabled(true);
+		trace.markWebview('T0');
+		trace.end();
+
+		const traces = trace.traces();
+		assert.equal(traces.length, 1);
+		assert.equal(traces[0]!.name, 'session');
+		assert.equal(traces[0]!.marks[0]!.origin, 'webview');
+	});
+});
