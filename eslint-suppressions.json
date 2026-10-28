@@ -219,9 +219,6 @@
     },
     "no-restricted-properties": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 4
     }
   },
   "src/webview/binaryCompare/imageView.test.ts": {
@@ -232,9 +229,6 @@
   "src/webview/binaryCompare/imageView.ts": {
     "no-restricted-properties": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/webview/binaryCompare/main.ts": {
@@ -247,17 +241,9 @@
       "count": 2
     }
   },
-  "src/webview/common/helpTooltip.ts": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/webview/comparison/diffView.ts": {
     "no-restricted-properties": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/webview/comparison/fileTree.ts": {
@@ -268,9 +254,6 @@
   "src/webview/comparison/main.ts": {
     "no-restricted-properties": {
       "count": 7
-    },
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/webview/graph/loading/configApply.ts": {

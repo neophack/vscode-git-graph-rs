@@ -1,13 +1,15 @@
 /**
- * Centralized layout measurement: the layout READS the render pipeline
- * needs are gathered here so they can run as one batch BEFORE the DOM writes that follow them.
- * A layout read (clientHeight, offsetWidth, getBoundingClientRect, ...) interleaved with a write
- * forces a synchronous layout of the whole table; batched reads collapse into at most one forced
- * layout per phase. Rule: call one of these functions, then write - never read and write in the
+ * The graph view's batched layout measurements. The generic element-geometry reads live in
+ * common/measure.ts (the standalone bundles and common/ widgets share them); this module keeps
+ * the graph-specific measures and re-exports the generic helpers so the graph's callers have
+ * one import home. Rule: call one of these functions, then write - never read and write in the
  * same loop.
  */
 
+import { measureBoundingClientRect, measureClientSize, measureOffsetHeight, measureOffsetTop } from '../../common/measure';
 import type { Store } from '../state/store';
+
+export { measureBoundingClientRect, measureClientSize, measureOffsetHeight, measureOffsetTop };
 
 /**
  * Everything `CommitTable.renderGraph` measures before the graph (a pure write phase) is drawn.
@@ -80,40 +82,4 @@ export interface ScrollMetrics {
 /** Read the view's scroll geometry in one batch (the auto-load-more check of the scroll observer). */
 export function measureScroll(viewElem: HTMLElement): ScrollMetrics {
 	return { scrollTop: viewElem.scrollTop, viewHeight: viewElem.clientHeight, contentHeight: viewElem.scrollHeight };
-}
-
-/** A single element's client size (its content box plus padding), read in one batch. */
-export interface ClientSizeMetrics {
-	/** The element's clientWidth (content plus left/right padding, no scrollbar). */
-	readonly width: number;
-	/** The element's clientHeight (content plus top/bottom padding, no scrollbar). */
-	readonly height: number;
-}
-
-/**
- * Read an element's client size in one batch. Both dimensions are read in the one call even when
- * the caller needs only one: the read stays here, batched, instead of reopening a geometry access
- * at the call site (F4). In jsdom every box measures 0, as the hidden-view guards downstream expect.
- */
-export function measureClientSize(elem: Element): ClientSizeMetrics {
-	return { width: elem.clientWidth, height: elem.clientHeight };
-}
-
-/** Read an element's border-box height (clientHeight plus its top and bottom borders). */
-export function measureOffsetHeight(elem: HTMLElement): number {
-	return elem.offsetHeight;
-}
-
-/** Read an element's top offset within its offsetParent (a row's position inside its table). */
-export function measureOffsetTop(elem: HTMLElement): number {
-	return elem.offsetTop;
-}
-
-/**
- * Read an element's bounding rect in viewport coordinates - the read behind every popup position
- * (context menus, dropdowns, tooltips, scroll-into-view maths). The values are only valid until
- * the caller's next DOM write, so measure right before positioning, never across a write.
- */
-export function measureBoundingClientRect(elem: Element): DOMRect {
-	return elem.getBoundingClientRect();
 }

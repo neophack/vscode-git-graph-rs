@@ -5,6 +5,7 @@
  * area over to the shared hex / picture comparison.
  */
 
+import { measureClientSize } from '../common/measure';
 import { escapeHtml, html, SafeHtml, setHtml } from '../common/html';
 import type { ComparisonFileModel } from './model';
 import { compareStrings as s } from './../binaryCompare/strings';
@@ -133,7 +134,7 @@ export class DiffView {
 
 	private relayout() {
 		if (this.currentRows === null) return;
-		if ((this.env.diffArea.clientWidth >= SIDE_BY_SIDE_BREAKPOINT) === this.lastLayoutWasSideBySide) return;
+		if ((measureClientSize(this.env.diffArea).width >= SIDE_BY_SIDE_BREAKPOINT) === this.lastLayoutWasSideBySide) return;
 		this.layoutTable(this.currentRows);
 	}
 
@@ -150,7 +151,7 @@ export class DiffView {
 	 *  side-by-side, or two stacked rows (a "del" row then an "add" row, each keeping its own
 	 *  word-diff marks) inline - exactly how VS Code's inline diff view renders a change. */
 	private layoutTable(rows: ReadonlyArray<DiffRow>) {
-		const sideBySide = this.env.diffArea.clientWidth >= SIDE_BY_SIDE_BREAKPOINT;
+		const sideBySide = measureClientSize(this.env.diffArea).width >= SIDE_BY_SIDE_BREAKPOINT;
 		this.lastLayoutWasSideBySide = sideBySide;
 		const table = document.createElement('table');
 		table.className = 'diff' + (sideBySide ? '' : ' inline');

@@ -313,25 +313,21 @@ export default tseslint.config(
 		}
 	},
 
-	// ---- (b3) layout reads through render/measure.ts (OPTIMIZATION-PLAN §6 F4) ----
-	// REFACTOR-PLAN §3.8.5: a geometry read interleaved with DOM writes forces a synchronous
-	// layout, so the webview's layout reads live in src/webview/graph/render/measure.ts, batched
-	// before the frame's writes. This rule holds that discipline: the forcing properties and rect
-	// methods (see the selector constants above) are error everywhere in the webview except
-	// measure.ts itself. Colocated *.test.ts are out of scope (jsdom boxes all measure 0; the
-	// tests are not shipped). Deliberately left behind the rule, via eslint-suppressions.json:
-	//   - src/webview/comparison/** and src/webview/binaryCompare/** - the standalone pages,
-	//     which are separate bundles from the graph view and must not depend on its render
-	//     modules (the same boundary F3's DOM-ownership sweep left them behind);
-	//   - src/webview/common/helpTooltip.ts - common/ sits below graph/ in the layering (graph
-	//     imports common, never the other way round), so routing its two tooltip-positioning
-	//     reads through graph/render/measure.ts would invert the dependency direction.
+	// ---- (b3) layout reads through the measure homes (F4) ----
+	// A geometry read interleaved with DOM writes forces a synchronous layout, so the webview's
+	// layout reads live in the two measure modules, batched before the frame's writes. This rule
+	// holds that discipline: the forcing properties and rect methods (see the selector constants
+	// above) are error everywhere in the webview except the measure homes themselves —
+	// common/measure.ts (the generic element reads, shared with the standalone bundles) and
+	// graph/render/measure.ts (the graph-specific batched measures, which re-exports the generic
+	// helpers). Colocated *.test.ts are out of scope (jsdom boxes all measure 0; the tests are
+	// not shipped).
 	// After (d) deliberately, like (d) after (c): this block re-declares the whole
 	// no-restricted-syntax value for the webview file set, so the `as any` probe and native-UI
 	// selectors ride along byte-identically.
 	{
 		files: WEBVIEW_TS,
-		ignores: ['src/webview/graph/render/measure.ts', 'src/**/*.test.ts'],
+		ignores: ['src/webview/common/measure.ts', 'src/webview/graph/render/measure.ts', 'src/**/*.test.ts'],
 		rules: {
 			'no-restricted-syntax': ['error', VSCODE_PROBE_SELECTOR, NATIVE_UI_SELECTOR_ENTRY, LAYOUT_READ_PROPERTY_SELECTOR_ENTRY, LAYOUT_READ_METHOD_SELECTOR_ENTRY]
 		}

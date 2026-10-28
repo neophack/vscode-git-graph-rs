@@ -14,6 +14,7 @@ import { DiffView } from './diffView';
 import { FileTreeSidebar } from './fileTree';
 import { ComparisonHeader } from './headerView';
 import { ComparisonFileModel, changePath, statusColour, statusLetter } from './model';
+import { measureBoundingClientRect } from '../common/measure';
 import { escapeHtml, html, setHtml } from '../common/html';
 
 const bridge = new ComparisonBridge();
@@ -58,7 +59,7 @@ if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fi
 			resizer.classList.add('resizing');
 			document.body.style.cursor = 'col-resize';
 			document.body.style.userSelect = 'none';
-			const bodyLeft = body.getBoundingClientRect().left;
+			const bodyLeft = measureBoundingClientRect(body).left;
 			const onMouseMove = (moveEvent: MouseEvent) => {
 				const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, moveEvent.clientX - bodyLeft));
 				sidebar.style.width = width + 'px';
@@ -69,7 +70,7 @@ if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fi
 				resizer.classList.remove('resizing');
 				document.body.style.cursor = '';
 				document.body.style.userSelect = '';
-				bridge.setState(Object.assign({}, bridge.getState(), { sidebarWidth: sidebar.getBoundingClientRect().width }));
+				bridge.setState(Object.assign({}, bridge.getState(), { sidebarWidth: measureBoundingClientRect(sidebar).width }));
 			};
 			window.addEventListener('mousemove', onMouseMove);
 			window.addEventListener('mouseup', onMouseUp);

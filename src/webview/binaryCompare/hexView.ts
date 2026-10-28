@@ -5,8 +5,8 @@
  * the selection and copy machinery hexCopy.ts.
  */
 
-
 import { escapeHtml, html, joinHtml, raw, setHtml } from '../common/html';
+import { measureBoundingClientRect, measureClientSize } from '../common/measure';
 import type { BinaryCompareRequest, BinaryCompareResponse, HexRowData } from '../../shared/protocol/binaryCompare';
 import { compareMarkup, compareStrings as s, format } from './strings';
 import { HexCell, HexCopy } from './hexCopy';
@@ -119,9 +119,9 @@ export class HexView {
 		probe.style.fontSize = 'var(--vscode-editor-font-size, 13px)';
 		probe.textContent = '0000000000000000000000000000';
 		document.body.appendChild(probe);
-		const charWidth = probe.getBoundingClientRect().width / 28;
+		const charWidth = measureBoundingClientRect(probe).width / 28;
 		document.body.removeChild(probe);
-		const available = this.env.root.clientWidth - 20 - 4 * HEX_SIDE_PAD;
+		const available = measureClientSize(this.env.root).width - 20 - 4 * HEX_SIDE_PAD;
 		const candidates = [16, 12, 8, 4];
 		for (let i = 0; i < candidates.length; i++) {
 			if (2 * hexSideCh(candidates[i], this.offDigits) * charWidth <= available) return candidates[i];
@@ -251,7 +251,7 @@ export class HexView {
 		if (!this.active || this.els === null) return;
 		const els = this.els;
 		els.spacer.style.height = (this.totalRows * HEX_ROW_H) + 'px';
-		const top = els.scroller.scrollTop, height = els.scroller.clientHeight;
+		const top = els.scroller.scrollTop, height = measureClientSize(els.scroller).height;
 		const first = Math.max(0, Math.floor(top / HEX_ROW_H) - 16);
 		const last = Math.min(this.totalRows - 1, Math.ceil((top + height) / HEX_ROW_H) + 24);
 		els.view.style.transform = 'translateY(' + (first * HEX_ROW_H) + 'px)';
@@ -524,7 +524,7 @@ export class HexView {
 			menu.appendChild(row);
 		}
 		document.body.appendChild(menu);
-		const rect = menu.getBoundingClientRect();
+		const rect = measureBoundingClientRect(menu);
 		const left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
 		const top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
 		menu.style.left = left + 'px';

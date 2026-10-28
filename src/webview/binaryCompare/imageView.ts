@@ -5,6 +5,7 @@
  */
 
 import { html, raw, setHtml } from '../common/html';
+import { measureClientSize } from '../common/measure';
 import type { BinaryCompareRequest, BinaryCompareResponse } from '../../shared/protocol/binaryCompare';
 import { compareMarkup, compareStrings as s, format } from './strings';
 import { frame } from './hexView';
@@ -412,7 +413,8 @@ export class ImageView {
 		if (this.zoomMode < 0) {
 			// Fit: the three panes side by side in the viewport; small pictures scale up to use
 			// the available space (capped, and pixelated so scaled pixels stay crisp).
-			this.scale = Math.min((this.els.scroller.clientWidth - 56) / (3 * width), (this.els.scroller.clientHeight - 64) / height);
+			const scrollerSize = measureClientSize(this.els.scroller);
+			this.scale = Math.min((scrollerSize.width - 56) / (3 * width), (scrollerSize.height - 64) / height);
 			this.scale = Math.min(4, Math.max(0.05, this.scale));
 		} else {
 			this.scale = this.zoomMode;

@@ -5,6 +5,8 @@
  * rendered later work too.
  */
 
+import { measureBoundingClientRect } from './measure';
+
 let tooltipElem: HTMLElement | null = null;
 let tooltipTarget: HTMLElement | null = null;
 let observed = false;
@@ -27,8 +29,8 @@ export function hideHelpTooltip() {
 
 function positionTooltip() {
 	if (tooltipElem === null || tooltipTarget === null) return;
-	const targetRect = tooltipTarget.getBoundingClientRect();
-	const tooltipRect = tooltipElem.getBoundingClientRect();
+	const targetRect = measureBoundingClientRect(tooltipTarget);
+	const tooltipRect = measureBoundingClientRect(tooltipElem);
 	const maxLeft = Math.max(8, window.innerWidth - tooltipRect.width - 8);
 	const left = Math.min(Math.max(8, targetRect.left + (targetRect.width - tooltipRect.width) / 2), maxLeft);
 	let top = targetRect.bottom + 6;
