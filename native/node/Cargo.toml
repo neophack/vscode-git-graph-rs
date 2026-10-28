@@ -25,7 +25,9 @@ large_types_passed_by_value = "warn"
 doc_markdown = "warn"
 
 [dependencies]
-git-graph-core = { path = "../core" }
+# An explicit version: cargo-deny's wildcard ban reads a version-less path dependency
+# as "any version". Bump this line together with [workspace.package]'s version.
+git-graph-core = { path = "../core", version = "1.1.0" }
 # cargo-deny's wildcard ban (deny.toml) rejects single-component version reqs: name at
 # least major.minor. The caret semantics are unchanged (^3.12 still takes 3.13+).
 napi = { version = "3.12", default-features = false, features = ["napi3", "dyn-symbols"] }

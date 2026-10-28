@@ -104,6 +104,14 @@ function usage() {
 	);
 }
 
+/** Cargo's output root for this invocation: CARGO_TARGET_DIR moves it (the perf job points it
+ * at a cached directory outside the tree), and a build that looks only at target/ then reports
+ * "cargo reported success but the artifact is not where it is expected". */
+function cargoTargetRoot() {
+	const override = process.env.CARGO_TARGET_DIR;
+	return override !== undefined && override !== '' ? path.resolve(root, override) : path.join(root, 'target');
+}
+
 /** The target triple cargo will build for when none was asked for. */
 function hostTarget() {
 	const output = spawnSync('rustc', ['-vV'], { encoding: 'utf8' });
@@ -184,7 +192,7 @@ function buildLinuxViaZigbuild(options, target, directory) {
 		...(options.release ? ['--release'] : []),
 		'--target', specifier
 	];
-	const artifact = path.join(root, 'target', target, options.release ? 'release' : 'debug', cargoArtifactName(target));
+	const artifact = path.join(cargoTargetRoot(), target, options.release ? 'release' : 'debug', cargoArtifactName(target));
 	if (options.dryRun) {
 		console.log(`[dry-run] cargo ${args.join(' ')}`);
 		if (isLinuxGnuTarget(target)) {
@@ -339,7 +347,7 @@ function buildWindowsArm64Locally(options, target, directory) {
 	if (build.status !== 0) process.exit(build.status ?? 1);
 
 	const profile = options.release ? 'release' : 'debug';
-	const artifact = path.join(root, 'target', target, profile, cargoArtifactName(target));
+	const artifact = path.join(cargoTargetRoot(), target, profile, cargoArtifactName(target));
 	if (!fs.existsSync(artifact)) {
 		console.error(`! cargo reported success but the artifact is not where it is expected: ${artifact}`);
 		process.exit(1);
@@ -544,7 +552,7 @@ function main() {
 
 	// napi build copies the artifact (plus a generated .d.ts) into --output-dir under its own
 	// platform-suffixed name; it is moved to the extension's layout below.
-	const staging = path.join(root, 'target', 'napi-build');
+	const staging = path.join(cargoTargetRoot(), 'napi-build');
 	if (!options.dryRun) fs.rmSync(staging, { recursive: true, force: true });
 
 	const args = [

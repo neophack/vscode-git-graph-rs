@@ -36,12 +36,17 @@ function fail(message: string): never {
 	process.exit(1);
 }
 
-/** rm -rf with the Windows read-only handling the fixture's own removals need. */
+/** rm -rf with the Windows read-only handling the fixture's own removals need. The chmod is
+ * Windows-only on purpose: on POSIX a 0o666 directory has lost its traverse bit, and the
+ * removal below then fails with EACCES on the very directory it was meant to open up (the
+ * first CI run of the smoke tier died exactly there, on the green run's profile cleanup). */
 function rmTree(target: string): void {
 	if (!fs.existsSync(target)) return;
-	try {
-		fs.chmodSync(target, 0o666);
-	} catch { /* not fatal */ }
+	if (process.platform === 'win32') {
+		try {
+			fs.chmodSync(target, 0o666);
+		} catch { /* not fatal */ }
+	}
 	fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
