@@ -4,11 +4,7 @@
 import { GraphContext } from '../context';
 import { measureBoundingClientRect } from '../render/measure';
 import { PanelSurface } from './panelSurface';
-
-/** The element with the given id under the panel's scope, or NULL (the shell's scoped lookup). */
-function byId(scope: ParentNode, id: string): HTMLElement | null {
-	return scope.querySelector<HTMLElement>('#' + id);
-}
+import { byId } from './panelDom';
 
 /** Apply the panel's configured height to it (clamped to the window), reserving the space below the list in the docked layout. */
 export function setHeight(ctx: GraphContext, elem: HTMLElement, isDocked: boolean) {

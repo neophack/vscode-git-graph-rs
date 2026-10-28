@@ -13,11 +13,7 @@ import { ExpandedCommit } from '../state/types';
 import { makeFileViewInteractive } from './fileActions';
 import { FileViewOptions, generateFileViewHtml, alterFileTreeFolderOpen } from './fileTree';
 import { PanelSurface } from './panelSurface';
-
-/** The element with the given id under the panel's scope, or NULL (the shell's scoped lookup). */
-function byId(scope: ParentNode, id: string): HTMLElement | null {
-	return scope.querySelector<HTMLElement>('#' + id);
-}
+import { byId } from './panelDom';
 
 /** The file view type in effect: the repository's own choice, or the setting's when it is Default. */
 export function getFileViewType(store: Store): GG.FileViewType {

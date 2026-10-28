@@ -14,11 +14,7 @@ import { hasMarkdown, isMarkdownLoaded, loadMarkdown, renderMarkdown } from '../
 import { CLASS_EXTERNAL_URL, CLASS_INTERNAL_URL, TextFormatter } from '../text/textFormatter';
 import { getCdvMessageBody, renderMobileCommitSummary } from './mobileSummary';
 import { PanelSurface } from './panelSurface';
-
-/** The element with the given id under the panel's scope, or NULL (the shell's scoped lookup). */
-function byId(scope: ParentNode, id: string): HTMLElement | null {
-	return scope.querySelector<HTMLElement>('#' + id);
-}
+import { byId } from './panelDom';
 
 /** The formatter of the commit message body (the summary card's title and message text). */
 export function createMessageFormatter(store: Store): TextFormatter {

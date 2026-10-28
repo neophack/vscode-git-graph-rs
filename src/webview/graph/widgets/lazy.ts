@@ -11,10 +11,11 @@
  * opened pays only the module fetch (warm after the idle prefetch — scheduleIdlePrefetch). The
  * semantics before the load are deliberate:
  *   - a not-yet-loaded widget is by definition not open: isVisible() answers FALSE, close() and
- *     refresh() are no-ops;
+ *     refresh() are no-ops — and close() also CANCELS the opens still queued behind the load, so
+ *     a widget cannot pop open after the user dismissed it or the view switched repositories;
  *   - a response for a not-yet-loaded widget is dropped — the widget only ever requests data
  *     after it was constructed, so a response arriving earlier cannot be for it;
- *   - show() (and the Settings widget's state restore) loads the module and forwards.
+ *   - show() (and the widgets' state restore) loads the module and forwards.
  */
 
 import { modifyColourOpacity } from '../../common/util';
@@ -33,10 +34,18 @@ const FIND_STATE_DEFAULT: FindWidgetState = { text: '', currentHash: null, visib
 /**
  * The shared machinery of one lazily loaded widget: the instance appears when the module first
  * loads, and every facade method answers through {@link loaded} or arms itself via {@link ensure}.
+ * Exported for the facades' tests (a controllable construct is the only way to test the
+ * in-flight window from outside).
  */
-class LazyWidget<W extends { dispose?(): void }> {
+export class LazyWidget<W extends { dispose?(): void }> {
 	private widget: W | null = null;
 	private pending: Promise<W> | null = null;
+	/**
+	 * Bumped by {@link cancelQueuedCalls}: a facade call queued behind the load captures the
+	 * epoch when armed and turns itself into a no-op if a later close() superseded it.
+	 */
+	private epoch = 0;
+	private disposed = false;
 
 	/**
 	 * @param construct Loads and constructs the widget. The dynamic import inside resolves from
@@ -56,6 +65,9 @@ class LazyWidget<W extends { dispose?(): void }> {
 			this.pending = this.construct().then((widget) => {
 				this.widget = widget;
 				this.pending = null;
+				// A dispose() that ran while the import was in flight could not see this instance;
+				// tear it straight back down so it cannot outlive the view that asked for it.
+				if (this.disposed && typeof widget.dispose === 'function') widget.dispose();
 				return widget;
 			}, (error) => {
 				this.pending = null;
@@ -67,11 +79,27 @@ class LazyWidget<W extends { dispose?(): void }> {
 
 	/** Load the widget, then call into it; an import that fails leaves nothing to call. */
 	protected ensureAndCall(call: (widget: W) => void): void {
-		void this.ensure().then(call, () => undefined);
+		const atEpoch = this.epoch;
+		void this.ensure().then((widget) => {
+			if (atEpoch !== this.epoch) return; // a close() superseded this call while it queued
+			call(widget);
+		}, () => undefined);
+	}
+
+	/**
+	 * Drop the facade calls still queued behind the load: a close (or another end-of-interaction
+	 * state change) after an open was queued but before the module settled must WIN over that
+	 * open, or the widget would pop open over whatever the user already moved on to (a repo
+	 * switch, an Escape) with no action of their own.
+	 */
+	protected cancelQueuedCalls(): void {
+		this.epoch++;
 	}
 
 	/** Tear the widget down (F3) once it has loaded: a facade before the load has nothing to remove. */
 	public dispose(): void {
+		this.disposed = true;
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null && typeof w.dispose === 'function') w.dispose();
 	}
@@ -95,6 +123,9 @@ export class LazySettingsWidget extends LazyWidget<SettingsWidgetSurface> implem
 	}
 
 	public close(): void {
+		// The close supersedes an open still queued behind the module load, in either direction
+		// of the load window: cancelled while loading, or run before a queued call replays it.
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.close();
 	}
@@ -110,7 +141,14 @@ export class LazySettingsWidget extends LazyWidget<SettingsWidgetSurface> implem
 	public restoreState(state: SettingsWidgetState): void {
 		this.restoredState = state;
 		const w = this.loaded();
-		if (w !== null) w.restoreState(state);
+		if (w !== null) {
+			w.restoreState(state);
+			return;
+		}
+		// A restored state that left the widget OPEN (it was showing a repository) must reopen it
+		// after a webview reload - that reopen is the first use, so it triggers the load (warm
+		// after the idle prefetch), exactly as the Find widget reopens a restored visible state.
+		if (state.currentRepo !== null) this.ensureAndCall((widget) => widget.restoreState(state));
 	}
 
 	public isVisible(): boolean {
@@ -132,6 +170,9 @@ export class LazyFindWidget extends LazyWidget<FindWidgetSurface> implements Fin
 	}
 
 	public close(): void {
+		// The close supersedes an open still queued behind the module load, in either direction
+		// of the load window: cancelled while loading, or run before a queued call replays it.
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.close();
 	}
@@ -163,11 +204,6 @@ export class LazyFindWidget extends LazyWidget<FindWidgetSurface> implements Fin
 		return this.restoredState !== null ? this.restoredState : FIND_STATE_DEFAULT;
 	}
 
-	public getCurrentHash(): string | null {
-		const w = this.loaded();
-		return w !== null ? w.getCurrentHash() : null;
-	}
-
 	public restoreState(state: FindWidgetState): void {
 		this.restoredState = state;
 		const w = this.loaded();
@@ -184,11 +220,6 @@ export class LazyFindWidget extends LazyWidget<FindWidgetSurface> implements Fin
 		const w = this.loaded();
 		return w !== null && w.isVisible();
 	}
-
-	public isScanning(): boolean {
-		const w = this.loaded();
-		return w !== null && w.isScanning();
-	}
 }
 
 /** The Reflog view, loaded on first use. */
@@ -202,6 +233,9 @@ export class LazyReflogView extends LazyWidget<ReflogViewSurface> implements Ref
 	}
 
 	public close(): void {
+		// The close supersedes an open still queued behind the module load, in either direction
+		// of the load window: cancelled while loading, or run before a queued call replays it.
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.close();
 	}
@@ -209,11 +243,6 @@ export class LazyReflogView extends LazyWidget<ReflogViewSurface> implements Ref
 	public isVisible(): boolean {
 		const w = this.loaded();
 		return w !== null && w.isVisible();
-	}
-
-	public refresh(): void {
-		const w = this.loaded();
-		if (w !== null) w.refresh();
 	}
 
 	public processResponse(msg: GG.ResponseReflog): void {
@@ -233,6 +262,9 @@ export class LazyWorktreeDialog extends LazyWidget<WorktreeDialogSurface> implem
 	}
 
 	public close(): void {
+		// The close supersedes an open still queued behind the module load, in either direction
+		// of the load window: cancelled while loading, or run before a queued call replays it.
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.close();
 	}
@@ -264,6 +296,9 @@ export class LazyStatisticsView extends LazyWidget<StatisticsViewSurface> implem
 	}
 
 	public close(): void {
+		// The close supersedes an open still queued behind the module load, in either direction
+		// of the load window: cancelled while loading, or run before a queued call replays it.
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.close();
 	}
@@ -287,9 +322,11 @@ export class LazyStatisticsView extends LazyWidget<StatisticsViewSurface> implem
  */
 export class LazyCommitDetails extends LazyWidget<CommitDetailsSurface> implements CommitDetailsSurface {
 	public readonly lineCounts: CommitDetailsSurface['lineCounts'];
+	private readonly getContext: () => GraphContext;
 
 	constructor(getContext: () => GraphContext) {
 		super(() => import('../commitDetails/commitDetails').then((m) => new m.CommitDetails(getContext)));
+		this.getContext = getContext;
 		this.lineCounts = {
 			apply: (msg) => {
 				const w = this.loaded();
@@ -308,20 +345,44 @@ export class LazyCommitDetails extends LazyWidget<CommitDetailsSurface> implemen
 		return w !== null ? w.openElem : null;
 	}
 
+	/**
+	 * The clicked commit's identity is read NOW, while the row element is live: the module load
+	 * inside is asynchronous, and a table re-render in that window can detach the row or re-index
+	 * it (an inserted row shifts every `data-id`), so the element must be re-resolved from the
+	 * hash after the load — the view then opens the commit the user clicked, not whatever the
+	 * stale element's row stands for. A commit that fell off the page is dropped (not open).
+	 */
 	public load(commitElem: HTMLElement): void {
-		this.ensureAndCall((w) => w.load(commitElem));
+		const ctx = this.getContext(), store = ctx.store;
+		const commit = store.getCommitOfElem(commitElem);
+		if (commit === null) return;
+		this.ensureAndCall((w) => {
+			const elem = ctx.table.findCommitElem(store.getCommitId(commit.hash));
+			if (elem !== null) w.load(elem);
+		});
 	}
 
+	/** As {@link load}: both clicked rows are re-resolved from their hashes after the load. */
 	public loadComparison(commitElem: HTMLElement, compareWithElem: HTMLElement): void {
-		this.ensureAndCall((w) => w.loadComparison(commitElem, compareWithElem));
+		const ctx = this.getContext(), store = ctx.store;
+		const commit = store.getCommitOfElem(commitElem);
+		const compareWith = store.getCommitOfElem(compareWithElem);
+		if (commit === null || compareWith === null) return;
+		this.ensureAndCall((w) => {
+			const elem = ctx.table.findCommitElem(store.getCommitId(commit.hash));
+			const cmpElem = ctx.table.findCommitElem(store.getCommitId(compareWith.hash));
+			if (elem !== null && cmpElem !== null) w.loadComparison(elem, cmpElem);
+		});
 	}
 
 	public close(saveAndRender: boolean): void {
+		this.cancelQueuedCalls(); // a close supersedes a load still queued behind the module load
 		const w = this.loaded();
 		if (w !== null) w.close(saveAndRender);
 	}
 
 	public closeComparison(saveAndRequestCommitDetails: boolean): void {
+		this.cancelQueuedCalls();
 		const w = this.loaded();
 		if (w !== null) w.closeComparison(saveAndRequestCommitDetails);
 	}

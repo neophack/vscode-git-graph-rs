@@ -10,11 +10,7 @@ import { SVG_ICONS } from '../../common/icons';
 import { GraphContext } from '../context';
 import { alterFileTreeFileReviewed, getFilesInTree, setFileTreeReviewed, updateFileTreeHtml, updateFileTreeHtmlFileReviewed } from './fileTree';
 import { PanelSurface } from './panelSurface';
-
-/** The element with the given id under the panel's scope, or NULL (the shell's scoped lookup). */
-function byId(scope: ParentNode, id: string): HTMLElement | null {
-	return scope.querySelector<HTMLElement>('#' + id);
-}
+import { byId } from './panelDom';
 
 /**
  * Update the state of a file in the Commit Details View.
