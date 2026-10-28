@@ -35,6 +35,13 @@ export type { WriteEffect };
  */
 export interface WriteStep {
 	readonly argv: ReadonlyArray<string>;
+	/**
+	 * Environment variables layered over the inherited process environment for this one
+	 * invocation (they win, after the askpass variables): for neutralising an inherited setting
+	 * that outranks the argv's own `-c` configuration — e.g. `GIT_EDITOR` outranks
+	 * `core.editor`, so the headless-editor no-op needs both spellings.
+	 */
+	readonly env?: { readonly [name: string]: string };
 	readonly bestEffort?: boolean;
 	readonly tolerance?: string;
 }

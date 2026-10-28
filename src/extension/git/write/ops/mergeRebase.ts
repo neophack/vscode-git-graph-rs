@@ -84,8 +84,13 @@ export function continueOperation(params: OperationStepParams): WriteOp {
 	// `core.editor=true` runs the shell no-op as the editor: a continue whose stopped commit
 	// wants a message edit must not open an interactive editor inside the headless extension
 	// host — that hangs it (the contract tests caught exactly that on CI, notepad on the
-	// windows runner, vi on ubuntu). Git reuses the existing message as-is.
-	return { steps: single(['-c', 'core.editor=true', params.type, '--continue']), effects: ['commits', 'head', 'worktree'] };
+	// windows runner, vi on ubuntu). Git reuses the existing message as-is. GIT_EDITOR is
+	// neutralised per-run too: it OUTRANKS core.editor in Git's editor resolution, so a user's
+	// exported editor (VISUAL/EDITOR already lose to core.editor) would otherwise still open.
+	return {
+		steps: [{ argv: ['-c', 'core.editor=true', params.type, '--continue'], env: { GIT_EDITOR: 'true' } }],
+		effects: ['commits', 'head', 'worktree']
+	};
 }
 
 /** Abort an in-progress merge, rebase, cherry-pick or revert. */

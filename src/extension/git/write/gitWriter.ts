@@ -87,7 +87,7 @@ export class GitWriter {
 		let error: string | null = null;
 		try {
 			for (const step of op.steps) {
-				const result = await this.process.run(step.argv, { cwd: repo, signal });
+				const result = await this.process.run(step.argv, { cwd: repo, signal, env: step.env });
 				if (result.code !== 0) {
 					const output = result.stderr + result.stdout.toString('utf8');
 					const tolerated = step.tolerance !== undefined && output.includes(step.tolerance);
