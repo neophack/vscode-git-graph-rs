@@ -79,15 +79,30 @@
 	min-width:80px;
 }
 /* ...and when the subject is at its floor, the refs give way before it does: they shrink and
-   ellipsize their names (the tablet layout does the same with its own floors). */
+   ellipsize their names (the tablet layout does the same with its own floors). The pill lays
+   out as a row of vertically centered segments: the icon, the remote labels and the score
+   chips keep their size (flex:none) while the name between them shrinks, ellipsizing inside
+   its own padding. (A plain inline-block pill cannot do this: a percentage max-width on the
+   name resolves against the pill's full content box - icon included - and its padding is
+   content-box, so a squeezed pill clipped the name flush at its edge with no ellipsis; and
+   the overflow that clipping needs turns the name's inline-block baseline into its bottom
+   edge, dropping every label after it below the pill's text line.) */
 #commitTable tr.commit td span.description .gitRef{
+	display:inline-flex;
+	align-items:center;
 	flex-shrink:1;
 	min-width:48px;
 	overflow:hidden;
 }
+#commitTable tr.commit td span.description .gitRef > svg,
+#commitTable tr.commit td span.description .gitRef .gitRefHeadRemote,
+#commitTable tr.commit td span.description .gitRef .gg-label,
+#commitTable tr.commit td span.description .gitRef .gg-status{
+	flex:none;
+}
 #commitTable tr.commit td span.description .gitRef .gitRefName{
+	flex:0 1 auto;
 	min-width:0;
-	max-width:100%;
 	overflow:hidden;
 	text-overflow:ellipsis;
 	white-space:nowrap;
@@ -520,13 +535,19 @@ body.tabletMode #commitTable tr.commit span.description .gitRef{
 	white-space:nowrap;
 }
 body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefName{
+	/* no percentage max-width here: against the pill's full content box it ignores the icon
+	   segment, so a squeezed pill clipped the name flush at its edge with no ellipsis - the
+	   name shrinks as a flex item instead (the non-name segments are flex:none below) */
+	flex:0 1 auto;
 	min-width:0;
-	max-width:100%;
 	overflow:hidden;
 	text-overflow:ellipsis;
 	white-space:nowrap;
 }
-body.tabletMode #commitTable tr.commit span.description .gitRef > svg{
+body.tabletMode #commitTable tr.commit span.description .gitRef > svg,
+body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefHeadRemote,
+body.tabletMode #commitTable tr.commit span.description .gitRef .gg-label,
+body.tabletMode #commitTable tr.commit span.description .gitRef .gg-status{
 	flex:none;
 }
 /* The avatar sits on the author text's line, not at the top of the 40px cell */
