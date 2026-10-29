@@ -235,9 +235,10 @@ export function createPanelPorts(deps: PanelPortDeps): PanelPorts {
  * The two auxiliary webviews the view opens — the Commit Comparison View and the Binary Compare
  * view — composed over the read backend and the streaming spawner (built here over the one
  * process adapter, whose no-Git failure throws the localised message the hex view's error toast
- * shows), so no graphView module imports the view controllers.
+ * shows), so no graphView module imports the view controllers. The config provider feeds the
+ * comparison page its boot-time layout input (the `mobileAdaptation` setting).
  */
-export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): AuxiliaryViewsPort {
+export function createAuxiliaryViews(reader: GitBackend, process: GitProcess, config: ConfigProvider): AuxiliaryViewsPort {
 	const gitStream: GitStreamSpawner = {
 		spawnGitStream: (args, repo) => {
 			if (process.git === null) throw new Error(unableToFindGitMsg(t));
@@ -246,7 +247,7 @@ export function createAuxiliaryViews(reader: GitBackend, process: GitProcess): A
 	};
 	return {
 		openCompareTab: (extensionPath, repoPath, fromHash, toHash, singleCommit) => {
-			CommitComparisonView.open(extensionPath, reader, gitStream, repoPath, fromHash, toHash, singleCommit);
+			CommitComparisonView.open(extensionPath, reader, gitStream, config, repoPath, fromHash, toHash, singleCommit);
 		},
 		openBinaryCompare: (extensionPath, repoPath, fromHash, toHash, file) => {
 			BinaryCompareView.open(extensionPath, gitStream, repoPath, fromHash, toHash, {

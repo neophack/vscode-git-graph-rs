@@ -162,3 +162,136 @@ body.vscode-light .hljs-comment, body.vscode-light .hljs-quote { color: #008000;
 body.vscode-light .hljs-number { color: #098658; }
 body.vscode-light .hljs-variable, body.vscode-light .hljs-attribute, body.vscode-light .hljs-params { color: #001080; }
 body.vscode-light .hljs-symbol, body.vscode-light .hljs-bullet { color: #795e26; }
+
+/* ===== Touch layouts: the file tree as a full-screen sheet on the phone, touch-sized targets on
+ * both (the same phone / tablet / touch <body> classes and --m-* tokens the graph view sets — see
+ * src/webview/comparison/layout.ts). The tablet keeps the wide layout's split with taller rows and
+ * controls; only the phone restructures: the sidebar leaves the split and becomes the sheet the
+ * "Files" bar opens. The skeleton carries the phone-only furniture (the bar, the sheet's title
+ * bar); these rules hide it everywhere else. ===== */
+
+/* The phone's furniture is hidden in the wide and tablet layouts. */
+#mobileFilesBar { display: none; }
+#closeFilesSheetBtn { display: none; }
+
+/* Shared touch sizing (phone and tablet): rows, the file header and its button clear the touch
+   minimums, feedback moves from hover to :active (a finger leaves no hover to linger). */
+body.touchMode #fileHeader { min-height: var(--m-bar); box-sizing: border-box; padding: 6px 12px; }
+body.touchMode #fileHeader button { min-height: var(--m-capsule); box-sizing: border-box; padding: 6px 16px; font-size: 13px; }
+body.touchMode .treeRow { min-height: var(--m-target); box-sizing: border-box; padding-top: 8px; padding-bottom: 8px; font-size: 14px; }
+body.mobileMode .treeRow { font-size: 15px; }
+body.touchMode .treeRow:hover { background: none; }
+body.touchMode .treeRow:active { background: var(--m-pressed); }
+body.touchMode .treeRow.selected:active { background: var(--vscode-list-activeSelectionBackground); }
+body.touchMode .commitCard.hasMessage .firstLine { margin: -6px -8px; padding: 6px 8px; }
+body.touchMode .commitCard.hasMessage .firstLine:hover { background: none; }
+body.touchMode .commitCard.hasMessage .firstLine:active { background: var(--m-pressed); }
+
+/* The phone layout: larger type, the "Files" bar under the commit cards, and the sidebar as the
+   full-screen sheet it opens. */
+body.mobileMode { font-size: 15px; }
+body.mobileMode table.diff { font-size: 13px; }
+body.mobileMode #mobileFilesBar {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	min-height: var(--m-bar);
+	box-sizing: border-box;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding: 4px;
+	padding: 4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left));
+	padding-top: 4px;
+	padding-top: max(4px, env(safe-area-inset-top));
+	border-bottom: 0.5px solid var(--m-sep);
+}
+body.mobileMode #mobileFilesBtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	height: var(--m-capsule);
+	padding: 0 16px;
+	border: none;
+	border-radius: var(--m-radius);
+	background: var(--m-fill);
+	color: var(--m-fg);
+	font-family: inherit;
+	font-size: 14px;
+	cursor: pointer;
+}
+body.mobileMode #mobileFilesBtn:active { background: var(--m-pressed); }
+/* chrome69: margin fallback for flex gap (the label is a text node, so the icon carries it) */
+@supports not (appearance: none) {
+	#mobileFilesBtn svg { margin-right: 8px; }
+	#sidebarHead > * + * { margin-left: 4px; }
+}
+body.mobileMode #sidebarResizer { display: none; }
+body.mobileMode #sidebar {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	z-index: 25;
+	/* An inline width the resizer saved (or clamped at load) must not shrink the full-screen sheet */
+	width: auto !important;
+	flex: none;
+	box-sizing: border-box;
+	padding: 0;
+	padding-bottom: 0;
+	padding-bottom: env(safe-area-inset-bottom);
+	background: var(--m-bg);
+	overflow: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	transform: translateX(100%);
+	visibility: hidden;
+	transition: transform 240ms var(--gg-ease-in-out), visibility 0s linear 240ms;
+}
+body.mobileMode.filesSheetOpen #sidebar {
+	transform: none;
+	visibility: visible;
+	transition: transform 240ms var(--gg-ease-in-out);
+}
+/* The sheet's title bar: the statistics heading (which doubles as the error label) plus the close
+   button, sticky over the scrolling tree. */
+body.mobileMode #sidebarHead {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: var(--m-bar);
+	box-sizing: border-box;
+	/* Chromium 69 fallback (min()/max() need Chrome 79) */
+	padding: 4px 4px 4px 16px;
+	padding-right: 4px;
+	padding-right: max(4px, env(safe-area-inset-right));
+	padding-top: 4px;
+	padding-top: max(4px, env(safe-area-inset-top));
+	border-bottom: 0.5px solid var(--m-sep);
+	background: var(--m-bg);
+}
+body.mobileMode #sidebarHead h2 {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	font-size: 13px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+body.mobileMode #closeFilesSheetBtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: var(--m-target);
+	height: var(--m-target);
+	border: none;
+	border-radius: 50%;
+	background: none;
+	color: var(--m-fg);
+	cursor: pointer;
+}
+body.mobileMode #closeFilesSheetBtn:active { background: var(--m-pressed); }

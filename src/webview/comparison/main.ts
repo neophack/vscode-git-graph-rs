@@ -13,18 +13,37 @@ import { compareStrings as s, setCompareStringsLanguage } from './../binaryCompa
 import { DiffView } from './diffView';
 import { FileTreeSidebar } from './fileTree';
 import { ComparisonHeader } from './headerView';
+import { ComparisonLayout } from './layout';
 import { ComparisonFileModel, changePath, statusColour, statusLetter } from './model';
 import { measureBoundingClientRect } from '../common/measure';
 import { escapeHtml, html, setHtml } from '../common/html';
 
 const bridge = new ComparisonBridge();
+const layout = new ComparisonLayout();
 const commitCards = document.getElementById('commitCards');
 const filesChangedLabel = document.getElementById('filesChangedLabel');
 const sidebar = document.getElementById('sidebar');
 const fileHeader = document.getElementById('fileHeader');
 const diffAreaEl = document.getElementById('diffArea');
 
+// The Escape key closes the phone layout's files sheet from wherever the focus sits.
+document.addEventListener('keydown', (event) => {
+	if (event.key === 'Escape') layout.closeFilesSheet();
+});
+
 if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fileHeader !== null && diffAreaEl !== null) {
+	/* ---------- The phone layout's files sheet ---------- */
+	// The "Files" bar (in the main column) opens the sheet, its title bar's close button closes
+	// it, and picking a file dismisses it back to the diff (see selectFile below). Both buttons
+	// live in the skeleton the host serves and are looked up under skeleton elements already
+	// resolved — document-wide lookups are rationed here (OPTIMIZATION-PLAN §6 F3); the guards
+	// keep older shells (the test harnesses') harmless.
+	const mainColumn = diffAreaEl.closest('#main');
+	const mobileFilesBtn = mainColumn !== null ? mainColumn.querySelector('#mobileFilesBtn') : null;
+	if (mobileFilesBtn !== null) mobileFilesBtn.addEventListener('click', () => layout.openFilesSheet());
+	const closeFilesSheetBtn = sidebar.querySelector('#closeFilesSheetBtn');
+	if (closeFilesSheetBtn !== null) closeFilesSheetBtn.addEventListener('click', () => layout.closeFilesSheet());
+
 	const header = new ComparisonHeader(commitCards, filesChangedLabel);
 	const tree = new FileTreeSidebar(sidebar);
 	const area = new BinaryCompareArea({
@@ -90,10 +109,14 @@ if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fi
 		area.leave();
 		tree.select(index);
 		diff.selectFile(file, index);
+		// Picking a file is the sheet's whole job: dismiss it back to the diff (a no-op outside
+		// the phone layout, and when the sheet is closed).
+		layout.closeFilesSheet();
 	};
 
 	const renderInit = (init: ComparisonInitResponse) => {
 		setCompareStringsLanguage(init.language);
+		layout.setMobileAdaptation(init.mobileAdaptation === true);
 		header.renderLabel(init.error);
 		changes.length = 0;
 		for (const file of init.changes) {

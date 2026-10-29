@@ -23,16 +23,28 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
  * The failing-write case needs the flow's OWN fs writes to fail mid-sequence. ESM namespace
  * bindings cannot be monkey-patched (unlike the legacy CJS require), so 'fs' is mocked at the
  * module boundary: the mock delegates to the real fs until the case arms it, and then fails the
- * Nth writeFileSync like a full disk would.
+ * Nth staging writeFileSync like a full disk would. Only writes inside a gg-amend-* staging
+ * directory count — an unrelated write landing in the armed window must not consume the count
+ * and let the rebase run to success.
  */
-const writeGate = vi.hoisted(() => ({ failAt: 0, writes: 0 }));
+const writeGate = vi.hoisted(() => ({ failAt: 0, writes: 0, stagingDirs: [] as string[] }));
 vi.mock('fs', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('node:fs')>();
+	// The segment checks the mock needs, as plain string ops (no path import in the hoisted factory)
+	const segments = (p: string) => p.replace(/\\/g, '/').split('/');
 	return {
 		...actual,
 		default: actual,
+		// Record the staging directory each rebase of this run creates, so the cleanup assertions
+		// check exactly what this run staged — the shared temp directory serves every parallel suite
+		mkdtempSync: ((prefix: string) => {
+			const created = actual.mkdtempSync(prefix);
+			if (segments(created).pop()!.startsWith('gg-amend-')) writeGate.stagingDirs.push(created);
+			return created;
+		}) as typeof fs.mkdtempSync,
 		writeFileSync: ((...args: Parameters<typeof fs.writeFileSync>) => {
-			if (writeGate.failAt > 0) {
+			const target = args[0];
+			if (writeGate.failAt > 0 && typeof target === 'string' && segments(target).some((segment) => segment.startsWith('gg-amend-'))) {
 				writeGate.writes++;
 				if (writeGate.writes === writeGate.failAt) {
 					const error = new Error('ENOSPC: no space left on device, write') as NodeJS.ErrnoException;
@@ -45,13 +57,16 @@ vi.mock('fs', async (importOriginal) => {
 	};
 });
 
-/** The gg-amend-* temporary files currently present in the system temp directory. */
-const amendTempFiles = (): string[] => fs.readdirSync(os.tmpdir()).filter((name) => /^gg-amend-(seq|msg|message)-/.test(name));
+/** The number of gg-amend-* staging directories this run has created so far (the snapshot cursor). */
+const stagedDirCount = (): number => writeGate.stagingDirs.length;
 
-/** Wait until no gg-amend-* file beyond the ones in `before` is left (unlink is asynchronous). */
-async function waitForTempCleanup(before: ReadonlyArray<string>): Promise<void> {
-	for (let i = 0; i < 100; i++) {
-		if (amendTempFiles().every((name) => before.includes(name))) return;
+/** TRUE once every staging directory created since the `before` snapshot is gone from disk. */
+const stagingDirsCleaned = (before: number): boolean =>
+	writeGate.stagingDirs.slice(before).every((dir) => !fs.existsSync(dir));
+
+/** Wait until no staging directory created since the snapshot is left (unlink is asynchronous). */
+async function waitForTempCleanup(before: number): Promise<void> {
+	for (let i = 0; i < 100 && !stagingDirsCleaned(before); i++) {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
 }
@@ -96,7 +111,7 @@ describe('editing the message of an earlier commit', () => {
 	});
 
 	it('rewords a commit in the middle of the history, keeping everything around it', async () => {
-		const tempFilesBefore = amendTempFiles();
+		const stagedBefore = stagedDirCount();
 		const target = hash('HEAD~1');
 
 		const error = await editCommitMessage(ctx, repoPath, target, 'second, reworded\n\na body line for the reworded commit');
@@ -107,8 +122,8 @@ describe('editing the message of an earlier commit', () => {
 		expect(subject('HEAD')).toBe('third');
 		expect(subject(rootHash())).toBe('first');
 		expect(commitCount()).toBe(3);
-		await waitForTempCleanup(tempFilesBefore);
-		expect(amendTempFiles()).toEqual(tempFilesBefore);
+		await waitForTempCleanup(stagedBefore);
+		expect(stagingDirsCleaned(stagedBefore)).toBe(true);
 	});
 
 	it('rewords the root commit', async () => {
@@ -155,7 +170,7 @@ describe('editing the message of an earlier commit', () => {
 	});
 
 	it('changes the author of a commit in the middle of the history', async () => {
-		const tempFilesBefore = amendTempFiles();
+		const stagedBefore = stagedDirCount();
 		const target = hash('HEAD~1');
 		const subjectBefore = subject('HEAD~1');
 
@@ -167,8 +182,8 @@ describe('editing the message of an earlier commit', () => {
 		expect(author(rootHash())).toBe('Test User <test@example.com>');
 		expect(author('HEAD')).toBe('Head Author <head@example.com>');
 		expect(commitCount()).toBe(3);
-		await waitForTempCleanup(tempFilesBefore);
-		expect(amendTempFiles()).toEqual(tempFilesBefore);
+		await waitForTempCleanup(stagedBefore);
+		expect(stagingDirsCleaned(stagedBefore)).toBe(true);
 	});
 
 	it('changes the author of the root commit', async () => {
@@ -188,7 +203,7 @@ describe('editing the message of an earlier commit', () => {
 	});
 
 	it('still cleans up the temp files when writing one of them fails', async () => {
-		const tempFilesBefore = amendTempFiles();
+		const stagedBefore = stagedDirCount();
 		const target = hash('HEAD~1'); // the rebase path is the one that writes the temp files
 		const subjectBefore = subject('HEAD~1');
 
@@ -205,8 +220,8 @@ describe('editing the message of an earlier commit', () => {
 
 		expect(String(error)).toMatch(/ENOSPC/);
 		expect(subject('HEAD~1')).toBe(subjectBefore);
-		await waitForTempCleanup(tempFilesBefore);
-		expect(amendTempFiles()).toEqual(tempFilesBefore);
+		await waitForTempCleanup(stagedBefore);
+		expect(stagingDirsCleaned(stagedBefore)).toBe(true);
 	});
 });
 

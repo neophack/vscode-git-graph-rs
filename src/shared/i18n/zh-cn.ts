@@ -1081,6 +1081,7 @@ export const STRINGS_ZH_CN = {
 	compareWorkingTreeLabel: '当前工作区',
 	compareErrorLabel: '错误',
 	compareFilesChangedLabel: '已更改的文件',
+	compareFilesButton: '文件',
 	compareLoadingChanges: '正在加载更改&hellip;',
 	compareNoChanges: '这些提交之间没有更改。',
 	compareOneFileChanged: '1 个文件已更改',

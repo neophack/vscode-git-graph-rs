@@ -21,6 +21,10 @@ import { GitBackendError } from './types';
 import { GitReaderLike } from '../gitRepository';
 import type { GitSpawnFn } from '../process/gitProcess';
 
+// The CLI answers are real `git` spawns against a temporary repository — over a dozen across a
+// test — which a loaded machine (a parallel build, a cold AV scan) stretches past the 20 s default.
+vi.setConfig({ testTimeout: 60_000 });
+
 vi.mock('./addonLoader', () => ({
 	request: vi.fn(),
 	cancel: vi.fn(),

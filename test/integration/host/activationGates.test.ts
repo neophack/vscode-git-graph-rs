@@ -237,9 +237,11 @@ describe('an untrusted workspace activates in Restricted Mode (V2)', () => {
 		trustSurface(true);
 		const trusted = contextOf('discovery-trusted', '1.0.0-discovery');
 		await activate(trusted.context as never);
+		// Discovery reaches the repository through several awaited startup steps and a real `git`
+		// spawn, which a loaded machine stretches past vi.waitFor's 1 s default timeout.
 		await vi.waitFor(() => {
 			assert.ok(discoveredRepos(trusted.context).length > 0, 'the workspace repository is discovered over the CLI');
-		});
+		}, { timeout: 10000 });
 		trusted.dispose();
 
 		// Restricted: the backend is engine-only and (with no engine binary) unavailable — the

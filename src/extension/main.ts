@@ -125,7 +125,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const statusBarItem = new StatusBarItem(repos.getNumRepos(), repos.onDidChangeRepos, onDidChangeConfiguration, config, logger);
 	const diffDocProvider = new DiffDocProvider(reader);
 	// The auxiliary views port (with its streaming spawner) and the Gerrit integration, same git layer.
-	const auxViews = createAuxiliaryViews(reader, gitProcess);
+	const auxViews = createAuxiliaryViews(reader, gitProcess, config);
 	const gerrit = gerritDataSourceOver(git);
 
 	const services: ExtensionServices = Object.freeze({

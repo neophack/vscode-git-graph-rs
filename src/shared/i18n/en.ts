@@ -1084,6 +1084,7 @@ export const STRINGS_EN = {
 	compareWorkingTreeLabel: 'The current working tree',
 	compareErrorLabel: 'Error',
 	compareFilesChangedLabel: 'Files changed',
+	compareFilesButton: 'Files',
 	compareLoadingChanges: 'Loading changes&hellip;',
 	compareNoChanges: 'No changes between these commits.',
 	compareOneFileChanged: '1 file changed',

@@ -81,6 +81,10 @@ body.binaryComparePage #diffArea { flex: 1; min-height: 0; }
 #hexToolbar .hxSpacer, #imgToolbar .hxSpacer { flex: 1; }
 #hexToolbar button, #imgToolbar button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 2px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; }
 #hexToolbar button:disabled, #imgToolbar button:disabled { opacity: 0.45; cursor: default; }
+/* Touch layouts (the comparison page sets the <body> classes; the standalone binary compare tab
+   has no layout decision and stays dense): the toolbar buttons clear the touch capsule. */
+body.touchMode #hexToolbar, body.touchMode #imgToolbar { flex-wrap: wrap; }
+body.touchMode #hexToolbar button, body.touchMode #imgToolbar button { min-height: var(--m-capsule); box-sizing: border-box; padding: 6px 14px; font-size: 13px; line-height: 18px; }
 /* The ruler and the rows share one font: the ch-based grid tracks only line up when
    both measure the same monospace glyph. */
 #hexScroller { flex: 1; overflow: auto; font-family: var(--vscode-editor-font-family, Consolas, monospace); font-size: var(--vscode-editor-font-size, 13px); color: var(--gg-foreground); background: var(--gg-background); }

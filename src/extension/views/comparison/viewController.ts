@@ -7,6 +7,7 @@ import { checkUnsafeGitArgs, isSafeRefName, isValidCommitHash, Localize } from '
 import type { GitStreamSpawner } from '../binaryCompare/hexDiff';
 import { HexDiffSession } from '../binaryCompare/hexDiff';
 import { isZhCn, t } from '../../platform/i18n';
+import type { ConfigProvider } from '../../platform/config';
 import type { TextMessageKey } from '../../../shared/i18n';
 import { ComparisonInitResponse, ComparisonRequest, ComparisonResponse } from '../../../shared/protocol/comparison';
 import { GitFileChange } from '../../../shared/model/git';
@@ -46,17 +47,17 @@ export class CommitComparisonView extends Disposable {
 	 * presents the changes as those of `toHash` alone (opened via the "Open Changes" action)
 	 * instead of showing both ends of the comparison; the tab is titled "Commit <hash>".
 	 */
-	public static open(extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
+	public static open(extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, config: ConfigProvider, repo: string, fromHash: string, toHash: string, singleCommit: boolean) {
 		const key = repo + '\n' + fromHash + '\n' + toHash + '\n' + (singleCommit ? '1' : '0');
 		const existing = CommitComparisonView.openViews.get(key);
 		if (existing !== undefined) {
 			existing.panel.reveal();
 			return;
 		}
-		new CommitComparisonView(extensionPath, read, spawner, repo, fromHash, toHash, singleCommit, key);
+		new CommitComparisonView(extensionPath, read, spawner, config, repo, fromHash, toHash, singleCommit, key);
 	}
 
-	private constructor(private readonly extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, private readonly singleCommit: boolean, key: string) {
+	private constructor(private readonly extensionPath: string, read: GitBackend, spawner: GitStreamSpawner, private readonly config: ConfigProvider, private readonly repo: string, private readonly fromHash: string, private readonly toHash: string, private readonly singleCommit: boolean, key: string) {
 		super();
 		this.read = read;
 		this.spawner = spawner;
@@ -165,7 +166,8 @@ export class CommitComparisonView extends Disposable {
 				summaries: summaries === null ? {} : summaries,
 				commitsBetween: commitsBetween,
 				error: comparison.error !== null ? comparison.error : null,
-				language: isZhCn() ? 'zh-cn' : 'en'
+				language: isZhCn() ? 'zh-cn' : 'en',
+				mobileAdaptation: this.config.current.mobileAdaptation
 			};
 			this.deliverInit();
 		}, (error: unknown) => {
@@ -180,7 +182,8 @@ export class CommitComparisonView extends Disposable {
 				summaries: {},
 				commitsBetween: null,
 				error: error instanceof Error ? error.message : String(error),
-				language: isZhCn() ? 'zh-cn' : 'en'
+				language: isZhCn() ? 'zh-cn' : 'en',
+				mobileAdaptation: this.config.current.mobileAdaptation
 			};
 			this.deliverInit();
 		});
@@ -297,6 +300,11 @@ export class CommitComparisonView extends Disposable {
 	 * under a nonce - the CSP allows no inline scripts or styles at all. The loading
 	 * status stands until the frontend's `ready` handshake and the comparison data produce the
 	 * `init` message.
+	 *
+	 * The phone layout's furniture is in the skeleton too: the "Files" bar that opens the file
+	 * tree's full-screen sheet, and the sheet's title bar with its close button (both hidden by
+	 * the stylesheet outside the phone layout, so the wide and tablet layouts render exactly as
+	 * before).
 	 */
 	private getHtml() {
 		const nonce = getNonce();
@@ -313,9 +321,18 @@ export class CommitComparisonView extends Disposable {
 	<div id="commitCards"></div>
 </div>
 <div id="body">
-	<div id="sidebar"><h2 id="filesChangedLabel">${t('compareFilesChangedLabel')}</h2></div>
+	<div id="sidebar">
+		<div id="sidebarHead">
+			<h2 id="filesChangedLabel">${t('compareFilesChangedLabel')}</h2>
+			<button type="button" id="closeFilesSheetBtn" title="${t('dialogClose')}" aria-label="${t('dialogClose')}"><svg width="14" height="14" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" d="M3.8,2.4L2.4,3.8L5.7,7L2.4,10.2L3.8,11.6L7,8.3L10.2,11.6L11.6,10.2L8.3,7L11.6,3.8L10.2,2.4L7,5.7L3.8,2.4z"/></svg></button>
+		</div>
+	</div>
 	<div id="sidebarResizer"></div>
-	<div id="main"><div id="fileHeader"></div><div id="diffArea"><div class="status">${t('compareLoadingChanges')}</div></div></div>
+	<div id="main">
+		<div id="mobileFilesBar"><button type="button" id="mobileFilesBtn"><svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M2 3.5A.75.75 0 0 1 2.75 2.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 3.5Zm0 4.5a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 8Zm.75 3.75a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>${t('compareFilesButton')}</button></div>
+		<div id="fileHeader"></div>
+		<div id="diffArea"><div class="status">${t('compareLoadingChanges')}</div></div>
+	</div>
 </div>
 <script nonce="${nonce}" src="${mediaUri('vendor/highlight.min.js')}"></script>
 <script nonce="${nonce}" src="${mediaUri('comparison.min.js')}"></script>

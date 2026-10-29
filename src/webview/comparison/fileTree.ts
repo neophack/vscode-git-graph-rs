@@ -78,9 +78,11 @@ export class FileTreeSidebar {
 			}
 			cur.files.push({ name: path[path.length - 1], file: file, index: index });
 		});
-		const filesHeading = this.sidebar.querySelector('h2');
+		// The skeleton's persistent head (the statistics heading, and the phone sheet's title bar
+		// with its close button) survives the re-render.
+		const persistentHead = this.sidebar.querySelector('#sidebarHead');
 		for (const child of Array.from(this.sidebar.children)) {
-			if (child !== filesHeading) child.remove();
+			if (child !== persistentHead) child.remove();
 		}
 		if (changes.length > 0) this.renderFolder(root, this.sidebar, 0, onSelect);
 	}

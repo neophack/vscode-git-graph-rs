@@ -40,6 +40,9 @@ export interface ComparisonInitResponse {
 	readonly error: string | null;
 	/** The interface language the host rendered the page for ('en' or 'zh-cn'). */
 	readonly language: string;
+	/** The `mobileAdaptation` Extension Setting at open time: above the width breakpoints it opts
+	 * a touchscreen of any size into the tablet layout, exactly as in the graph view. */
+	readonly mobileAdaptation: boolean;
 }
 
 /** One commit description card of the header, as `getCommitSummaries` returns them. */

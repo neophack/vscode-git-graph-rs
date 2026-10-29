@@ -2,7 +2,9 @@
  * A jsdom smoke test of the extracted Commit Comparison View frontend (REFACTOR-PLAN task 6.1):
  * boot the built bundle (media/comparison.min.js) in the exact shell the host serves, under a
  * scripted extension host, and drive the boot handshake, the file tree, the diff table, the
- * deferred line counts and the handover to the embedded binary comparison area.
+ * deferred line counts, the handover to the embedded binary comparison area, and the touch
+ * layouts (the phone's files sheet, the tablet's sizing, the layout's resize and setting
+ * signals).
  *
  * Ported from tests/comparisonWebview.test.mjs (REFACTOR-PLAN task 7.1); assertions are
  * unchanged. The whole suite self-skips when the bundle has not been built.
@@ -20,20 +22,26 @@ const BUNDLE = path.join(rootDir, 'media', 'comparison.min.js');
 const skip = !fs.existsSync(BUNDLE);
 
 /* The skeleton the host renders (see the comparison view controller): the CSP and the external
- * files do not matter to jsdom, only the element ids the frontend boots against. */
+ * files do not matter to jsdom, only the element ids the frontend boots against — including the
+ * phone layout's furniture (the "Files" bar and the files sheet's title bar). */
 const SHELL_HTML = `<!DOCTYPE html><html><head></head><body>
 <div id="header"><div id="commitCards"></div></div>
 <div id="body">
-	<div id="sidebar"><h2 id="filesChangedLabel">Files changed</h2></div>
+	<div id="sidebar"><div id="sidebarHead"><h2 id="filesChangedLabel">Files changed</h2><button type="button" id="closeFilesSheetBtn">x</button></div></div>
 	<div id="sidebarResizer"></div>
-	<div id="main"><div id="fileHeader"></div><div id="diffArea"><div class="status">Loading</div></div></div>
+	<div id="main">
+		<div id="mobileFilesBar"><button type="button" id="mobileFilesBtn">Files</button></div>
+		<div id="fileHeader"></div>
+		<div id="diffArea"><div class="status">Loading</div></div>
+	</div>
 </div>
 </body></html>`;
 
 const CHANGE = (type: string, oldPath: string, newPath: string) => ({ oldFilePath: oldPath, newFilePath: newPath, type: type, additions: null, deletions: null });
 
-/** Boot the bundle under a scripted host; answer requests through `respond`. */
-function boot() {
+/** Boot the bundle under a scripted host; answer requests through `respond`. The window width
+ * (jsdom defaults to 1024) decides the page's layout exactly as on a real page. */
+function boot(width = 1024) {
 	const dom = new JSDOM(SHELL_HTML, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://example.invalid/' });
 	const { window } = dom;
 	const document = window.document;
@@ -53,6 +61,7 @@ function boot() {
 		return { top: 0, right: width, bottom: 400, left: 0, width: width, height: 400, x: 0, y: 0, toJSON() { return this; } };
 	};
 	Object.defineProperty(document.getElementById('diffArea')!, 'clientWidth', { get: () => 1200 });
+	Object.defineProperty(window, 'innerWidth', { get: () => width, configurable: true });
 
 	const errors: string[] = [];
 	window.addEventListener('error', (e: any) => errors.push(String(e.error || e.message)));
@@ -69,7 +78,15 @@ function boot() {
 		if (elem === null) throw new Error('click: nothing matches ' + target);
 		elem!.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 	};
-	return { window, document, sent, states, errors, dispatch, posted, click };
+	/** Resize the window to a new width (the layout re-decides on the resize event). */
+	const resize = (newWidth: number) => {
+		Object.defineProperty(window, 'innerWidth', { get: () => newWidth, configurable: true });
+		window.dispatchEvent(new window.Event('resize'));
+	};
+	const keydown = (key: string) => {
+		document.dispatchEvent(new window.KeyboardEvent('keydown', { key: key, bubbles: true }));
+	};
+	return { window, document, sent, states, errors, dispatch, posted, click, resize, keydown };
 }
 
 const INIT = {
@@ -84,7 +101,8 @@ const INIT = {
 	},
 	commitsBetween: 1,
 	error: null,
-	language: 'en'
+	language: 'en',
+	mobileAdaptation: false
 };
 
 const TEXT_DIFF = `diff --git a/src/a.ts b/src/a.ts
@@ -181,6 +199,58 @@ maybeDescribe('the extracted comparison frontend boots and runs', () => {
 		page.dispatch({ ...INIT, changes: [], error: 'git failed spectacularly' });
 		assert.equal((page.document.querySelector('#filesChangedLabel') as HTMLElement)!.textContent, 'Error');
 		assert.ok((page.document.querySelector('#diffArea .status') as HTMLElement)!.textContent!.includes('git failed spectacularly'));
+		assert.equal(page.errors.length, 0, page.errors.join('; '));
+	});
+});
+
+maybeDescribe('the comparison page\'s touch layouts', () => {
+	it('takes the phone layout on a phone-width window, the tablet layout up to the tablet breakpoint', () => {
+		const phone = boot(480);
+		const { body } = phone.document;
+		assert.deepEqual([...body.classList], ['mobileMode', 'touchMode'], 'a phone-width window takes the phone layout');
+
+		// The sheet starts closed; the "Files" bar opens it, and picking a file closes it again.
+		assert.ok(!body.classList.contains('filesSheetOpen'), 'the files sheet starts closed');
+		phone.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts'), CHANGE('A', '', 'docs/logo.png')] });
+		phone.click('#mobileFilesBtn');
+		assert.ok(body.classList.contains('filesSheetOpen'), 'the Files bar opens the sheet');
+		phone.click('#closeFilesSheetBtn');
+		assert.ok(!body.classList.contains('filesSheetOpen'), 'the sheet\'s close button closes it');
+		phone.click('#mobileFilesBtn');
+		phone.keydown('Escape');
+		assert.ok(!body.classList.contains('filesSheetOpen'), 'the Escape key closes it');
+		phone.click('#mobileFilesBtn');
+		(phone.document.querySelector('.treeRow.file[data-index="1"]') as HTMLElement)!.click();
+		assert.ok(!body.classList.contains('filesSheetOpen'), 'picking a file dismisses the sheet');
+		assert.ok((phone.document.querySelector('.treeRow.file[data-index="1"]') as HTMLElement)!.classList.contains('selected'));
+		assert.equal(phone.errors.length, 0, phone.errors.join('; '));
+
+		const tablet = boot(800);
+		assert.deepEqual([...tablet.document.body.classList], ['tabletMode', 'touchMode'], 'a tablet-width window takes the tablet layout');
+
+		const wide = boot();
+		wide.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')] });
+		assert.deepEqual([...wide.document.body.classList], [], 'a wide window with the setting off keeps the wide layout');
+		assert.equal((wide.document.querySelector('#filesChangedLabel') as HTMLElement)!.textContent, '1 file changed', 'the tree still renders under the wide layout');
+	});
+
+	it('re-decides on resize and follows the mobileAdaptation setting above the breakpoints', () => {
+		const page = boot(480);
+		assert.deepEqual([...page.document.body.classList].sort(), ['mobileMode', 'touchMode']);
+		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')] });
+
+		// An open files sheet does not survive leaving the phone layout.
+		page.click('#mobileFilesBtn');
+		page.resize(1200);
+		assert.deepEqual([...page.document.body.classList], [], 'a wide resize leaves every touch class');
+		assert.ok(!page.document.body.classList.contains('filesSheetOpen'), 'leaving the phone layout closes the sheet');
+		page.resize(700);
+		assert.deepEqual([...page.document.body.classList], ['tabletMode', 'touchMode'], 'a tablet-width resize takes the tablet layout');
+
+		// The setting opts a wide window into the tablet layout, as it does in the graph view.
+		page.resize(1200);
+		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')], mobileAdaptation: true });
+		assert.deepEqual([...page.document.body.classList], ['tabletMode', 'touchMode'], 'mobileAdaptation opts a wide window in');
 		assert.equal(page.errors.length, 0, page.errors.join('; '));
 	});
 });
