@@ -96,6 +96,25 @@ ${section('Help tooltip popup', `
 <div class="gg-helpTooltipPopup" style="left:40px;top:4px">The commit that is currently checked out (HEAD)</div>`)}
 `;
 
+/** The narrow squeeze: the same wide-layout commit table inside a container too narrow for the
+ *  Description column to fit the refs and the subject at their natural sizes - the state a
+ *  narrow window drives the wide layout into, where the ref pills shrink and ellipsize their
+ *  names before the subject gives up its 80px floor. This gates the pill-interior layout: the
+ *  name ellipsizes inside its own padding, and every segment (the origin remote label, the
+ *  Gerrit score chips, the merged status) stays on the pill's single centred text line. */
+const squeezedBody = `
+<div id="view"><div id="content">
+	<div id="commitTable" class="autoLayout" style="width:460px;margin:8px 12px"><table>
+		<thead id="tableColHeaders"><tr><th>Graph</th><th>Description</th><th class="dateCol">Date</th><th class="authorCol">Author</th><th>Commit</th></tr></thead>
+		<tbody>
+			${wideCommitRow('current', 'docs: update the refactor plan', gitRef('remote', `${icons.branch}<span class="gitRefName">origin/task/m0-gates</span>`, ' style="--git-graph-color:var(--git-graph-color2)"'), 'neophack', '2026-09-10 12:00', 'a1b2c3d', 0)}
+			${wideCommitRow('', 'fix: use theme variables for signature icons', gitRef('head', `${icons.branch}<span class="gitRefName">task/m0-gates</span><span class="gitRefHeadRemote">origin</span>`, ' style="--git-graph-color:var(--git-graph-color0)"'), 'neophack', '2026-09-09 18:30', '9f8e7d6', 1)}
+			${wideCommitRow('', 'feat: review progress on the change badge', gitRef('gerrit', `${icons.review}<span class="gitRefName">#43955/1</span><span class="gg-label cr2">CR+2</span><span class="gg-label v1">V+1</span><span class="gg-status merged">MERGED</span>`), 'neophack', '2026-09-08 09:15', '7c6b5a4', 2)}
+		</tbody>
+	</table></div>
+</div></div>
+`;
+
 /** Harness-only layout neutralisation for the main view page (positioning only, never colours). */
 const viewCss = `
 #view{position:static !important;overflow:visible !important}
@@ -424,5 +443,6 @@ export const mainPages = [
 	{ name: 'view', label: 'Main view (table, control bar, banner, graph)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: viewBody, harnessCss: viewCss },
 	{ name: 'details', label: 'Commit details view (docked)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: detailsBody, harnessCss: detailsCss },
 	{ name: 'overlays', label: 'Overlays (find, context menu, dropdown, dialogs)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: overlaysBody, harnessCss: overlaysCss },
-	{ name: 'panels', label: 'Panels (settings, reflog, statistics, worktrees)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: panelsBody, harnessCss: panelsCss }
+	{ name: 'panels', label: 'Panels (settings, reflog, statistics, worktrees)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: panelsBody, harnessCss: panelsCss },
+	{ name: 'squeezed', label: 'Wide layout, squeezed Description column (shrinking ref pills)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: squeezedBody, harnessCss: viewCss }
 ];
