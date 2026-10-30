@@ -99,7 +99,7 @@ code{
 	padding:4px 7px;
 	border:1px solid var(--vscode-editorWidget-border, rgba(128,128,128,0.5));
 	border-radius:3px;
-	background-color:var(--vscode-editorWidget-background, var(--gg-menu-background));
+	background-color:var(--gg-widget-background, var(--vscode-editorWidget-background, var(--gg-menu-background)));
 	color:var(--vscode-editorWidget-foreground, var(--gg-menu-foreground));
 	box-shadow:var(--gg-shadow-2);
 	font-size:12px;

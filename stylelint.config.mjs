@@ -55,6 +55,9 @@ export default {
 			//     sub-features (Chrome 87), which no stylesheet uses.
 			//   - css-scrollbar: `scrollbar-width: none` (Chrome 121) is paired
 			//     with a `::-webkit-scrollbar { display: none }` fallback.
+			//   - css-relative-colors (Chrome 119): the opaque-surface token
+			//     redefinitions in tokens.css are @supports-guarded; the plain
+			//     declarations before them are the Chromium 69 values.
 			ignore: [
 				'flexbox-gap',
 				'css-focus-visible',
@@ -65,7 +68,8 @@ export default {
 				'css-backdrop-filter',
 				'css-masks',
 				'text-decoration',
-				'css-scrollbar'
+				'css-scrollbar',
+				'css-relative-colors'
 			]
 		}],
 

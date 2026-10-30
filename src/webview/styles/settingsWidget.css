@@ -9,7 +9,7 @@
 	min-height:146px;
 	padding:0 10px 4px 10px;
 	z-index:31;
-	background-color:var(--vscode-editorWidget-background);
+	background-color:var(--gg-widget-background, var(--vscode-editorWidget-background));
 	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
 	line-height:17px;
 	font-size:13px;
@@ -73,7 +73,7 @@
 	text-transform:uppercase;
 	letter-spacing:0.6px;
 	opacity:0.75;
-	background-color:var(--vscode-editorWidget-background);
+	background-color:var(--gg-widget-background, var(--vscode-editorWidget-background));
 	cursor:default;
 }
 

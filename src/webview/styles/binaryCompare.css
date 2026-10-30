@@ -147,7 +147,7 @@ body.touchMode #hexToolbar button, body.touchMode #imgToolbar button { min-heigh
 .hxCopyStatus { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
 /* The right-click menu: a minimal VS Code-styled popup, since this page has none of the
    main Git Graph view's bundled menu component. */
-#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--vscode-menu-background, var(--vscode-editor-background)); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--gg-border)); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
+#hexMenu { position: fixed; z-index: 1000; min-width: 170px; background: var(--gg-menu-background, var(--vscode-menu-background, var(--vscode-editor-background))); color: var(--vscode-menu-foreground, var(--vscode-editor-foreground)); border: 1px solid var(--vscode-menu-border, var(--gg-border)); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.35); font-size: 12px; }
 .hexMenuItem { padding: 4px 14px; cursor: pointer; white-space: nowrap; }
 .hexMenuItem:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
 .hexMenuItem.disabled { opacity: 0.45; cursor: default; }

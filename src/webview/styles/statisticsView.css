@@ -12,7 +12,7 @@
 	max-height:80vh;
 	padding:0 10px 10px 10px;
 	z-index:31;
-	background-color:var(--vscode-editorWidget-background);
+	background-color:var(--gg-widget-background, var(--vscode-editorWidget-background));
 	box-shadow:var(--gg-shadow-2, 0 2px 8px var(--vscode-widget-shadow));
 	color:var(--vscode-editorSuggestWidget-foreground);
 	fill:var(--vscode-editorSuggestWidget-foreground);

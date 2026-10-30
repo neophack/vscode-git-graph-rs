@@ -27,6 +27,7 @@
 	--gg-foreground:var(--vscode-editor-foreground, #cccccc);
 	--gg-border:var(--vscode-panel-border, rgba(128,128,128,0.35));
 	--gg-menu-background:var(--vscode-menu-background, #252526);
+	--gg-widget-background:var(--vscode-editorWidget-background, var(--vscode-menu-background, #252526));
 	--gg-menu-foreground:var(--vscode-menu-foreground, #cccccc);
 
 	/* Interaction: focus, accents, the hovered row, the selected menu item */
@@ -75,6 +76,20 @@ body.touchMode{
 }
 body.touchMode.vscode-high-contrast{
 	--m-sep:var(--vscode-contrastBorder, rgba(128,128,128,0.6));
+}
+
+/* Overlay surfaces must stay opaque even when a theme paints the widget/menu colours with an
+ * alpha channel (glass-style themes): with relative colours available, the surface tokens are
+ * redefined with the alpha channel dropped - the RGB channels carry over unchanged. The
+ * @supports guard leaves the plain values on the Chromium 69 floor, where nothing changes. */
+@supports (color: rgb(from red r g b / 1)){
+	:root{
+		--gg-menu-background:rgb(from var(--vscode-menu-background, #252526) r g b / 1);
+		--gg-widget-background:rgb(from var(--vscode-editorWidget-background, var(--vscode-menu-background, #252526)) r g b / 1);
+	}
+	body.touchMode{
+		--m-sheet:rgb(from var(--vscode-editorWidget-background, var(--vscode-editor-background, #252526)) r g b / 1);
+	}
 }
 
 /* The tablet's refinements of the shared touch tokens (merged from the former
