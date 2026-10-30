@@ -40,7 +40,8 @@ const SHELL_HTML = `<!DOCTYPE html><html><head></head><body>
 const CHANGE = (type: string, oldPath: string, newPath: string) => ({ oldFilePath: oldPath, newFilePath: newPath, type: type, additions: null, deletions: null });
 
 /** Boot the bundle under a scripted host; answer requests through `respond`. The window width
- * (jsdom defaults to 1024) decides the page's layout exactly as on a real page. */
+ * (jsdom defaults to 1024) and the init message's mobileAdaptation flag decide the page's
+ * layout, exactly as on a real page. */
 function boot(width = 1024) {
 	const dom = new JSDOM(SHELL_HTML, { runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://example.invalid/' });
 	const { window } = dom;
@@ -204,14 +205,17 @@ maybeDescribe('the extracted comparison frontend boots and runs', () => {
 });
 
 maybeDescribe('the comparison page\'s touch layouts', () => {
-	it('takes the phone layout on a phone-width window, the tablet layout up to the tablet breakpoint', () => {
+	it('takes the phone layout on a phone-width window and the tablet layout above it, once the setting is on', () => {
 		const phone = boot(480);
 		const { body } = phone.document;
-		assert.deepEqual([...body.classList], ['mobileMode', 'touchMode'], 'a phone-width window takes the phone layout');
+		assert.deepEqual([...body.classList], [], 'before the init message delivers it the setting is unknown: the wide layout');
+
+		// The init message delivers the setting: the phone-width window takes the phone layout.
+		phone.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts'), CHANGE('A', '', 'docs/logo.png')], mobileAdaptation: true });
+		assert.deepEqual([...body.classList], ['mobileMode', 'touchMode'], 'a phone-width window with the setting on takes the phone layout');
 
 		// The sheet starts closed; the "Files" bar opens it, and picking a file closes it again.
 		assert.ok(!body.classList.contains('filesSheetOpen'), 'the files sheet starts closed');
-		phone.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts'), CHANGE('A', '', 'docs/logo.png')] });
 		phone.click('#mobileFilesBtn');
 		assert.ok(body.classList.contains('filesSheetOpen'), 'the Files bar opens the sheet');
 		phone.click('#closeFilesSheetBtn');
@@ -226,31 +230,39 @@ maybeDescribe('the comparison page\'s touch layouts', () => {
 		assert.equal(phone.errors.length, 0, phone.errors.join('; '));
 
 		const tablet = boot(800);
-		assert.deepEqual([...tablet.document.body.classList], ['tabletMode', 'touchMode'], 'a tablet-width window takes the tablet layout');
+		tablet.dispatch({ ...INIT, changes: [], mobileAdaptation: true });
+		assert.deepEqual([...tablet.document.body.classList], ['tabletMode', 'touchMode'], 'a wider window with the setting on takes the tablet layout');
 
 		const wide = boot();
 		wide.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')] });
 		assert.deepEqual([...wide.document.body.classList], [], 'a wide window with the setting off keeps the wide layout');
 		assert.equal((wide.document.querySelector('#filesChangedLabel') as HTMLElement)!.textContent, '1 file changed', 'the tree still renders under the wide layout');
+
+		// The gate is the setting, not the width: a narrow window with the setting off stays wide.
+		const narrowOff = boot(480);
+		narrowOff.dispatch({ ...INIT, changes: [] });
+		assert.deepEqual([...narrowOff.document.body.classList], [], 'a phone-width window with the setting off keeps the wide layout');
 	});
 
-	it('re-decides on resize and follows the mobileAdaptation setting above the breakpoints', () => {
+	it('re-decides on resize, and returns to the wide layout when the setting goes off', () => {
 		const page = boot(480);
+		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')], mobileAdaptation: true });
 		assert.deepEqual([...page.document.body.classList].sort(), ['mobileMode', 'touchMode']);
-		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')] });
 
 		// An open files sheet does not survive leaving the phone layout.
 		page.click('#mobileFilesBtn');
-		page.resize(1200);
-		assert.deepEqual([...page.document.body.classList], [], 'a wide resize leaves every touch class');
-		assert.ok(!page.document.body.classList.contains('filesSheetOpen'), 'leaving the phone layout closes the sheet');
 		page.resize(700);
-		assert.deepEqual([...page.document.body.classList], ['tabletMode', 'touchMode'], 'a tablet-width resize takes the tablet layout');
+		assert.deepEqual([...page.document.body.classList].sort(), ['tabletMode', 'touchMode'], 'a wider resize takes the tablet layout');
+		assert.ok(!page.document.body.classList.contains('filesSheetOpen'), 'leaving the phone layout closes the sheet');
 
-		// The setting opts a wide window into the tablet layout, as it does in the graph view.
+		// The setting holds the tablet layout at any width above the phone breakpoint, and turning
+		// it off returns the wide layout whatever the width.
 		page.resize(1200);
-		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')], mobileAdaptation: true });
-		assert.deepEqual([...page.document.body.classList], ['tabletMode', 'touchMode'], 'mobileAdaptation opts a wide window in');
+		assert.deepEqual([...page.document.body.classList].sort(), ['tabletMode', 'touchMode'], 'the setting holds the tablet layout on a wide window');
+		page.dispatch({ ...INIT, changes: [CHANGE('M', 'src/a.ts', 'src/a.ts')], mobileAdaptation: false });
+		assert.deepEqual([...page.document.body.classList], [], 'the setting off returns the wide layout');
+		page.resize(480);
+		assert.deepEqual([...page.document.body.classList], [], 'a narrow window with the setting off keeps the wide layout');
 		assert.equal(page.errors.length, 0, page.errors.join('; '));
 	});
 });

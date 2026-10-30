@@ -367,7 +367,7 @@ export const STRINGS_ZH_CN = {
 	settingsStickyHeader: '滚动时固定表头',
 	settingsRenderMarkdown: '在提交信息中渲染 Markdown',
 	settingsMobileAdaptation: '使用手机平板布局',
-	settingsMobileAdaptationInfo: '紧凑、适合触屏的布局。窄窗口会自动启用：宽度不超过 600 像素时使用手机布局（两行式提交行，标题下显示日期、作者和提交哈希；全屏的提交详情面板；长按打开的底部操作菜单）；不超过 900 像素时使用平板布局（保留全部列的单行触控提交行、扁平工具栏、列表旁的提交详情侧栏，以及长按打开的弹出菜单）。触屏在任意宽度都使用平板布局，勾选此开关时同样；更宽的窗口仍使用原来的界面。',
+	settingsMobileAdaptationInfo: '紧凑、适合触屏的布局。勾选此开关后，视口宽度决定布局：宽度不超过 600 像素时使用手机布局（两行式提交行，标题下显示日期、作者和提交哈希；全屏的提交详情面板；长按打开的底部操作菜单）；更宽时使用平板布局（保留全部列的单行触控提交行、扁平工具栏、列表旁的提交详情侧栏，以及长按打开的弹出菜单）。未勾选时，任何宽度都保持原来的界面。',
 	mobileMoreActions: '更多操作',
 	mobileGoToHead: '定位到 HEAD',
 	mobileFilterAuthors: '按作者筛选',

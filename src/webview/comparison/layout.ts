@@ -1,41 +1,25 @@
 /**
- * The layout decision of the Commit Comparison View page: the same breakpoints and signals the
- * graph view uses (see src/webview/graph/render/layoutMode.ts), so the two pages never disagree
- * about what "phone" and "tablet" mean. Narrow windows take the touch layouts on their own: up
- * to PHONE_MAX_WIDTH the phone layout (the sidebar becomes the full-screen files sheet, nothing
- * of the side-by-side split fits a phone-width view), up to TABLET_MAX_WIDTH the tablet layout
- * (touch-sized rows and controls over the unchanged split), and a touch-primary screen
- * (`pointer: coarse`, a tablet at any width) the tablet layout too. The `mobileAdaptation`
- * Extension Setting — delivered by the boot `init` message, read at open time — opts IN
- * everywhere above the breakpoints.
+ * The layout decision of the Commit Comparison View page: the same breakpoint and gate the graph
+ * view uses (see src/webview/graph/render/layoutMode.ts), so the two pages never disagree about
+ * what "phone" and "tablet" mean. While the `mobileAdaptation` Extension Setting — delivered by
+ * the boot `init` message, read at open time — is off, the page keeps the wide (desktop) layout.
+ * While it is on, the window's width picks the touch layout: up to PHONE_MAX_WIDTH the phone
+ * layout (the sidebar becomes the full-screen files sheet, nothing of the side-by-side split
+ * fits a phone-width view), above it the tablet layout (touch-sized rows and controls over the
+ * unchanged split).
  *
  * The decision is re-taken at boot, when the `init` message delivers the setting, and on every
- * window resize, so a rotated or resized window moves between the layouts live. The
- * coarse-pointer media query is re-read per decision; a pointer switch with no accompanying
- * resize therefore takes effect at the next decision, not the moment it happens (this page
- * renders once, unlike the graph view's per-render decision).
+ * window resize, so a rotated or resized window moves between the layouts live.
  */
 
 import { alterClass, CLASS_MOBILE_MODE, CLASS_TABLET_MODE, CLASS_TOUCH_MODE } from '../common/dom';
 
-/** The wide (desktop) layout, or one of the two touch layouts (narrow windows, coarse pointers, the setting). */
+/** The wide (desktop) layout, or one of the two touch layouts of the `mobileAdaptation` setting. */
 export type ComparisonLayoutKind = 'wide' | 'phone' | 'tablet';
 
 const PHONE_MAX_WIDTH = 600;
-const TABLET_MAX_WIDTH = 900;
 /** The <body> class the phone stylesheet keys on while the files sheet is open. */
 const CLASS_FILES_SHEET_OPEN = 'filesSheetOpen';
-
-/** The coarse-pointer media query, resolved once and re-read on every decision (see layoutMode.ts). */
-let coarsePointerQuery: MediaQueryList | null | undefined;
-
-/** Is the screen's PRIMARY pointer coarse (a finger: a tablet or phone screen, not mouse desktops)? */
-function isCoarsePrimaryPointer(): boolean {
-	if (coarsePointerQuery === undefined) {
-		coarsePointerQuery = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
-	}
-	return coarsePointerQuery !== null && coarsePointerQuery.matches;
-}
 
 export class ComparisonLayout {
 	/** The `mobileAdaptation` Extension Setting as the boot `init` message delivered it. */
@@ -55,11 +39,10 @@ export class ComparisonLayout {
 	 * so nothing flashes away before the first measure.
 	 */
 	public decide(): ComparisonLayoutKind {
+		if (!this.mobileAdaptation) return 'wide';
 		const width = window.innerWidth;
 		if (width <= 0) return 'wide';
-		if (width <= PHONE_MAX_WIDTH) return 'phone';
-		if (this.mobileAdaptation || width <= TABLET_MAX_WIDTH || isCoarsePrimaryPointer()) return 'tablet';
-		return 'wide';
+		return width <= PHONE_MAX_WIDTH ? 'phone' : 'tablet';
 	}
 
 	/** The layout currently applied. */
@@ -68,8 +51,9 @@ export class ComparisonLayout {
 	}
 
 	/**
-	 * Take the setting the boot `init` message delivered and re-decide: above the breakpoints it
-	 * opts the page into the tablet layout, exactly as it does in the graph view.
+	 * Take the setting the boot `init` message delivered and re-decide: with it on, the window's
+	 * width picks the touch layout, exactly as it does in the graph view; with it off, the page
+	 * keeps the wide layout.
 	 */
 	public setMobileAdaptation(enabled: boolean) {
 		this.mobileAdaptation = enabled;

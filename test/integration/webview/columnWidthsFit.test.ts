@@ -36,8 +36,8 @@ describe('frozen column widths against a narrower window', () => {
 		// The stubbed view is 1200px wide: the frozen columns (~1060px) fit
 		assert.match(tableClass(h), /(^| )fixedLayout( |$)/, 'a wide window renders the frozen widths');
 
-		// Still the wide layout (the layout breakpoints sit at 600/900), but the frozen columns no
-		// longer fit: the table falls back to the automatic layout
+		// Still the wide layout (the touch layouts are gated by the mobileAdaptation setting), but
+		// the frozen columns no longer fit: the table falls back to the automatic layout
 		setViewWidth(h, 1000);
 		await h.pump();
 		assert.match(tableClass(h), /(^| )autoLayout( |$)/, 'a window narrower than the widths falls back to automatic');
@@ -54,7 +54,7 @@ describe('frozen column widths against a narrower window', () => {
 		assert.match(tableClass(h), /(^| )autoLayout( |$)/);
 		setViewWidth(h, 700);
 		await h.pump();
-		// 700px is the tablet layout (below the 900px breakpoint): two columns, still automatic
+		// 700px keeps the wide layout while the setting is off: two columns, still automatic
 		assert.match(tableClass(h), /(^| )autoLayout( |$)/);
 	});
 });

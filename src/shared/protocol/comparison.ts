@@ -40,8 +40,9 @@ export interface ComparisonInitResponse {
 	readonly error: string | null;
 	/** The interface language the host rendered the page for ('en' or 'zh-cn'). */
 	readonly language: string;
-	/** The `mobileAdaptation` Extension Setting at open time: above the width breakpoints it opts
-	 * a touchscreen of any size into the tablet layout, exactly as in the graph view. */
+	/** The `mobileAdaptation` Extension Setting at open time: while it is on, the window's width
+	 * picks the touch layout, exactly as in the graph view; while it is off, every width keeps
+	 * the wide layout. */
 	readonly mobileAdaptation: boolean;
 }
 

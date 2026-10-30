@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 /**
- * The narrow-window layout decision (src/webview/graph/render/layoutMode.ts), ported
- * from the layout cases of tests/webviewMobileAdaptation.test.mjs: narrow windows take the
- * touch layouts on their own - at most 600 pixels wide the phone layout, at most 900 the tablet
- * layout - and a touch-primary (coarse pointer) screen gets the tablet layout at any width. The
- * `mobileAdaptation` Extension Setting opts IN everywhere above the phone breakpoint. The
- * decision drives the <body> classes the mobile styles key on, the row height CSS variable, the
- * visibility of the Date / Author / Commit columns and where the Commit Details View lives.
+ * The layout decision (src/webview/graph/render/layoutMode.ts), ported from the layout cases of
+ * tests/webviewMobileAdaptation.test.mjs: while the `mobileAdaptation` Extension Setting is off,
+ * the view keeps the wide (desktop) layout at every width; while it is on, the view's width
+ * picks the touch layout - at most 600 pixels wide the phone layout, above it the tablet layout.
+ * The decision drives the <body> classes the mobile styles key on, the row height CSS variable,
+ * the visibility of the Date / Author / Commit columns and where the Commit Details View lives.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import * as GG from '../../common/protocol';
 import type { Store } from '../state/store';
@@ -18,19 +17,6 @@ import { LayoutMode } from './layoutMode';
 const ROW_HEIGHT = 24;
 const MOBILE_ROW_HEIGHT = 52;
 const TABLET_ROW_HEIGHT = 40;
-
-/** The coarse-pointer answer the (jsdom-absent) matchMedia stub gives; flipped per test. */
-let coarsePointer = false;
-vi.stubGlobal('matchMedia', (query: string): MediaQueryList => ({
-	media: query,
-	get matches() { return query === '(pointer: coarse)' ? coarsePointer : false; },
-	onchange: null,
-	addEventListener: () => undefined,
-	removeEventListener: () => undefined,
-	addListener: () => undefined,
-	removeListener: () => undefined,
-	dispatchEvent: () => false
-}));
 
 /** A store carrying only the settings the layout decision reads. */
 function makeStore(mobileAdaptation: boolean) {
@@ -56,22 +42,18 @@ beforeEach(() => {
 	document.body.textContent = '';
 	document.body.className = '';
 	document.body.removeAttribute('style');
-	coarsePointer = false;
 });
 
-describe('the phone and tablet (narrow window) layout decision', () => {
-	it('adapts narrow windows while the setting is disabled: phone, then tablet, then wide', () => {
-		const phone = new LayoutMode(makeStore(false), makeViewElem(400));
-		expect(phone.decide()).toBe('phone');
-		expect(phone.isNarrowWindow()).toBe(true);
+describe('the phone and tablet layout decision', () => {
+	it('keeps the wide layout at every width while the setting is disabled', () => {
+		// Narrow windows do not switch on their own: the setting is the only way in
+		for (const width of [400, 700, 1200]) {
+			const layout = new LayoutMode(makeStore(false), makeViewElem(width));
+			expect(layout.decide()).toBe('wide');
+			expect(layout.isNarrowWindow()).toBe(false);
+		}
 
-		const tablet = new LayoutMode(makeStore(false), makeViewElem(700));
-		expect(tablet.decide()).toBe('tablet');
-		expect(tablet.isNarrowWindow()).toBe(false);
-
-		// A wide window with a fine (mouse) pointer keeps the wide layout while the setting is off
 		const wide = new LayoutMode(makeStore(false), makeViewElem(1200));
-		expect(wide.decide()).toBe('wide');
 		wide.apply('wide');
 		expect(document.body.className).toBe('');
 		expect(wide.isTouchLayout()).toBe(false);
@@ -81,12 +63,11 @@ describe('the phone and tablet (narrow window) layout decision', () => {
 		expect(wide.isCdvDocked()).toBe(false); // as configured (inline)
 	});
 
-	it('gives a touch-primary (coarse pointer) screen the tablet layout at any width', () => {
-		coarsePointer = true;
-		expect(new LayoutMode(makeStore(false), makeViewElem(1200)).decide()).toBe('tablet');
-		expect(new LayoutMode(makeStore(false), makeViewElem(2400)).decide()).toBe('tablet');
-		// the phone breakpoint wins over the pointer: a phone-width window is a phone
-		expect(new LayoutMode(makeStore(false), makeViewElem(400)).decide()).toBe('phone');
+	it('follows the width while the setting is enabled: the phone layout up to 600px, the tablet layout above it', () => {
+		expect(new LayoutMode(makeStore(true), makeViewElem(400)).decide()).toBe('phone');
+		expect(new LayoutMode(makeStore(true), makeViewElem(600)).decide()).toBe('phone');
+		expect(new LayoutMode(makeStore(true), makeViewElem(601)).decide()).toBe('tablet');
+		expect(new LayoutMode(makeStore(true), makeViewElem(2400)).decide()).toBe('tablet');
 	});
 
 	it('switches to the phone layout in a narrow view: classes, row height, hidden columns, docked details', () => {
