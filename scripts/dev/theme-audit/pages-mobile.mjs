@@ -3,7 +3,7 @@
  * list, the fast scroller, the overflow sheet, the mobile find bar, the full-screen commit
  * details sheet and the mobile dialog styling — every rule set under styles/mobile/. */
 
-import { icons, gitRef, narrowCommitRow } from './icons.mjs';
+import { icons, gitRef, narrowCommitRow, wideCommitRow } from './icons.mjs';
 
 const section = (title, body) =>
 	`<h2 class="sectionTitle">${title}</h2>\n${body}`;
@@ -164,8 +164,35 @@ const mobileDetailsCss = `
 .dialog{animation:none}
 `;
 
+/** The tablet's squeezed Description column: the single-line commit table in a container too
+ *  narrow for the refs and the subject at their natural sizes. The pill lays out as a row of
+ *  vertically centered segments: the icon, the remote labels and the score chips keep their
+ *  size (flex:none) while the name between them shrinks, ellipsizing inside its own padding -
+ *  never clipped flush at the pill's rounded edge, and never dropping a segment below the
+ *  pill's text line. The rows cover: a long remote ref squeezed by a long subject (its name
+ *  ellipsizes), a combined head-plus-origin pill beside a short subject (it fits, so it keeps
+ *  its full name - no width cap truncates a pill that has room), and a Gerrit badge whose
+ *  score chip keeps its size while the change number ellipsizes. */
+const tabletSqueezedBody = `
+<div id="view"><div id="content">
+	<div id="commitTable" class="autoLayout" style="width:600px;margin:8px 12px"><table>
+		<thead id="tableColHeaders"><tr><th>Graph</th><th>Description</th><th class="dateCol">Date</th><th class="authorCol">Author</th><th>Commit</th></tr></thead>
+		<tbody>
+			${wideCommitRow('current', 'docs: update the refactor plan', gitRef('remote', `${icons.branch}<span class="gitRefName">origin/task/m0-gates</span>`, ' style="--git-graph-color:var(--git-graph-color2)"'), 'neophack', '2026-09-10 12:00', 'a1b2c3d', 0)}
+			${wideCommitRow('', 'docs: readme', gitRef('head', `${icons.branch}<span class="gitRefName">task/m0-gates</span><span class="gitRefHeadRemote">origin</span>`, ' style="--git-graph-color:var(--git-graph-color0)"'), 'neophack', '2026-09-09 18:30', '9f8e7d6', 1)}
+			${wideCommitRow('', 'feat: review progress on the change badge', gitRef('gerrit', `${icons.review}<span class="gitRefName">#43955/1</span><span class="gg-label cr2">CR+2</span>`), 'neophack', '2026-09-08 09:15', '7c6b5a4', 2)}
+		</tbody>
+	</table></div>
+</div></div>
+`;
+
+const tabletSqueezedCss = `
+#view{position:static !important;overflow:visible !important}
+`;
+
 /** The mobile pages of the audit. */
 export const mobilePages = [
 	{ name: 'mobile-view', label: 'Mobile layout (app bar, commit list, sheets)', stylesheet: 'out', bodyClass: 'mobileMode', viewport: { width: 390, height: 844 }, body: mobileViewBody, harnessCss: mobileViewCss },
-	{ name: 'mobile-details', label: 'Mobile layout (commit details sheet, dialog)', stylesheet: 'out', bodyClass: 'mobileMode', viewport: { width: 390, height: 844 }, body: mobileDetailsBody, harnessCss: mobileDetailsCss }
+	{ name: 'mobile-details', label: 'Mobile layout (commit details sheet, dialog)', stylesheet: 'out', bodyClass: 'mobileMode', viewport: { width: 390, height: 844 }, body: mobileDetailsBody, harnessCss: mobileDetailsCss },
+	{ name: 'tablet-squeezed', label: 'Tablet layout, squeezed Description column (ref pill names ellipsize)', stylesheet: 'out', bodyClass: 'tabletMode', viewport: { width: 768, height: 600 }, body: tabletSqueezedBody, harnessCss: tabletSqueezedCss }
 ];

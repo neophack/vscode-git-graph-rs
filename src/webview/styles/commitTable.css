@@ -78,35 +78,10 @@
 	flex:1 1 auto;
 	min-width:80px;
 }
-/* ...and when the subject is at its floor, the refs give way before it does: they shrink and
-   ellipsize their names (the tablet layout does the same with its own floors). The pill lays
-   out as a row of vertically centered segments: the icon, the remote labels and the score
-   chips keep their size (flex:none) while the name between them shrinks, ellipsizing inside
-   its own padding. (A plain inline-block pill cannot do this: a percentage max-width on the
-   name resolves against the pill's full content box - icon included - and its padding is
-   content-box, so a squeezed pill clipped the name flush at its edge with no ellipsis; and
-   the overflow that clipping needs turns the name's inline-block baseline into its bottom
-   edge, dropping every label after it below the pill's text line.) */
-#commitTable tr.commit td span.description .gitRef{
-	display:inline-flex;
-	align-items:center;
-	flex-shrink:1;
-	min-width:48px;
-	overflow:hidden;
-}
-#commitTable tr.commit td span.description .gitRef > svg,
-#commitTable tr.commit td span.description .gitRef .gitRefHeadRemote,
-#commitTable tr.commit td span.description .gitRef .gg-label,
-#commitTable tr.commit td span.description .gitRef .gg-status{
-	flex:none;
-}
-#commitTable tr.commit td span.description .gitRef .gitRefName{
-	flex:0 1 auto;
-	min-width:0;
-	overflow:hidden;
-	text-overflow:ellipsis;
-	white-space:nowrap;
-}
+/* The wide layout never shrinks the ref pills: a branch or tag name must stay whole and
+   readable, so when the description runs out of room the subject above gives way (down to its
+   80px floor) and the pills keep their natural width. Only the touch layouts shrink and
+   ellipsize pill names (their own floors below), where the screen is too small for both. */
 
 #commitTable tr.commit span.description .commitbody{
 	opacity: 0.5;
@@ -528,9 +503,10 @@ body.tabletMode #commitTable tr.commit span.description .gitRef{
 	align-self:center;
 	flex-shrink:1;
 	/* a floor, so a long subject beside several refs ellipsizes the names instead of cutting a
-	   chip down to its icon */
+	   chip down to its icon. No max-width cap: a percentage cap resolves against the description
+	   box regardless of need, so even a lone ref beside a short subject lost the tail of its
+	   name - the pill shrinks only under real flex pressure from a crowded row */
 	min-width:76px;
-	max-width:45%;
 	overflow:hidden;
 	white-space:nowrap;
 }

@@ -98,13 +98,13 @@ ${section('Help tooltip popup', `
 
 /** The narrow squeeze: the same wide-layout commit table inside a container too narrow for the
  *  Description column to fit the refs and the subject at their natural sizes - the state a
- *  narrow window drives the wide layout into, where the ref pills shrink and ellipsize their
- *  names before the subject gives up its 80px floor. This gates the pill-interior layout: the
- *  name ellipsizes inside its own padding, and every segment (the origin remote label, the
- *  Gerrit score chips, the merged status) stays on the pill's single centred text line. */
+ *  crowded description drives the wide layout into. The wide layout never shrinks the ref
+ *  pills: a branch or tag name stays whole and readable, and the subject gives way instead,
+ *  ellipsizing down to its 80px floor. (Only the touch layouts shrink pill names - the tablet
+ *  squeeze is gated by the tablet-squeezed page in pages-mobile.mjs.) */
 const squeezedBody = `
 <div id="view"><div id="content">
-	<div id="commitTable" class="autoLayout" style="width:460px;margin:8px 12px"><table>
+	<div id="commitTable" class="autoLayout" style="width:760px;margin:8px 12px"><table>
 		<thead id="tableColHeaders"><tr><th>Graph</th><th>Description</th><th class="dateCol">Date</th><th class="authorCol">Author</th><th>Commit</th></tr></thead>
 		<tbody>
 			${wideCommitRow('current', 'docs: update the refactor plan', gitRef('remote', `${icons.branch}<span class="gitRefName">origin/task/m0-gates</span>`, ' style="--git-graph-color:var(--git-graph-color2)"'), 'neophack', '2026-09-10 12:00', 'a1b2c3d', 0)}
@@ -444,5 +444,5 @@ export const mainPages = [
 	{ name: 'details', label: 'Commit details view (docked)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: detailsBody, harnessCss: detailsCss },
 	{ name: 'overlays', label: 'Overlays (find, context menu, dropdown, dialogs)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: overlaysBody, harnessCss: overlaysCss },
 	{ name: 'panels', label: 'Panels (settings, reflog, statistics, worktrees)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: panelsBody, harnessCss: panelsCss },
-	{ name: 'squeezed', label: 'Wide layout, squeezed Description column (shrinking ref pills)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: squeezedBody, harnessCss: viewCss }
+	{ name: 'squeezed', label: 'Wide layout, squeezed Description column (ref pills keep full names, the subject ellipsizes)', stylesheet: 'out', bodyClass: '', viewport: { width: 1280, height: 900 }, body: squeezedBody, harnessCss: viewCss }
 ];
