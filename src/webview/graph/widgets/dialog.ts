@@ -300,7 +300,13 @@ export class Dialog extends Component {
 	public useCloseIcon() {
 		if (this.elem === null) return;
 		const secondaryAction = this.byId('dialogSecondaryAction');
-		if (secondaryAction !== null) secondaryAction.style.display = 'none';
+		if (secondaryAction !== null) {
+			// The Close button stood behind a line break separating it from the content; with the
+			// button hidden the break would remain as a blank line at the dialog's bottom
+			const lineBreak = secondaryAction.previousElementSibling;
+			if (lineBreak !== null && lineBreak.tagName === 'BR') lineBreak.remove();
+			secondaryAction.style.display = 'none';
+		}
 		const closeIcon = document.createElement('span');
 		closeIcon.id = 'dialogCloseIcon';
 		closeIcon.title = strings.dialogClose;
@@ -422,7 +428,11 @@ export class Dialog extends Component {
 		const docHeight = measureClientSize(document.body).height;
 		let dialogHeight = measureClientSize(dialog).height + 2;
 		if (type !== DialogType.Form && dialogHeight > 0.8 * docHeight) {
-			dialogContent.style.height = Math.round(0.8 * docHeight - 22) + 'px';
+			// A cap, not a fixed height: the measurement can run ahead of the on-demand widget
+			// styles (a dialog's first open races the idle prefetch) and restyle the content
+			// shorter - a fixed height would then keep the dialog tall, leaving a large blank
+			// area above its bottom edge.
+			dialogContent.style.maxHeight = Math.round(0.8 * docHeight - 22) + 'px';
 			dialogHeight = Math.round(0.8 * docHeight);
 		}
 		dialog.style.top = Math.max(Math.round((docHeight - dialogHeight) / 2), 10) + 'px';

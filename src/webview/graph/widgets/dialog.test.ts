@@ -9,14 +9,31 @@
  * tooltip (and its aria-describedby).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventOverlay } from '../../common/eventOverlay';
 import { observeHelpTooltips } from '../../common/helpTooltip';
 import { Dialog, DialogInputType } from './dialog';
 
+// The viewport and dialog heights the sizing maths reads (jsdom boxes all measure 0; the two
+// controllable values let a test open a dialog that overshoots the 80%-of-viewport cap).
+const sizes = vi.hoisted(() => ({ body: 0, dialog: 0 }));
+
+vi.mock('../render/measure', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../render/measure')>();
+	return {
+		...actual,
+		measureClientSize: (elem: Element) => ({
+			width: elem.clientWidth,
+			height: elem === document.body ? sizes.body : elem.classList.contains('dialog') ? sizes.dialog : elem.clientHeight
+		})
+	};
+});
+
 beforeEach(() => {
 	document.body.textContent = '';
+	sizes.body = 0;
+	sizes.dialog = 0;
 	observeHelpTooltips();
 });
 
@@ -89,5 +106,50 @@ describe('the dialog validation tooltip', () => {
 		action.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(submitted).toEqual([]);
 		expect(dialog.isOpen()).toBe(true);
+	});
+});
+
+/** A dialog wired like the view wires it, showing a plain message. */
+function makeMessageDialog(message: string) {
+	const dialog = new Dialog({
+		eventOverlay: new EventOverlay(() => { }),
+		closeDialogAndContextMenu: () => { },
+		findCommitElem: () => null,
+		getReferenceInputSpaceSubstitution: () => null
+	});
+	dialog.showMessage(message);
+	return dialog;
+}
+
+describe('the message dialog sizing', () => {
+	it('caps a dialog taller than the viewport with a max-height the content can shrink under', () => {
+		sizes.body = 500;
+		sizes.dialog = 600; // the natural height overshoots the 80%-of-viewport cap
+		const dialog = makeMessageDialog('a tall message');
+
+		const content = <HTMLElement>document.querySelector('.dialogContent')!;
+		// 0.8 * 500 - 22
+		expect(content.style.maxHeight).toBe('378px');
+		// No fixed height: when the content is restyled shorter after the measurement (the
+		// dialog's first open races the on-demand widget styles), the dialog must shrink with
+		// it instead of keeping the measured height as a blank area above its bottom edge
+		expect(content.style.height).toBe('');
+
+		dialog.close();
+	});
+
+	it('leaves no blank line behind where the Close button was replaced by the close icon', () => {
+		const dialog = makeMessageDialog('the message');
+		dialog.useCloseIcon();
+
+		expect(document.getElementById('dialogSecondaryAction')!.style.display).toBe('none');
+		const closeIcon = document.getElementById('dialogCloseIcon');
+		expect(closeIcon).not.toBe(null);
+		// The line break that separated the content from the hidden Close button must go with it
+		const breaks = Array.from(document.querySelector('.dialogContent')!.children).filter((child) => child.tagName === 'BR');
+		expect(breaks).toEqual([]);
+
+		closeIcon!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(dialog.isOpen()).toBe(false);
 	});
 });
