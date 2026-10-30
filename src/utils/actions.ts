@@ -105,7 +105,7 @@ export function createPullRequest(config: PullRequestConfig, sourceOwner: string
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
 export function openExtensionSettings(): Thenable<ErrorInfo> {
-	return vscode.commands.executeCommand('workbench.action.openSettings', '@ext:aucneon.git-graph-rs').then(
+	return vscode.commands.executeCommand('workbench.action.openSettings', '@ext:neophack.git-graph-rs').then(
 		() => null,
 		() => t('openExtensionSettingsFailed')
 	);

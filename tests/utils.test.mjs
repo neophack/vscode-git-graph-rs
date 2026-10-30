@@ -261,7 +261,7 @@ describe('Visual Studio Code command wrappers', () => {
 		vscode.resetCalls();
 		assert.equal(await utils.openExtensionSettings(), null);
 		assert.equal(await utils.viewScm(), null);
-		assert.deepEqual(vscode.callsTo('executeCommand').map((c) => c.args), [['workbench.action.openSettings', '@ext:aucneon.git-graph-rs'], ['workbench.view.scm']]);
+		assert.deepEqual(vscode.callsTo('executeCommand').map((c) => c.args), [['workbench.action.openSettings', '@ext:neophack.git-graph-rs'], ['workbench.view.scm']]);
 
 		vscode.responses['executeCommand:workbench.action.openSettings'] = [new Error('x')];
 		vscode.responses['executeCommand:workbench.view.scm'] = [new Error('x')];
