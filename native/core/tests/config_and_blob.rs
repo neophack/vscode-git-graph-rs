@@ -289,3 +289,57 @@ fn a_deleted_file_diffs_against_the_empty_side() {
     assert!(diff.contains("-one"));
     assert!(diff.contains("/dev/null"));
 }
+
+/// A sparse file of `len` bytes (zeroes): the cheap way to stand a file larger than the read cap
+/// on disk — `set_len` extends without writing, and the zero content compresses to nothing in
+/// the object database.
+fn sparse_file(repo: &TestRepo, path: &str, len: u64) {
+    use std::io::Write;
+    let full = repo.path().join(path);
+    let mut file = std::fs::File::create(&full).expect("could not create the file");
+    file.set_len(len).expect("could not extend the file");
+    file.flush().expect("could not flush the file extension");
+}
+
+#[test]
+fn a_blob_above_the_read_cap_is_refused_before_it_is_read() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    sparse_file(&repo, "huge.bin", 101 * 1024 * 1024);
+    let hash = repo.commit("add a huge file");
+
+    let engine = open(&repo);
+    let error = blob::commit_file(&engine, &hash, "huge.bin").unwrap_err();
+
+    assert!(
+        error.to_string().contains("100 MiB"),
+        "the read must refuse above the cap, with the limit named: {error}"
+    );
+
+    // The raw-bytes channel (the hex comparison views) and the staged copy are capped by the
+    // same contract.
+    let error = blob::commit_file_bytes(&engine, &hash, "huge.bin").unwrap_err();
+    assert!(error.to_string().contains("100 MiB"), "{error}");
+}
+
+#[test]
+fn a_working_tree_file_above_the_read_cap_is_refused_before_it_is_read() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    sparse_file(&repo, "huge.txt", 101 * 1024 * 1024);
+
+    let engine = open(&repo);
+    let error = blob::working_tree_file(&engine, "huge.txt").unwrap_err();
+
+    assert!(
+        error.to_string().contains("100 MiB"),
+        "the working-tree read must refuse above the cap, from the file's metadata: {error}"
+    );
+
+    // The same reader stays inside the working tree: a path that climbs out is refused rather
+    // than read, whatever it names on disk.
+    repo.write("outside.txt", "not part of the repository\n");
+    let error = blob::working_tree_file(&engine, "../outside.txt").unwrap_err();
+    assert!(error.to_string().contains("escapes"), "{error}");
+}

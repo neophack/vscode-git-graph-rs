@@ -841,3 +841,58 @@ fn flags_the_unmerged_paths_of_a_stopped_merge() {
         "an ordinary edit is not a conflict"
     );
 }
+
+#[test]
+fn a_stash_hanging_off_the_filtered_branchs_history_is_still_shown() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "base");
+    // The stash hangs off the feature branch's head, which a `main`-only view does not reach:
+    // its base is a walk tip in its own right (the CLI reference appends it after its own branch
+    // selection), so the stash survives the branch filter instead of vanishing from the page.
+    repo.git(&["checkout", "--quiet", "-b", "feature"]);
+    let feature_head = repo.commit_file("f.txt", "f", "feature work");
+    repo.write("f.txt", "edited\n");
+    repo.git(&["stash", "push", "--quiet", "-m", "wip"]);
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.commit_file("m.txt", "m", "main change");
+
+    let engine = open(&repo);
+    let mut options = view_options(100);
+    options.branches = Some(vec!["main".to_string()]);
+    let data = graph::load_commits(&engine, &options).unwrap();
+
+    let shown = data
+        .commits
+        .iter()
+        .any(|commit| commit.hash == feature_head);
+    assert!(
+        shown,
+        "the stash's base is a walk tip under a branch filter: the feature head must be on the page"
+    );
+    assert!(
+        data.commits.iter().any(|commit| commit.stash.is_some()),
+        "the stash row is attached to its base commit"
+    );
+
+    // The reference answer: git walks the branch AND the stash base together. The stash's own
+    // synthetic row (inserted above its base by the engine) is filtered out before comparing.
+    let expected = repo.log_hashes(&[
+        "--date-order",
+        "-n",
+        "101",
+        "--ignore-missing",
+        "main",
+        &feature_head,
+    ]);
+    let shown_hashes: Vec<&str> = data
+        .commits
+        .iter()
+        .filter(|commit| commit.stash.is_none())
+        .map(|commit| commit.hash.as_str())
+        .collect();
+    assert_eq!(
+        shown_hashes,
+        expected.iter().map(String::as_str).collect::<Vec<_>>()
+    );
+}

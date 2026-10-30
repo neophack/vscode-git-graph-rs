@@ -377,7 +377,7 @@ pub fn parse_meta_history(change: u64, records: &[MetaCommitRecord]) -> Option<G
             // Fall back to any commit hash found in the history
             let mut fallback = None;
             for record in records {
-                if let Some(m) = regex_commit_multiline().captures(&record.message) {
+                if let Some(m) = regex_commit_footer().captures(&record.message) {
                     fallback = Some(m[1].to_string());
                     break;
                 }
@@ -449,7 +449,10 @@ grammar_regex!(
     regex_status_footer,
     r"^Status:\s*(new|merged|abandoned)\s*$"
 );
-grammar_regex!(regex_commit_footer, r"^Commit:\s*([0-9a-f]{4,40})\s*$");
+// `(?m)` so the SAME pattern serves both the per-line footer scan here and the whole-message
+// scan at the fallback below (on a single line, the multi-line anchors behave exactly like
+// plain ones).
+grammar_regex!(regex_commit_footer, r"(?m)^Commit:\s*([0-9a-f]{4,40})\s*$");
 grammar_regex!(regex_wip_footer, r"^Work-in-progress:\s*(true|false)\s*$");
 grammar_regex!(regex_uploaded_header, r"^Uploaded patch set (\d+)\.");
 grammar_regex!(regex_patch_set_header, r"^Patch Set (\d+):");
@@ -494,8 +497,4 @@ grammar_regex!(regex_footer_like, r"^[A-Za-z-]+:");
 grammar_regex!(
     regex_submitted_by,
     r"(?m)^Submitted-by:\s*([^<]+?)(?:\s*<[^>]*>)?\s*$"
-);
-grammar_regex!(
-    regex_commit_multiline,
-    r"(?m)^Commit:\s*([0-9a-f]{4,40})\s*$"
 );

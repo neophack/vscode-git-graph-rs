@@ -629,3 +629,43 @@ describe('the Rust engine parses the NoteDb metas', () => {
 		assert.equal(hashes.has('refs/remotes/origin/main'), false);
 	});
 });
+
+describe('the remote timeout kills its child', () => {
+	it('hands the run an abort token, and the timer aborts it into the fallback', async () => {
+		let sawSignal = false, aborted = false;
+		const runner = {
+			// A stalled remote operation: it never settles on its own — only the abort token the
+			// timeout hands it (which a real runner turns into killing the git child) ends it.
+			gitOutput: (args, cwd, resolveValue, signal) => {
+				sawSignal = signal !== undefined;
+				return new Promise((resolve, reject) => {
+					signal.addEventListener('abort', () => { aborted = true; reject(new Error('killed')); });
+				});
+			},
+			runGitCommand: async () => null,
+			runGitCommandWithInput: async () => null
+		};
+		const client = new GerritDataSource(runner, 40);
+
+		const changes = await client.listRemoteChanges('/unused', 'origin');
+
+		assert.equal(sawSignal, true, 'the timeout must hand the run its abort token');
+		assert.equal(aborted, true, 'the timer must abort the token');
+		assert.equal(changes.size, 0, 'the aborted run resolves the fallback');
+	});
+
+	it('a run that settles within the timeout is answered with its own value', async () => {
+		const runner = {
+			gitOutput: (args, cwd, resolveValue, signal) => new Promise((resolve) => {
+				setTimeout(() => resolve(resolveValue('1\trefs/changes/24/41466/1\n')), 10);
+			}),
+			runGitCommand: async () => null,
+			runGitCommandWithInput: async () => null
+		};
+		const client = new GerritDataSource(runner, 5000);
+
+		const changes = await client.listRemoteChanges('/unused', 'origin');
+
+		assert.equal(changes.size, 1, 'the run itself is served');
+	});
+});

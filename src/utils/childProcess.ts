@@ -8,6 +8,52 @@ import { getConfig } from '../config';
 import { t } from '../i18n';
 
 /**
+ * Cancellation, structurally: any `AbortSignal` fits, and tests can pass a minimal object.
+ * Kept structural because `src/tsconfig.json` compiles against `lib: ["es6"]` only.
+ */
+export interface AbortLike {
+	readonly aborted: boolean;
+	addEventListener(type: 'abort', listener: () => void): void;
+	removeEventListener(type: 'abort', listener: () => void): void;
+}
+
+/** The writable side of {@link AbortLike}: what a run's owner holds and aborts. */
+export interface AbortControllerLike {
+	readonly signal: AbortLike;
+	abort(): void;
+}
+
+/**
+ * A run token: the real `AbortController` where the runtime has one, the structural minimum
+ * where it does not — an extension host older than the class makes `new AbortController()` a
+ * ReferenceError that kills every read. Consumers read the signal structurally (the
+ * {@link AbortLike} parameters of the spawn helpers), so either form satisfies them.
+ */
+export function createAbortController(): AbortControllerLike {
+	if (typeof AbortController === 'function') return new AbortController();
+	let aborted = false;
+	const listeners: Array<() => void> = [];
+	const signal: AbortLike = {
+		get aborted() { return aborted; },
+		addEventListener(_type: 'abort', listener: () => void): void {
+			if (!aborted) listeners.push(listener);
+		},
+		removeEventListener(_type: 'abort', listener: () => void): void {
+			const at = listeners.indexOf(listener);
+			if (at >= 0) listeners.splice(at, 1);
+		}
+	};
+	return {
+		signal,
+		abort(): void {
+			if (aborted) return;
+			aborted = true;
+			for (const listener of listeners.splice(0)) listener();
+		}
+	};
+}
+
+/**
  * Open a new terminal, set up the Git executable, and optionally run a command.
  * @param cwd The working directory for the terminal.
  * @param gitPath The path of the Git executable.

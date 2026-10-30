@@ -2376,18 +2376,23 @@ export class GitGraphView extends Disposable {
 			else this.gerritCache.delete(repo); // a hard rebuild that found no local change refs: the old entry (if any) refers to now-dead refs, and serving it again would make the next load fail on them
 		}
 		if (this.gerritStaleRepos.has(repo) || cache === null || cache.fetchLimit !== fetchLimit) {
-			// Reuse a fetch that is already in progress for this repository
+			// Reuse a fetch that is already in progress for this repository. Whether its outcome
+			// clears the stale flag is decided inside, under the generation the fetch captured —
+			// a fetch superseded by a settings change must leave the flag set so the next load
+			// re-fetches under the new settings.
 			let fetch = this.gerritFetches.get(repo);
 			if (fetch === undefined) {
 				fetch = this.fetchGerritChanges(repo, fetchLimit, statusFilter).then((entry) => {
-					this.gerritFetches.delete(repo);
+					// Only unregister THIS fetch: a fetch settling after the settings change
+					// cleared the map (or after a newer fetch replaced it there) must not drop
+					// the newer registration.
+					if (this.gerritFetches.get(repo) === fetch) this.gerritFetches.delete(repo);
 					return entry;
 				});
 				this.gerritFetches.set(repo, fetch);
 			}
 			const fetched = await fetch;
 			if (fetched !== null) {
-				this.gerritStaleRepos.delete(repo);
 				cache = fetched;
 			} // on failure, fall back to the local cache (if any) and keep the stale flag so the next load retries the fetch
 		}
@@ -2462,8 +2467,14 @@ export class GitGraphView extends Disposable {
 				const pruneError = await gerrit.pruneLocalChanges(repo, remote, Array.from(entry.patchsets.keys()));
 				if (pruneError !== null) this.logger.log('Gerrit ref pruning failed (stale change refs may accumulate): ' + pruneError);
 			}
-			// Only cache the result if the fetch settings didn't change while the pipeline was running
-			if (generation === this.gerritCacheGeneration) this.gerritCache.set(repo, entry);
+			// Only cache the result if the fetch settings didn't change while the pipeline was
+			// running; the stale flag clears under the same contract — a fetch superseded by a
+			// settings change must leave the repository stale so the next load re-fetches under
+			// the new settings instead of serving the pre-change data as fresh.
+			if (generation === this.gerritCacheGeneration) {
+				this.gerritCache.set(repo, entry);
+				this.gerritStaleRepos.delete(repo);
+			}
 			return entry;
 		} catch (errorMessage) {
 			this.logger.log('Fetching the Gerrit changes failed: ' + errorMessage);

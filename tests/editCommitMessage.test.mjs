@@ -490,3 +490,76 @@ describe('the Edit Message dialog\'s body fetch (webview)', () => {
 		await closeDialog();
 	});
 });
+
+describe('continuing a stopped operation inside the headless extension host', () => {
+	let repoPath;
+	let dataSource;
+
+	before(() => {
+		repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'git-graph-rs-continue-'));
+		const git = (args) => execFileSync('git', args, { cwd: repoPath, encoding: 'utf8' });
+		git(['init', '--quiet', '--initial-branch=main']);
+		git(['config', 'user.name', 'Test User']);
+		git(['config', 'user.email', 'test@example.com']);
+		git(['config', 'commit.gpgsign', 'false']);
+
+		const writeAndCommit = (contents, message, branch) => {
+			fs.writeFileSync(path.join(repoPath, 'file.txt'), contents);
+			git(['add', '-A']);
+			git(['commit', '--quiet', '-m', message]);
+		};
+		writeAndCommit('one\n', 'base');
+		git(['checkout', '--quiet', '-b', 'feature']);
+		writeAndCommit('feature\n', 'the picked change');
+		git(['checkout', '--quiet', 'main']);
+		writeAndCommit('main\n', 'the local change');
+
+		// Stop on the conflict, then resolve it: the next `cherry-pick --continue` wants to create
+		// the commit, which is exactly the step git opens an editor for.
+		try {
+			execFileSync('git', ['cherry-pick', 'feature'], { cwd: repoPath, stdio: 'ignore' });
+			assert.fail('the cherry-pick was expected to stop on a conflict');
+		} catch { /* the conflict */ }
+		fs.writeFileSync(path.join(repoPath, 'file.txt'), 'resolved\n');
+		git(['add', 'file.txt']);
+
+		dataSource = makeDataSource();
+	});
+
+	after(() => {
+		// The DataSource's askpass server holds the event loop open; the test process would
+		// otherwise never exit once its tests are done.
+		dataSource.dispose();
+	});
+
+	it('neutralises git\'s editor (GIT_EDITOR included), so the continue cannot hang the host', async () => {
+		// A user's exported editor: if the continue ran it, the marker would appear (and the
+		// editor's non-zero exit would fail the cherry-pick). GIT_EDITOR outranks core.editor in
+		// git's resolution, so BOTH spellings must be neutralised per-run.
+		const editorScript = path.join(repoPath, 'editor-ran.mjs');
+		fs.writeFileSync(editorScript, [
+			"import fs from 'node:fs';",
+			"fs.writeFileSync(new URL('./editor-ran', import.meta.url), '');",
+			'process.exit(1);'
+		].join('\n'));
+		const marker = path.join(repoPath, 'editor-ran');
+		fs.rmSync(marker, { force: true });
+		const toPosix = (p) => p.split(path.sep).join('/');
+		const poisoned = `"${toPosix(process.execPath)}" "${toPosix(editorScript)}"`;
+
+		const savedEditor = process.env.GIT_EDITOR;
+		process.env.GIT_EDITOR = poisoned;
+		let error;
+		try {
+			error = await dataSource.continueOperation(repoPath, 'cherry-pick');
+		} finally {
+			if (savedEditor === undefined) delete process.env.GIT_EDITOR;
+			else process.env.GIT_EDITOR = savedEditor;
+		}
+
+		assert.equal(error, null, `the continue must succeed: ${error}`);
+		assert.equal(fs.existsSync(marker), false, 'git\'s editor must never run inside the extension host');
+		const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: repoPath, encoding: 'utf8' }).trim();
+		assert.equal(subject, 'the picked change', 'the stopped cherry-pick completed, reusing its message');
+	});
+});

@@ -91,6 +91,42 @@ impl TestRepo {
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
+    /// Run a git command with `input` on its standard input, asserting that it succeeded.
+    /// `fast-import` is the reason this exists: a stream of commits through one spawn is the
+    /// cheap way to build a history larger than the walk's window floor (256 commits), where
+    /// per-commit `git commit` spawns would dominate the test's runtime.
+    pub fn git_with_stdin(&self, args: &[&str], input: &str) -> String {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(self.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", self.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("could not run `git {}`: {e}", args.join(" ")));
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin was piped")
+            .write_all(input.as_bytes())
+            .unwrap_or_else(|e| panic!("could not feed `git {}`: {e}", args.join(" ")));
+        let output = child
+            .wait_with_output()
+            .expect("could not wait for `git` to finish");
+        assert!(
+            output.status.success(),
+            "`git {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
     pub fn write(&self, path: &str, contents: &str) {
         let full = self.path().join(path);
         if let Some(parent) = full.parent() {

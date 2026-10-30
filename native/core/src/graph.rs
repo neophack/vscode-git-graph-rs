@@ -199,12 +199,16 @@ fn resolve_tips(
                         .map(|remote| remote.hash.clone()),
                 );
             }
-            // Stashes hang off commits that may not be reachable from any branch.
-            for stash in stashes {
-                revisions.push(stash.base_hash.clone());
-            }
             revisions.push("HEAD".to_string());
         }
+    }
+
+    // Stashes hang off commits that may not be reachable from any branch being shown — under a
+    // branch filter their base can sit outside the filtered history — so their bases are walk
+    // tips in both modes (the CLI reference appends them after its own branch selection, and a
+    // base that no longer resolves is skipped rather than failing the load).
+    for stash in stashes {
+        revisions.push(stash.base_hash.clone());
     }
 
     // The Gerrit change refs allowed through the filter are walked whether the view is showing all
@@ -312,15 +316,12 @@ fn insert_stashes(stashes: &[GitStash], commits: &mut Vec<GitCommit>) {
 
 /// Hang the branch, tag and remote labels on the commits they point at.
 fn annotate_refs(ref_data: &GitRefData, options: &LogOptions, commits: &mut [GitCommit]) {
-    let lookup: HashMap<&str, usize> = commits
+    // Built keyed by the hash directly (one map, no cloned re-key pass): the loops below borrow
+    // `commits` mutably, so the map must own its keys.
+    let lookup: HashMap<String, usize> = commits
         .iter()
         .enumerate()
-        .map(|(index, commit)| (commit.hash.as_str(), index))
-        .collect();
-    // Cloned up front because the loops below borrow `commits` mutably.
-    let lookup: HashMap<String, usize> = lookup
-        .into_iter()
-        .map(|(hash, index)| (hash.to_string(), index))
+        .map(|(index, commit)| (commit.hash.clone(), index))
         .collect();
 
     for head in &ref_data.heads {
@@ -343,12 +344,20 @@ fn annotate_refs(ref_data: &GitRefData, options: &LogOptions, commits: &mut [Git
     for remote in &ref_data.remotes {
         if let Some(&index) = lookup.get(&remote.hash) {
             // The ref name starts with the remote it belongs to, unless that remote has since been
-            // removed and only its tracking refs are left behind.
-            let owner = options
-                .remotes
-                .iter()
-                .find(|name| remote.name.starts_with(&format!("{name}/")))
-                .cloned();
+            // removed and only its tracking refs are left behind. The prefix is tested without
+            // formatting one per remote ref (`remote.name.strip_prefix` on each configured remote
+            // in turn): a Gerrit repository carries tens of thousands of change refs.
+            let mut owner = None;
+            for name in &options.remotes {
+                if remote
+                    .name
+                    .strip_prefix(name.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+                {
+                    owner = Some(name.clone());
+                    break;
+                }
+            }
             commits[index].remotes.push(GitCommitRemote {
                 name: remote.name.clone(),
                 remote: owner,

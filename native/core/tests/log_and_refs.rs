@@ -727,3 +727,101 @@ fn a_remote_branch_with_tags_in_its_path_stays_a_branch() {
     assert!(tags.contains(&"origin/v1"), "{tags:?}");
     assert!(!remotes.contains(&"origin/tags/v1"));
 }
+
+/// One commit of a `fast-import` stream: a mark, the two dates the scenario needs to diverge
+/// (author and committer are set independently — exactly the rebase/import shape the author-date
+/// window exists for), and the parent (`from`, which fast-import reads AFTER the message).
+fn import_commit(
+    mark: usize,
+    parent: Option<usize>,
+    author: i64,
+    committer: i64,
+    message: &str,
+) -> String {
+    let mut out = format!("commit refs/heads/main\nmark :{mark}\n");
+    out.push_str(&format!(
+        "author Test User <test@example.com> {author} +0000\ncommitter Test User <test@example.com> {committer} +0000\ndata {}\n{message}\n",
+        message.len() + 1
+    ));
+    if let Some(parent) = parent {
+        out.push_str(&format!("from :{parent}\n"));
+    }
+    out
+}
+
+#[test]
+fn the_author_date_window_keeps_the_commits_author_date_order_surfaces() {
+    require_git!();
+    let repo = TestRepo::new();
+
+    // A history longer than the walk's window floor (256), where one out-of-band commit has the
+    // NEWEST author date but an OLD committer date: a committer-date window cut (gix's traversal
+    // ranking) drops it exactly when the author-date page should show it first.
+    let total = 300;
+    let base = 1_600_000_000;
+    let mut stream = import_commit(1, None, base, base, "c1");
+    for index in 2..=total {
+        let tick = base + (index as i64) * 60;
+        stream.push_str(&import_commit(
+            index,
+            Some(index - 1),
+            tick,
+            tick,
+            &format!("c{index}"),
+        ));
+    }
+    // The out-of-band commit: a second branch off the OLDEST commit, authored "now" (the newest
+    // author date of the whole repository) but committed back then (among the oldest committer
+    // dates — outside the newest-256-by-committer-date window).
+    stream.push_str(&format!(
+        "commit refs/heads/out-of-band\nmark :{}\nauthor Test User <test@example.com> {} +0000\ncommitter Test User <test@example.com> {} +0000\ndata 12\nout-of-band\nfrom :1\n",
+        total + 1,
+        base + 86_400,
+        base + 60
+    ));
+    repo.git_with_stdin(&["fast-import", "--quiet"], &stream);
+
+    // The reference answer: git's own `--author-date-order` page has the out-of-band commit
+    // first (its author date is the newest), then the newest-authored commits of main.
+    let expected = repo.log_hashes(&["--author-date-order", "--all", "-n", "10"]);
+    assert_eq!(expected.len(), 10);
+    assert_eq!(
+        expected[0],
+        repo.rev_parse("refs/heads/out-of-band"),
+        "git puts the newest-authored commit first under --author-date-order"
+    );
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).expect("could not resolve the tips");
+    let options = WalkOptions {
+        limit: 10,
+        ordering: CommitOrdering::AuthorDate,
+        ..Default::default()
+    };
+    let hashes: Vec<String> = log::walk(&engine, &tips, &options)
+        .expect("the walk failed")
+        .into_iter()
+        .map(|record| record.hash)
+        .collect();
+
+    assert_eq!(
+        hashes, expected,
+        "the author-date window must rank by the ordering in effect, not by committer date"
+    );
+
+    // The control: under date order the same commit stays off the page (its committer date is
+    // old), and the page still matches git.
+    let expected_date = repo.log_hashes(&["--date-order", "--all", "-n", "10"]);
+    let options = WalkOptions {
+        limit: 10,
+        ordering: CommitOrdering::Date,
+        ..Default::default()
+    };
+    let hashes: Vec<String> = log::walk(&engine, &tips, &options)
+        .expect("the walk failed")
+        .into_iter()
+        .map(|record| record.hash)
+        .collect();
+    assert_eq!(hashes, expected_date);
+    assert!(!hashes.contains(&repo.rev_parse("refs/heads/out-of-band")));
+}

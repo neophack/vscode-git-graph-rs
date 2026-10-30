@@ -62,6 +62,13 @@ export class CommitComparisonView extends Disposable {
 				if (this.isDisposed()) return;
 				if (msg.command === 'getFileDiff') {
 					const file = this.fileChanges[msg.index];
+					if (file === undefined) {
+						// A stale request for an index the current file list no longer has (the
+						// range failed to load, or changed since the page asked): answer rather
+						// than leave the webview waiting on a diff that never comes.
+						this.hexPost()({ command: 'fileDiff', index: msg.index, diff: null, error: 'The file is no longer part of the comparison.' });
+						return;
+					}
 					let diff: string | null, error: string | null = null;
 					try {
 						diff = await dataSource.getCommitFileDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath);
@@ -73,7 +80,10 @@ export class CommitComparisonView extends Disposable {
 					this.hexPost()({ command: 'fileDiff', index: msg.index, diff: diff, error: error });
 				} else if (msg.command === 'viewDiff') {
 					const file = this.fileChanges[msg.index];
-					await viewDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath, file.type);
+					// A stale index (the range changed since the page asked) has no file to open
+					if (file !== undefined) {
+						await viewDiff(this.repo, this.fromHash, this.toHash, file.oldFilePath, file.newFilePath, file.type);
+					}
 				} else if (msg.command === 'viewDiffBinary') {
 					// Binary files have no textual diff to open in the native editor: the
 					// standalone Binary Compare tab shows the full hex / picture comparison.

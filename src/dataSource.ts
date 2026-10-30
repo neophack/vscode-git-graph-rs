@@ -23,7 +23,7 @@ import {
 	isValidCommitHash,
 } from './utils/git';
 import { getPathFromUri, pathWithTrailingSlash, realpath } from './utils/paths';
-import { detectTerminalShellKind, openGitTerminal, quoteForShell, resolveSpawnOutput } from './utils/childProcess';
+import { AbortLike, detectTerminalShellKind, openGitTerminal, quoteForShell, resolveSpawnOutput } from './utils/childProcess';
 import { showErrorMessage } from './utils/actions';
 import { Disposable } from './utils/disposable';
 import { GgEvent } from './utils/event';
@@ -301,12 +301,18 @@ export class DataSource extends Disposable {
 
 	/**
 	 * Continue an in-progress merge, rebase, cherry-pick or revert.
+	 *
+	 * `core.editor=true` runs the shell no-op as the editor: a continue whose stopped commit
+	 * wants a message edit must not open an interactive editor inside the headless extension
+	 * host — that hangs it. Git reuses the existing message as-is. GIT_EDITOR is neutralised
+	 * per-run too: it OUTRANKS core.editor in Git's editor resolution, so a user's exported
+	 * editor (VISUAL/EDITOR already lose to core.editor) would otherwise still open.
 	 * @param repo The path of the repository.
 	 * @param type The type of operation to continue.
 	 * @returns The ErrorInfo from the executed command.
 	 */
 	public continueOperation(repo: string, type: GitOperationType) {
-		return this.runGitCommand([type, '--continue'], repo);
+		return this.runGitCommand(['-c', 'core.editor=true', type, '--continue'], repo, { GIT_EDITOR: 'true' });
 	}
 
 	/**
@@ -2344,12 +2350,17 @@ export class DataSource extends Disposable {
 	 * Run a Git command (typically for a Git Graph View action).
 	 * @param args The arguments to pass to Git.
 	 * @param repo The repository to run the command in.
+	 * @param extraEnv Environment variables layered over the inherited process environment for
+	 * this one invocation (they win, after the askpass variables).
+	 * @param signal When the token aborts, the Git child process is killed and the run rejects -
+	 * used by the Gerrit integration to stop a stalled remote operation at its timeout instead of
+	 * leaving the ssh child running for the rest of the session.
 	 * @returns The returned ErrorInfo (suitable for being sent to the Git Graph View).
 	 */
-	public runGitCommand(args: string[], repo: string): Promise<ErrorInfo> {
+	public runGitCommand(args: string[], repo: string, extraEnv: { [key: string]: string } | null = null, signal?: AbortLike): Promise<ErrorInfo> {
 		// Any of these commands may change the repository's refs, so the cached ref read is dropped
 		this.invalidateRefCache(repo);
-		return this._spawnGit(args, repo, () => null).catch((errorMessage: string) => errorMessage);
+		return this._spawnGit(args, repo, () => null, false, extraEnv, signal).catch((errorMessage: string) => errorMessage);
 	}
 
 	/**
@@ -2421,9 +2432,10 @@ export class DataSource extends Disposable {
 	 * @param args The arguments to pass to Git.
 	 * @param repo The repository to run the command in.
 	 * @param resolveValue A callback invoked to resolve the data from `stdout`.
+	 * @param signal When the token aborts, the Git child process is killed and the run rejects.
 	 */
-	public gitOutput<T>(args: string[], repo: string, resolveValue: { (stdout: string): T }) {
-		return this._spawnGit(args, repo, (stdout) => resolveValue(stdout.toString()));
+	public gitOutput<T>(args: string[], repo: string, resolveValue: { (stdout: string): T }, signal?: AbortLike) {
+		return this._spawnGit(args, repo, (stdout) => resolveValue(stdout.toString()), false, null, signal);
 	}
 
 	/**
@@ -2475,8 +2487,9 @@ export class DataSource extends Disposable {
 	 * @param resolveValue A callback invoked to resolve the data from `stdout` and `stderr`.
 	 * @param ignoreExitCode Ignore the exit code returned by Git (default: `FALSE`).
 	 * @param extraEnv Additional environment variables layered over the process and askpass environments.
+	 * @param signal When the token aborts, the Git child process is killed and the run rejects.
 	 */
-	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, extraEnv: { [key: string]: string } | null = null) {
+	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, extraEnv: { [key: string]: string } | null = null, signal?: AbortLike) {
 		return new Promise<T>((resolve, reject) => {
 			if (this.gitExecutable === null) {
 				return reject(unableToFindGitMsg());
@@ -2485,10 +2498,27 @@ export class DataSource extends Disposable {
 			// The command is logged with how long it took, once it has finished: that duration is
 			// what makes the opt-in session log analysable for performance (scripts/analyze-log.mjs).
 			const started = Date.now();
-			resolveSpawnOutput(cp.spawn(this.gitExecutable.path, args, {
+			const child = cp.spawn(this.gitExecutable.path, args, {
 				cwd: repo,
 				env: Object.assign({}, process.env, this.askpassEnv, extraEnv)
-			})).then((values) => {
+			});
+			// An already-settled run leaves the listener behind for nothing: the settle path below
+			// removes it, and the token's own contract never fires a listener registered after the
+			// abort.
+			let onAbort: (() => void) | null = null;
+			if (signal !== undefined) {
+				onAbort = () => {
+					child.kill();
+					reject('The operation was cancelled.');
+				};
+				if (signal.aborted) {
+					onAbort();
+					return;
+				}
+				signal.addEventListener('abort', onAbort);
+			}
+			resolveSpawnOutput(child).then((values) => {
+				if (signal !== undefined && onAbort !== null) signal.removeEventListener('abort', onAbort);
 				this.logger.logCmd('git', args, Date.now() - started);
 				const status = values[0], stdout = values[1], stderr = values[2];
 				if (status.code === 0 || ignoreExitCode) {
