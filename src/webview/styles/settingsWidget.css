@@ -37,8 +37,10 @@
 	text-align:center;
 }
 
-/* The Settings Widget is split into two independently scrollable columns:
-   the settings of the repository open in the view, and the Global (User) Settings. */
+/* The wide layout splits the Settings Widget into two independently scrollable columns:
+   the settings of the repository open in the view, and the Global (User) Settings. The touch
+   layouts stack the two into one column and the panel itself becomes the single scroll
+   (body.touchMode, below). */
 #settingsColumns{
 	display:flex;
 	align-items:flex-start;
@@ -587,8 +589,20 @@ body.touchMode .settingsColumnTitle{
 	opacity:1;
 	color:var(--m-fg);
 }
+/* Both touch layouts read the settings as one column: the Repository Settings stack above the
+   Global Settings, and the panel itself is the one scroll (a single scrollbar, the widget's own).
+   The column titles stay sticky, handing off at the seam as the panel scrolls past them. */
+body.touchMode #settingsColumns{
+	display:block;
+}
+body.touchMode .settingsColumn{
+	max-height:none;
+	overflow-y:visible;
+}
 body.touchMode .settingsColumn + .settingsColumn{
-	border-left-color:var(--m-sep);
+	border-left:none;
+	padding-left:0;
+	margin-top:4px;
 }
 body.touchMode .settingsSection, body.touchMode .settingsSection.general{
 	margin:0 0 12px;
@@ -809,7 +823,9 @@ body.tabletMode #settingsWidget{
 	right:0;
 	margin:0 auto;
 	box-sizing:border-box;
-	width:880px;
+	/* narrower than the list panels: the single settings column reads at form width
+	   (the statistics sheet's 620px) */
+	width:620px;
 	max-width:calc(100vw - 48px);
 	min-height:0;
 	max-height:calc(100vh - 24px);
@@ -861,18 +877,8 @@ body.tabletMode #settingsClose:active{
 	background-color:var(--m-pressed);
 }
 
-/* Settings: the two columns scroll within the sheet */
-body.tabletMode #settingsColumns{
-	gap:16px;
-}
-body.tabletMode .settingsColumn{
-	max-height:calc(100vh - 120px);
-}
-body.tabletMode .settingsColumn + .settingsColumn{
-	padding-left:16px;
-}
-@media (max-width:719px){
-	body.tabletMode .settingsColumn + .settingsColumn{
-		padding-left:0;
-	}
+/* Settings: the single column (body.touchMode, above) scrolls within the sheet.
+   Its sticky column titles pick up the phone's --m-bg; on the sheet they must match --m-sheet. */
+body.tabletMode .settingsColumnTitle{
+	background-color:var(--m-sheet);
 }
