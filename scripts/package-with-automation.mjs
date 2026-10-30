@@ -7,4 +7,5 @@
 
 import { runVsce, withAutomationContributions } from './automation-packaging.mjs';
 
-await withAutomationContributions(() => runVsce(['package', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));
+// --no-dependencies: same reason as package-without-automation.mjs.
+await withAutomationContributions(() => runVsce(['package', '--no-dependencies', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));

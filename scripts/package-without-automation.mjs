@@ -8,4 +8,7 @@
 
 import { runVsce, withAutomationExcluded } from './automation-packaging.mjs';
 
-await withAutomationExcluded(() => runVsce(['package', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));
+// --no-dependencies: node_modules/** is vscodeignored (the package is self-contained), so vsce's
+// npm dependency detection is dead weight that fails packaging whenever the local npm tree is
+// merely untidy (e.g. extraneous packages make `npm list` exit nonzero).
+await withAutomationExcluded(() => runVsce(['package', '--no-dependencies', '--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid']));

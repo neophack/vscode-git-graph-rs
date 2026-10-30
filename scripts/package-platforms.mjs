@@ -167,8 +167,10 @@ async function main() {
 				fs.copyFileSync(path.join(stash, `${platform}.node`), dest);
 				const outFile = `git-graph-rs-${version}-${platform}.vsix`;
 				console.log(`  packaging ${outFile} (--target ${target})...`);
+				// --no-dependencies: node_modules/** is vscodeignored, so vsce's npm dependency
+				// detection is dead weight that fails packaging on an untidy npm tree.
 				execFileSync(process.execPath, [
-					vsceEntry, 'package', '--target', target,
+					vsceEntry, 'package', '--no-dependencies', '--target', target,
 					'--baseContentUrl', 'https://example.invalid', '--baseImagesUrl', 'https://example.invalid',
 					'--out', outFile
 				], { cwd: root, stdio: 'inherit' });
