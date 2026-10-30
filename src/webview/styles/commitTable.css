@@ -80,8 +80,10 @@
 }
 /* The wide layout never shrinks the ref pills: a branch or tag name must stay whole and
    readable, so when the description runs out of room the subject above gives way (down to its
-   80px floor) and the pills keep their natural width. Only the touch layouts shrink and
-   ellipsize pill names (their own floors below), where the screen is too small for both. */
+   80px floor) and the pills keep their natural width. The tablet's single-line rows follow the
+   same rule (their own block below); only the phone and the tablet's two-line side-pane rows
+   shrink and ellipsize pill names (their own floors below), where that meta line is too small
+   for both. */
 
 #commitTable tr.commit span.description .commitbody{
 	opacity: 0.5;
@@ -437,10 +439,10 @@ body.tabletMode #commitTable tr.commit span.description{
 	align-items:center;
 	height:var(--git-graph-rowHeight);
 }
-/* The subject takes the room the refs leave and never collapses below a readable stub: the base
-   rule only ellipsizes it, while its ref labels (flex-shrink:0) could squeeze it to nothing in a
-   narrow description column (the side pane open). The refs give way first: they shrink and
-   ellipsize instead. */
+/* The subject takes what room the whole pills leave and never collapses below a readable stub:
+   the base rule only ellipsizes it, while its ref labels could squeeze it to nothing in a narrow
+   description column. Like the wide layout, the pills stay whole (flex-shrink:0 below) and the
+   subject is what gives way. */
 body.tabletMode #commitTable tr.commit span.description .text{
 	flex:1 1 auto;
 	min-width:96px;
@@ -501,26 +503,16 @@ body.tabletMode #commitTable tr.commit span.description .gitRef{
 	display:inline-flex;
 	align-items:center;
 	align-self:center;
-	flex-shrink:1;
-	/* a floor, so a long subject beside several refs ellipsizes the names instead of cutting a
-	   chip down to its icon. No max-width cap: a percentage cap resolves against the description
-	   box regardless of need, so even a lone ref beside a short subject lost the tail of its
-	   name - the pill shrinks only under real flex pressure from a crowded row */
-	min-width:76px;
-	overflow:hidden;
-	white-space:nowrap;
+	/* the pill never yields: like the wide layout, a branch or tag name stays whole and readable,
+	   and the subject beside it gives way instead (its 96px floor above). No min-width floor - a
+	   floor only matters to a shrinking pill, and here it would pad short names. */
+	flex-shrink:0;
 }
-body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefName{
-	/* no percentage max-width here: against the pill's full content box it ignores the icon
-	   segment, so a squeezed pill clipped the name flush at its edge with no ellipsis - the
-	   name shrinks as a flex item instead (the non-name segments are flex:none below) */
-	flex:0 1 auto;
-	min-width:0;
-	overflow:hidden;
-	text-overflow:ellipsis;
-	white-space:nowrap;
-}
+/* Nothing inside the pill gives way either: the icon, the name, the remote labels and the score
+   chips all keep their natural size, so no segment can ever shrink or clip inside the pill's
+   rounded box */
 body.tabletMode #commitTable tr.commit span.description .gitRef > svg,
+body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefName,
 body.tabletMode #commitTable tr.commit span.description .gitRef .gitRefHeadRemote,
 body.tabletMode #commitTable tr.commit span.description .gitRef .gg-label,
 body.tabletMode #commitTable tr.commit span.description .gitRef .gg-status{

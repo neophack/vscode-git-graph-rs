@@ -100,8 +100,9 @@ ${section('Help tooltip popup', `
  *  Description column to fit the refs and the subject at their natural sizes - the state a
  *  crowded description drives the wide layout into. The wide layout never shrinks the ref
  *  pills: a branch or tag name stays whole and readable, and the subject gives way instead,
- *  ellipsizing down to its 80px floor. (Only the touch layouts shrink pill names - the tablet
- *  squeeze is gated by the tablet-squeezed page in pages-mobile.mjs.) */
+ *  ellipsizing down to its 80px floor. (The tablet's single-line rows follow the same rule -
+ *  gated by the tablet-squeezed page in pages-mobile.mjs; only the phone and the tablet's
+ *  two-line side-pane rows shrink pill names.) */
 const squeezedBody = `
 <div id="view"><div id="content">
 	<div id="commitTable" class="autoLayout" style="width:760px;margin:8px 12px"><table>
