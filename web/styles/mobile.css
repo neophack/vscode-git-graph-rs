@@ -1209,9 +1209,21 @@ body.mobileMode .contextMenu.checked li.contextMenuItem{
 body.mobileMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
 	left:18px;
 }
+/* A pointer can hover the sheet too (the view in a phone-size window, or the repro page), and the
+   wide layout's hover colour (.contextMenu.css) then out-ranks the solid li surface above:
+   --vscode-menu-selectionBackground is translucent in some themes - and missing entirely where no
+   theme variables are injected, which collapses the whole declaration to transparent - so the
+   hovered item went see-through and the commit list showed through the sheet. Hover and press
+   therefore never replace the surface: the solid --m-sheet colour stays as background-color and
+   the highlight is layered over it as a background-image tint (the pressed strength). */
+body.mobileMode .contextMenu li.contextMenuItem:hover,
 body.mobileMode .contextMenu li.contextMenuItem:active{
-	background-color:var(--m-pressed);
+	background-color:var(--m-sheet);
+	background-image:linear-gradient(var(--m-pressed), var(--m-pressed));
 	color:var(--m-fg);
+}
+body.mobileMode .contextMenu.checked li.contextMenuItem:hover .contextMenuItemCheck svg{
+	fill:currentColor;
 }
 body.mobileMode .contextMenu li.contextMenuItem + li.contextMenuItem{
 	box-shadow:inset 0 0.5px 0 var(--m-sep);
