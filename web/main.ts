@@ -231,17 +231,20 @@ class GitGraphView {
 		this.refreshBtnElem.setAttribute('role', 'button');
 		makeKeyboardActivatable(this.refreshBtnElem);
 		this.refreshBtnElem.addEventListener('click', () => {
-			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
-				// The hard refresh below clears the table (the scroll height collapses with it, and
-				// the browser clamps scrollTop to 0): remember where the user was reading, so the
-				// reloaded same-query list renders back around it instead of resetting to the top
-				this.capturePendingViewportAnchor();
-				// An explicit refresh must also re-query the pull request states: prStatusRepos is a
-				// one-shot cache per repository, so without dropping the entry a request merged since
-				// the view loaded keeps its badge showing "open" until the webview is reloaded.
-				this.prStatusRepos.delete(this.currentRepo);
-				this.refresh(true, true);
-			}
+			// An explicit click is honoured even while a load cycle is in flight (e.g. one the
+			// background poll or a repository switch triggered): requestLoadRepoInfoAndCommits
+			// coalesces it — invalidating the in-flight cycle and requesting a fresh loadRepoInfo —
+			// the same treatment the branch and author dropdowns' direct reloads already get. A
+			// refreshing-class guard here silently lost the click whenever the spinner was on.
+			// The hard refresh below clears the table (the scroll height collapses with it, and
+			// the browser clamps scrollTop to 0): remember where the user was reading, so the
+			// reloaded same-query list renders back around it instead of resetting to the top
+			this.capturePendingViewportAnchor();
+			// An explicit refresh must also re-query the pull request states: prStatusRepos is a
+			// one-shot cache per repository, so without dropping the entry a request merged since
+			// the view loaded keeps its badge showing "open" until the webview is reloaded.
+			this.prStatusRepos.delete(this.currentRepo);
+			this.refresh(true, true);
 		});
 		this.renderRefreshButton();
 		if (prevState) {

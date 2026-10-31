@@ -249,3 +249,67 @@ describe('a change the file watcher never reports is still caught by the backgro
 		if (lastError !== null) throw lastError;
 	});
 });
+
+describe('a refresh click during an in-flight load cycle is honoured, not dropped', () => {
+	let context = null;
+	const repoDir = path.join(os.tmpdir(), 'git-graph-rs-refresh-click-coalesce');
+
+	it('a click while the spinner is on still reaches the host (coalesced) and the cycle completes', async () => {
+		// The regression this pins: the refresh button's click handler used to ignore clicks while
+		// a load cycle was in flight (the "refreshing" class), so an explicit click that raced the
+		// background poll's own refresh was silently lost — no request, and an automation run
+		// waiting for loadRepoInfo starved until its timeout (the Windows CI flake).
+		setAfterDeliver(null);
+		setOnExtensionMessage(null);
+		createRepo(repoDir);
+		const h = await bootRealView(repoDir);
+		context = h;
+		for (let i = 0; i < 200 && h.rows().length === 0; i++) await sleep(100);
+		assert.ok(h.rows().length > 0, 'commits were rendered');
+		await sleep(1000); // let the boot's initial load cycle fall quiet
+
+		// Count the loadRepoInfo REQUESTS leaving the page (page -> host direction).
+		let loadRepoInfoRequests = 0;
+		const api = h.window.__api;
+		const originalPost = api.postMessage;
+		api.postMessage = (msg) => {
+			if (msg && msg.command === 'loadRepoInfo') loadRepoInfoRequests++;
+			return originalPost(msg);
+		};
+
+		const refreshBtn = h.document.getElementById('refreshBtn');
+		const click = () => refreshBtn.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		click(); // starts a hard refresh cycle
+		click(); // lands while that cycle is still in flight (the spinner is on)
+		await sleep(400); // the coalesced request goes out within the in-flight window
+		assert.equal(loadRepoInfoRequests, 2, 'both clicks must produce a request, got ' + loadRepoInfoRequests);
+
+		// The coalesced cycle completes cleanly: the button leaves the refreshing state.
+		let settled = false;
+		for (let i = 0; i < 100 && !settled; i++) {
+			settled = !refreshBtn.classList.contains('refreshing');
+			if (!settled) await sleep(100);
+		}
+		assert.ok(settled, 'the coalesced load cycle completes');
+	}, 60000);
+
+	after(async () => {
+		setOnExtensionMessage(null);
+		if (context !== null) {
+			context.dispose();
+			context.window.close();
+		}
+		let lastError = null;
+		for (let i = 0; i < 40; i++) {
+			try {
+				fs.rmSync(repoDir, { recursive: true, force: true });
+				lastError = null;
+				break;
+			} catch (error) {
+				lastError = error;
+				await sleep(250);
+			}
+		}
+		if (lastError !== null) throw lastError;
+	});
+});
