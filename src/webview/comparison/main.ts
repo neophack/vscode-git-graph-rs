@@ -36,7 +36,7 @@ if (commitCards !== null && filesChangedLabel !== null && sidebar !== null && fi
 	// The "Files" bar (in the main column) opens the sheet, its title bar's close button closes
 	// it, and picking a file dismisses it back to the diff (see selectFile below). Both buttons
 	// live in the skeleton the host serves and are looked up under skeleton elements already
-	// resolved — document-wide lookups are rationed here (OPTIMIZATION-PLAN §6 F3); the guards
+	// resolved — document-wide lookups are rationed here; the guards
 	// keep older shells (the test harnesses') harmless.
 	const mainColumn = diffAreaEl.closest('#main');
 	const mobileFilesBtn = mainColumn !== null ? mainColumn.querySelector('#mobileFilesBtn') : null;
