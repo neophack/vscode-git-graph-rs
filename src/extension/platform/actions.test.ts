@@ -206,7 +206,7 @@ describe('the Visual Studio Code command wrappers', () => {
 		vscodeMock.responses['executeCommand:workbench.view.scm'] = [];
 		expect(await openExtensionSettings()).toBe(null);
 		expect(await viewScm()).toBe(null);
-		expect(vscodeMock.callsTo('executeCommand:workbench.action.openSettings').map((args) => args.slice(1))).toEqual([['@ext:aucneon.git-graph-rs']]);
+		expect(vscodeMock.callsTo('executeCommand:workbench.action.openSettings').map((args) => args.slice(1))).toEqual([['@ext:neophack.git-graph-rs']]);
 		expect(vscodeMock.callsTo('executeCommand:workbench.view.scm').length).toBe(1);
 
 		vscodeMock.responses['executeCommand:workbench.action.openSettings'] = [new Error('x')];
