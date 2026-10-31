@@ -3,8 +3,8 @@
 This document describes the repository **as it is now**: the refactor waves through the host
 and webview rework, the operate/render performance passes (tasks 4.8–4.10, 5.9–5.10), the
 native surface shrink (2.6), the test-system drain (7.1) and the tooling that grew around
-them. `docs/REFACTOR-PLAN.md` remains the plan of record; where the two disagree, this file
-describes the tree.
+them. With the refactor plan executed and retired from `docs/`, this file is the authority on
+the tree's shape; the decisions behind it live in [`adr/`](adr/README.md).
 
 ## 1. Top-level layout
 
@@ -22,7 +22,7 @@ describes the tree.
 │   │                        #   compat.mjs + es2018.mjs (artifact syntax gates), check-binary-compat.mjs
 │   ├── dev/                 # install.mjs, baseline.mjs, theme-audit.mjs (+ pages/themes), coverage-matrix.mjs
 │   └── ...                  # packaging, addon build, automation packaging, log analysis
-├── docs/                    # REFACTOR-PLAN.md, this file, ADRs, compatibility/performance/baselines
+├── docs/                    # this file, ADRs, compatibility/performance/baselines
 ├── resources/               # Icons and static assets shipped in the VSIX
 ├── media/                   # Compiled webview bundles (gitignored build output)
 ├── dist/                    # Bundled host + askpass (gitignored, the only packaging input)

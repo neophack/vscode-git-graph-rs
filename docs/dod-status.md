@@ -1,6 +1,7 @@
 # Definition of Done — status
 
-REFACTOR-PLAN §11, item by item, as of 2026-10-28 (`task/m0-gates`). Every evidence command runs
+The executed refactor plan's Definition of Done (§11), item by item, as of 2026-10-28
+(`task/m0-gates`). Every evidence command runs
 on a clean checkout.
 
 **The rule.** A row is **held** only if a CI job fails when it regresses. A property that is true

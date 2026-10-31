@@ -1,7 +1,7 @@
 # Compatibility
 
-The extension's documented compatibility promise, as defined by [REFACTOR-PLAN](./REFACTOR-PLAN.md)
-§3.7. This page records the promise; entries marked **measured, pending** are numbers CI fills
+The extension's documented compatibility promise, set by the executed refactor plan's §3.7 and
+owned by this page. Entries marked **measured, pending** are numbers CI fills
 in once the corresponding gate runs on real artifacts (the Phase 0 / task 2.8 measurement
 steps), at which point the marker is replaced by the measured value.
 

@@ -2,8 +2,8 @@
 
 Thanks for helping. This file covers the day-to-day commands and the conventions a change is
 reviewed against; the shape of the tree and how the pieces connect are described in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and the why behind the ongoing refactor lives in
-[`docs/REFACTOR-PLAN.md`](docs/REFACTOR-PLAN.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and the decisions that outlive the code are
+recorded in [`docs/adr/`](docs/adr/README.md).
 
 ## Build
 
@@ -48,8 +48,7 @@ the `npm run test:node` / `test:node:cov` / `test:automation:full` scripts) is d
 scenario was either migrated into the Vitest layers above with its assertions preserved, or
 deleted together with its owning machinery (the `out/` build, the packaging substitution, the
 full-test script). The complete old→new mapping is recorded in the drain commit's message. The
-test layout is now exactly the L0–L4 structure of `docs/REFACTOR-PLAN.md` §6.1; there is no
-separate legacy runner.
+test layout is exactly the L0–L4 structure described above; there is no separate legacy runner.
 
 ## Static checks
 
@@ -97,7 +96,7 @@ The short version (the long one is `docs/ARCHITECTURE.md`):
   (`src/**/*.test.ts`).
 - `scripts/build/`, `scripts/dev/`, `scripts/` — build pipeline, developer entry points, and
   the not-yet-consolidated packaging/audit tooling.
-- `docs/` — this file, ARCHITECTURE.md, the REFACTOR-PLAN, and `docs/adr/`.
+- `docs/` — this file, ARCHITECTURE.md and the reference/baseline documents, and `docs/adr/`.
 
 ## Conventions
 
@@ -109,8 +108,8 @@ The short version (the long one is `docs/ARCHITECTURE.md`):
   a change, its tests, and its doc updates land together; unrelated cleanups ride in their own
   commit.
 - **File size.** Non-generated source files stay **≤ 600 lines** (string tables and generated
-  code excepted). When a module outgrows it, split it — the plan's §2.3 covers the pure-move
-  PR discipline for exactly this.
+  code excepted). When a module outgrows it, split it — pure moves first, behaviour unchanged,
+  in a PR of its own.
 - **Docs stay true (goal U8).** If your change alters structure or reverses a recorded
   decision, update `docs/ARCHITECTURE.md` or `CONTRIBUTING.md` in the same commit, and record
   the decision in `docs/adr/` if it is one worth keeping.

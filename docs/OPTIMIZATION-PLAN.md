@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-10-26 |
 | Code baseline | `dev-refactor` @ `fe79dbf` (1.1.0) |
-| Relationship to other docs | Follows [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (plan of record) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
+| Relationship to other docs | Follows the executed REFACTOR-PLAN (retired from `docs/`; its DoD ledger is [dod-status.md](dod-status.md), its decisions the ADRs) and audits [dod-status.md](dod-status.md). Where this plan corrects the DoD ledger, the correction is backed by a command in §1. |
 | Viewpoints | Software architecture · VS Code platform · Rust engine · webview frontend · quality/CI |
 | Status | M0 complete; waves 1–4 (§12) landed R1–R8, V1–V5, S2–S7, G1–G5, D, F1–F7, A1–A7, P1–P3 and the D-1/D-2/D-4 decisions. D-2 is taken: `retainContextWhenHidden` stays `true` (ADR-0007 measured 52 ms retained vs 227 ms non-retained restore). The size gate's KNOWN list is empty — no production file is over the 600-line limit. Wave 8 closed the first Actions run's size finding: the Commit Details View is on demand, and both ADR-0005 first-paint budgets hold again (entry 160.4/200 KB, closure 332.7/360 KB) |
 

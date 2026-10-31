@@ -1,7 +1,7 @@
 # Performance Budgets and Status
 
-This document carries the **binding performance budgets** of the refactor plan
-([REFACTOR-PLAN.md](REFACTOR-PLAN.md) §3.8.1, reproduced verbatim below) together with a
+This document carries the **binding performance budgets** of the executed refactor plan
+(its §3.8.1, reproduced verbatim below) together with a
 **status column** recording, as of 2026-10-27, which numbers have actually been measured on
 this repository and which await the measurement infrastructure. The plan's rule is absolute:
 *no number is written here unless a command produced it*; every unmeasured item says
@@ -176,4 +176,5 @@ always the comparison page's, never the graph view's first paint.
 - [ADR-0004: performance budgets — calibration status and the tighten-only ratchet](adr/adr-0004-performance-budgets.md)
 - [ADR-0005: the first-paint critical-JS budget recalibrated to the split layout's measured floor](adr/adr-0005-critical-js-budget-recalibration.md)
 - [docs/baseline-2026-10.md](baseline-2026-10.md) — the generated baseline this document's size numbers come from
-- [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §3.8 (performance architecture), §6.7 (P1–P5 gates), §7.6 (finalization of this document)
+- The retired refactor plan's §3.8 (performance architecture), §6.7 (P1–P5 gates), §7.6
+  (finalization of this document) — the budgets here are that plan's §3.8.1, verbatim
