@@ -17,6 +17,12 @@
 				"id": "withProgress",
 				"reason": "No host call site routes through the port's withProgress yet (the only withProgress caller, commands/automation.ts's runAutomationTest, calls vscode.window.withProgress directly), so no catalog action can drive the interface member today."
 			}
+		],
+		"ui-languages": [
+			{
+				"id": "i18n:compareFilesButton",
+				"reason": "The comparison view's phone-only files bar (#mobileFilesBtn): the layout appears only with mobileAdaptation on or a phone-width window, and the E2E launcher pins the desktop layout on purpose ('git-graph-rs.mobileAdaptation': false - the touch layouts' coverage is the mobileAdaptation unit tests and the theme audit's narrow pages). The comparison-webview unit journeys drive the bar and the sheet instead."
+			}
 		]
 	},
 	"uncovered": {
