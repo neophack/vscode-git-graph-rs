@@ -484,16 +484,19 @@ body.mobileMode .customSelectOption{
 /* ===== Tablet layout: dialogs (merged from styles/tablet/overlays.css) =====
  * Dialogs are form sheets: a centred card at tablet density, flat filled fields, capsule
  * buttons. One soft shadow and a hairline lift the card off the content - no borders, no
- * gradients. */
+ * gradients. The card's geometry is the one the tablet panels (Settings, Reflog, Statistics,
+ * Worktrees) share: 16px radius, 20px side padding with 16px top / 20px bottom, the 32px
+ * round close button at 12/14, and a 12px inset from every viewport edge (the dialog is
+ * centred, so the inset caps its height). */
 
 /* Dialogs */
 body.tabletMode .dialog{
 	max-width:calc(100vw - 48px);
-	max-height:calc(100vh - 48px);
+	max-height:calc(100vh - 24px);
 	overflow-y:auto;
 	box-sizing:border-box;
 	border:none;
-	border-radius:14px;
+	border-radius:16px;
 	background-color:var(--m-sheet);
 	box-shadow:0 16px 48px rgba(0,0,0,0.3), 0 0 0 0.5px var(--m-sep);
 	color:var(--m-fg);
@@ -505,7 +508,7 @@ body.tabletMode.vscode-high-contrast .dialog{
 	border:1px solid var(--m-sep);
 }
 body.tabletMode .dialogContent{
-	padding:20px 20px 16px;
+	padding:16px 20px 20px;
 	font-size:14px;
 	line-height:20px;
 }
@@ -556,10 +559,10 @@ body.tabletMode .dialog.noInput #dialogAction, body.tabletMode .dialog.inputInva
 	opacity:0.45;
 }
 body.tabletMode #dialogCloseIcon{
-	top:8px;
-	right:8px;
-	width:30px;
-	height:30px;
+	top:12px;
+	right:14px;
+	width:32px;
+	height:32px;
 	border-radius:50%;
 	background-color:var(--m-fill);
 	opacity:1;
