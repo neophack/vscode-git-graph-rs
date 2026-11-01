@@ -186,6 +186,17 @@ body.touchMode .treeRow.selected:active { background: var(--vscode-list-activeSe
 body.touchMode .commitCard.hasMessage .firstLine { margin: -6px -8px; padding: 6px 8px; }
 body.touchMode .commitCard.hasMessage .firstLine:hover { background: none; }
 body.touchMode .commitCard.hasMessage .firstLine:active { background: var(--m-pressed); }
+/* A finger cannot land on a 4px sash: an invisible skirt around it widens the grab area for touch
+   (the drawn sash stays 4px; the skirt hits the resizer itself, whose pointerdown captures the
+   drag) */
+body.touchMode #sidebarResizer:after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: -12px;
+	right: -12px;
+}
 
 /* The phone layout: larger type, the "Files" bar under the commit cards, and the sidebar as the
    full-screen sheet it opens. */
