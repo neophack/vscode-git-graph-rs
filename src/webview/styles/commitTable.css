@@ -524,6 +524,22 @@ body.tabletMode #commitTable .commit .avatar > img{
 	vertical-align:middle;
 }
 
+/* The Open Changes action: shown, not hover-revealed. A finger has no hover, so the wide layout's
+   reveal-on-hover would leave the action unreachable; the single-line rows carry it always shown,
+   at a touch-sized hit area (the wide layout's 20x20 grows to 24x32 inside the 40px row). The
+   description lends the room permanently here, where the wide layout lends it only while hovered.
+   The two-line rows below hide the action instead - a tap opens the details pane, whose title bar
+   carries it (commitDetails.ts). */
+body.tabletMode #commitTable tr.commit span.description .openChangesBtn{
+	width:24px;
+	height:32px;
+	opacity:1;
+	pointer-events:auto;
+}
+body.tabletMode #commitTable tr.commit span.description .openChangesBtn:active{
+	background-color:var(--m-pressed);
+}
+
 /* The footer's "Load More Commits": a flat capsule (merged from styles/tablet/base.css) */
 body.tabletMode #loadMoreCommitsBtn{
 	width:auto;
@@ -634,7 +650,9 @@ body.mobileMode #commitTable .pinnedBadge, body.tabletMode.sidePaneOpen #commitT
 @supports not (appearance: none) {
 	body.mobileMode #commitTable .mobileRefs > .gitRef + .gitRef, body.tabletMode.sidePaneOpen #commitTable .mobileRefs > .gitRef + .gitRef { margin-left: 4px; }
 }
-/* A tap opens the commit details sheet, which offers the commit's changes */
+/* The two-line rows (the phone, and the tablet with its side pane open) hide the Open Changes
+   action: a tap opens the commit details sheet, whose title bar carries the action at touch size
+   (the two-line description leaves it no room beside the subject) */
 body.mobileMode #commitTable .openChangesBtn, body.tabletMode.sidePaneOpen #commitTable .openChangesBtn{
 	display:none !important;
 }

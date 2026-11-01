@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, vi } from 'vitest';
-import { bootView } from '../../support/webviewHost';
+import { bootView, REPO } from '../../support/webviewHost';
 
 vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
@@ -189,6 +189,43 @@ describe('the tablet (mobileAdaptation, wide view) layout', () => {
 		await h.pump();
 		assert.equal(h.document.getElementById('cdv'), null, 'the pane closed');
 		assert.ok(!h.document.body.classList.contains('sidePaneOpen'), 'the list took its width back');
+	});
+
+	it('offers Open Changes to a finger: always shown on the single-line rows, and in the side pane\'s title bar', async () => {
+		// jsdom applies no CSS, so the always-shown rule is asserted on the stylesheet the build
+		// ships (the approach of the native-scrollbar test above): the wide layout reveals the row
+		// button only on hover, which a finger cannot do, so the tablet shows it at rest
+		const sheet = fs.readFileSync(path.join(rootDir, 'media', 'out.min.css'), 'utf8');
+		const tabletRule = sheet.match(/body\.tabletMode #commitTable tr\.commit span\.description \.openChangesBtn\{[^}]*\}/);
+		assert.ok(tabletRule !== null, 'a tablet rule block for the Open Changes button exists');
+		assert.match(tabletRule![0], /opacity\s*:\s*1/, 'the button is shown without a hover');
+		const hiddenRule = sheet.match(/body\.mobileMode #commitTable \.openChangesBtn\s*,\s*body\.tabletMode\.sidePaneOpen #commitTable \.openChangesBtn\{[^}]*\}/);
+		assert.ok(hiddenRule !== null, 'the two-line rows (the phone, the tablet side pane) keep hiding it');
+		assert.match(hiddenRule![0], /display\s*:\s*none/, 'there a tap opens the details sheet instead');
+
+		const h = await bootTablet(30);
+		const row = h.rows()[1];
+		row.click();
+		await h.pump();
+		await sleep(50);
+
+		const openChanges = h.document.getElementById('cdvOpenChanges')!;
+		assert.ok(openChanges !== null, 'the side pane\'s title bar carries the Open Changes action');
+		assert.ok(openChanges.closest('#cdvControls') !== null, 'beside the commit\'s other actions');
+
+		const requests: any[] = [];
+		const originalPostMessage = h.window.VSCODE_API.postMessage;
+		h.window.VSCODE_API.postMessage = (message: any) => { requests.push(message); originalPostMessage(message); };
+		openChanges.click();
+		h.window.VSCODE_API.postMessage = originalPostMessage;
+		// Field-wise (not deepEqual): the message crosses from the jsdom realm, whose object
+		// prototype fails Node's structural equality
+		const openCompareTab = requests.find((message) => message.command === 'openCompareTab');
+		assert.ok(openCompareTab !== undefined, 'the button opened a Commit Comparison tab');
+		assert.equal(openCompareTab.repo, REPO);
+		assert.equal(openCompareTab.fromHash, 'c0002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'); // the commit's first parent
+		assert.equal(openCompareTab.toHash, row.dataset.hash);
+		assert.equal(openCompareTab.singleCommit, true, 'presented as the commit\'s own changes, not a two-commit comparison');
 	});
 
 	it('returns to the original layout when the setting is unchecked', async () => {

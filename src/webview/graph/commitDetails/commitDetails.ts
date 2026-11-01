@@ -402,6 +402,12 @@ export class CommitDetails extends Component implements CommitDetailsSurface {
 		const isMobile = layout.isTouchLayout();
 		const mobileActionsPossible = isMobile && !expandedCommit.loading && expandedCommit.compareWithHash === null && expandedCommitLoaded;
 		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (expandedCommitLoaded && store.getCommit(expandedCommit.commitHash)!.parents.length > 0));
+		// The touch title bar's Open Changes button: the wide layout offers the action as the
+		// hover-revealed row button, which a finger cannot reveal - only the tablet's single-line
+		// rows carry it (always shown, commitTable.css). The phone sheet and the tablet side pane
+		// offer it here instead, for any commit the row button itself would accept (a first parent
+		// to diff against: not a root commit, and not a comparison already open).
+		const openChangesPossible = isMobile && !expandedCommit.loading && expandedCommit.compareWithHash === null && expandedCommitLoaded && store.getCommit(expandedCommit.commitHash)!.parents.length > 0;
 
 		// The file view controls: in the toolbar, or in the mobile sheet's "Files" section header
 		const fileViewBtns = html`<button type="button" id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="${strings.fileListViewTitle}" aria-label="${strings.fileListViewTitle}">${SVG_ICONS.fileList}</button><button type="button" id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="${strings.fileTreeViewTitle}" aria-label="${strings.fileTreeViewTitle}">${SVG_ICONS.fileTree}</button><button type="button" id="cdvCollapse" class="cdvControlBtn cdvFolderBtn" title="${strings.collapseFoldersTitle}" aria-label="${strings.collapseFoldersTitle}">${SVG_ICONS.collapseAll}</button><button type="button" id="cdvExpand" class="cdvControlBtn cdvFolderBtn" title="${strings.expandFoldersTitle}" aria-label="${strings.expandFoldersTitle}">${SVG_ICONS.expandAll}</button>`;
@@ -447,7 +453,7 @@ export class CommitDetails extends Component implements CommitDetailsSurface {
 			content = html`<div id="cdvSummary">${renderSummary(ctx, this.getScope, expandedCommit, commitOrder)}</div>${isMobile ? renderMobileFilesHeader(expandedCommit.fileChanges!, expandedCommit.lineCounts.pending, fileViewBtns) : ''}<div id="cdvFiles">${generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, getFileViewType(store), commitOrder.to === UNCOMMITTED, expandedCommit.lineCounts.pending, getFileViewOptions(store))}</div><div id="cdvDivider"></div>`;
 		}
 		// The mobile sheet's toolbar is a title bar: close, the commit's name, then its actions
-		const inner = html`<div id="cdvContent">${content}</div><div id="cdvControls"><button type="button" id="cdvClose" class="cdvControlBtn" title="${strings.dialogClose}" aria-label="${strings.dialogClose}">${SVG_ICONS.close}</button>${isMobile ? html`<span id="cdvMobileTitle">${getMobileCdvTitle(expandedCommit, commitOrder)}</span>` : ''}${codeReviewPossible ? html`<button type="button" id="cdvCodeReview" class="cdvControlBtn">${SVG_ICONS.review}</button>` : ''}${!expandedCommit.loading && !isMobile ? fileViewBtns : ''}${externalDiffPossible ? html`<button type="button" id="cdvExternalDiff" class="cdvControlBtn">${SVG_ICONS.linkExternal}</button>` : ''}${mobileActionsPossible ? html`<button type="button" id="cdvMobileActions" class="cdvControlBtn" title="${strings.mobileMoreActions}" aria-label="${strings.mobileMoreActions}">${SVG_ICONS.ellipsis}</button>` : ''}</div><div class="cdvHeightResize"></div>`;
+		const inner = html`<div id="cdvContent">${content}</div><div id="cdvControls"><button type="button" id="cdvClose" class="cdvControlBtn" title="${strings.dialogClose}" aria-label="${strings.dialogClose}">${SVG_ICONS.close}</button>${isMobile ? html`<span id="cdvMobileTitle">${getMobileCdvTitle(expandedCommit, commitOrder)}</span>` : ''}${openChangesPossible ? html`<button type="button" id="cdvOpenChanges" class="cdvControlBtn" title="${strings.openChangesTitle}" aria-label="${strings.openChangesTitle}">${SVG_ICONS.openChanges}</button>` : ''}${codeReviewPossible ? html`<button type="button" id="cdvCodeReview" class="cdvControlBtn">${SVG_ICONS.review}</button>` : ''}${!expandedCommit.loading && !isMobile ? fileViewBtns : ''}${externalDiffPossible ? html`<button type="button" id="cdvExternalDiff" class="cdvControlBtn">${SVG_ICONS.linkExternal}</button>` : ''}${mobileActionsPossible ? html`<button type="button" id="cdvMobileActions" class="cdvControlBtn" title="${strings.mobileMoreActions}" aria-label="${strings.mobileMoreActions}">${SVG_ICONS.ellipsis}</button>` : ''}</div><div class="cdvHeightResize"></div>`;
 
 		setHtml(elem, isDocked ? inner : html`<td><div class="cdvHeightResize"></div></td><td colspan="${ctx.layout.getNumColumns() - 1}">${inner}</td>`);
 		if (!expandedCommit.loading) setDivider(ctx, this.getScope);
@@ -487,6 +493,18 @@ export class CommitDetails extends Component implements CommitDetailsSurface {
 		this.listenOnSurface(this.byId('cdvClose')!, 'click', () => {
 			this.close(true);
 		});
+		const openChangesBtn = this.byId('cdvOpenChanges');
+		if (openChangesBtn !== null) {
+			this.listenOnSurface(openChangesBtn, 'click', () => {
+				// The commit's changes (diffed against its first parent) in a dedicated Commit
+				// Comparison View tab - the same action as the wide layout's row button
+				const current = store.expandedCommit;
+				if (current === null || current.compareWithHash !== null) return;
+				const commit = store.getCommit(current.commitHash);
+				if (commit === undefined || commit.parents.length === 0) return;
+				this.openCompareTab(commit.hash, commit.parents[0], true);
+			});
+		}
 		const mobileActionsBtn = this.byId('cdvMobileActions');
 		if (mobileActionsBtn !== null) {
 			this.listenOnSurface(mobileActionsBtn, 'click', (e) => {
