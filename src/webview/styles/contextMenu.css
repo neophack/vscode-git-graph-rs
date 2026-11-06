@@ -168,11 +168,18 @@ body.mobileMode .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
    wide layout's hover colour above then out-ranks the solid li surface: the menu selection
    background is translucent in some themes - and missing entirely where no theme variables are
    injected, which collapses the whole declaration to transparent - so the hovered item went
-   see-through and the commit list showed through the sheet. Hover and press therefore never
-   replace the surface: the solid --m-sheet colour stays as background-color and the highlight is
-   layered over it as a background-image tint (the pressed strength). */
+   see-through and the commit list showed through the sheet. The wide layout's :focus colour is
+   the same translucent selection background, and focus is not a corner case here: ContextMenu.show
+   focuses the first item the moment a menu opens (the keyboard flow starts there), so the sheet's
+   first item went see-through over the commit list behind the scrim on every open. Hover, press
+   and focus therefore never replace the surface: the solid --m-sheet colour stays as
+   background-color and the highlight is layered over it as a background-image tint (the pressed
+   strength). (:focus alone covers the focused state on every Chromium; adding :focus-visible to
+   this list would drop the whole rule on the 69 floor.) The wide layout's :focus outline above is
+   left standing - it is the keyboard focus indicator, and this rule does not touch outline. */
 body.mobileMode .contextMenu li.contextMenuItem:hover,
-body.mobileMode .contextMenu li.contextMenuItem:active{
+body.mobileMode .contextMenu li.contextMenuItem:active,
+body.mobileMode .contextMenu li.contextMenuItem:focus{
 	background-color:var(--m-sheet);
 	background-image:linear-gradient(var(--m-pressed), var(--m-pressed));
 	color:var(--m-fg);
