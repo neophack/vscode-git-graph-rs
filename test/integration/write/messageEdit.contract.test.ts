@@ -145,6 +145,25 @@ describe('editing the message of an earlier commit', () => {
 		expect(commitCount()).toBe(3);
 	});
 
+	it('amends the HEAD message without absorbing the staged changes', async () => {
+		// The regression the --only guards: a bare `git commit --amend` folds the index into the
+		// rewritten commit, silently consuming the user's staged work.
+		fs.appendFileSync(path.join(repoPath, 'file-2.txt'), 'staged but not committed\n');
+		execFileSync('git', ['add', 'file-2.txt'], { cwd: repoPath, encoding: 'utf8' });
+
+		const error = await editCommitMessage(ctx, repoPath, hash('HEAD'), 'third, amended over staged work');
+
+		expect(error).toBeNull();
+		expect(subject('HEAD')).toBe('third, amended over staged work');
+		// The staged change stayed staged and never entered the rewritten commit.
+		expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoPath, encoding: 'utf8' }).trim()).toBe('M  file-2.txt');
+		expect(execFileSync('git', ['diff', '--cached'], { cwd: repoPath, encoding: 'utf8' })).toContain('staged but not committed');
+		expect(execFileSync('git', ['show', 'HEAD', '--', 'file-2.txt'], { cwd: repoPath, encoding: 'utf8' })).not.toContain('staged but not committed');
+
+		// Leave the fixture as the later tests expect it: clean.
+		execFileSync('git', ['reset', '--quiet', '--hard', 'HEAD'], { cwd: repoPath, encoding: 'utf8' });
+	});
+
 	it('keeps uncommitted changes across the reword (autostash)', async () => {
 		fs.writeFileSync(path.join(repoPath, 'uncommitted.txt'), 'work in progress\n');
 

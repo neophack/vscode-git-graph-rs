@@ -132,15 +132,15 @@ describe('commit operations', () => {
 	});
 
 	it('amendCommitMessage author forms and argument order', () => {
-		expect(argvOf(amendCommitMessage({ message: 'msg', sign: false }))).toEqual([['commit', '--amend', '-m', 'msg']]);
+		expect(argvOf(amendCommitMessage({ message: 'msg', sign: false }))).toEqual([['commit', '--amend', '--only', '-m', 'msg']]);
 		expect(argvOf(amendCommitMessage({ message: 'msg', authorName: 'Ada', authorEmail: 'a@b.c', sign: false })))
-			.toEqual([['commit', '--amend', '--author=Ada <a@b.c>', '-m', 'msg']]);
+			.toEqual([['commit', '--amend', '--only', '--author=Ada <a@b.c>', '-m', 'msg']]);
 		// An empty email is written as "<>": git records a name-only author.
 		expect(argvOf(amendCommitMessage({ message: 'msg', authorName: 'Ada', authorEmail: '', sign: false })))
-			.toEqual([['commit', '--amend', '--author=Ada <>', '-m', 'msg']]);
+			.toEqual([['commit', '--amend', '--only', '--author=Ada <>', '-m', 'msg']]);
 		// Whitespace-only names leave the author untouched.
 		expect(argvOf(amendCommitMessage({ message: 'msg', authorName: '  ', authorEmail: 'a@b.c', sign: true })))
-			.toEqual([['commit', '--amend', '-m', 'msg', '-S']]);
+			.toEqual([['commit', '--amend', '--only', '-m', 'msg', '-S']]);
 	});
 
 	it('archive types', () => {

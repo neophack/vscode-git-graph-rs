@@ -146,7 +146,9 @@ export function amendCommitMessage(params: AmendCommitMessageParams): WriteOp {
 			? params.authorName + ' <' + params.authorEmail + '>'
 			: params.authorName + ' <>')
 		: null;
-	const argv = ['commit', '--amend'];
+	// `--only` keeps the amend message/author-only: a bare `git commit --amend` folds the index's
+	// staged changes into the rewritten commit, silently consuming the user's uncommitted work.
+	const argv = ['commit', '--amend', '--only'];
 	if (author !== null) argv.push('--author=' + author);
 	argv.push('-m', params.message);
 	if (params.sign) argv.push('-S');
