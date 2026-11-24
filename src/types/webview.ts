@@ -6,7 +6,8 @@ import type { GitRepoSet, IssueLinkingConfig } from './repoState';
 /* Git Graph View Types */
 
 export interface GitGraphViewInitialState {
-	readonly config: GitGraphViewConfig;
+	/** Mutable: `applyConfig` refreshes this in place so config readers see live settings. */
+	config: GitGraphViewConfig;
 	readonly lastActiveRepo: string | null;
 	readonly loadViewTo: LoadGitGraphViewTo;
 	readonly repos: GitRepoSet;

@@ -226,7 +226,15 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 			onClick: () => {
 
-				dialog.showForm(formatStr(strings.updateBranchConfirm, escapeHtml(refName), escapeHtml(view.gitRemotes[0] + '/' + refName)), [{
+				// Pull from the branch's configured upstream remote when it has one: falling back to
+				// the first remote in the list would pull the wrong branch on multi-remote setups
+				// (e.g. a fork's remotes ordered before the upstream)
+				const branchConfig = view.gitConfig !== null && typeof view.gitConfig.branches[refName] !== 'undefined' ? view.gitConfig.branches[refName] : null;
+				const pullRemote = branchConfig !== null && branchConfig.remote !== null && view.gitRemotes.includes(branchConfig.remote)
+					? branchConfig.remote
+					: view.gitRemotes[0];
+
+				dialog.showForm(formatStr(strings.updateBranchConfirm, escapeHtml(refName), escapeHtml(pullRemote + '/' + refName)), [{
 
 					type: DialogInputType.Checkbox,
 
@@ -238,7 +246,7 @@ function getBranchContextMenuActions(view: GitGraphView, target: DialogTarget & 
 
 				}], strings.yesUpdate, (values) => {
 
-					runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: view.gitRemotes[0], remoteBranch: refName, localBranch: refName, force: <boolean>values[0] }, strings.updatingBranch);
+					runAction({ command: 'fetchIntoLocalBranch', repo: view.currentRepo, remote: pullRemote, remoteBranch: refName, localBranch: refName, force: <boolean>values[0] }, strings.updatingBranch);
 
 				}, target);
 

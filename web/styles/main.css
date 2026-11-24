@@ -427,11 +427,13 @@ table { border-collapse: collapse; }
 	border-radius:4px;
 }
 
-#cdvFileViewTypeTree{
+/* The file view buttons are stacked in DOM order List then Tree (see commitDetailsView.ts), so
+   List gets the top rounding and Tree the bottom, joined in the middle */
+#cdvFileViewTypeList{
 	border-radius:4px 4px 0 0;
 	margin-bottom:0;
 }
-#cdvFileViewTypeList{
+#cdvFileViewTypeTree{
 	border-radius:0 0 4px 4px;
 	margin-top:0;
 }
@@ -576,6 +578,15 @@ table { border-collapse: collapse; }
 #cdvMessageBody th, #cdvMessageBody td{
 	padding:3px 8px;
 	border:1px solid rgba(128,128,128,0.4);
+}
+/* The commit table's flexible Description column rule (#commitTable.autoLayout td:nth-child(2))
+   also matches the second cell of every row of a Markdown table rendered inside the (inline)
+   Commit Details View - width:100% with max-width:0 collapses it to nothing. Restore normal
+   auto table layout inside the message body. */
+#commitTable.autoLayout #cdvMessageBody table th:nth-child(2),
+#commitTable.autoLayout #cdvMessageBody table td:nth-child(2){
+	width:auto;
+	max-width:none;
 }
 #cdvMessageBody img{
 	max-width:100%;
@@ -1010,7 +1021,11 @@ body.tagLabelsRightAligned .gitRef.tag{
 	right:0;
 	top:0;
 	white-space:nowrap;
-	padding:4px 174px 4px 0;
+	/* The right padding keeps the inline controls clear of the row of toolbar buttons, the
+	   leftmost of which (#currentBtn, right:172px and 20px wide) reaches 192px in from the edge
+	   (219px when the fetch button shifts the row over, #controls.fetchSupported #currentBtn
+	   right:199px) */
+	padding:4px 192px 4px 0;
 	background-color: var(--vscode-editor-background);
 	border-bottom:1px solid rgba(128,128,128,0.5);
 	line-height:32px;
@@ -1137,7 +1152,7 @@ body.tagLabelsRightAligned .gitRef.tag{
 }
 
 #controls.fetchSupported{
-	padding-right:201px;
+	padding-right:219px;
 }
 #controls.fetchSupported #currentBtn{
 	right:199px;
@@ -1482,6 +1497,9 @@ body.narrowWindow #authorControl{
    the details dialog (which reuses the Gerrit dialog's gg-* styles). */
 .gitRef.pr svg{
 	fill:currentColor;
+	/* .gitRef > svg paints its background with the commit's graph colour - wrong for the PR
+	   badge, whose icon is coloured by its own fill */
+	background-color:transparent;
 }
 
 .gitRef.pr .gg-status{
@@ -1548,7 +1566,9 @@ body.narrowWindow #authorControl{
 body.vscode-light, body.vscode-high-contrast-light{
 	--gg-disapproval-weak:#9a6700;
 }
-body.vscode-high-contrast{
+/* The white-based muted colours assume an HC Dark background, so scope them out of HC Light
+   themes - which keep the light-theme disapproval orange from the rule above */
+body.vscode-high-contrast:not(.vscode-high-contrast-light){
 	--gg-icon:var(--vscode-editorLightBulb-foreground, #f5a623);
 	--gg-open:var(--vscode-textLink-foreground, #0078d4);
 	--gg-approved:var(--vscode-testing-iconPassed, #2da44e);
@@ -1562,6 +1582,9 @@ body.vscode-high-contrast{
 
 .gitRef.gerrit svg{
 	fill:var(--gg-icon);
+	/* .gitRef > svg paints its background with the commit's graph colour - wrong for the Gerrit
+	   change badge, whose icon is coloured by its own fill */
+	background-color:transparent;
 }
 
 .gitRef.gerrit .gg-label{

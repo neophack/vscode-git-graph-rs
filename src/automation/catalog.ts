@@ -1240,8 +1240,9 @@ export const CATALOG: readonly AutomationAction[] = [
 		title: 'Add Tag…',
 		group: 'menu-commit',
 		mutable: true,
-		// The fixture's single remote adds a checked "push to remote" checkbox at #dialogInput3 —
-		// unchecked here so the tag stays local. TextRef inputs validate on keyup, so the name
+		// The fixture's single remote adds a "push to remote" checkbox at #dialogInput3, whose
+		// initial state follows the dialog.addTag.pushToRemote setting — forced off here so the
+		// tag stays local whatever the default. TextRef inputs validate on keyup, so the name
 		// is typed through an eval (a plain `set` would leave the dialog's no-input state).
 		ui: [
 			scrollUntilVisibleStep('tr.commit[data-hash="{{commit}}"]'),
@@ -1250,7 +1251,9 @@ export const CATALOG: readonly AutomationAction[] = [
 			{ op: 'waitFor', selector: '.dialog' },
 			...DIALOG_ASSERT_STEPS,
 			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput0");i.value="automation-tag";i.dispatchEvent(new KeyboardEvent("keyup",{bubbles:true}));})()' },
-			{ op: 'click', selector: '#dialogInput3' },
+			// Force the push checkbox off whatever the dialog defaulted it to (the initial state now
+			// follows the dialog.addTag.pushToRemote setting, so a click would only toggle it).
+			{ op: 'eval', expr: '(function(){var i=document.getElementById("dialogInput3");if(i){i.checked=false;}})()' },
 			{ op: 'click', selector: '#dialogAction' },
 			DISMISS_ERROR_DIALOG_STEP
 		],

@@ -93,7 +93,9 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 			: isInitialLoad
 
-				? view.gitRemotes.indexOf(view.getPushRemote())
+				// The Extension Setting decides what a fresh dialog defaults to (re-opening after a
+				// failed action keeps the user's previous choice instead)
+				? view.config.dialogDefaults.addTag.pushToRemote ? view.gitRemotes.indexOf(view.getPushRemote()) : -1
 
 				: -1;
 
@@ -101,7 +103,7 @@ function addTagAction(view: GitGraphView, hash: string, initialName: string, ini
 
 	} else if (view.gitRemotes.length === 1) {
 
-		const defaultValue = initialPushToRemote !== null || isInitialLoad;
+		const defaultValue = initialPushToRemote !== null || (isInitialLoad && view.config.dialogDefaults.addTag.pushToRemote);
 
 		inputs.push({ type: DialogInputType.Checkbox, name: strings.pushToRemoteInput, value: defaultValue, info: strings.pushToRemoteRepoInfo });
 

@@ -113,7 +113,9 @@
 	font-family:var(--vscode-editor-font-family, monospace);
 	opacity:0.85;
 }
-.reflogMessageCol{
+/* Two class levels plus the element: the plain ".reflogMessageCol" (0,1,0) was out-ranked by
+   ".reflogTable td" (0,1,1), whose single-line white-space clobbered the wrapping below */
+.reflogTable td.reflogMessageCol{
 	white-space:normal;
 	word-break:break-word;
 }

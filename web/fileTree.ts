@@ -54,9 +54,9 @@ function generateFileListHtml(folder: FileTreeFolder, gitFiles: ReadonlyArray<GG
 	return '<ul class="fileTreeFolderContents">' + html + '</ul>';
 }
 
-/** The "M (a → b)" message describing what happened to a file, shown in tooltips. */
+/** The "M (a → b)" message describing what happened to a file, shown in tooltips. Returns PLAIN text - escape it at the HTML interpolation sites. */
 function fileChangeTypeMessage(file: GG.GitFileChange): string {
-	return getGitFileChangeTypeName(file.type) + (file.type === GG.GitFileStatus.Renamed ? ' (' + escapeHtml(file.oldFilePath) + ' → ' + escapeHtml(file.newFilePath) + ')' : '');
+	return getGitFileChangeTypeName(file.type) + (file.type === GG.GitFileStatus.Renamed ? ' (' + file.oldFilePath + ' → ' + file.newFilePath + ')' : '');
 }
 
 /**
@@ -101,7 +101,7 @@ function generateFileTreeLeafHtml(name: string, leaf: FileTreeLeaf, gitFiles: Re
 				? fileCountsChipHtml(fileTreeFile)
 				: pending ? PENDING_COUNTS_CHIP_HTML : '';
 		}
-		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile gitDiffPossible' + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + strings.clickToViewDiff + (isBinary ? strings.binaryFileSuffix : '') + ' • ' + changeTypeMessage + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
+		return '<li data-pathseg="' + encodedName + '"><span class="fileTreeFileRecord' + (leaf.index === fileContextMenuOpen ? ' ' + CLASS_CONTEXT_MENU_ACTIVE : '') + '" data-index="' + leaf.index + '"><span class="fileTreeFile gitDiffPossible' + (leaf.reviewed ? '' : ' ' + CLASS_PENDING_REVIEW) + '" title="' + strings.clickToViewDiff + (isBinary ? strings.binaryFileSuffix : '') + ' • ' + escapeHtml(changeTypeMessage) + '"><span class="fileTreeFileIcon">' + SVG_ICONS.file + '</span><span class="gitFileName ' + type + '">' + escapedName + '</span></span>' +
 			(initialState.config.enhancedAccessibility ? '<span ' + helpTooltipAttrs(changeTypeMessage, 'fileTreeFileType') + '>' + type + '</span>' : '') +
 			countsChip +
 			(fileTreeFile.newFilePath === lastViewedFile ? '<span ' + helpTooltipAttrs(strings.lastFileViewedTitle) + ' id="cdvLastFileViewed">' + SVG_ICONS.eyeOpen + '</span>' : '') +

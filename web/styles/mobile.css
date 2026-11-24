@@ -343,10 +343,11 @@ body.mobileMode .dropdownOption:active{
 body.mobileMode .dropdown.multi .dropdownOption{
 	padding-left:38px;
 }
+/* A multi-selected option carries .selected AND a .dropdownOptionMultiSelected icon child
+   (web/dropdown.ts renders both), while the .selected::before rule below already draws the
+   checkmark: hide the icon so the check is not drawn twice */
 body.mobileMode .dropdownOptionMultiSelected{
-	top:50%;
-	left:13px;
-	margin-top:-8px;
+	display:none;
 }
 body.mobileMode .dropdownOptionHint{
 	font-size:13px;
@@ -1292,7 +1293,12 @@ body.mobileMode .dialog .roundedBtn{
 	font-size:16px;
 	font-weight:600;
 }
-body.mobileMode .dialog .roundedBtn:first-of-type{
+/* The primary action is targeted by id: ".dialog #dialogAction" (dialog.css) out-ranks the
+   class-only mobile rules, and the wide layout's ".roundedBtn:first-of-type" here highlighted
+   whatever div came first in the content (or the secondary action when the dialog has no
+   primary one). The disabled states (.dialog.noInput / .dialog.inputInvalid) still dim it via
+   their own opacity. */
+body.mobileMode .dialog #dialogAction{
 	background-color:var(--m-accent-fill);
 	color:var(--m-accent-on);
 }
@@ -1312,6 +1318,12 @@ body.mobileMode .customSelectCurrent{
 	line-height:calc(var(--m-target) - 2px);
 	border-radius:10px;
 }
+/* The current value is absolutely positioned within the container, so the container's own fixed
+   height (27px in dialog.css) must grow with the larger touch target or the button overflows
+   onto the following form row */
+body.mobileMode .customSelectContainer{
+	height:var(--m-target);
+}
 body.mobileMode .customSelectOption{
 	min-height:var(--m-target);
 	line-height:var(--m-target);
@@ -1328,7 +1340,9 @@ body.mobileMode .findWidget{
 	height:auto;
 	min-height:var(--m-bar);
 	box-sizing:border-box;
-	flex-wrap:nowrap;
+	/* wrap lets the [data-error] badge (flex-basis:100%, order 99) take its own row below the
+	   input instead of being squeezed to nothing */
+	flex-wrap:wrap;
 	gap:0;
 	padding:4px max(4px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
 	padding-top:max(4px, env(safe-area-inset-top));
@@ -1355,7 +1369,16 @@ body.mobileMode #findInput{
 	border-radius:10px;
 	background-color:var(--m-fill);
 }
-body.mobileMode .findWidget button{
+/* The wide layout pulls the case toggle over the input's reserved right padding
+   (#findCaseSensitive margin-left:-47px); the mobile input has no such padding, so the toggle
+   must sit in the normal flow */
+body.mobileMode #findCaseSensitive{
+	margin-left:0;
+}
+/* Only the navigation buttons grow to touch-target size; the Aa / .* modifier buttons keep
+   their compact inline size from findWidget.css */
+body.mobileMode .findWidget #findPrev, body.mobileMode .findWidget #findNext,
+body.mobileMode .findWidget #findOpenCdv, body.mobileMode .findWidget #findClose{
 	flex:none;
 	width:40px;
 	height:var(--m-target);

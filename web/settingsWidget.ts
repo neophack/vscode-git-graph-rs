@@ -67,6 +67,11 @@ class SettingsWidget {
 		this.scrollTop = scrollTop;
 		this.repoColumnScrollTop = repoColumnScrollTop;
 		this.globalColumnScrollTop = globalColumnScrollTop;
+		// The slide-down overlays share the same screen region: opening one closes the others, so
+		// they can never stack invisibly on top of each other
+		this.view.reflogView.close();
+		this.view.worktreeDialog.close();
+		this.view.statisticsView.close();
 		alterClass(this.widgetElem, CLASS_TRANSITION, isInitialLoad);
 		this.widgetElem.classList.add(CLASS_ACTIVE);
 		this.view.saveState();

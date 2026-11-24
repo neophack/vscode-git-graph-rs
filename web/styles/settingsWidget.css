@@ -67,7 +67,8 @@
 	text-align:center;
 	text-transform:uppercase;
 	letter-spacing:0.6px;
-	opacity:0.75;
+	/* The background must stay fully opaque: an opacity on this element would also fade its own
+	   background, letting the settings scrolled beneath the sticky title bleed through it */
 	background-color:var(--vscode-editorWidget-background);
 	cursor:default;
 }

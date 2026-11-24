@@ -338,7 +338,9 @@ class Dropdown {
 		let val = this.filterInput.value.toLowerCase(), match, matches = false;
 		for (let i = 0; i < this.options.length; i++) {
 			match = this.options[i].name.toLowerCase().indexOf(val) > -1;
-			(<HTMLElement>this.optionsElem.children[i]).style.display = match ? 'block' : 'none';
+			// Reset to '' (not 'block'): an inline display would override the stylesheet's own
+			// option layout (the mobile layout renders options as flex)
+			(<HTMLElement>this.optionsElem.children[i]).style.display = match ? '' : 'none';
 			if (match) matches = true;
 		}
 		this.filterInput.style.display = 'block';

@@ -6,7 +6,10 @@
 	top:-42px;
 	right:28px;
 	max-width:calc(100vw - 56px);
-	height:34px;
+	/* height:auto (not a fixed 34px) so the [data-error] badge, wrapped below the input row by
+	   flex-wrap, can extend the widget instead of overflowing it */
+	min-height:34px;
+	height:auto;
 	padding:0 10px;
 	z-index:21;
 	background-color:var(--vscode-editorWidget-background);

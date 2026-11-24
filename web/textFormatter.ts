@@ -556,30 +556,31 @@ class TextFormatter {
 /* URL Element Methods */
 
 /**
- * Is an element an external or internal URL.
+ * Is an element an external or internal URL (or inside one - a click may land on a descendant,
+ * e.g. a find-highlight span wrapping part of the link's text).
  * @param elem The element to check.
- * @returns TRUE => The element is an external or internal URL, FALSE => The element isn't an external or internal URL
+ * @returns TRUE => The element is (inside) an external or internal URL, FALSE => The element isn't an external or internal URL
  */
 function isUrlElem(elem: Element) {
-	return elem.classList.contains(CLASS_EXTERNAL_URL) || elem.classList.contains(CLASS_INTERNAL_URL);
+	return elem.closest('.' + CLASS_EXTERNAL_URL) !== null || elem.closest('.' + CLASS_INTERNAL_URL) !== null;
 }
 
 /**
- * Is an element an external URL.
+ * Is an element an external URL (or inside one).
  * @param elem The element to check.
- * @returns TRUE => The element is an external URL, FALSE => The element isn't an external URL
+ * @returns TRUE => The element is (inside) an external URL, FALSE => The element isn't an external URL
  */
 function isExternalUrlElem(elem: Element) {
-	return elem.classList.contains(CLASS_EXTERNAL_URL);
+	return elem.closest('.' + CLASS_EXTERNAL_URL) !== null;
 }
 
 /**
- * Is an element an internal URL.
+ * Is an element an internal URL (or inside one).
  * @param elem The element to check.
- * @returns TRUE => The element is an internal URL, FALSE => The element isn't an internal URL
+ * @returns TRUE => The element is (inside) an internal URL, FALSE => The element isn't an internal URL
  */
 function isInternalUrlElem(elem: Element) {
-	return elem.classList.contains(CLASS_INTERNAL_URL);
+	return elem.closest('.' + CLASS_INTERNAL_URL) !== null;
 }
 
 
@@ -619,7 +620,7 @@ function generateIssueLinkFromMatch(match: RegExpExecArray, issueLinking: IssueL
 	return match.length > 1
 		? issueLinking.url.replace(ISSUE_LINKING_ARGUMENT_REGEXP, (placeholder, index) => {
 			const i = parseInt(index);
-			return i < match.length ? match[i] : placeholder;
+			return i < match.length ? (match[i] ?? '') : placeholder;
 		})
 		: issueLinking.url;
 }

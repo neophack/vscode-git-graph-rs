@@ -8,7 +8,10 @@
 	margin:0;
 	padding:4px 0;
 	border-radius:5px;
-	z-index:13;
+	/* Above the slide-down overlay widgets (settings/reflog/statistics/worktrees at 31) and the
+	   dropdown menus (19), below the event capture overlay (40) and dialogs (41; the mobile
+	   sheet overrides this at 45) */
+	z-index:35;
 	-webkit-user-select:none;
 	user-select:none;
 	transform-origin:top left;

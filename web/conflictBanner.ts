@@ -58,6 +58,19 @@ class ConflictBanner {
 		abortBtn.addEventListener('click', () => this.abortOperation());
 	}
 
+	public isVisible() {
+		return this.type !== null;
+	}
+
+	/**
+	 * The height the banner currently occupies (0 while hidden): it sits in normal flow between
+	 * the sticky header row and the commit table, so `getHeaderHeight` must add it or every
+	 * scroll-to-commit lands one banner short.
+	 */
+	public getHeight() {
+		return this.type !== null ? this.elem.clientHeight : 0;
+	}
+
 	private continueOperation() {
 		if (this.type === null) return;
 		runAction({ command: 'continueOperation', repo: this.view.currentRepo, type: this.type }, strings.conflictBannerContinue);

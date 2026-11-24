@@ -562,6 +562,23 @@ function applyLineCounts(view: GitGraphView, msg: GG.ResponseCommitFileCounts) {
 
 	}
 
+	// The batch failed (or a path was dropped from it - e.g. a binary file): the pending entries it
+	// covered must be cleared, or their `(+…|-…)` placeholders hang forever and the files stat
+	// never settles
+	if (msg.error !== null) {
+
+		expandedCommit.lineCounts.pending.clear();
+
+	} else {
+
+		for (const path of Array.from(expandedCommit.lineCounts.pending)) {
+
+			if (!(path in msg.counts)) expandedCommit.lineCounts.pending.delete(path);
+
+		}
+
+	}
+
 	const statElem = document.querySelector('#cdvFilesHeader .cdvmFilesStat');
 	if (statElem !== null) statElem.innerHTML = getMobileFilesStatHtml(expandedCommit.fileChanges, expandedCommit.lineCounts.pending);
 
@@ -1507,7 +1524,9 @@ function openFolders(view: GitGraphView, open: boolean) {
 
 			parent.classList.remove('closed');
 
-			sourceElem.children[0].children[0].innerHTML = SVG_ICONS.openFolder;
+			// children[0] is the icon span: writing into it replaces the folder icon. Indexing one
+			// level deeper would write INTO the <svg> and nest a second icon inside it
+			sourceElem.children[0].innerHTML = SVG_ICONS.openFolder;
 
 			parent.children[1].classList.remove('hidden');
 
@@ -1519,7 +1538,7 @@ function openFolders(view: GitGraphView, open: boolean) {
 
 			parent.classList.add('closed');
 
-			sourceElem.children[0].children[0].innerHTML = SVG_ICONS.closedFolder;
+			sourceElem.children[0].innerHTML = SVG_ICONS.closedFolder;
 
 			parent.children[1].classList.add('hidden');
 

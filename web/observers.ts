@@ -2,7 +2,10 @@
 
 function observeWindowSizeChanges(view: GitGraphView) {
 
-	let windowWidth = window.outerWidth, windowHeight = window.outerHeight, resizeRafId: number | null = null;
+	// Track the view element's own size, not the browser window's: the webview is resized by its
+	// host (a VS Code split or sidebar moving, another editor group resizing) without the window
+	// itself changing, and only a change of the view's size affects the layout.
+	let viewWidth = view.viewElem.clientWidth, viewHeight = view.viewElem.clientHeight, resizeRafId: number | null = null;
 
 	window.addEventListener('resize', () => {
 
@@ -26,21 +29,29 @@ function observeWindowSizeChanges(view: GitGraphView) {
 
 			view.updateVirtualWindow();
 
-			if (windowWidth === window.outerWidth && windowHeight === window.outerHeight) {
+			if (viewWidth === view.viewElem.clientWidth && viewHeight === view.viewElem.clientHeight) {
 
 				view.renderGraph();
 
 			} else {
 
-				windowWidth = window.outerWidth;
+				viewWidth = view.viewElem.clientWidth;
 
-				windowHeight = window.outerHeight;
+				viewHeight = view.viewElem.clientHeight;
 
 				// The view was resized: recompute the automatic graph column layout so that the
 
-				// graph width limit tracks the new view size
+				// graph width limit tracks the new view size, re-draw the graph for it, and keep a
+
+				// docked Commit Details View clamped to the new view height
 
 				applyGraphColumnAutoLayout(view);
+
+				view.renderGraph();
+
+				const cdvElem = document.getElementById('cdv');
+
+				if (view.expandedCommit !== null && isCdvDocked(view) && cdvElem !== null) setCdvHeight(view, cdvElem, true);
 
 			}
 
@@ -54,6 +65,10 @@ function observeWindowSizeChanges(view: GitGraphView) {
 function applyGraphColumnAutoLayout(view: GitGraphView) {
 
 	if (typeof view.currentRepo === 'undefined' || view.tableElem.className.indexOf('autoLayout') === -1) return; // only the automatic layout depends on the view width
+
+	// A hidden view (a background tab) measures every size as 0: deriving column padding from it
+	// would collapse the graph column, so leave the layout untouched until the view is measured.
+	if (view.viewElem.clientWidth <= 0) return;
 
 
 
@@ -143,7 +158,10 @@ function observeLongPress(view: GitGraphView) {
 		if (e.target instanceof Element && e.target.closest('#fastScroller') !== null) return; // holding the scroller still is not a long press
 		startX = e.touches[0].clientX;
 		startY = e.touches[0].clientY;
-		target = <Element | null>e.target;
+		// Touch targets can be text nodes: normalise to the enclosing element, so the dispatched
+		// contextmenu event always reaches the view's handlers with an Element target (they all
+		// cast e.target to Element)
+		target = e.target instanceof Element ? e.target : (e.target !== null ? (<Node>e.target).parentElement : null);
 		timer = window.setTimeout(() => {
 			timer = null;
 			if (!touchActive || target === null || !target.isConnected) return;
@@ -484,6 +502,16 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 		} else if (view.expandedCommit !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
 
+			// Leave the arrow keys to the focused control (a text input's caret, a select's
+			// options), an open dropdown, or a visible slide-down widget - never navigate commits
+			// underneath them.
+			const activeElem = document.activeElement;
+			if ((activeElem !== null && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA' || activeElem.tagName === 'SELECT'))
+				|| view.repoDropdown.isOpen() || view.branchDropdown.isOpen() || view.authorDropdown.isOpen()
+				|| view.settingsWidget.isVisible() || view.statisticsView.isVisible() || view.reflogView.isVisible() || view.worktreeDialog.isVisible()) {
+				return;
+			}
+
 			const curHashIndex = view.commitLookup[view.expandedCommit.commitHash];
 
 			let newHashIndex = -1;
@@ -546,13 +574,21 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 				handledEvent(e);
 
+				// Bring the target row into the rendered window first: under windowed rendering the
+				// row may not exist in the DOM yet, and resolving it first would silently drop the
+				// navigation (the same scroll-first order the loadViewTo resume paths use)
+				view.scrollToCommit(view.commits[newHashIndex].hash, false);
+
 				const elem = findCommitElemWithId(newHashIndex);
 
 				if (elem !== null) loadCommitDetails(view, elem);
 
 			}
 
-		} else if (e.key && (e.ctrlKey || e.metaKey)) {
+		} else if (e.key && (e.ctrlKey || e.metaKey) && !e.altKey) {
+
+			// AltGr is reported as Ctrl+Alt on Windows: a Ctrl+Alt keypress is a character
+			// AltGr produces, never a shortcut, so ignore it here (a real shortcut never needs Alt).
 
 			const key = e.key.toLowerCase(), keybindings = view.config.keybindings;
 
@@ -566,6 +602,11 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 				if (key === keybindings.refresh) {
 
+					// Behave exactly like a click on the refresh button: hold the reading position
+					// across the hard refresh, and re-query the pull request states (prStatusRepos
+					// is a one-shot cache per repository)
+					view.capturePendingViewportAnchor();
+					view.prStatusRepos.delete(view.currentRepo);
 					view.refresh(true, true);
 
 					handledEvent(e);
@@ -663,6 +704,11 @@ function observeUrls(view: GitGraphView) {
 				case 'commit':
 
 					if (typeof view.commitLookup[value] === 'number' && (view.expandedCommit === null || view.expandedCommit.commitHash !== value || view.expandedCommit.compareWithHash !== null)) {
+
+						// Bring the target row into the rendered window before resolving it - under
+						// windowed rendering an off-window commit has no element yet (see also the
+						// keyboard navigation above)
+						view.scrollToCommit(value, false);
 
 						const elem = findCommitElemWithId(view.commitLookup[value]);
 
@@ -981,13 +1027,18 @@ function observeTableEvents(view: GitGraphView) {
 
 				let sourceElem = <HTMLElement>eventElem.children[1];
 
-				let refName = unescapeHtml(eventElem.dataset.name!), isHead = eventElem.classList.contains(CLASS_REF_HEAD), isRemoteCombinedWithHead = eventTarget.classList.contains('gitRefHeadRemote');
+				// The click may have landed inside the combined remote label (e.g. on a find-highlight
+				// span wrapping part of the name): resolve the label through the DOM tree instead of
+				// requiring the deepest event target to be the label itself
+				const remoteHeadElem = <HTMLElement | null>eventTarget.closest('.gitRefHeadRemote');
 
-				if (isHead && isRemoteCombinedWithHead) {
+				let refName = unescapeHtml(eventElem.dataset.name!), isHead = eventElem.classList.contains(CLASS_REF_HEAD), isRemoteCombinedWithHead = remoteHeadElem !== null;
 
-					refName = unescapeHtml((<HTMLElement>eventTarget).dataset.fullref!);
+				if (isHead && remoteHeadElem !== null) {
 
-					sourceElem = <HTMLElement>eventTarget;
+					refName = unescapeHtml(remoteHeadElem.dataset.fullref!);
+
+					sourceElem = remoteHeadElem;
 
 					isHead = false;
 
@@ -1011,7 +1062,7 @@ function observeTableEvents(view: GitGraphView) {
 
 
 
-				checkoutBranchAction(view, refName, isHead ? null : unescapeHtml((isRemoteCombinedWithHead ? <HTMLElement>eventTarget : eventElem).dataset.remote!), null, target);
+				checkoutBranchAction(view, refName, isHead ? null : unescapeHtml((isRemoteCombinedWithHead ? remoteHeadElem! : eventElem).dataset.remote!), null, target);
 
 			}
 
@@ -1084,13 +1135,17 @@ function observeTableEvents(view: GitGraphView) {
 
 			} else {
 
-				let isHead = eventElem.classList.contains(CLASS_REF_HEAD), isRemoteCombinedWithHead = eventTarget.classList.contains('gitRefHeadRemote');
+				// Resolve the combined remote label through the DOM tree: a click inside one of its
+				// descendants (a find-highlight span) must still be recognised as the label
+				const remoteHeadElem = <HTMLElement | null>eventTarget.closest('.gitRefHeadRemote');
 
-				if (isHead && isRemoteCombinedWithHead) {
+				let isHead = eventElem.classList.contains(CLASS_REF_HEAD), isRemoteCombinedWithHead = remoteHeadElem !== null;
 
-					target.ref = unescapeHtml((<HTMLElement>eventTarget).dataset.fullref!);
+				if (isHead && remoteHeadElem !== null) {
 
-					target.elem = <HTMLElement>eventTarget;
+					target.ref = unescapeHtml(remoteHeadElem.dataset.fullref!);
+
+					target.elem = remoteHeadElem;
 
 					isHead = false;
 
@@ -1102,7 +1157,7 @@ function observeTableEvents(view: GitGraphView) {
 
 				} else {
 
-					const remote = unescapeHtml((isRemoteCombinedWithHead ? <HTMLElement>eventTarget : eventElem).dataset.remote!);
+					const remote = unescapeHtml((isRemoteCombinedWithHead ? remoteHeadElem! : eventElem).dataset.remote!);
 
 					actions = getRemoteBranchContextMenuActions(view, remote, target);
 
@@ -1267,7 +1322,7 @@ function makeTableResizable(view: GitGraphView) {
 
 
 
-	if (columnWidths[0] !== COLUMN_AUTO) {
+	if (columnWidths[0] !== COLUMN_AUTO && !view.isMobileLayout()) {
 
 		// Table should have fixed layout
 
@@ -1275,7 +1330,8 @@ function makeTableResizable(view: GitGraphView) {
 
 	} else {
 
-		// Table should have automatic layout
+		// Table should have automatic layout (always in the mobile layout: applying the desktop
+		// fixed pixel widths to its narrow screen would overflow the columns off screen)
 
 		view.tableElem.className = 'autoLayout';
 
@@ -1405,6 +1461,11 @@ function makeTableResizable(view: GitGraphView) {
 	// unguarded attach would stack one listener per renderTable call.
 	if (signal === null) return;
 	tableRootElem.addEventListener('mousedown', (e) => {
+
+		// The mobile layout keeps the automatic column layout: dragging a resize handle there
+		// would convert the columns to desktop fixed pixel widths and corrupt their widths state.
+		if (view.isMobileLayout()) return;
+
 		const resizeColElem = e.target !== null ? (<HTMLElement>e.target).closest('.resizeCol') : null;
 		if (resizeColElem === null) return;
 

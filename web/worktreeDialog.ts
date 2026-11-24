@@ -31,6 +31,11 @@ class WorktreeDialog {
 	public show() {
 		if (this.isOpen) return;
 		this.isOpen = true;
+		// The slide-down overlays share the same screen region: opening one closes the others, so
+		// they can never stack invisibly on top of each other
+		this.view.settingsWidget.close();
+		this.view.statisticsView.close();
+		this.view.reflogView.close();
 		this.widgetElem.classList.add(CLASS_ACTIVE);
 		this.load();
 	}

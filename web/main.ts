@@ -133,7 +133,7 @@ class GitGraphView {
 	private viewSnapshotTimer: number | null = null;
 
 	/** The repositories whose pull requests were already requested (one request per repository). */
-	private prStatusRepos: Set<string> = new Set();
+	public prStatusRepos: Set<string> = new Set();
 	/** The pull requests of the current repository's remote, keyed by the commit each one points at. */
 	public pullRequestsByHead: { [hash: string]: GG.PullRequestInfo } = {};
 	public compareSourceHash: string | null = null; // the commit selected via "Select for Compare" (persisted with the webview state)
@@ -718,6 +718,10 @@ class GitGraphView {
 		// reloaded rows give the view its full height back (absolute, never a delta - applying it
 		// twice cannot accumulate).
 		if (this.renderedRange === null || anchorFromPending) this.applyViewportAnchor(anchor);
+		// The second application can move the scroll AFTER the window was rendered around the
+		// first one: re-render the window around the final position, or the rows at the new
+		// viewport would not exist yet (a no-op when the window already covers it)
+		if (this.renderedRange !== null) this.updateVirtualWindow();
 
 		if (currentRepoLoading) {
 			if (this.config.onRepoLoad.scrollToHead && this.commitHead !== null) {
@@ -828,6 +832,11 @@ class GitGraphView {
 			} else if (this.loadViewTo.commitDetails && (this.expandedCommit === null || this.expandedCommit.commitHash !== this.loadViewTo.commitDetails.commitHash || this.expandedCommit.compareWithHash !== this.loadViewTo.commitDetails.compareWithHash)) {
 				const commitIndex = this.getCommitId(this.loadViewTo.commitDetails.commitHash);
 				const compareWithIndex = this.loadViewTo.commitDetails.compareWithHash !== null ? this.getCommitId(this.loadViewTo.commitDetails.compareWithHash) : null;
+				// Resuming a comparison needs BOTH rows in the DOM at the same time: windowed
+				// rendering can only hold one of them at a time (the second scrollToCommit re-renders
+				// the window around its own target, unmounting the first), so leave windowed mode
+				// and render every row first.
+				if (compareWithIndex !== null) this.exitWindowedRender();
 				// Bring both rows into the rendered window first (as above), then resolve their
 				// elements — under windowed rendering the elements only exist once the window
 				// covers their indices.
@@ -1157,9 +1166,21 @@ class GitGraphView {
 	 */
 	public applyConfig(config: Config) {
 		const previousColours = this.config.graph.colours.length;
+		const prevUncommittedChanges = this.config.graph.uncommittedChanges;
+		const prevMobileAdaptation = this.config.mobileAdaptation;
+		const prevCdvDocked = isCdvDocked(this);
 		this.config = config;
+		initialState.config = config;
+		TextFormatter.registerCustomEmojiMappings(config.customEmojiShortcodeMappings);
+		this.formattedTextCache.clear();
 		this.saveState();
 		this.graph.setConfig(config.graph, config.mute);
+		// The graph bakes the uncommitted-changes marker (an open circle at the uncommitted row or
+		// at HEAD) into its vertices when the commits are loaded into it: re-run the layout when
+		// the setting changes, so the next render draws it in the right place.
+		if (prevUncommittedChanges !== config.graph.uncommittedChanges) {
+			this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
+		}
 
 		// What the constructor applies from the configuration (see there)
 		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, config.referenceLabels.branchLabelsAlignedToGraph);
@@ -1174,6 +1195,23 @@ class GitGraphView {
 		for (let i = config.graph.colours.length; i < previousColours; i++) {
 			document.body.style.removeProperty('--git-graph-color' + i);
 		}
+		// The page's inline <style> was generated with one [data-color] rule per colour present at
+		// load: a configuration with a different number of colours needs the rules rebuilt, or rows
+		// using the new indices keep the fallback colour. They are regenerated into a dedicated
+		// style element, so a repeated update never duplicates rules or leaves stale ones behind.
+		if (config.graph.colours.length !== previousColours) {
+			let colourRules = '';
+			for (let i = 0; i < config.graph.colours.length; i++) {
+				colourRules += '[data-color="' + i + '"]{--git-graph-color:var(--git-graph-color' + i + ');} ';
+			}
+			let colourStyleElem = document.getElementById('dataColourRules') as HTMLStyleElement | null;
+			if (colourStyleElem === null) {
+				colourStyleElem = document.createElement('style');
+				colourStyleElem.id = 'dataColourRules';
+				document.head.appendChild(colourStyleElem);
+			}
+			colourStyleElem.textContent = colourRules;
+		}
 		alterClass(document.getElementById('headerRow')!, 'sticky', config.stickyHeader);
 		document.getElementById('fetchBtn')!.title = config.fetchAndPrune ? strings.fetchAndPruneTitle : strings.fetchTitle;
 
@@ -1186,6 +1224,16 @@ class GitGraphView {
 		this.repoDropdown.setOptions(getRepoDropdownOptions(this.gitRepos, config.repoDropdownOrder), [this.currentRepo]);
 		this.branchDropdown.setOptions(this.getBranchOptions(true), this.currentBranches);
 		this.settingsWidget.refresh();
+
+		// The Commit Details View's docked placement derives from the configuration (the view
+		// location, or mobileAdaptation flipping the rendered layout): when the update changes it,
+		// close the open view first, so its docked element is never inserted into the other
+		// container (the same guard updateNarrowWindowLayout applies on a resize).
+		if (this.expandedCommit !== null
+			&& (prevCdvDocked !== isCdvDocked(this)
+				|| (prevMobileAdaptation !== config.mobileAdaptation && this.isNarrowWindow() !== this.renderedNarrowWindow))) {
+			closeCommitDetails(this, false);
+		}
 
 		// Settings that shape the rendered output but not the commit data (graph style, date
 		// format, column visibility, ...) would otherwise wait for the next render: run one now.
@@ -1334,7 +1382,10 @@ class GitGraphView {
 	 * commit instead of a comparison between two.
 	 */
 	public openCompareTab(hash: string, compareWithHash: string, singleCommit: boolean = false) {
-		let commitOrder = getCommitOrder(this, hash, compareWithHash);
+		// "Open Changes" diffs the commit against the given parent (hash is always the newer side):
+		// the order must not be "corrected" by list position, or a skewed committer date / ordering
+		// mode would invert the diff and present the parent's changes as the commit's own
+		let commitOrder = singleCommit ? { from: compareWithHash, to: hash } : getCommitOrder(this, hash, compareWithHash);
 		sendMessage({
 			command: 'openCompareTab',
 			repo: this.currentRepo,
@@ -1646,8 +1697,11 @@ class GitGraphView {
 
 	private formatText(textFormatter: TextFormatter, text: string): string {
 		// The cache is only valid for the current formatting configuration (markdown setting and
-		// the repository's issue linking configuration): bust it when either changes
-		const formatSignature = (this.config.markdown ? '1' : '0') + '|' + this.gitRepos[this.currentRepo].issueLinkingConfig;
+		// the effective issue linking configuration - the repository's, or the global fallback):
+		// bust it when either changes
+		const issueLinkingConfig = this.gitRepos[this.currentRepo].issueLinkingConfig ?? globalState.issueLinkingConfig;
+		const formatSignature = (this.config.markdown ? '1' : '0')
+			+ '|' + (issueLinkingConfig === null ? '' : issueLinkingConfig.issue + '|' + issueLinkingConfig.url);
 		if (formatSignature !== this.formattedTextCacheSignature) {
 			this.formattedTextCache.clear();
 			this.formattedTextCacheSignature = formatSignature;
@@ -1736,12 +1790,13 @@ class GitGraphView {
 			refBranches += '<span class="gitRef remote" data-name="' + refName + '" data-remote="' + (branchLabels.remotes[j].remote !== null ? escapeHtml(branchLabels.remotes[j].remote!) : '') + '">' + SVG_ICONS.branch + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span></span>';
 		}
 
-		let tagMap: { [name: string]: { name: string, remotes: string[], annotated: boolean, local: boolean } } = {};
+		let tagMap: { [name: string]: { name: string, remotes: string[], annotated: boolean, local: boolean } } = Object.create(null);
 		for (j = 0; j < commit.tags.length; j++) {
 			let parts = commit.tags[j].name.split('/');
-			let tName = parts.length > 1 ? parts.slice(1).join('/') : parts[0];
-			let tRemote = parts.length > 1 ? parts[0] : null;
-			if (!tagMap[tName]) { tagMap[tName] = { name: tName, remotes: [], annotated: commit.tags[j].annotated, local: false }; }
+			const hasRemote = parts.length > 1 && this.gitRemotes.includes(parts[0]);
+			let tName = hasRemote ? parts.slice(1).join('/') : commit.tags[j].name;
+			let tRemote = hasRemote ? parts[0] : null;
+			if (!Object.prototype.hasOwnProperty.call(tagMap, tName)) { tagMap[tName] = { name: tName, remotes: [], annotated: commit.tags[j].annotated, local: false }; }
 			if (tRemote) { tagMap[tName].remotes.push(tRemote); } else { tagMap[tName].local = true; }
 		}
 		for (let tName in tagMap) {
@@ -1951,7 +2006,7 @@ class GitGraphView {
 	 * anchor already pending: a hard refresh that fails to load reaches displayLoadDataError with
 	 * the table already cleared, and must not overwrite the refresh's own capture with nothing.
 	 */
-	private capturePendingViewportAnchor() {
+	public capturePendingViewportAnchor() {
 		const anchor = this.captureViewportAnchor();
 		if (anchor !== null) this.pendingViewportAnchor = anchor;
 	}
@@ -2402,24 +2457,33 @@ class GitGraphView {
 		// the two things a working-tree status can change are touched - the count in the message
 		// and the date. A background refresh with an identical status leaves the row's DOM
 		// (structure, resize handles, find highlights) completely alone.
+		let patched = false;
 		const messageElem = uncommittedElem.querySelector('.description .text');
 		if (messageElem !== null && messageElem.textContent !== this.commits[0].message) {
 			messageElem.textContent = this.commits[0].message;
+			patched = true;
 		}
 		const mobileDateElem = <HTMLElement | null>uncommittedElem.querySelector('.mobileMetaDate');
 		if (mobileDateElem !== null) {
 			const compact = formatCompactDate(this.commits[0].date);
-			if (mobileDateElem.title !== date.title) mobileDateElem.title = date.title;
-			if (mobileDateElem.textContent !== compact) mobileDateElem.textContent = compact;
+			if (mobileDateElem.title !== date.title) { mobileDateElem.title = date.title; patched = true; }
+			if (mobileDateElem.textContent !== compact) { mobileDateElem.textContent = compact; patched = true; }
 		}
 		const dateElem = <HTMLElement | null>uncommittedElem.querySelector('.dateCol');
 		if (dateElem !== null) {
-			if (dateElem.title !== date.title) dateElem.title = date.title;
+			if (dateElem.title !== date.title) { dateElem.title = date.title; patched = true; }
 			// The formatted date is the trailing text node after the column-resize handle
 			const dateText = dateElem.lastChild;
 			if (dateText !== null && dateText.nodeType === 3 && dateText.textContent !== date.formatted) {
 				dateText.textContent = date.formatted;
+				patched = true;
 			}
+		}
+		if (patched) {
+			// The row's DOM no longer matches the HTML it was originally built from: drop the
+			// stored signature so the next render reconciles the row from the builder's output
+			// instead of trusting a signature the in-place patch invalidated
+			this.rowSignatures.delete(uncommittedElem);
 		}
 	}
 
@@ -2471,6 +2535,9 @@ class GitGraphView {
 			const chosen = options.filter((_option, i) => <boolean>values[i]).map((option) => option.value);
 			const authors = chosen.filter((value) => value !== SHOW_ALL_BRANCHES);
 			this.currentAuthors = authors.length > 0 ? authors : [SHOW_ALL_BRANCHES];
+			// Keep the (desktop) author dropdown's options and selection in sync with the choice
+			// made here - the same refresh applyConfig and the loadRepoInfo response apply
+			this.authorDropdown.setOptions(this.getAuthorOptions(), this.currentAuthors);
 			this.maxCommits = this.config.initialLoadCommits;
 			this.saveState();
 			this.clearCommits();
@@ -2756,8 +2823,11 @@ class GitGraphView {
 			// Windowed rendering: the row's position derives from its index (uniform row heights),
 			// then the window is re-rendered around the new scroll position so the row exists
 			const elemTop = this.getRowTop(id);
-			if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
-				this.viewElem.scroll(0, Math.max(0, elemTop + 12 - this.viewElem.clientHeight / 2));
+			// The half-row / row+margin offsets derive from the row height: hardcoding them (they
+			// matched the default 24px row) mis-centres commits in the mobile layout and any custom
+			// graph.rowHeight
+			if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + this.getRowHeight() + 8 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
+				this.viewElem.scroll(0, Math.max(0, elemTop + this.getRowHeight() / 2 - this.viewElem.clientHeight / 2));
 			}
 			this.updateVirtualWindow();
 			const virtualElem = findCommitElemWithId(id);
@@ -2774,8 +2844,8 @@ class GitGraphView {
 		if (elem === null) return;
 
 		let elemTop = this.getHeaderHeight() + elem.offsetTop;
-		if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + 32 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
-			this.viewElem.scroll(0, this.getHeaderHeight() + elem.offsetTop + 12 - this.viewElem.clientHeight / 2);
+		if (alwaysCenterCommit || elemTop - 8 < this.viewElem.scrollTop || elemTop + this.getRowHeight() + 8 - this.viewElem.clientHeight > this.viewElem.scrollTop) {
+			this.viewElem.scroll(0, this.getHeaderHeight() + elem.offsetTop + this.getRowHeight() / 2 - this.viewElem.clientHeight / 2);
 		}
 
 		if (flash && !elem.classList.contains('flash')) {
@@ -2794,11 +2864,14 @@ class GitGraphView {
 	}
 
 	/**
-	 * Get the total height of the header rows (the main controls row + the Pinned row).
+	 * Get the total height of the header rows (the main controls row + the Pinned row), plus the
+	 * Conflict Banner when it is visible: it sits in normal flow between the sticky header and the
+	 * commit table, so leaving it out lands every scroll-to-commit one banner short.
 	 */
 	public getHeaderHeight() {
 		return this.controlsElem.clientHeight
-			+ (this.pinnedControlsElem !== null && this.pinnedControlsElem.style.display !== 'none' ? this.pinnedControlsElem.clientHeight : 0);
+			+ (this.pinnedControlsElem !== null && this.pinnedControlsElem.style.display !== 'none' ? this.pinnedControlsElem.clientHeight : 0)
+			+ this.conflictBanner.getHeight();
 	}
 
 
@@ -2900,7 +2973,7 @@ window.addEventListener('load', () => {
 	function handleResponseMessage(msg: GG.ResponseMessage) {
 		switch (msg.command) {
 			case 'abortOperation':
-				refreshOrDisplayError(msg.error, strings.errAbortOperation);
+				refreshOrDisplayError(msg.error, strings.errAbortOperation, false, true);
 				break;
 			case 'addRemote':
 				refreshOrDisplayError(msg.error, strings.errAddRemote, true);
@@ -2914,7 +2987,7 @@ window.addEventListener('load', () => {
 				}
 				break;
 			case 'applyStash':
-				refreshOrDisplayError(msg.error, strings.errApplyStash);
+				refreshOrDisplayError(msg.error, strings.errApplyStash, false, true);
 				break;
 			case 'branchFromStash':
 				refreshOrDisplayError(msg.error, strings.errBranchFromStash);
@@ -2926,7 +2999,7 @@ window.addEventListener('load', () => {
 				refreshAfterCheckout([msg.error], strings.errCheckoutCommit);
 				break;
 			case 'cherrypickCommit':
-				refreshAndDisplayErrors(msg.errors, strings.errCherryPick);
+				refreshAndDisplayErrors(msg.errors, strings.errCherryPick, false, true);
 				break;
 			case 'cleanUntrackedFiles':
 				refreshOrDisplayError(msg.error, strings.errCleanUntracked);
@@ -2938,7 +3011,7 @@ window.addEventListener('load', () => {
 				refreshOrDisplayError(msg.error, strings.errCommitSquash);
 				break;
 			case 'continueOperation':
-				refreshOrDisplayError(msg.error, strings.errContinueOperation);
+				refreshOrDisplayError(msg.error, strings.errContinueOperation, false, true);
 				break;
 			case 'predictConflicts': {
 				// Only patches the dialog if it is still showing (or fading out) for the same
@@ -3005,7 +3078,7 @@ window.addEventListener('load', () => {
 				finishOrDisplayErrors(msg.errors, strings.errDeleteUserDetails, () => gitGraph.requestLoadConfig(), true);
 				break;
 			case 'dropCommit':
-				refreshOrDisplayError(msg.error, strings.errDropCommit);
+				refreshOrDisplayError(msg.error, strings.errDropCommit, false, true);
 				break;
 			case 'dropStash':
 				refreshOrDisplayError(msg.error, strings.errDropStash);
@@ -3097,7 +3170,7 @@ window.addEventListener('load', () => {
 				if (msg.authorConfigTouched) gitGraph.requestLoadConfig();
 				break;
 			case 'merge':
-				refreshOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn)));
+				refreshOrDisplayError(msg.error, formatStr(strings.errMergeActionOn, getMergeActionOnName(msg.actionOn)), false, true);
 				break;
 			case 'openExtensionSettings':
 				finishOrDisplayError(msg.error, strings.errOpenExtensionSettings);
@@ -3118,13 +3191,13 @@ window.addEventListener('load', () => {
 				finishOrDisplayError(msg.error, strings.errOpenTerminal, true);
 				break;
 			case 'popStash':
-				refreshOrDisplayError(msg.error, strings.errPopStash);
+				refreshOrDisplayError(msg.error, strings.errPopStash, false, true);
 				break;
 			case 'pruneRemote':
 				refreshOrDisplayError(msg.error, strings.errPruneRemote);
 				break;
 			case 'pullBranch':
-				refreshOrDisplayError(msg.error, strings.errPullBranch);
+				refreshOrDisplayError(msg.error, strings.errPullBranch, false, true);
 				break;
 			case 'pushBranch':
 				refreshAndDisplayErrors(msg.errors, strings.errPushBranch, msg.willUpdateBranchConfig);
@@ -3147,6 +3220,10 @@ window.addEventListener('load', () => {
 						gitGraph.refresh(false);
 					}
 				} else {
+					// A failed rebase can leave the operation in progress (a conflict): refresh in the
+					// background so the conflict banner and uncommitted changes show while the error
+					// dialog stays open
+					gitGraph.refresh(false);
 					dialog.showError(formatStr(strings.errRebaseActionOn, getRebaseActionOnName(msg.actionOn)), msg.error, null, null);
 				}
 				break;
@@ -3170,7 +3247,7 @@ window.addEventListener('load', () => {
 				break;
 
 			case 'revertCommit':
-				refreshOrDisplayError(msg.error, strings.errRevertCommit);
+				refreshOrDisplayError(msg.error, strings.errRevertCommit, false, true);
 				break;
 			case 'editCommitMessage':
 				refreshOrDisplayError(msg.error, strings.errEditCommitMessage);
@@ -3251,17 +3328,24 @@ window.addEventListener('load', () => {
 		}, { type: TargetType.Repo }, strings.dialogCancel, null, true);
 	}
 
-	function refreshOrDisplayError(error: GG.ErrorInfo, errorMessage: string, configChanges: boolean = false) {
+	function refreshOrDisplayError(error: GG.ErrorInfo, errorMessage: string, configChanges: boolean = false, refreshOnError: boolean = false) {
 		if (error === null) {
 			gitGraph.refresh(false, configChanges);
 		} else {
+			// The failed operation may still have changed the repository (a merge, rebase,
+			// cherry-pick or revert stopped on a conflict leaves the operation in progress, the
+			// conflicted files and uncommitted changes behind): refresh in the background while the
+			// error dialog stays open, so the conflict banner and the Uncommitted Changes row show
+			// the real state without waiting for a manual refresh
+			if (refreshOnError) gitGraph.refresh(false, configChanges);
 			dialog.showError(errorMessage, error, null, null);
 		}
 	}
 
-	function refreshAndDisplayErrors(errors: GG.ErrorInfo[], errorMessage: string, configChanges: boolean = false) {
+	function refreshAndDisplayErrors(errors: GG.ErrorInfo[], errorMessage: string, configChanges: boolean = false, refreshOnError: boolean = false) {
 		const reducedErrors = reduceErrorInfos(errors);
 		if (reducedErrors.error !== null) {
+			if (refreshOnError) gitGraph.refresh(false, configChanges);
 			dialog.showError(errorMessage, reducedErrors.error, null, null);
 		}
 		if (reducedErrors.partialOrCompleteSuccess) {

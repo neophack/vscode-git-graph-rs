@@ -63,6 +63,11 @@ class ReflogView {
 		this.isOpen = true;
 		this.ref = 'HEAD';
 		this.limit = REFLOG_PAGE_SIZE;
+		// The slide-down overlays share the same screen region: opening one closes the others, so
+		// they can never stack invisibly on top of each other
+		this.view.settingsWidget.close();
+		this.view.statisticsView.close();
+		this.view.worktreeDialog.close();
 		this.widgetElem.classList.add(CLASS_ACTIVE);
 		this.load();
 	}
@@ -130,8 +135,13 @@ class ReflogView {
 		for (let i = 0; i < rows.length; i++) {
 			const row = <HTMLElement>rows[i];
 			const entry = entries[i];
-			makeKeyboardActivatable(row);
-			row.addEventListener('click', (e) => this.showRowActions(entry, row, <MouseEvent>e));
+		makeKeyboardActivatable(row);
+		row.addEventListener('click', (e) => {
+			// The context menu's document-level click listener would close the menu on this very
+			// click bubbling up to the document - stop it here
+			e.stopPropagation();
+			this.showRowActions(entry, row, <MouseEvent>e);
+		});
 		}
 
 		if (moreAvailable) {
@@ -185,7 +195,10 @@ class ReflogView {
 				onClick: () => sendMessage({ command: 'copyToClipboard', type: 'Reflog Selector', data: selector })
 			}
 		]];
-		contextMenu.show(actions, false, null, e, this.widgetElem);
+		// Frame the menu on the view element (like every other caller): the context menu is
+		// position:fixed, so a frame whose bounding box does not start at the viewport origin
+		// (this widget is anchored to the right edge) would offset the menu by its left/top
+		contextMenu.show(actions, false, null, e, this.view.viewElem);
 		row.focus();
 	}
 }
