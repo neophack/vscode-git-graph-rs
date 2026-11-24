@@ -196,18 +196,20 @@ export class ColumnLayout {
 
 				if (!dragMoved) {
 					dragMoved = true;
-					if (columnWidths[0] === COLUMN_AUTO) {
-						// The drag began on the automatic layout: capture the columns' current widths
-						// and switch the table to a fixed layout - but only now, on the first actual
-						// movement. Converting on mousedown instead meant that one stray click on a
-						// handle (they line every cell boundary of every row, full column height, so
-						// they are easy to hit accidentally) permanently froze the column widths: the
-						// Graph column never tracked the graph again, and a graph wider than the
-						// frozen width was cut off at the column boundary.
+					if (!this.appliedFixedLayout) {
+						// The drag began on the automatic layout (either unconfigured or because
+						// frozen widths did not fit this narrower window): capture the columns'
+						// current rendered widths and switch the table to a fixed layout - but only
+						// now, on the first actual movement. Converting on mousedown instead meant
+						// that one stray click on a handle (they line every cell boundary of every
+						// row, full column height, so they are easy to hit accidentally) permanently
+						// froze the column widths: the Graph column never tracked the graph again,
+						// and a graph wider than the frozen width was cut off at the column boundary.
 						for (let i = 0; i < cols.length; i++) {
 							const curCol = parseInt(cols[i].dataset.col!);
 							if (curCol !== 1) columnWidths[curCol] = measureClientSize(cols[i]).width - COLUMN_LEFT_RIGHT_PADDING;
 						}
+						this.appliedFixedLayout = true;
 						makeTableFixedLayout();
 					}
 				}

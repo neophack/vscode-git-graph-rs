@@ -164,6 +164,15 @@ export class ContextMenu extends Component {
 				else next = e.key === 'ArrowDown' ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
 				items[next].focus();
 				handledEvent(e);
+			} else if (e.key === 'Enter' || e.key === ' ') {
+				// Activate the currently focused menu item from the keyboard (<li> elements with
+				// role="menuitem" do not synthesize click events on Enter or Space).
+				const active = document.activeElement;
+				if (active instanceof HTMLElement && active.classList.contains('contextMenuItem') && menu.contains(active)) {
+					handledEvent(e);
+					this.close();
+					handlers[parseInt(active.dataset.index!)]();
+				}
 			} else if (e.key === 'Tab') {
 				// Tab moves the focus out of the menu: close it first, so what is on screen matches
 				// where the focus is going (close() returns the focus to the invoker on the way)
