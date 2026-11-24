@@ -1,7 +1,7 @@
 /**
  * The artifact syntax gate's standalone runner (C1, REFACTOR-PLAN task 1.8): every script the
- * build emits under dist/ must parse as ES2018, the syntax floor of VS Code 1.38 (Node 10.11
- * host, Chromium 69 webview).
+ * build emits under dist/ must parse as ES2018, within the VS Code 1.42 floor (Node 12.8
+ * host, Chromium 78 webview).
  *
  * The authoritative enforcement lives inside the build itself: scripts/build/build.mjs runs
  * this same es-check binary over the dist/ tree (glob: dist + "*.js") right behind its

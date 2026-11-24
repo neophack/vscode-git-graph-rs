@@ -12,10 +12,10 @@ name: Compat
 # C4/C5 as not held until these jobs go green.
 #
 # Known compromises, recorded per §6.6's own fallback rules:
-#  - The C4 floor leg (VS Code 1.38.0) may fail to start its Electron on the current runner
+#  - The C4 floor leg (VS Code 1.42.0) may fail to start its Electron on the current runner
 #    image. Until the first runs say otherwise, the old-version legs only warn
 #    (continue-on-error) — per §6.6, an unstartable floor falls back to the oldest startable
-#    version, recorded in docs/compatibility.md, with the Node 10.11 runtime backstopped by C2.
+#    version, recorded in docs/compatibility.md, with the Node 12.8.1 runtime backstopped by C2.
 #  - The C5 old-Git leg uses debian:10 (git 2.20.1): the oldest image whose glibc (2.28) can
 #    still run Node 20 and the actions runtime. The exact floor Git (2.17.1) and the pre-2.4
 #    tiers need the self-built image §6.6 defers; the capability-table cases at those tiers
@@ -44,12 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The floor the manifest declares and the transitional versions between it and
-          # current. The two old legs are wobbly until the first runs observe whether their
-          # Electrons start on the runner image (see the header).
-          - vscode: 1.38.0
-            wobbly: true
-          - vscode: 1.40.0
+          # The floor the manifest declares and current releases. The old leg is wobbly until
+          # the first runs observe whether its Electron starts on the runner image (see header).
+          - vscode: 1.42.0
             wobbly: true
           - vscode: stable
           # Insiders failures warn without blocking (§6.6).

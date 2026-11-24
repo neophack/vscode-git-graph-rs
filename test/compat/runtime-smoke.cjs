@@ -1,10 +1,10 @@
 /**
  * The old-Node runtime smoke (C2, REFACTOR-PLAN task 1.8): the built extension bundle must
  * BOOT and serve a real repository read and write on the oldest Node the extension's floor
- * allows - VS Code 1.38's extension host is Node 10.11 - and on the current LTS.
+ * allows - VS Code 1.42's extension host is Node 12.8.1 - and on the current LTS.
  *
  * Plain CommonJS on purpose: the CI matrix (.github/workflows/native-build.yml) runs this file
- * directly under Node 10.11.0 and 12.4.0, which cannot parse ES modules, and this script must
+ * directly under Node 12.8.1, which cannot parse ES modules by default, and this script must
  * require nothing but Node builtins and the built dist/extension.js - no devDependency tooling
  * runs on the old Nodes. test/compat/runtime-smoke.mjs is a thin forwarder so modern invocations
  * (`node test/compat/runtime-smoke.mjs`) reach the same smoke.
@@ -163,7 +163,7 @@ const statusBarItems = [];
 const userMessages = [];
 
 const vscodeStub = {
-	version: '1.38.0',
+	version: '1.42.0',
 	env: {
 		appName: 'Visual Studio Code',
 		language: 'en',

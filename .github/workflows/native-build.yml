@@ -238,8 +238,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The canonical pipeline (task 1.4): one esbuild bundle on the VS Code 1.38 floor
-      # (Node 10.11), the askpass launchers, the webview assets, and the ES2018 compat gates
+      # The canonical pipeline (task 1.4): one esbuild bundle on the VS Code 1.42 floor
+      # (Node 12.8), the askpass launchers, the webview assets, and the ES2018 compat gates
       # (the in-tree scanner + the es-check CLI, task 1.8) inside build.mjs. This is the same
       # chain `npm run package` ships.
       - name: Build the extension bundle (dist pipeline)
@@ -263,8 +263,8 @@ jobs:
         run: node test/compat/artifactSyntax.test.mjs
 
   # The old-Node runtime smoke (task 1.8, C2): the built bundle must BOOT and serve a real
-  # repository read + write on the oldest Node the VS Code 1.38 host ships (10.11), on the
-  # transitional 12.x line, and on the current LTS. The bundle is built ONCE on modern Node
+  # repository read + write on the oldest Node the VS Code 1.42 host ships (12.8.1), and on
+  # the current LTS. The bundle is built ONCE on modern Node
   # (the toolchain's own floor) and the matrix legs require nothing but the dist artifact and
   # Node builtins - no devDependency tooling runs on the old Nodes.
   smoke-dist:
@@ -295,7 +295,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [10.11.0, 12.4.0, 20]
+        node-version: [12.8.1, 20]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
