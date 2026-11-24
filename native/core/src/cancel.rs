@@ -84,17 +84,26 @@ impl Cancel {
     }
 }
 
+/// The cancellation state shared behind one lock: active in-flight flags and the bounded FIFO of
+/// cancellations that raced ahead of their request. Holding both halves under a single mutex
+/// eliminates the TOCTOU window where `cancel(id)` could miss an in-flight `register(id)` and
+/// strand the id in `pre_cancelled`.
+#[derive(Debug, Default)]
+struct RegistryState {
+    entries: HashMap<u32, Arc<AtomicBool>>,
+    /// The ids cancelled before any request registered them, oldest first (bounded to
+    /// [`PRE_CANCELLED_LIMIT`]; in-flight entries are removed by their guards, so only this
+    /// half of the registry needs a bound).
+    pre_cancelled: VecDeque<u32>,
+}
+
 /// The registry of cancellable requests: request id → cancellation flag, process-wide.
 ///
 /// The ids are the host's own (`requestId`); the engine only requires that one id name at most one
 /// in-flight request, since the registry holds one entry per id.
 #[derive(Debug, Default)]
 pub struct Registry {
-    entries: Mutex<HashMap<u32, Arc<AtomicBool>>>,
-    /// The ids cancelled before any request registered them, oldest first (bounded to
-    /// [`PRE_CANCELLED_LIMIT`]; in-flight entries are removed by their guards, so only this
-    /// half of the registry needs a bound).
-    pre_cancelled: Mutex<VecDeque<u32>>,
+    state: Mutex<RegistryState>,
 }
 
 impl Registry {
@@ -114,18 +123,15 @@ impl Registry {
     /// [`PRE_CANCELLED_LIMIT`] such ids are remembered. Cancelling an id that is neither in flight
     /// nor about to start is a no-op apart from that remembered id.
     pub fn cancel(&self, id: u32) {
-        {
-            let entries = self.lock();
-            if let Some(flag) = entries.get(&id) {
-                flag.store(true, Ordering::Relaxed);
-                return;
-            }
+        let mut state = self.lock();
+        if let Some(flag) = state.entries.get(&id) {
+            flag.store(true, Ordering::Relaxed);
+            return;
         }
-        let mut pending = self.lock_pre_cancelled();
-        if !pending.contains(&id) {
-            pending.push_back(id);
-            while pending.len() > PRE_CANCELLED_LIMIT {
-                pending.pop_front();
+        if !state.pre_cancelled.contains(&id) {
+            state.pre_cancelled.push_back(id);
+            while state.pre_cancelled.len() > PRE_CANCELLED_LIMIT {
+                state.pre_cancelled.pop_front();
             }
         }
     }
@@ -139,26 +145,20 @@ impl Registry {
     /// in-flight request, and the caller that reuses it mid-flight simply detaches the older
     /// request's cancellation.
     pub fn register(&self, id: u32) -> Guard {
-        let mut pre_cancelled = {
-            let mut pending = self.lock_pre_cancelled();
-            let known = pending.contains(&id);
-            if known {
-                pending.retain(|other| *other != id);
-            }
-            known
-        };
-        let flag = {
-            let mut entries = self.lock();
-            if entries
-                .remove(&id)
-                .is_some_and(|flag| flag.load(Ordering::Relaxed))
-            {
-                pre_cancelled = true;
-            }
-            let flag = Arc::new(AtomicBool::new(pre_cancelled));
-            entries.insert(id, Arc::clone(&flag));
-            flag
-        };
+        let mut state = self.lock();
+        let mut pre_cancelled = state.pre_cancelled.contains(&id);
+        if pre_cancelled {
+            state.pre_cancelled.retain(|other| *other != id);
+        }
+        if state
+            .entries
+            .remove(&id)
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+        {
+            pre_cancelled = true;
+        }
+        let flag = Arc::new(AtomicBool::new(pre_cancelled));
+        state.entries.insert(id, Arc::clone(&flag));
         Guard {
             id,
             token: Cancel { flag: Some(flag) },
@@ -168,19 +168,13 @@ impl Registry {
     /// Drop the registration of a finished request. Guard's `Drop` calls this; it exists for
     /// symmetry and for callers that hold the id rather than the guard.
     pub fn unregister(&self, id: u32) {
-        self.lock().remove(&id);
+        self.lock().entries.remove(&id);
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Arc<AtomicBool>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, RegistryState> {
         // A poisoned lock means a panic while holding it; the registry is a cache of flags, not a
         // consistency-critical structure, so recovering beats failing every later request.
-        self.entries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn lock_pre_cancelled(&self) -> std::sync::MutexGuard<'_, VecDeque<u32>> {
-        self.pre_cancelled
+        self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }

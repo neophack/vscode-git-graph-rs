@@ -388,11 +388,21 @@ impl Task for Delivery {
     }
 
     fn resolve(&mut self, env: Env, deliveries: Self::Output) -> Result<()> {
+        let mut first_error: Option<napi::Error> = None;
         for (promise, output) in deliveries {
-            settle(promise, &env, output)?;
+            if let Err(err) = settle(promise, &env, output) {
+                if first_error.is_none() {
+                    first_error = Some(err);
+                }
+            }
         }
+        // Always re-arm before propagating any settlement error: skipping rearm leaves
+        // `sentinel_armed` stuck at true and wedges every subsequent queued request forever.
         gate().rearm(&env);
-        Ok(())
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
     }
 }
 

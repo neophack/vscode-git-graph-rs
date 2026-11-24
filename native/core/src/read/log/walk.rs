@@ -218,15 +218,17 @@ fn walk_date_order_window(
     let mut reachable = 0usize;
     let mut stack: Vec<ObjectId> = Vec::new();
     for tip in tips {
-        let commit = git
-            .find_commit(*tip)
-            .git_ctx("Could not walk the commit graph")?;
-        dates.insert(*tip, rank_date(&commit, ordering));
-        for parent in shallow_parents(&commit, &shallow, first_parent_only) {
-            *waiting.entry(parent).or_insert(0) += 1;
-            stack.push(parent);
+        if let std::collections::hash_map::Entry::Vacant(date) = dates.entry(*tip) {
+            let commit = git
+                .find_commit(*tip)
+                .git_ctx("Could not walk the commit graph")?;
+            date.insert(rank_date(&commit, ordering));
+            for parent in shallow_parents(&commit, &shallow, first_parent_only) {
+                *waiting.entry(parent).or_insert(0) += 1;
+                stack.push(parent);
+            }
+            reachable += 1;
         }
-        reachable += 1;
     }
     while let Some(id) = stack.pop() {
         // One entry lookup decides both "already discovered" and where the date goes.
@@ -251,9 +253,10 @@ fn walk_date_order_window(
     // The ready set: counted, nothing left to wait for, not yet shown. Ranked by committer date,
     // ties toward the commit readied first — the same tie order_records applies.
     let mut ready: BinaryHeap<(i64, Reverse<usize>, ObjectId)> = BinaryHeap::new();
+    let mut seeded: HashSet<ObjectId> = HashSet::new();
     let mut sequence = 0usize;
     for tip in tips {
-        if waiting.get(tip).copied().unwrap_or(0) == 0 {
+        if waiting.get(tip).copied().unwrap_or(0) == 0 && seeded.insert(*tip) {
             ready.push((
                 dates.get(tip).copied().unwrap_or(0),
                 Reverse(sequence),

@@ -199,6 +199,11 @@ pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>>
     let Some(entry) = index.entry_by_path(file_path.as_bytes().into()) else {
         return Ok(None);
     };
+    if entry.mode.is_submodule() {
+        return Ok(Some(
+            format!("Subproject commit {}\n", entry.id).into_bytes(),
+        ));
+    }
     check_blob_size(&git, entry.id)?;
     let data = git
         .find_blob(entry.id)
