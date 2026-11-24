@@ -67,16 +67,16 @@ fn answer(repo_path: &str, method: &str, params: Value) -> Result<Value> {
             RepoManager::global().close_all();
             return Ok(Value::Null);
         }
+        "close" => {
+            RepoManager::global().close(repo_path);
+            return Ok(Value::Null);
+        }
         "repoRoot" => return Ok(json!(crate::repository::repo_root(repo_path)?)),
         _ => {}
     }
     let repo = RepoManager::global().get(repo_path)?;
     match method {
         "open" => Ok(json!({ "root": repo.root().display().to_string() })),
-        "close" => {
-            RepoManager::global().close(repo_path);
-            Ok(Value::Null)
-        }
 
         /* ---------- The graph and its refs ---------- */
         "graph" => {

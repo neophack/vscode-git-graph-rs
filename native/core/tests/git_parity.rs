@@ -118,6 +118,49 @@ fn status_renames_off_counts_both_halves_of_a_staged_rename() {
 }
 
 #[test]
+fn status_renames_copies_still_pairs_a_staged_rename() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", &"x\n".repeat(20), "one");
+    // `copies` is not a boolean: reading the key as one finds it unset, and a bare
+    // `diff.renames=false` underneath would then turn the pairing off against git.
+    repo.git(&["config", "status.renames", "copies"]);
+    repo.git(&["config", "diff.renames", "false"]);
+    repo.git(&["mv", "a.txt", "b.txt"]);
+
+    let engine = open(&repo);
+    assert_eq!(porcelain_lines(&repo), 1);
+    assert_eq!(status::count_changes(&engine, true).unwrap(), 1);
+}
+
+#[test]
+fn a_staged_rename_deleted_from_the_worktree_is_one_deletion() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "content\n", "one");
+    repo.git(&["mv", "a.txt", "b.txt"]);
+    repo.remove("b.txt");
+
+    let engine = open(&repo);
+    // git: `RD b` on the porcelain, but the whole difference against HEAD is one deletion,
+    // and of the file HEAD actually holds: `git diff HEAD --name-status` prints `D a.txt`.
+    assert_eq!(
+        repo.git(&["diff", "HEAD", "--name-status"]).trim(),
+        "D\ta.txt"
+    );
+    assert_eq!(
+        status::count_changes(&engine, true).unwrap(),
+        porcelain_lines(&repo)
+    );
+    assert_eq!(status::count_changes(&engine, true).unwrap(), 1);
+    let changes = status::uncommitted_changes(&engine).unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].kind, GitFileStatus::Deleted);
+    assert_eq!(changes[0].old_file_path, "a.txt");
+    assert_eq!(changes[0].new_file_path, "a.txt");
+}
+
+#[test]
 fn a_nested_repository_is_listed_as_a_directory() {
     require_git!();
     let mut repo = TestRepo::new();
@@ -228,6 +271,24 @@ fn a_commit_in_a_legacy_encoding_is_decoded_as_git_log_decodes_it() {
     assert_eq!(details::commit_subject(&engine, &hash).unwrap(), "café");
     let matches = log::search_history(&engine, "café").unwrap();
     assert_eq!(matches.len(), 1, "--grep matches the re-encoded message");
+
+    // The author filter matches the re-encoded name `git log --author` matches, not the raw
+    // ISO-8859-1 bytes, and a lightweight tag reports the commit's message re-encoded too.
+    repo.git(&["tag", "light", &hash]);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let options = log::WalkOptions {
+        limit: 10,
+        authors: Some(vec!["José".to_string()]),
+        ..Default::default()
+    };
+    let filtered = log::walk(&engine, &tips, &options).unwrap();
+    assert_eq!(
+        filtered.len(),
+        1,
+        "--author=José matches the commit written in ISO-8859-1"
+    );
+    let tag = details::tag_details(&engine, "light").unwrap();
+    assert_eq!(tag.message, "café");
 }
 
 /* ---------- Shallow clones ---------- */
@@ -502,6 +563,49 @@ fn replacement_objects_hand_the_graph_to_git() {
     assert_eq!(error.kind, ErrorKind::Unsupported);
     assert_eq!(
         details::commit_details(&engine, &two).unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+
+    // Every secondary read that answers a piece of the same repository is declined the same way,
+    // so no view half is served from objects git itself would have replaced.
+    assert_eq!(
+        diff::diff_revisions(&engine, &two, "HEAD")
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        diff::line_counts(&engine, None, &two, &["a.txt".to_string()])
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        blob::commit_file(&engine, &two, "a.txt").unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        blob::commit_file_diff(&engine, &two, "a.txt")
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        log::count_commits_before(&engine, None, &two, true, false)
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        log::authors(&engine).unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        stats::author_stats(&engine).unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(
+        stats::activity_heatmap(&engine).unwrap_err().kind,
         ErrorKind::Unsupported
     );
 

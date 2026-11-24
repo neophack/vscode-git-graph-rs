@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use crate::error::{Result, ResultExt};
+use crate::error::{Error, ErrorKind, Result, ResultExt};
 use crate::log::{all_tips, stash_tip};
 use crate::repository::Repo;
 use crate::types::{GitActivityCell, GitAuthorStat};
@@ -27,10 +27,28 @@ fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
     Ok(tips)
 }
 
+/// `all_tips_with_stash`, with a repository that has no commits counting nothing - what
+/// `git shortlog --all` and `git log --all` print for one, rather than a failure.
+fn all_tips_with_stash_or_empty(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
+    match all_tips_with_stash(repo) {
+        Ok(tips) => Ok(tips),
+        // `all_tips`'s "The repository has no commits" is an empty answer here, not an error.
+        Err(error) if error.kind == ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(error),
+    }
+}
+
 /// Commit counts per author, across all refs, merge commits excluded - what
 /// `git shortlog -sne --all --no-merges` aggregates into, `.mailmap` applied as shortlog applies it.
 pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
-    let tips = all_tips_with_stash(repo)?;
+    // The history git counts runs through the replacement objects the engine cannot apply
+    // (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
+    let tips = all_tips_with_stash_or_empty(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);
     let mailmap = git.open_mailmap();
@@ -88,7 +106,14 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
 /// commit made at 11pm in the author's timezone bins as "night" regardless of what time it was
 /// for whoever happens to be viewing the graph.
 pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
-    let tips = all_tips_with_stash(repo)?;
+    // The same replacement-objects refusal and the same empty-repository answer as
+    // [`author_stats`], which shares this walk.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
+    let tips = all_tips_with_stash_or_empty(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);
 
@@ -115,7 +140,9 @@ pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
             continue;
         };
 
-        let local_seconds = time.seconds + i64::from(time.offset);
+        // `saturating_add` because an offset near `i64::MIN` (a corrupt or hand-written commit)
+        // would overflow the addition and panic the engine mid-walk.
+        let local_seconds = time.seconds.saturating_add(i64::from(time.offset));
         let days_since_epoch = local_seconds.div_euclid(86400);
         let hour = (local_seconds.rem_euclid(86400) / 3600) as u8;
         // 1970-01-01 (epoch day 0) was a Thursday (weekday 4 in the 0=Sunday scheme); +4 aligns

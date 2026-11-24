@@ -26,6 +26,9 @@ pub struct Repo {
     root: PathBuf,
     /// The git directory. Cached because the shared handle does not expose it.
     git_dir: PathBuf,
+    /// The git directory the repository shares with every linked worktree (its own `.git`, or the
+    /// main repository's, when this is a linked worktree). Cached for the same reason.
+    common_dir: PathBuf,
 }
 
 impl Repo {
@@ -46,6 +49,7 @@ impl Repo {
 
     fn from_gix(repo: gix::Repository) -> Result<Repo> {
         let git_dir = repo.git_dir().to_path_buf();
+        let common_dir = repo.common_dir().to_path_buf();
         let root = repo
             .workdir()
             .map(Path::to_path_buf)
@@ -63,6 +67,7 @@ impl Repo {
             inner: repo.into_sync(),
             root,
             git_dir,
+            common_dir,
         })
     }
 
@@ -102,6 +107,13 @@ impl Repo {
     /// The `.git` directory.
     pub fn git_dir(&self) -> &Path {
         &self.git_dir
+    }
+
+    /// The git directory shared with every linked worktree: this repository's own `.git`, or the
+    /// main repository's when this is a linked worktree — where git's local configuration and
+    /// the shared refs live (`git rev-parse --git-path config` answers it).
+    pub fn common_dir(&self) -> &Path {
+        &self.common_dir
     }
 
     pub fn is_bare(&self) -> bool {

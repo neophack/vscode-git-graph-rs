@@ -73,6 +73,13 @@ const CONTEXT_LINES: u32 = 3;
 /// as binary with `contents: None` — the view shows its "cannot display binary" presentation,
 /// exactly as it does for the `git` backend's binary output.
 pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFile> {
+    // The file git shows for this request runs through the replacement objects the engine cannot
+    // apply (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let tree = git
@@ -93,6 +100,12 @@ pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFil
 /// `None` when the path does not exist in the commit's tree, which is how the missing side of
 /// an added or deleted file reads: not an error, just nothing to show there.
 pub fn commit_file_bytes(repo: &Repo, hash: &str, file_path: &str) -> Result<Option<Vec<u8>>> {
+    // The same replacement-objects refusal as [`commit_file`], which reads the same file.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let tree = git
@@ -186,6 +199,13 @@ pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>>
     let Some(entry) = index.entry_by_path(file_path.as_bytes().into()) else {
         return Ok(None);
     };
+    // A staged submodule is a gitlink, not a blob, and has no blob to read: the same one-line
+    // summary `index_file` reports (and `git show :<path>` diffs) instead of a failed read.
+    if entry.mode.is_submodule() {
+        return Ok(Some(
+            format!("Subproject commit {}\n", entry.id).into_bytes(),
+        ));
+    }
     check_blob_size(&git, entry.id)?;
     let data = git
         .find_blob(entry.id)
@@ -201,11 +221,27 @@ pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>>
 /// rename (both the old and the new path match), a root commit is compared against the empty
 /// tree, and a file the commit did not touch yields empty output rather than an error.
 pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<String> {
+    // The same replacement-objects refusal as [`commit_file`]: git diffs the replaced objects.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     // The tree diff already knows how the commit touched every path, including renames, so the
-    // change record for this file is looked up rather than re-derived.
-    let change = diff::diff_commit(repo, hash)?
-        .into_iter()
-        .find(|change| change.new_file_path == file_path || change.old_file_path == file_path);
+    // change record for this file is looked up rather than re-derived. A path that was renamed
+    // *away* and recreated in the same commit matches two records — the rename (old side) and
+    // the recreation (new side) — and the one asked for is the recreation, which carries the
+    // path on its new side; the old-side match is the fallback for deletions only.
+    let changes = diff::diff_commit(repo, hash)?;
+    let change = changes
+        .iter()
+        .find(|change| change.new_file_path == file_path)
+        .or_else(|| {
+            changes
+                .iter()
+                .find(|change| change.old_file_path == file_path)
+        })
+        .cloned();
     let Some(change) = change else {
         return Ok(String::new());
     };
@@ -307,7 +343,10 @@ fn blob_at(git: &gix::Repository, tree: &gix::Tree<'_>, path: &str) -> Result<Op
         .lookup_entry(path.split('/'))
         .git_ctx("Could not look up the path in the tree")?;
     match entry {
-        Some(entry) if entry.mode().is_blob() => {
+        // A symlink (mode 120000) is a blob too — its content is the path it points at, which is
+        // exactly what `git show <rev>:<link>` prints. Testing `is_blob` alone answered "not in
+        // commit" for one.
+        Some(entry) if entry.mode().is_blob_or_symlink() => {
             check_blob_size(git, entry.id().detach())?;
             let data = git
                 .find_blob(entry.id())

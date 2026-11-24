@@ -150,6 +150,13 @@ fn unverified_signature() -> GitSignature {
 ///
 /// A hash that does not resolve fails the whole call, matching `git log --no-walk <bad-hash>`.
 pub fn commit_bodies(repo: &Repo, hashes: &[String]) -> Result<BTreeMap<String, String>> {
+    // The bodies git shows run through the replacement objects the engine cannot apply (see
+    // `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let git = repo.borrow();
     let mut bodies = BTreeMap::new();
     for hash in hashes {
@@ -170,6 +177,12 @@ pub fn commit_bodies(repo: &Repo, hashes: &[String]) -> Result<BTreeMap<String, 
 /// The subject of one commit, whitespace-normalised the way the original extension normalised
 /// `git log --format=%s` output (trimmed, runs of whitespace collapsed to one space).
 pub fn commit_subject(repo: &Repo, hash: &str) -> Result<String> {
+    // The same replacement-objects refusal as [`commit_details`], whose subject this serves.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let git = repo.borrow();
     let id = crate::repository::resolve_commit_in(&git, hash)?;
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
@@ -185,6 +198,12 @@ pub fn commit_summaries(
     repo: &Repo,
     hashes: &[String],
 ) -> Result<BTreeMap<String, GitCommitSummary>> {
+    // The same replacement-objects refusal as [`commit_details`], whose commits these summarise.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let git = repo.borrow();
     let mut summaries = BTreeMap::new();
     for hash in hashes {
@@ -275,12 +294,15 @@ pub fn tag_details(repo: &Repo, tag_name: &str) -> Result<GitTagDetails> {
         }
         gix::object::Kind::Commit => {
             // A lightweight tag has no tag object: the fields `for-each-ref` fills in for a ref
-            // that points straight at a commit are the commit's own.
+            // that points straight at a commit are the commit's own — re-encoded the way
+            // `for-each-ref` prints them, which converts a non-UTF-8 `encoding` header
+            // (see `CommitEncoding`).
             let commit = object.try_into_commit().map_err(|_| not_a_tag())?;
-            let message = commit
-                .message_raw()
-                .git_ctx("Could not decode the commit message")?
-                .to_string();
+            let message = CommitEncoding::of(&commit).decode(
+                commit
+                    .message_raw()
+                    .git_ctx("Could not decode the commit message")?,
+            );
             Ok(GitTagDetails {
                 hash: id.to_string(),
                 tagger_name: String::new(),

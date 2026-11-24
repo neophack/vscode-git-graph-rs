@@ -102,6 +102,7 @@ impl GraphOptions {
             show_uncommitted_changes: true,
             show_untracked_files: true,
             show_commits_only_referenced_by_tags: true,
+            show_stashes: true,
             use_mailmap: false,
         }
     }

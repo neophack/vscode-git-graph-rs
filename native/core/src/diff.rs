@@ -24,6 +24,13 @@ const RENAME_SIMILARITY: f32 = 0.5;
 /// `to` may be [`UNCOMMITTED`] or empty, which compares `from` against the working tree, as
 /// `git diff <from>` does.
 pub fn diff_revisions(repo: &Repo, from: &str, to: &str) -> Result<Vec<GitFileChange>> {
+    // The diff git reports for these revisions runs through the replacement objects the engine
+    // cannot apply (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     if to.is_empty() || to == UNCOMMITTED {
         return diff_against_worktree(repo, from);
     }
@@ -59,6 +66,12 @@ pub fn new_path_of_renamed_file(
 /// A root commit is compared against the empty tree, which is how the commit that created a
 /// repository shows its files as added rather than showing nothing at all.
 pub fn diff_commit(repo: &Repo, hash: &str) -> Result<Vec<GitFileChange>> {
+    // The same replacement-objects refusal as [`diff_revisions`], whose commit reads this serves.
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
@@ -168,7 +181,15 @@ fn layer_uncommitted(changes: &mut Vec<GitFileChange>, change: GitFileChange) {
     existing.deletions = None;
     match (existing.kind, change.kind) {
         (GitFileStatus::Deleted, GitFileStatus::Untracked) => changes.push(change),
-        (_, GitFileStatus::Deleted) => existing.kind = GitFileStatus::Deleted,
+        (_, GitFileStatus::Deleted) => {
+            existing.kind = GitFileStatus::Deleted;
+            // A rename whose destination the working tree deleted is a deletion overall — of
+            // the file the rename started from, which is what `git diff <revision>` reports
+            // for one — so the record must not keep naming the vanished destination.
+            if existing.old_file_path != existing.new_file_path {
+                existing.new_file_path = existing.old_file_path.clone();
+            }
+        }
         (GitFileStatus::Added | GitFileStatus::Renamed, _) => {}
         // Deleted since the revision, then added back to the index: the path exists on both sides.
         (GitFileStatus::Deleted, _) => existing.kind = GitFileStatus::Modified,
@@ -247,6 +268,14 @@ pub fn line_counts(
     to: &str,
     paths: &[String],
 ) -> Result<BTreeMap<String, GitLineCounts>> {
+    // The blobs these counts read are the replaced objects' originals under `git replace`, which
+    // would disagree with the file list the CLI backend serves for the same commit (see
+    // `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     if paths.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -312,6 +341,10 @@ pub fn line_counts(
         let counts =
             gitlink_line_counts(&change).unwrap_or_else(|| blob_line_counts(&change, &mut cache));
         counted.insert(change.location().to_string(), counts);
+        // The two blob buffers the counting just read stay in the cache otherwise, and a commit
+        // touching hundreds of files would hold every one of them inflated until the diff ends —
+        // which is exactly what gix's own diff statistics drop after each file.
+        cache.clear_resource_cache_keep_allocation();
         Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
     });
     outcome.map_err(|e| Error::git(format!("Could not diff the trees: {e}")))?;
@@ -323,7 +356,7 @@ pub fn line_counts(
 ///
 /// `track_empty` pairs an emptied file's deletion with an empty file's addition, which git's exact
 /// rename detection does (`git mv empty new` shows `R100`) while gix skips empty blobs by default.
-fn rewrites() -> gix::diff::Rewrites {
+pub(crate) fn rewrites() -> gix::diff::Rewrites {
     gix::diff::Rewrites {
         copies: None,
         percentage: Some(RENAME_SIMILARITY),

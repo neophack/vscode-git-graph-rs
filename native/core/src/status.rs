@@ -58,20 +58,28 @@ fn scan(
 
     // `git status` pairs staged deletions and additions into renames unless `status.renames` (or,
     // when that is unset, `diff.renames`) turns it off — and then prints both halves, which the
-    // count must see as two lines. Resolved here rather than left to gix's own reading of the keys,
-    // which kept pairing renames with `status.renames=false` set.
+    // count must see as two lines. Resolved here rather than left to gix's own reading of the
+    // keys, in two places gix gets wrong: `boolean` misses the non-boolean `copies` spelling and
+    // falls through to `diff.renames` beneath it, and gix's unset default skips the empty-file
+    // pairings git's own default makes.
     let renames_off = {
         let config = git.config_snapshot();
-        config
-            .boolean("status.renames")
-            .or_else(|| config.boolean("diff.renames"))
-            == Some(false)
+        // Both keys accept `copies` / `copies-unmodified` beside plain booleans; any spelling
+        // but a literal `false` enables the pairing.
+        let rename_setting = |key: &str| match config.string(key) {
+            Some(value) if value.as_slice() == b"false" => Some(false),
+            Some(_) => Some(true),
+            None => config.boolean(key),
+        };
+        rename_setting("status.renames").or_else(|| rename_setting("diff.renames")) == Some(false)
     };
     let track_renames = match renames {
+        // As `git status` does: the configuration (or git's default pairing) may be turned off.
         Renames::AsStatus if renames_off => gix::status::tree_index::TrackRenames::Disabled,
-        Renames::AsStatus => gix::status::tree_index::TrackRenames::AsConfigured,
-        Renames::Always => {
-            gix::status::tree_index::TrackRenames::Given(gix::diff::Rewrites::default())
+        // Everything else pairs the way `git diff --find-renames` does, empty files included —
+        // which is what git's own default makes and `Rewrites` (with `track_empty: true`) spells.
+        Renames::AsStatus | Renames::Always => {
+            gix::status::tree_index::TrackRenames::Given(crate::diff::rewrites())
         }
     };
     let platform = git
@@ -283,10 +291,19 @@ pub fn uncommitted_changes(repo: &Repo) -> Result<Vec<GitFileChange>> {
         };
 
         let old_file_path = state.old_path.unwrap_or_else(|| path.clone());
+        // A staged rename whose destination the working tree deleted (git's `RD`) is a deletion
+        // overall — HEAD held the source and the working tree holds nothing — which is what
+        // `git diff HEAD` reports: the deletion of the file the rename started from. The record
+        // keeps that one path on both sides rather than naming the vanished destination.
+        let new_file_path = if kind == GitFileStatus::Deleted {
+            old_file_path.clone()
+        } else {
+            path
+        };
 
         changes.push(GitFileChange {
             old_file_path,
-            new_file_path: path,
+            new_file_path,
             kind,
             additions: None,
             deletions: None,

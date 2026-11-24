@@ -595,6 +595,56 @@ fn an_empty_filter_path_filters_nothing() {
 }
 
 #[test]
+fn path_filters_normalise_windows_and_dot_slash_spellings() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("src/base.txt", "0", "base");
+    repo.commit_file("src/main1.txt", "1", "main 1");
+
+    let engine = open(&repo);
+    let tips = log::all_tips(&engine, true, true).unwrap();
+    let walk = |filter_paths: Vec<String>| -> Vec<String> {
+        let options = WalkOptions {
+            limit: 100,
+            filter_paths,
+            ..Default::default()
+        };
+        log::walk(&engine, &tips, &options)
+            .unwrap()
+            .into_iter()
+            .map(|record| record.hash)
+            .collect()
+    };
+    let expected = repo.log_hashes(&["--date-order", "--all", "--", "src/main1.txt"]);
+    // The view's paths use `/`, but a caller on Windows hands the spellings it has on hand:
+    // read literally, neither filter names a tree entry, and the history would silently empty.
+    assert_eq!(walk(vec!["src\\main1.txt".to_string()]), expected);
+    assert_eq!(walk(vec!["./src/main1.txt".to_string()]), expected);
+}
+
+#[test]
+fn an_author_date_walk_survives_duplicated_tips() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    repo.commit_file("b.txt", "2", "second");
+
+    let engine = open(&repo);
+    let head = engine.resolve_commit("HEAD").unwrap();
+    let options = WalkOptions {
+        limit: 100,
+        ordering: CommitOrdering::AuthorDate,
+        ..Default::default()
+    };
+    // The same revision twice counted its parents' waiting children twice, which never fell
+    // back to zero — the walk then stopped after the tip itself.
+    let single = log::walk(&engine, &[head], &options).unwrap();
+    let doubled = log::walk(&engine, &[head, head], &options).unwrap();
+    assert_eq!(doubled.len(), single.len());
+    assert_eq!(doubled.len(), 2);
+}
+
+#[test]
 fn topological_order_matches_git_with_and_without_a_path_filter() {
     require_git!();
     let mut repo = TestRepo::new();

@@ -452,6 +452,10 @@ pub struct LogOptions {
     pub show_untracked_files: bool,
     /// Include commits that are only referenced by a tag.
     pub show_commits_only_referenced_by_tags: bool,
+    /// Read the stash and splice its rows into the graph. Defaults to true: `git log` walks
+    /// `refs/stash`, so a caller that does not say otherwise must not lose them.
+    #[serde(default = "default_true")]
+    pub show_stashes: bool,
     /// Apply `.mailmap` to author names and emails. The engine does not read mailmaps: when this
     /// is set and the work tree carries a `.mailmap`, the load is declined (`Unsupported`) so the
     /// CLI backend serves the mapped names.

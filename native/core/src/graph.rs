@@ -93,9 +93,15 @@ pub fn load_commits(repo: &Repo, options: &LogOptions) -> Result<GitCommitData> 
         hide_remotes: options.hide_remotes.clone(),
         show_change_refs: options.gerrit_show_change_refs,
     };
-    // A failed ref scan is propagated (see `repo_info`), not served as an empty graph.
+    // A failed ref scan is propagated (see `repo_info`), not served as an empty graph. The stash
+    // is skipped with `show_stashes`: an empty list keeps its base hashes out of the walk tips
+    // and its rows out of the graph, which is the whole of the three things a disabled stash does.
     let snapshot = read_refs(repo, &ref_options)?;
-    let stashes = read_stashes(repo).unwrap_or_default();
+    let stashes = if options.show_stashes {
+        read_stashes(repo).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     let tips = resolve_tips(repo, options, &snapshot.ref_data, &stashes)?;
     if tips.is_empty() {
@@ -179,7 +185,18 @@ fn resolve_tips(
 
     match &options.branches {
         // A specific set of branches is shown.
-        Some(branches) => revisions.extend(branches.iter().cloned()),
+        Some(branches) => {
+            // A `--glob=` pattern is the caller's spelling of "match these branch names", which
+            // the engine cannot expand: resolved literally it would name nothing, and the
+            // branches it was meant to show would silently vanish from the graph (the same
+            // refusal `count_commits_before` makes).
+            if branches.iter().any(|branch| branch.starts_with("--glob=")) {
+                return Err(crate::error::Error::unsupported(
+                    "Custom branch glob patterns are not resolved by the engine",
+                ));
+            }
+            revisions.extend(branches.iter().cloned());
+        }
         None => {
             // Show all: the local branches always, the tags and remote-tracking branches only when
             // the view is showing them.

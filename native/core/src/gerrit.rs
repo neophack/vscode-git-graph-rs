@@ -404,7 +404,7 @@ pub fn parse_meta_history(change: u64, records: &[MetaCommitRecord]) -> Option<G
 fn strongest_vote(values: &[i32]) -> i32 {
     let mut best: i32 = 0;
     for &value in values {
-        if value.abs() > best.abs() {
+        if value.unsigned_abs() > best.unsigned_abs() {
             best = value;
         }
     }
@@ -474,7 +474,7 @@ grammar_regex!(
 grammar_regex!(regex_create_change, r"^Create change");
 grammar_regex!(
     regex_start_wip,
-    r"^Start Work In Progress|^Uploaded patch set \d+ \(WIP\)"
+    r"Start Work In Progress|^Uploaded patch set \d+ \(WIP\)"
 );
 grammar_regex!(regex_uploaded, r"^Uploaded patch set \d+");
 grammar_regex!(

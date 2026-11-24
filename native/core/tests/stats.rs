@@ -163,3 +163,15 @@ fn never_emits_a_zero_count_cell() {
     let cells = stats::activity_heatmap(&engine).expect("activity_heatmap failed");
     assert!(cells.iter().all(|c| c.count > 0));
 }
+
+#[test]
+fn an_empty_repository_counts_nothing() {
+    require_git!();
+    // `git shortlog --all` and `git log --all --format=%aI` print nothing for a repository with
+    // no commits, and the Statistics view opens on one: an empty answer, not a failure.
+    let repo = TestRepo::new();
+
+    let engine = open(&repo);
+    assert!(stats::author_stats(&engine).unwrap().is_empty());
+    assert!(stats::activity_heatmap(&engine).unwrap().is_empty());
+}

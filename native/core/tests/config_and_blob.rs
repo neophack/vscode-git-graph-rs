@@ -290,6 +290,62 @@ fn a_deleted_file_diffs_against_the_empty_side() {
     assert!(diff.contains("/dev/null"));
 }
 
+/// A symlink (mode 120000) whose blob the engine stages directly, so the test does not depend on
+/// the platform's symlink privileges: the object database stores it as a plain blob.
+#[test]
+fn reads_a_symlink_as_the_target_path_it_names() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    let blob = repo
+        .git_with_stdin(&["hash-object", "-w", "--stdin"], "target.txt\n")
+        .trim()
+        .to_string();
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        &format!("120000,{blob},link.txt"),
+    ]);
+    repo.git(&["commit", "--quiet", "--allow-empty", "-m", "add a symlink"]);
+    let hash = repo.head();
+
+    let engine = open(&repo);
+    // `git show <rev>:<link>` prints the target path, which is the content a read answers with;
+    // a mode test of `is_blob` alone reported the path as not in the commit at all.
+    assert_eq!(
+        repo.git(&["show", &format!("{hash}:link.txt")]),
+        "target.txt\n"
+    );
+    let file = blob::commit_file(&engine, &hash, "link.txt").unwrap();
+    assert_eq!(file.contents.as_deref(), Some("target.txt\n"));
+    let bytes = blob::commit_file_bytes(&engine, &hash, "link.txt").unwrap();
+    assert_eq!(bytes.as_deref(), Some("target.txt\n".as_bytes()));
+}
+
+/// A staged submodule (gitlink) has no blob to read: the same one-line summary
+/// `index_file` reports, instead of a failed read of a commit id as if it were a blob.
+#[test]
+fn index_file_bytes_of_a_staged_submodule_is_its_subproject_line() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    let first = repo.commit_file("a.txt", "1\n", "first");
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        &format!("160000,{first},vendored"),
+    ]);
+
+    let engine = open(&repo);
+    let bytes = blob::index_file_bytes(&engine, "vendored").unwrap();
+
+    assert_eq!(
+        bytes.as_deref(),
+        Some(format!("Subproject commit {first}\n").as_bytes())
+    );
+}
+
 /// A sparse file of `len` bytes (zeroes): the cheap way to stand a file larger than the read cap
 /// on disk — `set_len` extends without writing, and the zero content compresses to nothing in
 /// the object database.

@@ -320,3 +320,44 @@ fn the_table_covers_the_host_workflow() {
     assert_eq!(ask(&root, "repoRoot", json!({})), json!(root));
     assert_eq!(ask(&root, "openCount", json!({})), json!(0));
 }
+
+#[test]
+fn load_commits_reads_show_stashes_from_the_wire() {
+    let _registry = REGISTRY_LOCK.lock().unwrap();
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "one\n", "first");
+    repo.write("a.txt", "stashed\n");
+    repo.git(&["stash", "push", "--quiet", "-m", "the stashed work"]);
+    let root = repo.path().to_str().unwrap();
+
+    // Default: `git log` walks the stash, so the graph carries its rows.
+    let shown = ask(root, "loadCommits", json!({ "maxCommits": 10 }));
+    assert!(
+        shown["commits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|commit| !commit["stash"].is_null()),
+        "{shown}"
+    );
+
+    // `showStashes: false` omits them, and nothing answers an error the view cannot render.
+    let hidden = ask(
+        root,
+        "loadCommits",
+        json!({ "maxCommits": 10, "showStashes": false }),
+    );
+    assert!(
+        hidden["commits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|commit| commit["stash"].is_null()),
+        "{hidden}"
+    );
+
+    // The loadCommits reads opened handles through the shared registry: drop them, or the
+    // lifecycle test's "no handles open" precondition fails when this test runs first.
+    ask(root, "closeAll", json!({}));
+}

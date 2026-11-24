@@ -613,6 +613,30 @@ fn lists_the_local_configuration_with_git_resolution_semantics() {
 }
 
 #[test]
+fn lists_the_local_configuration_of_a_linked_worktree() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1\n", "first");
+    repo.git(&["branch", "--quiet", "side"]);
+    let worktree = tempfile::tempdir().unwrap();
+    repo.git(&[
+        "worktree",
+        "add",
+        "--quiet",
+        worktree.path().to_str().unwrap(),
+        "side",
+    ]);
+    // A linked worktree's own git directory holds no `config` file: the entries
+    // `git config --local` lists live in the main repository's `.git`.
+    assert!(!worktree.path().join(".git").join("config").is_file());
+
+    let engine = Repo::discover(worktree.path()).unwrap();
+    let config = config::config_list(&engine, config::ConfigLocation::Local).unwrap();
+
+    assert_eq!(config["user.name"], "Test User");
+}
+
+#[test]
 fn lists_the_global_configuration_and_declines_includes() {
     require_git!();
     let mut repo = TestRepo::new();

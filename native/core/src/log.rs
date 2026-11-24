@@ -54,15 +54,18 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         return Ok(Vec::new());
     }
     let git = repo.borrow();
-    // An empty path and an empty author list are no filter at all, exactly as the CLI backend
-    // reads them: it drops empty paths before `-- <paths>` and passes no `--author` for an empty
-    // list. Taken literally they would instead filter out every empty commit and every commit.
+    // An empty path, a Windows spelling, and a leading `./` are all "no path prefix" where the
+    // CLI backend normalises them before `-- <paths>`: `dir\file` and `./dir/file` name `dir/file`.
+    // Taken literally they would filter everything out.
     let filter_paths: Vec<String> = options
         .filter_paths
         .iter()
+        .map(|path| path.replace('\\', "/"))
+        .map(|path| path.trim_start_matches("./").to_string())
         .filter(|path| !path.is_empty())
-        .cloned()
         .collect();
+    // An empty author list is no filter at all, exactly as the CLI backend reads it: it passes no
+    // `--author` for an empty list. Taken literally it would instead filter out every commit.
     let authors = options
         .authors
         .as_deref()
@@ -211,8 +214,14 @@ fn walk_author_date_window(
 
     // The count pass: every commit reachable from the tips, headers only. The parents to visit
     // are collected rather than recursed, so a million-commit history costs heap, not stack.
+    // A tip given twice would count its parents' waiting children twice, and they would never
+    // fall back to zero — so the tips are deduplicated here, whatever the caller passed.
     let mut stack: Vec<ObjectId> = Vec::new();
+    let mut walked_tips: HashSet<ObjectId> = HashSet::new();
     for tip in tips {
+        if !walked_tips.insert(*tip) {
+            continue;
+        }
         let commit = git
             .find_commit(*tip)
             .git_ctx("Could not walk the commit graph")?;
@@ -364,7 +373,16 @@ fn commit_matches_author(commit: &gix::Commit<'_>, patterns: &[String]) -> Resul
     let author = commit
         .author()
         .git_ctx("Could not decode the commit author")?;
-    let haystack = format!("{} <{}>", author.name, author.email).to_lowercase();
+    // The match runs against the text `git log` prints, which re-encodes a commit recorded in a
+    // non-UTF-8 `encoding` header; matching the raw bytes would miss the author name the user
+    // actually sees (see `CommitEncoding`).
+    let encoding = CommitEncoding::of(commit);
+    let haystack = format!(
+        "{} <{}>",
+        encoding.decode(author.name),
+        encoding.decode(author.email)
+    )
+    .to_lowercase();
     Ok(patterns.iter().any(|pattern| haystack.contains(pattern)))
 }
 
@@ -867,6 +885,13 @@ pub fn count_commits_before(
     show_remote_branches: bool,
     include_reflogs: bool,
 ) -> Result<u64> {
+    // The counts the view jumps by run over the replacement objects the engine cannot apply
+    // (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     if include_reflogs {
         return Err(Error::unsupported(
             "Commits mentioned by reflogs are not counted by the engine",
@@ -942,6 +967,13 @@ pub fn count_commits_before(
 /// is parsed into: aggregated per (name, email), ordered by commit count (most first), then
 /// de-duplicated by name (the first, most-prolific spelling wins) and sorted by name.
 pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
+    // The authors git aggregates run through the replacement objects the engine cannot apply
+    // (see `Repo::uses_replace_refs`).
+    if repo.uses_replace_refs() {
+        return Err(Error::unsupported(
+            "The engine does not apply replacement objects (git replace)",
+        ));
+    }
     let git = repo.borrow();
     let head = git
         .head_id()

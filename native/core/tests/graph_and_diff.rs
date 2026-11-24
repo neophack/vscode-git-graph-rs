@@ -12,11 +12,14 @@ fn open(repo: &TestRepo) -> Repo {
     Repo::discover(repo.path()).expect("could not open the fixture repository")
 }
 
-/// The options a default view load sends.
+/// The options a default view load sends. The fields set here are the ones whose serde default
+/// (`showTags`, `showStashes`) differs from the derived Rust default, so the helper reads what
+/// the wire sends when the caller leaves them at their defaults.
 fn view_options(max_commits: u32) -> LogOptions {
     LogOptions {
         max_commits,
         show_tags: true,
+        show_stashes: true,
         show_remote_branches: true,
         show_uncommitted_changes: true,
         show_untracked_files: true,
@@ -221,6 +224,55 @@ fn skips_the_uncommitted_row_when_the_view_defers_it() {
 
     // Deferring lets the graph render before the working tree has been scanned.
     assert!(data.commits.iter().all(|commit| commit.hash != UNCOMMITTED));
+}
+
+#[test]
+fn skips_the_stash_rows_when_the_view_hides_stashes() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+    // The stash hangs off a commit that no branch will point at afterwards, so the disabled load
+    // differs in both of the places stashes reach: the row spliced into the page, and the base
+    // the walk starts from.
+    repo.git(&["checkout", "--quiet", "-b", "temp"]);
+    let base = repo.commit_file("b.txt", "2", "only on temp");
+    repo.write("a.txt", "stashed");
+    repo.git(&["stash", "push", "--quiet", "-m", "the stashed work"]);
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.git(&["branch", "--quiet", "-D", "temp"]);
+
+    let engine = open(&repo);
+
+    let shown = graph::load_commits(&engine, &view_options(100)).unwrap();
+    assert!(shown.commits.iter().any(|commit| commit.stash.is_some()));
+    assert!(shown.commits.iter().any(|commit| commit.hash == base));
+
+    let mut options = view_options(100);
+    options.show_stashes = false;
+    let hidden = graph::load_commits(&engine, &options).unwrap();
+    assert!(
+        hidden.commits.iter().all(|commit| commit.stash.is_none()),
+        "no stash row may be spliced in with showStashes disabled"
+    );
+    assert!(
+        !hidden.commits.iter().any(|commit| commit.hash == base),
+        "the stash's base is not a walk tip with showStashes disabled"
+    );
+}
+
+#[test]
+fn declines_a_branch_filter_given_as_a_glob_pattern() {
+    require_git!();
+    let mut repo = TestRepo::new();
+    repo.commit_file("a.txt", "1", "first");
+
+    let engine = open(&repo);
+    let mut options = view_options(100);
+    options.branches = Some(vec!["--glob=refs/heads/*".to_string()]);
+    // Resolved literally the pattern would name nothing and show an empty graph, which reads
+    // as "this repository has no history"; the CLI backend expands it, so the engine declines.
+    let error = graph::load_commits(&engine, &options).unwrap_err();
+    assert_eq!(error.kind, git_graph_core::ErrorKind::Unsupported);
 }
 
 #[test]

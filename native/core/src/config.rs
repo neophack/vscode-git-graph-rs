@@ -153,9 +153,16 @@ fn submodule_root(root: &Path, path: &str) -> Option<String> {
         return None;
     }
     let canonical = std::fs::canonicalize(&dir).ok()?;
-    // Windows prefixes canonical paths with `\\?\`, which nothing comparing these strings expects.
+    // Windows prefixes canonical paths with `\\?\`, which nothing comparing these strings
+    // expects. A UNC path (a submodule on a network share) keeps the drive-less `\\server\share`
+    // spelling rather than the invalid `UNC\server\share` the plain prefix strip would leave.
     let text = canonical.display().to_string();
-    Some(text.strip_prefix(r"\\?\").unwrap_or(&text).to_string())
+    Some(
+        text.strip_prefix(r"\\?\UNC\")
+            .map(|rest| format!(r"\\{rest}"))
+            .or_else(|| text.strip_prefix(r"\\?\").map(str::to_string))
+            .unwrap_or(text),
+    )
 }
 
 /* ---------- The remaining reads the settings panel and dialogs make ---------- */
@@ -197,7 +204,10 @@ pub fn config_list(
     location: ConfigLocation,
 ) -> Result<std::collections::BTreeMap<String, String>> {
     let path = match location {
-        ConfigLocation::Local => repo.git_dir().join("config"),
+        // The local configuration lives in the *common* directory, not this worktree's own git
+        // directory: a linked worktree keeps its config in `.git/worktrees/<name>`, which holds
+        // no `config` file — the entries `git config --local` lists are the main `.git`'s.
+        ConfigLocation::Local => repo.common_dir().join("config"),
         ConfigLocation::Global => global_config_path()?,
     };
     if !path.is_file() {
@@ -248,9 +258,14 @@ fn global_config_path() -> Result<std::path::PathBuf> {
             return Ok(PathBuf::from(explicit));
         }
     }
+    // `HOME` can be set to the empty string (a common Windows arrangement), which is no home at
+    // all: git skips it and so must the fallback to `USERPROFILE`.
     let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| Error::new(ErrorKind::Io, "Neither HOME nor USERPROFILE is set"))?;
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var("USERPROFILE").ok())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::new(ErrorKind::Io, "Neither HOME nor USERPROFILE is set"))?;
     let home_config = PathBuf::from(&home).join(".gitconfig");
     if home_config.is_file() {
         return Ok(home_config);
