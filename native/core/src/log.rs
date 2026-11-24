@@ -250,9 +250,10 @@ fn walk_author_date_window(
     // The ready set: counted, nothing left to wait for, not yet shown. Ranked by author date,
     // ties toward the commit readied first — the same tie `order` applies.
     let mut ready: BinaryHeap<(i64, Reverse<usize>, ObjectId)> = BinaryHeap::new();
+    let mut seeded: HashSet<ObjectId> = HashSet::new();
     let mut sequence = 0usize;
     for tip in tips {
-        if waiting.get(tip).copied().unwrap_or(0) == 0 {
+        if waiting.get(tip).copied().unwrap_or(0) == 0 && seeded.insert(*tip) {
             ready.push((
                 dates.get(tip).copied().unwrap_or(0),
                 Reverse(sequence),

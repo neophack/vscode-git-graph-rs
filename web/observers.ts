@@ -1353,8 +1353,9 @@ function makeTableResizable(view: GitGraphView) {
 
 			if (!dragMoved) {
 				dragMoved = true;
-				if (columnWidths[0] === COLUMN_AUTO) {
-					// The drag began on the automatic layout: capture the columns' current widths
+				if (view.tableElem.className !== 'fixedLayout') {
+					// The drag began on the automatic layout (either unconfigured or because
+					// fixed widths were not applied): capture the columns' current rendered widths
 					// and switch the table to a fixed layout - but only now, on the first actual
 					// movement. Converting on mousedown instead meant that one stray click on a
 					// handle (they line every cell boundary of every row, full column height, so
