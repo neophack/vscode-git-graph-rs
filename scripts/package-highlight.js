@@ -17,6 +17,7 @@ try {
 		outfile: path.join(__dirname, '..', 'media', 'vendor', 'highlight.min.js'),
 		bundle: true,
 		format: 'iife',
+		target: ['es2018', 'chrome78'],
 		minify: !DEBUG,
 		sourcemap: false,
 		legalComments: 'none',
