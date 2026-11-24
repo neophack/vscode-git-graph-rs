@@ -836,7 +836,7 @@ class GitGraphView {
 				// rendering can only hold one of them at a time (the second scrollToCommit re-renders
 				// the window around its own target, unmounting the first), so leave windowed mode
 				// and render every row first.
-				if (compareWithIndex !== null) this.exitWindowedRender();
+				if (compareWithIndex !== null) this.exitWindowedRender(true);
 				// Bring both rows into the rendered window first (as above), then resolve their
 				// elements — under windowed rendering the elements only exist once the window
 				// covers their indices.
@@ -1636,9 +1636,9 @@ class GitGraphView {
 
 	/* Renderers */
 
-	public render() {
+	public render(forceFullRender: boolean = false) {
 		this.renderPinnedControls();
-		this.renderTable();
+		this.renderTable(forceFullRender);
 		this.renderGraph();
 		// The graph column's automatic width follows the lanes the graph just drew, so it can only
 		// be measured once renderGraph() has run - makeTableResizable() applies it from inside
@@ -2217,12 +2217,12 @@ class GitGraphView {
 	 * Widget before scanning for matches: matching only sees rows that are in the DOM, so every
 	 * commit row must be rendered (see `canVirtualize`).
 	 */
-	public exitWindowedRender() {
+	public exitWindowedRender(force: boolean = false) {
 		if (this.renderedRange === null) return;
-		this.render();
+		this.render(force);
 	}
 
-	private renderTable() {
+	private renderTable(forceFullRender: boolean = false) {
 		// The expanded Commit Details View is a <tr> living inside this table (non-docked layout).
 		// Detach it while the rows are reconciled and put it back afterwards: it must not be
 		// treated as one of the commit rows, and re-creating it would discard its scroll position,
@@ -2251,11 +2251,12 @@ class GitGraphView {
 		// are rendered at all. The clamp only acts in that case: the #footer ("Load More Commits")
 		// also contributes to the scrollable height, so clamping to the table's height alone would
 		// nudge the view up on every re-render while the user is scrolled to the very bottom.
-		if (this.canVirtualize() && this.computeVisibleRange().start >= this.commits.length) {
+		const virtualize = !forceFullRender && this.canVirtualize();
+		if (virtualize && this.computeVisibleRange().start >= this.commits.length) {
 			const maxScroll = Math.max(0, this.getHeaderHeight() + this.commits.length * this.getRowHeight() - this.viewElem.clientHeight);
 			if (this.viewElem.scrollTop > maxScroll) this.viewElem.scrollTop = maxScroll;
 		}
-		this.renderedRange = this.canVirtualize() ? this.computeVisibleRange() : null;
+		this.renderedRange = virtualize ? this.computeVisibleRange() : null;
 		const from = this.renderedRange !== null ? this.renderedRange.start : 0;
 		const to = this.renderedRange !== null ? this.renderedRange.end : this.commits.length;
 
@@ -3345,10 +3346,9 @@ window.addEventListener('load', () => {
 	function refreshAndDisplayErrors(errors: GG.ErrorInfo[], errorMessage: string, configChanges: boolean = false, refreshOnError: boolean = false) {
 		const reducedErrors = reduceErrorInfos(errors);
 		if (reducedErrors.error !== null) {
-			if (refreshOnError) gitGraph.refresh(false, configChanges);
 			dialog.showError(errorMessage, reducedErrors.error, null, null);
 		}
-		if (reducedErrors.partialOrCompleteSuccess) {
+		if (reducedErrors.partialOrCompleteSuccess || (reducedErrors.error !== null && refreshOnError)) {
 			gitGraph.refresh(false, configChanges);
 		} else if (configChanges) {
 			gitGraph.requestLoadConfig();

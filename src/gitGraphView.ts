@@ -1053,6 +1053,7 @@ export class GitGraphView extends Disposable {
 					commitHash: msg.commitHash,
 					compareWithHash: msg.compareWithHash,
 					counts: counts.counts,
+					paths: msg.paths,
 					error: counts.error
 				});
 				break;

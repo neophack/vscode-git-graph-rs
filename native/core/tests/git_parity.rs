@@ -134,6 +134,25 @@ fn status_renames_copies_still_pairs_a_staged_rename() {
 }
 
 #[test]
+fn status_renames_boolean_false_spellings_disable_pairing() {
+    require_git!();
+    for spelling in ["no", "off", "0", "FALSE"] {
+        let mut repo = TestRepo::new();
+        repo.commit_file("a.txt", &"x\n".repeat(20), "one");
+        repo.git(&["config", "status.renames", spelling]);
+        repo.git(&["mv", "a.txt", "b.txt"]);
+
+        let engine = open(&repo);
+        assert_eq!(porcelain_lines(&repo), 2, "git porcelain for {spelling}");
+        assert_eq!(
+            status::count_changes(&engine, true).unwrap(),
+            2,
+            "count_changes for status.renames={spelling}"
+        );
+    }
+}
+
+#[test]
 fn a_staged_rename_deleted_from_the_worktree_is_one_deletion() {
     require_git!();
     let mut repo = TestRepo::new();

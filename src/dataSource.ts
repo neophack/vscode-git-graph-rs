@@ -2052,7 +2052,7 @@ export class DataSource extends Disposable {
 					? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
 					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --only'
 						+ (getConfig().signCommits ? ' -S' : '')
-						+ ' --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
+						+ ' --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)[^\\r\\n]*/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
 				fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
 				fs.writeFileSync(messageFile, message);
 				if (author !== null) fs.writeFileSync(authorFile, author);

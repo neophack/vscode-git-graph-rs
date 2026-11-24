@@ -696,11 +696,12 @@ function observeUrls(view: GitGraphView) {
 
 	const followInternalLink = (e: MouseEvent) => {
 
-		if (e.target !== null && isInternalUrlElem(<Element>e.target)) {
+		const urlElem = e.target !== null ? <HTMLElement | null>(<Element>e.target).closest('.' + CLASS_INTERNAL_URL) : null;
+		if (urlElem !== null) {
 
-			const value = unescapeHtml((<HTMLElement>e.target).dataset.value!);
+			const value = unescapeHtml(urlElem.dataset.value!);
 
-			switch ((<HTMLElement>e.target).dataset.type!) {
+			switch (urlElem.dataset.type!) {
 				case 'commit':
 
 					if (typeof view.commitLookup[value] === 'number' && (view.expandedCommit === null || view.expandedCommit.commitHash !== value || view.expandedCommit.compareWithHash !== null)) {
@@ -737,10 +738,13 @@ function observeUrls(view: GitGraphView) {
 
 
 
-		const isExternalUrl = isExternalUrlElem(eventTarget), isInternalUrl = isInternalUrlElem(eventTarget);
+		const externalUrlElem = <HTMLAnchorElement | null>eventTarget.closest('.' + CLASS_EXTERNAL_URL);
+		const internalUrlElem = <HTMLElement | null>eventTarget.closest('.' + CLASS_INTERNAL_URL);
+		const isExternalUrl = externalUrlElem !== null, isInternalUrl = internalUrlElem !== null;
 
 		if (isExternalUrl || isInternalUrl) {
 
+			const urlElem: HTMLElement = externalUrlElem !== null ? externalUrlElem : internalUrlElem!;
 			const viewElem: HTMLElement | null = eventTarget.closest('#view');
 
 			let eventElem: HTMLElement | null;
@@ -761,7 +765,7 @@ function observeUrls(view: GitGraphView) {
 
 					index: view.commitLookup[view.expandedCommit.commitHash],
 
-					elem: <HTMLElement>eventTarget
+					elem: urlElem
 
 				};
 
@@ -785,7 +789,7 @@ function observeUrls(view: GitGraphView) {
 
 					index: parseInt(eventElem.dataset.id!),
 
-					elem: <HTMLElement>eventTarget
+					elem: urlElem
 
 				};
 
@@ -819,7 +823,7 @@ function observeUrls(view: GitGraphView) {
 
 						onClick: () => {
 
-							sendMessage({ command: 'openExternalUrl', url: (<HTMLAnchorElement>eventTarget).href });
+							sendMessage({ command: 'openExternalUrl', url: externalUrlElem!.href });
 
 						}
 
@@ -843,7 +847,7 @@ function observeUrls(view: GitGraphView) {
 
 						onClick: () => {
 
-							sendMessage({ command: 'copyToClipboard', type: strings.copyTypeExternalUrl, data: (<HTMLAnchorElement>eventTarget).href });
+							sendMessage({ command: 'copyToClipboard', type: strings.copyTypeExternalUrl, data: externalUrlElem!.href });
 
 						}
 

@@ -359,6 +359,19 @@ describe('PullRequestDataSource', () => {
 		}
 	});
 
+	it('does not send an empty PRIVATE-TOKEN header when GITLAB_TOKEN is empty', async () => {
+		const previous = process.env.GITLAB_TOKEN;
+		process.env.GITLAB_TOKEN = '';
+		try {
+			const fetcher = recordingFetcher([[]]);
+			await new PullRequestDataSource(fetcher).getPullRequests('https://gitlab.com/group/sub/repo.git');
+			assert.equal(fetcher.calls[0].headers['PRIVATE-TOKEN'], undefined);
+		} finally {
+			if (previous === undefined) delete process.env.GITLAB_TOKEN;
+			else process.env.GITLAB_TOKEN = previous;
+		}
+	});
+
 	it('degrades to null on an unsupported remote or a failed request (never throws)', async () => {
 		const fetcher = recordingFetcher([new Error('HTTP 404'), new Error('request timed out')]);
 		const source = new PullRequestDataSource(fetcher);

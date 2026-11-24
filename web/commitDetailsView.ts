@@ -30,6 +30,7 @@ function closeCommitDetails(view: GitGraphView, saveAndRender: boolean) {
 
 
 	const elem = document.getElementById('cdv'), isDocked = isCdvDocked(view);
+	const wasDocked = isDocked || (elem !== null && elem.classList.contains('docked'));
 
 	if (elem !== null) {
 
@@ -37,7 +38,7 @@ function closeCommitDetails(view: GitGraphView, saveAndRender: boolean) {
 
 	}
 
-	if (isDocked) {
+	if (wasDocked) {
 
 		view.viewElem.style.bottom = '0px';
 
@@ -562,18 +563,34 @@ function applyLineCounts(view: GitGraphView, msg: GG.ResponseCommitFileCounts) {
 
 	}
 
-	// The batch failed (or a path was dropped from it - e.g. a binary file): the pending entries it
-	// covered must be cleared, or their `(+…|-…)` placeholders hang forever and the files stat
-	// never settles
+	const clearPendingPath = (path: string) => {
+
+		if (!expandedCommit.lineCounts.pending!.delete(path)) return;
+
+		const index = expandedCommit.lineCounts.byPath !== null ? expandedCommit.lineCounts.byPath.get(path) : undefined;
+
+		if (index === undefined || index >= expandedCommit.fileChanges!.length || filesElem === null) return;
+
+		const record = filesElem.querySelector('.fileTreeFileRecord[data-index="' + index + '"]');
+
+		if (record !== null) patchFileRowCounts(<HTMLElement>record, expandedCommit.fileChanges![index]);
+
+	};
+
+	// The batch failed (or a path was dropped from it - e.g. a binary file): clear only the
+	// pending entries this batch covered (never paths still queued or in flight from another
+	// batch), and patch their DOM rows so `(+…|-…)` placeholders disappear cleanly
 	if (msg.error !== null) {
 
-		expandedCommit.lineCounts.pending.clear();
+		expandedCommit.lineCounts.queue = [];
 
-	} else {
+		for (const path of Array.from(expandedCommit.lineCounts.pending)) clearPendingPath(path);
 
-		for (const path of Array.from(expandedCommit.lineCounts.pending)) {
+	} else if (Array.isArray(msg.paths)) {
 
-			if (!(path in msg.counts)) expandedCommit.lineCounts.pending.delete(path);
+		for (const path of msg.paths) {
+
+			if (!(path in msg.counts)) clearPendingPath(path);
 
 		}
 

@@ -64,12 +64,13 @@ fn scan(
     // pairings git's own default makes.
     let renames_off = {
         let config = git.config_snapshot();
-        // Both keys accept `copies` / `copies-unmodified` beside plain booleans; any spelling
-        // but a literal `false` enables the pairing.
-        let rename_setting = |key: &str| match config.string(key) {
-            Some(value) if value.as_slice() == b"false" => Some(false),
-            Some(_) => Some(true),
-            None => config.boolean(key),
+        // Both keys accept `copies` / `copies-unmodified` beside plain booleans; any boolean
+        // false spelling (`false`, `no`, `off`, `0`, case-insensitive) disables pairing, while
+        // any non-boolean value such as `copies` enables it.
+        let rename_setting = |key: &str| {
+            config
+                .boolean(key)
+                .or_else(|| config.string(key).map(|_| true))
         };
         rename_setting("status.renames").or_else(|| rename_setting("diff.renames")) == Some(false)
     };

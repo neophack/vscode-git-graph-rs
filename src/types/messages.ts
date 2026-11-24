@@ -193,6 +193,8 @@ export interface ResponseCommitFileCounts extends ResponseWithErrorInfo {
 	readonly commitHash: string;
 	readonly compareWithHash: string | null;
 	readonly counts: { [path: string]: GitLineCounts };
+	/** The paths this response's request asked for, echoed back so only that batch's pending entries are settled. */
+	readonly paths?: ReadonlyArray<string>;
 }
 
 export interface RequestCommitBodies extends RepoRequest {

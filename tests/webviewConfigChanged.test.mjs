@@ -86,4 +86,85 @@ describe('a configChanged message applies the settings live', () => {
 		assert.ok(cdvAfter !== null, 'the Commit Details View is still open');
 		assert.strictEqual(cdvAfter, cdvBefore, 'the Commit Details View element was not rebuilt');
 	});
+
+	it('resets view bottom offset when switching an open docked CDV to inline', async () => {
+		const h = await bootView(20);
+		const dockedConfig = clonedConfig(h);
+		dockedConfig.commitDetailsView.location = 1; // CommitDetailsViewLocation.DockedToBottom
+		h.dispatch({ command: 'configChanged', config: dockedConfig });
+		await h.pump();
+
+		const row = h.rows()[0];
+		row.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		await h.pump();
+		assert.ok(h.document.getElementById('cdv').classList.contains('docked'), 'CDV opened docked');
+		assert.notEqual(h.viewElem.style.bottom, '0px', 'view bottom offset is expanded while docked');
+
+		const inlineConfig = clonedConfig(h);
+		inlineConfig.commitDetailsView.location = 0; // CommitDetailsViewLocation.Inline
+		h.dispatch({ command: 'configChanged', config: inlineConfig });
+		await h.pump();
+
+		assert.equal(h.document.getElementById('cdv'), null, 'docked CDV closed on location change');
+		assert.equal(h.viewElem.style.bottom, '0px', 'view bottom offset was reset to 0px');
+	});
+
+	it('preserves pending paths across batched commitFileCounts responses', async () => {
+		const h = await bootView(20);
+		const row = h.rows()[0];
+		const hash = h.state.history[0].hash;
+
+		row.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		await h.pump();
+		h.dispatch({
+			command: 'commitDetails', repo: 'C:\\repo', error: null, avatar: null, codeReview: null, refresh: false,
+			commitDetails: {
+				hash: hash, parents: [], author: 'Author 0', authorEmail: 'a@example.com', authorDate: 0,
+				committer: 'Author 0', committerEmail: 'a@example.com', committerDate: 0,
+				signature: null, body: '',
+				fileChanges: [
+					{ oldFilePath: 'a.txt', newFilePath: 'a.txt', type: 'M', additions: null, deletions: null },
+					{ oldFilePath: 'b.txt', newFilePath: 'b.txt', type: 'M', additions: null, deletions: null }
+				]
+			}
+		});
+
+		h.dispatch({
+			command: 'commitFileCounts', repo: 'C:\\repo', commitHash: hash, compareWithHash: null,
+			paths: ['a.txt'],
+			counts: { 'a.txt': { additions: 3, deletions: 1 } },
+			error: null
+		});
+		h.dispatch({
+			command: 'commitFileCounts', repo: 'C:\\repo', commitHash: hash, compareWithHash: null,
+			paths: ['b.txt'],
+			counts: { 'b.txt': { additions: 7, deletions: 2 } },
+			error: null
+		});
+
+		const rows = Array.from(h.document.querySelectorAll('#cdvFiles .fileTreeFileRecord'));
+		assert.equal(rows.length, 2, 'both file rows are rendered');
+		assert.ok(rows[0].textContent.includes('+3') && rows[0].textContent.includes('-1'), 'first batch counts applied');
+		assert.ok(rows[1].textContent.includes('+7') && rows[1].textContent.includes('-2'), 'second batch counts applied');
+	});
+
+	it('resolves descendant elements inside internalUrl links on click', async () => {
+		const h = await bootView(20);
+		const targetHash = h.state.history[5].hash;
+		const link = h.document.createElement('span');
+		link.className = 'internalUrl';
+		link.dataset.type = 'commit';
+		link.dataset.value = targetHash;
+		const highlight = h.document.createElement('span');
+		highlight.className = 'findMatch';
+		highlight.textContent = targetHash.substring(0, 8);
+		link.appendChild(highlight);
+		h.document.body.appendChild(link);
+
+		highlight.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		await h.pump();
+
+		const highlighted = h.document.querySelector('#commitTable tr.commit[data-id="5"]');
+		assert.ok((highlighted !== null && highlighted.classList.contains('cdvOpen')) || h.document.getElementById('cdv') !== null, 'clicking child span inside internalUrl opened the target commit');
+	});
 });

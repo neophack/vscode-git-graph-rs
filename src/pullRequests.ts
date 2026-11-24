@@ -306,7 +306,7 @@ export class PullRequestDataSource {
 			// merge requests degrade to anonymous access (the request still runs, and its failure
 			// resolves to null); gitlab.com keeps authenticating exactly as before.
 			const gitlabHost = remote.apiBase.replace(/^https:\/\//, '').replace(/\/api\/v4$/, '');
-			if (token !== undefined && /^(?:[\w-]+\.)*gitlab\.com$/.test(gitlabHost)) {
+			if (token && /^(?:[\w-]+\.)*gitlab\.com$/.test(gitlabHost)) {
 				headers['PRIVATE-TOKEN'] = token;
 			}
 			// state=all like GitHub: a merged or closed request must stay in the list, or the refs
