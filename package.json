@@ -15,7 +15,7 @@
 	},
 	"homepage": "https://github.com/neophack/vscode-git-graph-rs#readme",
 	"engines": {
-		"vscode": "^1.38.0"
+		"vscode": "^1.42.0"
 	},
 	"extensionKind": [
 		"workspace"

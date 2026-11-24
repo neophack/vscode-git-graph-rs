@@ -6,15 +6,15 @@
 // Stylelint 17 note: array-style ("flat") configs were removed — the config
 // must be a plain object using `extends`/`plugins`.
 //
-// The Chromium 69 floor comes from `.browserslistrc` (chrome 69, shared with
-// eslint-plugin-compat — §3.7.2). The stylelint-no-unsupported-browser-features
+// The Chromium 78 floor comes from `.browserslistrc` (chrome 78, shared with
+// eslint-plugin-compat — VS Code 1.42). The stylelint-no-unsupported-browser-features
 // plugin reads it and errors on declarations no supported browser parses.
 //
 // Fallback discipline (see the stylesheets themselves): every declaration newer
-// than Chromium 69 carries a Chromium-69-safe fallback immediately before it
+// than Chromium 78 carries a Chromium-78-safe fallback immediately before it
 // (same property, so the modern value wins where supported), every pseudo-class
-// newer than 69 (`:focus-visible`) is preceded by a `:focus`-only duplicate rule
-// (an unknown pseudo-class drops the whole rule on 69), and every flex `gap`
+// newer than 78 (`:focus-visible`) is preceded by a `:focus`-only duplicate rule
+// (an unknown pseudo-class drops the whole rule on 78), and every flex `gap`
 // site (Chrome 84) carries a margin fallback inside an
 // `@supports not (appearance: none)` block (unprefixed `appearance` only parses
 // from Chrome 84, so the probe is a Chrome-version fence: the margins apply
@@ -29,25 +29,21 @@ export default {
 		// The plugin's registered ruleName is 'plugin/no-unsupported-browser-features'
 		// (stylelint.createPlugin prefixes plugin rules with 'plugin/').
 		'plugin/no-unsupported-browser-features': [true, {
-			browsers: ['chrome 69'],
-			// Features with an established Chromium-69 fallback pattern in the
+			browsers: ['chrome 78'],
+			// Features with an established Chromium-78 fallback pattern in the
 			// stylesheets, which a per-declaration checker cannot see:
 			//   - flexbox-gap: every site carries a margin fallback in an
 			//     `@supports not (appearance: none)` block (Chrome 84 gained flex gap).
 			//   - css-focus-visible: every site carries a `:focus`-only duplicate
-			//     rule (an unknown pseudo-class drops the whole rule on 69).
-			//   - prefers-reduced-motion (Chrome 74): the block simply never
-			//     matches on 69 — pure progressive enhancement.
+			//     rule (an unknown pseudo-class drops the whole rule on 78).
 			//   - css-overflow: every flagged site uses auto/hidden/visible/scroll,
-			//     all fully supported in 69; the "partial" flag tracks `overflow:
+			//     all fully supported in 78; the "partial" flag tracks `overflow:
 			//     clip` (Chrome 90), which no stylesheet uses.
 			//   - css-sticky: `position: sticky` works on non-table elements since
 			//     Chrome 56. The one table site (commitTable's column headers)
-			//     degrades gracefully on 69 to scrolling headers.
+			//     degrades gracefully on 78 to scrolling headers.
 			//   - css-math-functions: min()/max() need Chrome 79; every site
 			//     carries a literal or calc() fallback declaration before it.
-			//   - css-backdrop-filter (Chrome 76): the mobile app bar's frost is
-			//     @supports-guarded over a solid background base.
 			//   - css-masks: every unprefixed `mask` is preceded by `-webkit-mask`
 			//     (supported since Chrome 1).
 			//   - text-decoration: only `text-decoration-color` is used (supported
@@ -57,15 +53,13 @@ export default {
 			//     with a `::-webkit-scrollbar { display: none }` fallback.
 			//   - css-relative-colors (Chrome 119): the opaque-surface token
 			//     redefinitions in tokens.css are @supports-guarded; the plain
-			//     declarations before them are the Chromium 69 values.
+			//     declarations before them are the Chromium 78 values.
 			ignore: [
 				'flexbox-gap',
 				'css-focus-visible',
-				'prefers-reduced-motion',
 				'css-overflow',
 				'css-sticky',
 				'css-math-functions',
-				'css-backdrop-filter',
 				'css-masks',
 				'text-decoration',
 				'css-scrollbar',

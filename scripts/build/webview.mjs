@@ -1,14 +1,14 @@
 /**
  * Build the Git Graph webview (REFACTOR-PLAN §3.4, §4.1, task 5.9): bundle the ES module sources
  * under src/webview into the files the extension host serves - and run the gates that keep them
- * inside the VS Code 1.38 floor (Chromium 69 = ES2018):
+ * inside the VS Code 1.42 floor (Chromium 78, ES2018 syntax gate):
  *
  *   1. type check   tsc -p src/webview (lib es2018 + dom: newer built-ins are type errors)
  *   2. source gate  no syntax newer than ES2018 in src/webview/**.ts (dynamic import() allowed:
- *                   the on-demand chunks of task 5.9 rely on it, and Chromium 69 runs it natively)
+ *                   the on-demand chunks of task 5.9 rely on it, and Chromium 78 runs it natively)
  *   3. html gate    innerHTML / outerHTML / insertAdjacentHTML appear only in
  *                   src/webview/common/html.ts, which accepts SafeHtml alone
- *   4. bundle       the graph view: esbuild, ESM + splitting, target es2018 + chrome69 - the
+ *   4. bundle       the graph view: esbuild, ESM + splitting, target es2018 + chrome78 - the
  *                   entry chunk media/out.min.js plus on-demand media/chunks/*.js pulled in by
  *                   dynamic import() (the widgets and modules that must not sit on the first
  *                   paint); the comparison and binary-compare pages stay single-file IIFEs
@@ -124,7 +124,7 @@ try {
 		bundle: true,
 		splitting: true,
 		format: 'esm',
-		target: ['es2018', 'chrome69'],
+		target: ['es2018', 'chrome78'],
 		minify: !DEBUG,
 		sourcemap: DEBUG ? false : 'linked',
 		sourcesContent: true,
@@ -155,7 +155,7 @@ try {
 			bundle: true,
 			format: 'iife',
 			plugins: [i18nSubsetPlugin],
-			target: ['es2018', 'chrome69'],
+			target: ['es2018', 'chrome78'],
 			minify: !DEBUG,
 			sourcemap: DEBUG ? false : 'linked',
 			sourcesContent: true,
@@ -169,7 +169,7 @@ try {
 			entryPoints: [entry],
 			outfile: out,
 			bundle: true,
-			target: ['chrome69'],
+			target: ['chrome78'],
 			minify: !DEBUG,
 			legalComments: 'none',
 			logLevel: 'warning'
@@ -186,7 +186,7 @@ try {
 		outfile: path.join(mediaDir, 'out.testbundle.js'),
 		bundle: true,
 		format: 'iife',
-		target: ['es2018', 'chrome69'],
+		target: ['es2018', 'chrome78'],
 		minify: !DEBUG,
 		sourcemap: false,
 		sourcesContent: true,

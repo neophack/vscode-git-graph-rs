@@ -1,7 +1,7 @@
 /**
  * The artifact compatibility gate (REFACTOR-PLAN §3.7.2): every script this repository emits
  * itself - the host and askpass bundles under dist/ and the webview bundle media/out.min.js -
- * must parse as ES2018, the syntax floor of VS Code 1.38 (Node 10.11 host, Chromium 69 webview).
+ * must parse as ES2018, within the VS Code 1.42 floor (Node 12.8 host, Chromium 78 webview).
  * esbuild's `target` downlevels our own sources, so what this gate catches is a dependency or a
  * future entry slipping newer syntax past the bundler.
  *
@@ -64,7 +64,7 @@ export function checkCompat() {
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const problems = checkCompat();
 	if (problems.length > 0) {
-		console.error('Compatibility check failed (floor: VS Code 1.38 = Node 10.11 / Chromium 69):\n');
+		console.error('Compatibility check failed (floor: VS Code 1.42 = Node 12.8 / Chromium 78):\n');
 		for (const problem of problems) console.error('  - ' + problem);
 		process.exit(1);
 	}

@@ -1,11 +1,11 @@
 /**
  * The unified dist build (REFACTOR-PLAN §4.1, task 1.3): one esbuild pipeline that bundles the
- * extension host (src/extension/main.ts) into a single dist/extension.js on the VS Code 1.38 floor
- * (Node 10.11), bundles the askpass helper git's credential prompts run, copies the askpass
+ * extension host (src/extension/main.ts) into a single dist/extension.js on the VS Code 1.42 floor
+ * (Node 12.8), bundles the askpass helper git's credential prompts run, copies the askpass
  * launchers, and chains the webview pipeline (scripts/build/webview.mjs) that emits
  * media/out.min.{js,css}.
  *
- *   dist/extension.js           the host, one file on the node10.11 target; only `vscode` and the
+ *   dist/extension.js           the host, one file on the node12.8 target; only `vscode` and the
  *                               original-fs fallback stay outside the bundle
  *   dist/automation/extension.js  the same host built with `--automation`: __AUTOMATION__ is
  *                               defined truthy, so the automation subsystem's gate keeps its
@@ -79,8 +79,8 @@ const common = {
 	sourcesContent: true,
 	legalComments: 'none',
 	logLevel: 'warning',
-	// Node 10.11 and Chromium 69 both parse `catch {}`, but it is ES2019; lowering it keeps
-	// every artifact inside the ES2018 syntax floor of VS Code 1.38 (REFACTOR-PLAN §3.7.2).
+	// Node 12.8 and Chromium 78 both parse `catch {}`, but it is ES2019; lowering it keeps
+	// every artifact inside the ES2018 syntax gate (scripts/build/compat.mjs & es-check).
 	supported: { 'optional-catch-binding': false }
 };
 
@@ -127,7 +127,7 @@ const hostEntry = {
 	outdir: automationBuild ? path.relative(root, hostOut) : 'dist',
 	platform: 'node',
 	format: 'cjs',
-	target: 'node10.11',
+	target: 'node12.8',
 	// The compile-time automation switch (task 6.2): false dead-code-eliminates the gate's
 	// requires (so no automation module enters the default bundle — nothing about them needs to
 	// stay external in either mode); true keeps them, and the modules are bundled in.
@@ -145,7 +145,7 @@ const askpassEntry = {
 	outdir: automationBuild ? path.relative(root, path.join(hostOut, 'askpass')) : 'dist/askpass',
 	platform: 'node',
 	format: 'cjs',
-	target: 'node10.11',
+	target: 'node12.8',
 	tsconfig: path.join(root, 'src', 'tsconfig.json')
 };
 
@@ -162,7 +162,7 @@ const editorsEntry = {
 	outdir: automationBuild ? path.relative(root, path.join(hostOut, 'editors')) : 'dist/editors',
 	platform: 'node',
 	format: 'cjs',
-	target: 'node10.11',
+	target: 'node12.8',
 	tsconfig: path.join(root, 'src', 'tsconfig.json')
 };
 
@@ -271,7 +271,7 @@ async function main() {
 	// shipped one.
 	const problems = checkCompat();
 	if (problems.length > 0) {
-		console.error('\nCompatibility check failed (floor: VS Code 1.38 = Node 10.11 / Chromium 69):\n');
+		console.error('\nCompatibility check failed (floor: VS Code 1.42 = Node 12.8 / Chromium 78):\n');
 		for (const problem of problems) console.error('  - ' + problem);
 		process.exit(1);
 	}

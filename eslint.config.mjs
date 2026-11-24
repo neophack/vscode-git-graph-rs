@@ -4,17 +4,16 @@
 //
 // Layers:
 //   (a) src/** host code (everything except src/webview) + scripts/**
-//       — eslint-plugin-n built-in API floors. The ARTIFACT floor is Node >=10.11.0
-//         (§3.7.1 runtime anchors, VS Code 1.38); §3.7.2 pins
-//         n/no-unsupported-features/{es-builtins,node-builtins} to `>=10.11.0`.
+//       — eslint-plugin-n built-in API floors. The ARTIFACT floor is Node >=12.8.1
+//         (VS Code 1.42 runtime anchor); pins
+//         n/no-unsupported-features/{es-builtins,node-builtins} to `>=12.8.1`.
 //         Dev-only code (*.test.ts run by Vitest, scripts/** run by developers)
-//         is relaxed to the dev floor `>=18.0.0` (§3.7.2 "Separating the dev
-//         environment from the runtime environment": tooling uses Node >=20).
-//   (b) src/webview/** — eslint-plugin-compat against browserslist `chrome 69`
-//         (§3.7.2, Chromium 69 floor; see .browserslistrc), no-implicit-globals
-//         (§5.1), and no Node builtins importable at all (§3.6).
+//         is relaxed to the dev floor `>=18.0.0` (tooling uses Node >=20).
+//   (b) src/webview/** — eslint-plugin-compat against browserslist `chrome 78`
+//         (Chromium 78 floor; see .browserslistrc), no-implicit-globals,
+//         and no Node builtins importable at all.
 //   (c) `(vscode.window as any)`-style API probes are forbidden outside
-//         src/extension/platform/** (§3.7.2 "VS Code API" row: post-1.38 APIs go
+//         src/extension/platform/** (post-1.42 APIs go
 //         through extension/platform/vscodeCompat.ts only). Expressed with
 //         no-restricted-syntax: any TS `as any` cast whose expression mentions the
 //         `vscode` identifier.
@@ -70,7 +69,7 @@ const NATIVE_UI_MESSAGE = "Native UI goes through the platform layer: route 'vsc
 // rule value per file set) keeps the probe entry byte-identical.
 const VSCODE_PROBE_SELECTOR = {
 	selector: 'TSAsExpression[typeAnnotation.type=\'TSAnyKeyword\'] Identifier[name=\'vscode\']',
-	message: 'Do not probe the vscode API with `as any` casts (REFACTOR-PLAN §3.7.2/§3.7.3): route post-1.38 APIs through extension/platform/vscodeCompat.ts.'
+	message: 'Do not probe the vscode API with `as any` casts: route post-1.42 APIs through extension/platform/vscodeCompat.ts.'
 };
 const NATIVE_UI_SELECTOR_ENTRY = {
 	selector: NATIVE_UI_SELECTOR,
@@ -128,7 +127,7 @@ export default tseslint.config(
 
 	// ---- scripts/** (.js/.mjs/.cjs dev tooling) --------------------------------
 	// Dev scripts run on the developer's Node (engines.node >=18), NOT on the
-	// 10.11 artifact floor — hence the relaxed n/* version here (§3.7.2).
+	// 12.8.1 artifact floor — hence the relaxed n/* version here.
 	{
 		files: SCRIPTS,
 		...js.configs.recommended,
@@ -171,16 +170,16 @@ export default tseslint.config(
 		}
 	},
 
-	// ---- (a) src/** host code (Node artifact floor >=10.11.0) ------------------
-	// Production host code ships in the VSIX and runs on VS Code 1.38's Node
-	// 10.11 (§3.7.1/§3.7.2). Unit tests next to sources run under Vitest on the
-	// dev Node, so they get the relaxed floor.
+	// ---- (a) src/** host code (Node artifact floor >=12.8.1) ------------------
+	// Production host code ships in the VSIX and runs on VS Code 1.42's Node
+	// 12.8.1. Unit tests next to sources run under Vitest on the dev Node,
+	// so they get the relaxed floor.
 	{
 		files: HOST_TS_NO_WEBVIEW,
 		plugins: { n: nPlugin },
 		rules: {
-			'n/no-unsupported-features/es-builtins': ['error', { version: '>=10.11.0' }],
-			'n/no-unsupported-features/node-builtins': ['error', { version: '>=10.11.0' }]
+			'n/no-unsupported-features/es-builtins': ['error', { version: '>=12.8.1' }],
+			'n/no-unsupported-features/node-builtins': ['error', { version: '>=12.8.1' }]
 		}
 	},
 	{
@@ -215,7 +214,7 @@ export default tseslint.config(
 		}
 	},
 
-	// ---- (b) src/webview/** (Chromium 69 floor) ---------------------------------
+	// ---- (b) src/webview/** (Chromium 78 floor) ---------------------------------
 	{
 		files: WEBVIEW_TS,
 		...compatPlugin.configs['flat/recommended'],
@@ -228,17 +227,17 @@ export default tseslint.config(
 				paths: [
 					{
 						name: 'vscode',
-						message: 'The webview must not import the vscode module (REFACTOR-PLAN §3.6); talk to the host through the bridge.'
+						message: 'The webview must not import the vscode module; talk to the host through the bridge.'
 					}
 				],
 				patterns: [
 					{
 						regex: NODE_BUILTIN_REGEX,
-						message: 'The webview runs in Chromium 69, not Node: node builtins are not available (REFACTOR-PLAN §3.6).'
+						message: 'The webview runs in Chromium 78, not Node: node builtins are not available.'
 					},
 					{
 						regex: '^node:',
-						message: 'The webview runs in Chromium 69, not Node: node builtins are not available (REFACTOR-PLAN §3.6).'
+						message: 'The webview runs in Chromium 78, not Node: node builtins are not available.'
 					}
 				]
 			}],

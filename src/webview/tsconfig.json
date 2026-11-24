@@ -1,7 +1,7 @@
 {
 	// The Git Graph webview front end (REFACTOR-PLAN §3.4 / Phase 5): ES modules bundled by
 	// scripts/build/webview.mjs into the media/out.min.{js,css} the extension host serves.
-	// The runtime floor is VS Code 1.38 = Chromium 69, which implements ES2018: the sources are
+	// The runtime floor is VS Code 1.42 = Chromium 78, held to ES2018 syntax: the sources are
 	// written against ES2018 (target/lib below), and the build gates reject newer syntax both in
 	// these sources and in the emitted bundle.
 	"extends": "../../tsconfig.base.json",

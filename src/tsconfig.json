@@ -1,8 +1,8 @@
 {
-	// The extension host, as it ships: scripts/build/build.mjs bundles it for VS Code 1.38's
-	// Node 10.11, which implements ES2018. Node API floors are ESLint's job (eslint-plugin-n);
-	// `lib` here keeps newer ECMAScript builtins out. Colocated tests run on the dev Node and are
-	// checked by the root tsconfig.json instead.
+	// The extension host, as it ships: scripts/build/build.mjs bundles it for VS Code 1.42's
+	// Node 12.8, keeping ES2018 syntax compatibility. Node API floors are ESLint's job
+	// (eslint-plugin-n); `lib` here keeps newer ECMAScript builtins out. Colocated tests run on
+	// the dev Node and are checked by the root tsconfig.json instead.
 	"extends": "../tsconfig.base.json",
 	"compilerOptions": {
 		"lib": [
