@@ -387,8 +387,8 @@ The full promise, with the measured values behind it, lives in
 
 | Requirement | Floor | Notes |
 |---|---|---|
-| VS Code | **1.38.0** | `engines.vscode` stays `^1.38.0`; host artifacts target `node10.11`, the webview `chrome69` |
-| VS Code derivatives | VSCodium, Code - OSS, Git Graph Studio, other 1.38-based editors | Only 1.38-era APIs, feature-detected where newer |
+| VS Code | **1.42.0** | `engines.vscode` is `^1.42.0`; host artifacts target `node12.8`, the webview `chrome78` |
+| VS Code derivatives | VSCodium, Code - OSS, Git Graph Studio, other 1.42-based editors | Only 1.42-era APIs, feature-detected where newer |
 | Git | **2.0** for all reads | Writes are tiered by the capability table — below a threshold a feature degrades with a localized notice, the rest keeps working |
 | Windows | 7+ | The engine binary needs Windows 10; older Windows runs fully functional over the Git CLI |
 | macOS | 10.13+ | Engine binaries pin `MACOSX_DEPLOYMENT_TARGET=10.13` |
@@ -431,7 +431,7 @@ runs the whole pipeline and publishes a GitHub Release with two kinds of VSIX, n
 published unless every test passed:
 
 - **the universal VSIX** (`git-graph-rs-<version>.vsix`) — every built engine in one package,
-  `engines.vscode ^1.38.0`; the engine is picked at load time;
+  `engines.vscode ^1.42.0`; the engine is picked at load time;
 - **the per-platform VSIXs** (`git-graph-rs-<version>-<platform>.vsix`) — one engine each, built
   with `vsce package --target` and stamped `^1.61.0`, since only 1.61+ editors request
   platform-specific packages. Editors older than 1.61, and platforms with no package of their own,

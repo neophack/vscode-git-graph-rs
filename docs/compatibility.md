@@ -9,8 +9,8 @@ steps), at which point the marker is replaced by the measured value.
 
 | Dimension | Promised floor | Notes |
 |---|---|---|
-| VS Code | **1.38.0** | `engines.vscode` stays `^1.38.0`, verified by compatibility test C4 |
-| VS Code derivatives | VSCodium, Code - OSS, Git Graph Studio (`uriScheme === 'ggs'`), and other VS Code-based editors | Depends only on 1.38 APIs; no Marketplace-exclusive capabilities |
+| VS Code | **1.42.0** | `engines.vscode` is `^1.42.0` (Codicons natively supported across all contributed commands); verified by compatibility test C4. Post-1.42 manifest/API features degrade gracefully: `onStartupFinished` (1.46+), `git.pullpush` submenu (1.48+), Workspace Trust / `untrustedWorkspaces` (1.56–1.57+), `vscode.env.shell` (1.62+), and `vscode.window.tabGroups` (1.67+) |
+| VS Code derivatives | VSCodium, Code - OSS, Git Graph Studio (`uriScheme === 'ggs'`), and other VS Code-based editors | Depends only on 1.42-era APIs (typed against `@types/vscode` 1.38.0); newer APIs are feature-detected through `vscodeCompat.ts` |
 | Where it runs | Local; Remote-SSH / WSL / Dev Containers / Codespaces | `extensionKind: workspace`; the host runs remotely, so engine binaries must cover the remote platform. The pure-browser vscode.dev environment is not supported (it needs Git) |
 | Git CLI | Determined by D7 (proposed: all read features usable from 2.0; write features tiered by the capability table) | Below a threshold, only that feature is disabled with a localized notice; everything else keeps working |
 | Operating systems | Windows 7+, macOS 10.13+, Linux with glibc 2.17+, musl Linux (Alpine) | Systems the engine does not cover use the CLI with full functionality (§3.7.4) |
@@ -18,15 +18,16 @@ steps), at which point the marker is replaced by the measured value.
 
 ## Runtime anchors (§3.7.1)
 
-The versions each supported VS Code runs on; the artifact baselines (`node10.11` host,
-`chrome69` webview) follow the promised floor row. **measured, pending**: Phase 0 prints
+The versions each supported VS Code runs on; the artifact baselines (`node12.8` host,
+`chrome78` webview) follow the promised floor row. **measured, pending**: Phase 0 prints
 `process.versions` in each version and records the verified values here.
 
 | VS Code | Electron | Node | Chromium | Significance for this project |
 |---|---|---|---|---|
-| 1.38 | 4.2 | 10.11 | 69 | **Promised floor**: host artifact baseline `node10.11`, webview artifact baseline `chrome69`; N-API 3 |
-| 1.40 | 6 | 12.4 | 76 | N-API 4 first available (no longer a constraint: the engine targets N-API 3, adr-0003) |
-| 1.56 | 12 | 14.16 | 89 | Native `?.`/`??` first available — the de facto floor of today's legacy `out/` artifacts (plan problem B1) |
+| 1.42 | 7.1 | 12.8 | 78 | **Promised floor**: host artifact baseline `node12.8`, webview artifact baseline `chrome78`; Codicons in command contributions; N-API 3/4 |
+| 1.46 | 7.2 | 12.8 | 78 | `onStartupFinished` activation event introduced (earlier versions activate via `workspaceContains:.git`, commands, or webview serializer) |
+| 1.48 | 7.3 | 12.8 | 78 | `git.pullpush` SCM submenu introduced (earlier versions expose Gerrit push via the Command Palette) |
+| 1.56 | 12 | 14.16 | 89 | Desktop webviews migrated to `<iframe>`; Workspace Trust preview (`capabilities.untrustedWorkspaces` stable in 1.57) |
 | 1.61 | — | — | — | First version for platform-specific VSIXs (`vsce --target`); earlier versions use the universal VSIX |
 
 ## Native engine binary floors (§3.7.4)

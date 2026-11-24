@@ -59,7 +59,7 @@ There is no `tests/` legacy suite, no `legacy/` snapshot and no `out/` build ste
 | `webview/comparison/`, `webview/binaryCompare/` | The auxiliary views (typed protocols in `shared/protocol/`) |
 | `webview/styles/` | Per-component stylesheets; `onDemand.ts` is the dynamically-imported widget CSS chunk |
 
-The first paint loads only the entry chunk (`media/out.min.js`, ES modules, Chromium 69
+The first paint loads only the entry chunk (`media/out.min.js`, ES modules, Chromium 78
 floor): the table, graph and control bar. Everything else — markdown rendering, the settings/
 statistics/reflog/worktree/find widgets, the detail panes' extra CSS — loads via dynamic
 `import()` and is prefetched when idle (task 5.9). `media/out.testbundle.js` is the single-file
@@ -140,8 +140,8 @@ packaged only in the automation build (`--automation` define), loadable as libra
 ## 6. Build pipelines
 
 One pipeline. `package.json#main` is `./dist/extension.js`; `npm run build` =
-`build:native` → `build:dist --production` (esbuild: host single file on the **node10.11**
-target, webview ESM split on **chrome69**, askpass copied) with the artifact syntax gates
+`build:native` → `build:dist --production` (esbuild: host single file on the **node12.8**
+target, webview ESM split on **chrome78**, askpass copied) with the artifact syntax gates
 (`scripts/build/compat.mjs`, es-check) failing the build on post-ES2018 syntax.
 `npm run package` / `package:automation` bundle first and run vsce against the
 `.vscodeignore` allowlist (`--no-dependencies`: the VSIX never ships node_modules).

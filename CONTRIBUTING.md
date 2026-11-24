@@ -56,7 +56,7 @@ test layout is exactly the L0–L4 structure described above; there is no separa
 npm run check          # everything below, in order: what the CI `static` job runs
 npm run typecheck      # the four TypeScript projects (host, webview, tests, E2E launcher)
 npm run lint:js        # ESLint over src/ and scripts/
-npm run lint:css       # stylelint (the Chromium 69 floor)
+npm run lint:css       # stylelint (the Chromium 78 floor)
 npm run lint:deps      # the dependency rules (dependency-cruiser) and their baseline
 npm run lint:size      # the 600-line limit for the TypeScript and Rust sources
 npm run lint           # cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
@@ -80,7 +80,7 @@ each record may only shrink:
 The Rust engine takes no `unsafe`.
 
 The tooling needs Node 20 or newer (`.nvmrc`). That is the developer's Node only: the shipped
-extension runs on VS Code 1.38's Node 10.11, which the build and lint gates hold it to.
+extension runs on VS Code 1.42's Node 12.8, which the build and lint gates hold it to.
 
 ## Repository layout and where code goes
 
