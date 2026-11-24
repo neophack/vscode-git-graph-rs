@@ -70,6 +70,7 @@ try {
 		entryPoints: [tmpJsFile],
 		outfile: minJsFile,
 		bundle: false,
+		target: ['es2018', 'chrome78'],
 		minify: !DEBUG,
 		sourcemap: DEBUG ? false : 'linked',
 		sourcesContent: true,

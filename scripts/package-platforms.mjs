@@ -22,7 +22,7 @@
  * Each package type then declares exactly the clients that can receive it: the per-platform
  * VSIXs — which only VS Code >= 1.61 ever asks the Marketplace for, since older editors query
  * without a target platform and are handed the universal VSIX as the fallback — claim
- * `^1.61.0`, while the universal VSIX keeps package.json's own engines (^1.38.0) and is what
+ * `^1.61.0`, while the universal VSIX keeps package.json's own engines (^1.42.0) and is what
  * every pre-1.61 editor installs, picking its engine at load time by
  * `process.platform`-`process.arch` (src/backend/addon.ts).
  */

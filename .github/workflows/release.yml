@@ -6,7 +6,7 @@ name: Release
 # engine that was built) plus one smaller VSIX per platform (only that platform's engine).
 #
 # The two kinds declare different engines on purpose: the universal VSIX keeps package.json's
-# ^1.38.0 (it is the fallback every editor older than 1.61 — and every platform without its own
+# ^1.42.0 (it is the fallback every editor older than 1.61 — and every platform without its own
 # package — receives from the Marketplace), while the per-platform VSIXs are stamped ^1.61.0
 # during packaging, exactly the editors the Marketplace will ever hand them to. See README's
 # "Publishing a release" for the full story.
@@ -111,7 +111,7 @@ jobs:
       # engines.vscode >= 1.61, so the script stamps `^1.61.0` into package.json for these runs
       # and restores the original file afterwards — accurate, since only 1.61+ editors are ever
       # served a per-platform package; older editors get the universal VSIX packaged in the step
-      # above, which keeps package.json's own ^1.38.0. Publishing per-platform is still a manual
+      # above, which keeps package.json's own ^1.42.0. Publishing per-platform is still a manual
       # `vsce publish --packagePath <file>` per asset below (the VSIX carries its target — vsce
       # rejects passing --target together with --packagePath); this step only produces packages
       # that are valid to publish that way.
