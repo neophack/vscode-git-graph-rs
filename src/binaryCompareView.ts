@@ -48,6 +48,8 @@ export class BinaryCompareView extends Disposable {
 		this.session = createHexSession(dataSource, repo, fromHash, toHash, file);
 		wireHexSession(this.session, 0, this.post());
 
+		BinaryCompareView.openViews.set(key, this);
+
 		this.registerDisposables(
 			this.panel.onDidDispose(() => {
 				BinaryCompareView.openViews.delete(key);
@@ -91,7 +93,7 @@ export class BinaryCompareView extends Disposable {
 		const statusColour = file.type === 'D' ? 'var(--vscode-gitDecoration-deletedResourceForeground, #b31d28)'
 			: file.type === 'A' || file.type === 'R' ? 'var(--vscode-gitDecoration-addedResourceForeground, #22863a)'
 			: 'var(--vscode-gitDecoration-modifiedResourceForeground, inherit)';
-		const letter = file.type === 'D' ? 'D' : file.type === 'A' || file.type === 'R' ? 'A' : file.type === 'U' ? 'U' : 'M';
+		const letter = file.type === 'D' ? 'D' : file.type === 'A' ? 'A' : file.type === 'R' ? 'R' : file.type === 'U' ? 'U' : 'M';
 		const toLabel = this.toHash === UNCOMMITTED || this.toHash === '' ? t('comparePresentLabel') : abbrevCommit(this.toHash);
 		return `<!DOCTYPE html>
 <html lang="en">

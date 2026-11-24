@@ -46,7 +46,7 @@ export class CommitComparisonView extends Disposable {
 
 		this.panel = vscode.window.createWebviewPanel('git-graph-rs.compare', this.singleCommit
 			? t('commitPanelTitle', abbrevCommit(this.toHash))
-			: t('comparePanelTitle', abbrevCommit(fromHash), toHash === '' ? t('comparePresentLabel') : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
+			: t('comparePanelTitle', abbrevCommit(fromHash), toHash === '' || toHash === UNCOMMITTED ? t('comparePresentLabel') : abbrevCommit(toHash)), vscode.ViewColumn.Active, {
 			enableScripts: true,
 			localResourceRoots: [vscode.Uri.file(path.join(extensionPath, 'media'))]
 		});
@@ -243,7 +243,7 @@ export class CommitComparisonView extends Disposable {
 	.commitCard .firstLine { display: flex; align-items: center; gap: 7px; }
 	.commitCard.hasMessage .firstLine { cursor: pointer; margin: -3px -6px; padding: 3px 6px; border-radius: 3px; }
 	.commitCard.hasMessage .firstLine:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
-	.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-foreground); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
+	.commitCard .chip { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 15px; background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit); border-radius: 10px; padding: 1px 7px; flex-shrink: 0; }
 	.commitCard .author { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
 	/* The single-commit card's subject line: takes whatever width the window leaves between the
 	   fixed chip/author/date and truncates with an ellipsis, so it always fits. */
@@ -332,14 +332,14 @@ export class CommitComparisonView extends Disposable {
 		.hljs-number { color: #b5cea8; }
 		.hljs-variable, .hljs-attribute, .hljs-params { color: #9cdcfe; }
 		.hljs-symbol, .hljs-bullet { color: #d7ba7d; }
-		body.vscode-light .hljs-keyword, body.vscode-light .hljs-selector-tag, body.vscode-light .hljs-literal, body.vscode-light .hljs-section, body.vscode-light .hljs-link { color: #0000ff; }
-		body.vscode-light .hljs-string, body.vscode-light .hljs-attr, body.vscode-light .hljs-template-tag, body.vscode-light .hljs-regexp, body.vscode-light .hljs-meta .hljs-string { color: #a31515; }
-		body.vscode-light .hljs-title, body.vscode-light .hljs-title.function_ { color: #795e26; }
-		body.vscode-light .hljs-title.class_, body.vscode-light .hljs-type, body.vscode-light .hljs-built_in { color: #267f99; }
-		body.vscode-light .hljs-comment, body.vscode-light .hljs-quote { color: #008000; }
-		body.vscode-light .hljs-number { color: #098658; }
-		body.vscode-light .hljs-variable, body.vscode-light .hljs-attribute, body.vscode-light .hljs-params { color: #001080; }
-		body.vscode-light .hljs-symbol, body.vscode-light .hljs-bullet { color: #795e26; }
+		body.vscode-light .hljs-keyword, body.vscode-light .hljs-selector-tag, body.vscode-light .hljs-literal, body.vscode-light .hljs-section, body.vscode-light .hljs-link, body.vscode-high-contrast-light .hljs-keyword, body.vscode-high-contrast-light .hljs-selector-tag, body.vscode-high-contrast-light .hljs-literal, body.vscode-high-contrast-light .hljs-section, body.vscode-high-contrast-light .hljs-link { color: #0000ff; }
+		body.vscode-light .hljs-string, body.vscode-light .hljs-attr, body.vscode-light .hljs-template-tag, body.vscode-light .hljs-regexp, body.vscode-light .hljs-meta .hljs-string, body.vscode-high-contrast-light .hljs-string, body.vscode-high-contrast-light .hljs-attr, body.vscode-high-contrast-light .hljs-template-tag, body.vscode-high-contrast-light .hljs-regexp, body.vscode-high-contrast-light .hljs-meta .hljs-string { color: #a31515; }
+		body.vscode-light .hljs-title, body.vscode-light .hljs-title.function_, body.vscode-high-contrast-light .hljs-title, body.vscode-high-contrast-light .hljs-title.function_ { color: #795e26; }
+		body.vscode-light .hljs-title.class_, body.vscode-light .hljs-type, body.vscode-light .hljs-built_in, body.vscode-high-contrast-light .hljs-title.class_, body.vscode-high-contrast-light .hljs-type, body.vscode-high-contrast-light .hljs-built_in { color: #267f99; }
+		body.vscode-light .hljs-comment, body.vscode-light .hljs-quote, body.vscode-high-contrast-light .hljs-comment, body.vscode-high-contrast-light .hljs-quote { color: #008000; }
+		body.vscode-light .hljs-number, body.vscode-high-contrast-light .hljs-number { color: #098658; }
+		body.vscode-light .hljs-variable, body.vscode-light .hljs-attribute, body.vscode-light .hljs-params, body.vscode-high-contrast-light .hljs-variable, body.vscode-high-contrast-light .hljs-attribute, body.vscode-high-contrast-light .hljs-params { color: #001080; }
+		body.vscode-light .hljs-symbol, body.vscode-light .hljs-bullet, body.vscode-high-contrast-light .hljs-symbol, body.vscode-high-contrast-light .hljs-bullet { color: #795e26; }
 		${binaryCompareCss()}
 </style>
 </head>
@@ -694,18 +694,21 @@ export class CommitComparisonView extends Disposable {
 		}
 		const lines = diffText.split('\\n');
 		let binary = false;
+		let inHunk = false;
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
+			if (line.startsWith('diff --git ')) inHunk = false;
 			if (line.startsWith('Binary files') || line.startsWith('GIT binary patch')) binary = true;
 			const hunk = line.match(/^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@/);
 			if (hunk !== null) {
 				flushChangeBlock();
 				rowsOut.push({ type: 'hunk', html: escapeHtml(line) });
+				inHunk = true;
 				oldLine = parseInt(hunk[1]);
 				newLine = parseInt(hunk[3]);
 				continue;
 			}
-			if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ ') ||
+			if (line.startsWith('diff ') || line.startsWith('index ') || (!inHunk && (line.startsWith('--- ') || line.startsWith('+++ '))) ||
 				line.startsWith('new file mode') || line.startsWith('deleted file mode') || line.startsWith('old mode') || line.startsWith('new mode') ||
 				line.startsWith('similarity index') || line.startsWith('rename ') || line.startsWith('copy ') || line.startsWith('\\ No newline') || hunk === null && !line.startsWith(' ') && !line.startsWith('+') && !line.startsWith('-')) {
 				continue;

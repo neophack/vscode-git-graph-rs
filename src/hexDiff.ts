@@ -700,7 +700,22 @@ export class HexDiffSession {
 				if (!equalSizes && !hashable && prefixEnded) break;
 				const oldBlock = await oldBlocks.next();
 				const newBlock = await newBlocks.next();
-				if (oldBlock === null || newBlock === null) break;
+				if (oldBlock === null || newBlock === null) {
+					// One stream hit EOF: hash the other stream's already-fetched block so the
+					// suffix-hash arrays stay aligned with the block counts (the drain loops below
+					// continue after it) instead of shifting them and defeating suffix matching.
+					if (!equalSizes && hashable) {
+						if (oldBlock !== null) {
+							oldHashA.push(fnv1a(oldBlock, 0x811c9dc5, 0x01000193));
+							oldHashB.push(fnv1a(oldBlock, 0xdeadbeef, 0x85ebca6b));
+						}
+						if (newBlock !== null) {
+							newHashA.push(fnv1a(newBlock, 0x811c9dc5, 0x01000193));
+							newHashB.push(fnv1a(newBlock, 0xdeadbeef, 0x85ebca6b));
+						}
+					}
+					break;
+				}
 				seedCaches(oldBlock);
 				if (blockIndex < SCAN_SEED_CHUNKS && !this.newSide.hasChunk(blockIndex)) this.newSide.storeChunk(blockIndex, newBlock);
 				if (equalSizes) {
@@ -802,7 +817,7 @@ export class HexDiffSession {
 	private async refineForward(from: number): Promise<number> {
 		const limit = Math.min(this.oldSize, this.newSize);
 		let offset = from;
-		while (offset < limit) {
+		while (offset < limit && !this.disposed) {
 			const length = Math.min(CHUNK_SIZE, limit - offset);
 			await Promise.all([this.oldSide.prepareRange(offset, length), this.newSide.prepareRange(offset, length)]);
 			const a = this.oldSide.sliceCached(offset, length);
@@ -817,7 +832,7 @@ export class HexDiffSession {
 
 	/** Shrink the middle from its end while the two sides still agree byte for byte. */
 	private async refineBackward(prefixEnd: number, oldEnd: number, newEnd: number): Promise<{ oldEnd: number, newEnd: number }> {
-		while (oldEnd > prefixEnd && newEnd > prefixEnd) {
+		while (oldEnd > prefixEnd && newEnd > prefixEnd && !this.disposed) {
 			const length = Math.min(CHUNK_SIZE, oldEnd - prefixEnd, newEnd - prefixEnd);
 			await Promise.all([
 				this.oldSide.prepareRange(oldEnd - length, length),
@@ -848,7 +863,15 @@ export class HexDiffSession {
 				return null;
 			}
 			if (child.stderr !== null) child.stderr.resume(); // the scan has no use for stderr; just drain it
-			return child.stdout;
+			// A spawn failure surfaces as an 'error' on the child, never on its stdout: without a
+			// handler it would crash the process, and the stdout reader would await forever. Forward
+			// it onto the stream so BlockSource observes it like any other stream error.
+			const stream: NodeJS.ReadableStream = child.stdout;
+			child.on('error', (err: Error) => {
+				const destroy = (stream as { destroy?: (error?: Error) => void }).destroy;
+				if (typeof destroy === 'function') destroy.call(stream, err);
+			});
+			return stream;
 		}
 		return null;
 	}

@@ -1403,7 +1403,15 @@ export function binaryCompareScript(): string {
 				imgEls = null;
 				imgDiff = null;
 				diffArea.className = '';
-				diffArea.innerHTML = '<div class="status">' + bcEscapeHtml(msg.error) + '</div>';
+				// Show the error but keep the toolbar with the Hex button: a display limit such as
+				// an oversized image is not a broken file, and the hex view can still render it.
+				diffArea.innerHTML =
+					'<div id="imgToolbar">' +
+						'<span>' + bcEscapeHtml(msg.error) + '</span>' +
+						'<span class="hxSpacer"></span>' +
+						'<button id="imgHexBtn">${t('compareHexToggleButton')}</button>' +
+					'</div>';
+				document.getElementById('imgHexBtn').addEventListener('click', function () { enterHexView(imgIndex); });
 				return true;
 			}
 			imgOldBytes = msg.oldSize;
