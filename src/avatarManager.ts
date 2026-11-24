@@ -115,8 +115,15 @@ export class AvatarManager extends Disposable {
 	public getAvatarImage(email: string) {
 		return new Promise<string | null>((resolve) => {
 			if (typeof this.avatars[email] !== 'undefined' && this.avatars[email].image !== null) {
-				fs.readFile(this.avatarStorageFolder + '/' + this.avatars[email].image, (err, data) => {
-					resolve(err ? null : 'data:image/' + this.avatars[email].image.split('.')[1] + ';base64,' + data.toString('base64'));
+				// The image path is captured before the callback: expireOldAvatars or a failed
+				// re-fetch can replace the cache entry while the read is in flight, and reading
+				// the (then-different) extension back would mislabel the data URI's mime type.
+				const image = this.avatars[email].image;
+				fs.readFile(this.avatarStorageFolder + '/' + image, (err, data) => {
+					// An .svg file is image/svg+xml — the bare "image/svg" the extension split
+					// produced is not a valid mime type and the webview would refuse to render it.
+					const mime = image.split('.')[1] === 'svg' ? 'svg+xml' : image.split('.')[1];
+					resolve(err ? null : 'data:image/' + mime + ';base64,' + data.toString('base64'));
 				});
 			} else {
 				resolve(null);
@@ -244,7 +251,9 @@ export class AvatarManager extends Disposable {
 				if (remoteUrl !== null) {
 					// Depending on the domain of the remote repo source, determine the type of source it is
 					let match;
-					if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.*)\.git$/)) !== null) {
+					// A GitHub remote need not carry the `.git` suffix (forks and some clones omit
+					// it), and `.+?` keeps the optional suffix from swallowing the repo name.
+					if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(?:\.git)?\/?$/)) !== null) {
 						remoteSource = { type: 'github', owner: match[2], repo: match[3] };
 					} else if (remoteUrl.startsWith('https://gitlab.com/') || remoteUrl.startsWith('git@gitlab.com:')) {
 						remoteSource = { type: 'gitlab' };
@@ -319,7 +328,14 @@ export class AvatarManager extends Disposable {
 						return;
 					}
 				} else if (res.statusCode === 403) {
-					// Rate limit reached, try again after timeout
+					// Rate limited (or forbidden): wait for the announced reset, or at least a
+					// bounded 10-minute backoff — a 403 whose headers carry no reset time (e.g. a
+					// private repository) would otherwise re-queue on the stale, already-expired
+					// timeout and spin on the same response forever.
+					this.githubTimeout = Math.max(this.githubTimeout, t + 600000);
+					if (/^\d+$/.test(<string>res.headers['x-ratelimit-reset'] ?? '')) {
+						this.githubTimeout = Math.max(this.githubTimeout, parseInt(<string>res.headers['x-ratelimit-reset']) * 1000);
+					}
 					this.queue.addItem(avatarRequest, this.githubTimeout, false);
 					return;
 				} else if (res.statusCode === 422 && avatarRequest.commits.length > avatarRequest.attempts + 1 && avatarRequest.attempts < 4) {
@@ -408,7 +424,13 @@ export class AvatarManager extends Disposable {
 						return;
 					}
 				} else if (res.statusCode === 429) {
-					// Rate limit reached, try again after timeout
+					// Rate limited: wait for the announced reset, or at least a bounded 10-minute
+					// backoff — re-queueing on the stale, already-expired timeout would spin on
+					// the same 429 forever.
+					this.gitLabTimeout = Math.max(this.gitLabTimeout, t + 600000);
+					if (/^\d+$/.test(<string>res.headers['ratelimit-reset'] ?? '')) {
+						this.gitLabTimeout = Math.max(this.gitLabTimeout, parseInt(<string>res.headers['ratelimit-reset']) * 1000);
+					}
 					this.queue.addItem(avatarRequest, this.gitLabTimeout, false);
 					return;
 				} else if (res.statusCode! >= 500) {
@@ -478,8 +500,11 @@ export class AvatarManager extends Disposable {
 				res.on('end', () => {
 					if (res.statusCode === 200) { // If success response, save the image to the avatar folder
 						const contentType = res.headers['content-type'];
-						// Only accept recognised image content types, so that the file extension is a known image format
-						let format = typeof contentType === 'string' ? contentType.split('/')[1] : undefined;
+						// Only accept recognised image content types, so that the file extension is a
+						// known image format. Parameters after the type (`image/png; charset=binary`)
+						// are stripped first, or they would end up inside the format and fail the
+						// whitelist below.
+						let format = typeof contentType === 'string' ? contentType.split(';')[0].trim().split('/')[1] : undefined;
 						if (format !== undefined && ['jpeg', 'jpg', 'png', 'gif', 'webp', 'x-ms-bmp', 'svg+xml'].indexOf(format) > -1) {
 							format = format === 'svg+xml' ? 'svg' : (format === 'x-ms-bmp' ? 'bmp' : format);
 							fs.writeFile(this.avatarStorageFolder + '/' + hash + '.' + format, Buffer.concat(imageBufferArray), err => {

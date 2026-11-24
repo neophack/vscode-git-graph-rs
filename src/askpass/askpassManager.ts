@@ -82,7 +82,8 @@ export class AskpassManager extends Disposable {
 				res.end();
 				return;
 			}
-			vscode.window.showInputBox({ placeHolder: data.request, prompt: 'Git Graph RS: ' + data.host, password: /password/i.test(data.request), ignoreFocusOut: true }).then(result => {
+			// A SSH key's passphrase prompt ("Enter passphrase for key ...") must be masked too.
+			vscode.window.showInputBox({ placeHolder: data.request, prompt: 'Git Graph RS: ' + data.host, password: /password|passphrase/i.test(data.request), ignoreFocusOut: true }).then(result => {
 				res.writeHead(200);
 				res.end(JSON.stringify(result || ''));
 			}, () => {

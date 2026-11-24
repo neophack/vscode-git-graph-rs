@@ -300,7 +300,15 @@ export class PullRequestDataSource {
 			}
 			const token = process.env.GITLAB_TOKEN;
 			const headers: { [name: string]: string } = { 'User-Agent': 'git-graph-rs' };
-			if (token) headers['PRIVATE-TOKEN'] = token;
+			// The token is only sent to gitlab.com (and its subdomains): any https/ssh host with
+			// two path segments parses as GitLab, and a repository hosted on some other server
+			// must not leak the user's GitLab credentials to it. A self-hosted instance's private
+			// merge requests degrade to anonymous access (the request still runs, and its failure
+			// resolves to null); gitlab.com keeps authenticating exactly as before.
+			const gitlabHost = remote.apiBase.replace(/^https:\/\//, '').replace(/\/api\/v4$/, '');
+			if (token !== undefined && /^(?:[\w-]+\.)*gitlab\.com$/.test(gitlabHost)) {
+				headers['PRIVATE-TOKEN'] = token;
+			}
 			// state=all like GitHub: a merged or closed request must stay in the list, or the refs
 			// of merged requests would be pruned by findStalePullRequestRefs (which keeps them
 			// deliberately, so their commits stay in the graph)

@@ -49,7 +49,9 @@ export class Logger extends Disposable {
 		if (enabled && this.logFile !== null) {
 			try {
 				const directory = path.dirname(this.logFile);
-				if (!fs.existsSync(directory)) fs.mkdirSync(directory);
+				// recursive: the storage path may be several directories deep on a fresh profile,
+				// where creating only the leaf fails with ENOENT.
+				if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
 				fs.writeFileSync(this.logFile, '');
 				this.logFileBytes = 0;
 			} catch {

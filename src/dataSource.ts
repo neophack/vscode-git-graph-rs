@@ -280,6 +280,10 @@ export class DataSource extends Disposable {
 				type = GitOperationType.Rebase;
 				progress = readRebaseProgress(path.join(gitDir, 'rebase-merge', 'msgnum'), path.join(gitDir, 'rebase-merge', 'end'));
 			} else if (fs.existsSync(path.join(gitDir, 'rebase-apply'))) {
+				// `rebase-apply` is shared by the rebase's apply backend and `git am`; only am
+				// writes the `applying` marker inside it. The banner type stays "rebase" (the
+				// type set has no am member), and continue/abortOperation resolve the marker to
+				// run the right subcommand — see isAmInProgress.
 				type = GitOperationType.Rebase;
 				progress = readRebaseProgress(path.join(gitDir, 'rebase-apply', 'next'), path.join(gitDir, 'rebase-apply', 'last'));
 			} else if (fs.existsSync(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
@@ -292,7 +296,9 @@ export class DataSource extends Disposable {
 
 			if (type === null) return none;
 
-			const conflictedFiles = await this.gitOutput(['diff', '--name-only', '--diff-filter=U'], repo, (stdout) => stdout.split(EOL_REGEX).filter((line) => line !== ''))
+			// core.quotePath=false: without it git octal-quotes non-ASCII conflicted paths
+			// (`"\346\226\207..."`), and the banner would show (and click through to) mangled names.
+			const conflictedFiles = await this.gitOutput(['-c', 'core.quotePath=false', 'diff', '--name-only', '--diff-filter=U'], repo, (stdout) => stdout.split(EOL_REGEX).filter((line) => line !== ''))
 				.catch(() => [] as string[]);
 
 			return { type, conflictedFiles, progress };
@@ -311,8 +317,27 @@ export class DataSource extends Disposable {
 	 * @param type The type of operation to continue.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public continueOperation(repo: string, type: GitOperationType) {
-		return this.runGitCommand(['-c', 'core.editor=true', type, '--continue'], repo, { GIT_EDITOR: 'true' });
+	public async continueOperation(repo: string, type: GitOperationType) {
+		// `git am` shares `rebase-apply` with the rebase's apply backend but takes its own
+		// subcommand: `rebase --continue` neither resumes nor cleans up an in-progress am.
+		const resolvedType = type === GitOperationType.Rebase && await this.isAmInProgress(repo) ? 'am' : type;
+		return this.runGitCommand(['-c', 'core.editor=true', resolvedType, '--continue'], repo, { GIT_EDITOR: 'true' });
+	}
+
+	/**
+	 * Whether a `git am` (patch application) rather than a rebase is in progress. Both state
+	 * directories are `rebase-apply`, but only `git am` writes the `applying` marker inside it
+	 * (the apply-backend rebase writes `rebasing` instead), and the am must be continued/aborted
+	 * with `git am`, not `git rebase`.
+	 */
+	private async isAmInProgress(repo: string): Promise<boolean> {
+		try {
+			const gitDirOutput = await this.gitOutput(['rev-parse', '--git-dir'], repo, (stdout) => stdout.trim());
+			const gitDir = path.isAbsolute(gitDirOutput) ? gitDirOutput : path.join(repo, gitDirOutput);
+			return fs.existsSync(path.join(gitDir, 'rebase-apply', 'applying'));
+		} catch (_) {
+			return false;
+		}
 	}
 
 	/**
@@ -321,8 +346,10 @@ export class DataSource extends Disposable {
 	 * @param type The type of operation to abort.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public abortOperation(repo: string, type: GitOperationType) {
-		return this.runGitCommand([type, '--abort'], repo);
+	public async abortOperation(repo: string, type: GitOperationType) {
+		// See continueOperation: an in-progress am takes `git am --abort`, not `git rebase --abort`.
+		const resolvedType = type === GitOperationType.Rebase && await this.isAmInProgress(repo) ? 'am' : type;
+		return this.runGitCommand([resolvedType, '--abort'], repo);
 	}
 
 	/**
@@ -343,7 +370,9 @@ export class DataSource extends Disposable {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['ours', ours, 'ref'], ['theirs', theirs, 'ref']);
 		if (unsafeArgs !== null) return Promise.resolve(null);
 
-		return this.gitOutput(['merge-tree', '--write-tree', ours, theirs], repo, () => {
+		// core.quotePath=false so conflicted paths with non-ASCII names survive the porcelain
+		// parse below unquoted (git's default octal-quotes them into `\346\226\207...` blobs).
+		return this.gitOutput(['-c', 'core.quotePath=false', 'merge-tree', '--write-tree', ours, theirs], repo, () => {
 			// Exit code 0 (no rejection) means a clean merge: no conflicted paths.
 			return <GitConflictPrediction>{ conflicted: false, files: [] };
 		}).catch((errorMessage: string) => {
@@ -395,7 +424,7 @@ export class DataSource extends Disposable {
 
 		const parsed = lines.map((line) => {
 			const parts = line.split('\x1f');
-			const dateMatch = parts.length === 4 ? parts[2].match(/\{(\d+)\}/) : null;
+			const dateMatch = parts.length === 4 ? parts[2].match(/@\{(\d+)\}$/) : null;
 			return parts.length === 4 && dateMatch !== null
 				? { hash: parts[0], abbrevHash: parts[1], date: parseInt(dateMatch[1], 10), message: parts[3] }
 				: null;
@@ -581,6 +610,7 @@ export class DataSource extends Disposable {
 			showUncommittedChanges: config.showUncommittedChanges,
 			showUntrackedFiles: config.showUntrackedFiles,
 			showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags,
+			showStashes: config.showStashes,
 			useMailmap: config.useMailmap
 		}).then((data) => data as unknown as GitCommitData, (errorMessage) => <GitCommitData>{ commits: [], head: null, tags: [], moreCommitsAvailable: false, error: errorMessage });
 	}
@@ -1030,7 +1060,7 @@ export class DataSource extends Disposable {
 	 * @returns TRUE => Staged Changes, FALSE => No Staged Changes.
 	 */
 	private areStagedChanges(repo: string) {
-		return this.spawnGit(['diff-index', 'HEAD'], repo, (stdout) => stdout !== '').then(changes => changes, () => false);
+		return this.spawnGit(['diff-index', '--cached', 'HEAD'], repo, (stdout) => stdout !== '').then(changes => changes, () => false);
 	}
 
 	/**
@@ -1527,7 +1557,7 @@ export class DataSource extends Disposable {
 	 * @param force Force fetch the remote branch.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public async fetchIntoLocalBranch(repo: string, remote: string, remoteBranch: string, localBranch: string, force: boolean) {
+	public async fetchIntoLocalBranch(repo: string, remote: string, remoteBranch: string, localBranch: string, force: boolean, confirmed: boolean = false): Promise<ErrorInfo | LossWarning> {
 		const unsafeArgs = DataSource.checkUnsafeGitArgs(['remote', remote, 'ref'], ['remoteBranch', remoteBranch, 'ref'], ['localBranch', localBranch, 'ref']);
 		if (unsafeArgs !== null) return unsafeArgs;
 
@@ -1538,12 +1568,23 @@ export class DataSource extends Disposable {
 				return this.runGitCommand(['pull', remote, remoteBranch], repo);
 			}
 
+			// A forced fetch-into-the-current-branch is a hard reset: uncommitted changes are
+			// discarded irrecoverably, so the same loss warning the reset action shows applies.
+			if (!confirmed) {
+				const warning = await this.hardResetLossWarning(repo);
+				if (warning !== null) return warning;
+			}
+
 			const fetchArgs = ['fetch', remote, remoteBranch];
 			const fetchResult = await this.runGitCommand(fetchArgs, repo);
 			if (fetchResult !== null) {
 				return fetchResult;
 			}
-			return this.runGitCommand(['reset', '--hard', remote + '/' + remoteBranch], repo);
+			// Reset to FETCH_HEAD, which is exactly what the fetch above brought down: the
+			// remote-tracking ref `remote/remoteBranch` may not exist at all (a branch outside
+			// the remote's fetch refspec) or may predate this fetch, and resetting onto it
+			// would move the branch somewhere other than what the user just fetched.
+			return this.runGitCommand(['reset', '--hard', 'FETCH_HEAD'], repo);
 		}
 
 		// If the branch is not checked out, we can use fetch
@@ -1922,7 +1963,17 @@ export class DataSource extends Disposable {
 			const headCommit = await this.spawnGit(['rev-parse', 'HEAD'], repo, (stdout) => stdout.trim());
 
 			if (headCommit === commitHash) {
-				const args = ['commit', '--amend'];
+				// The view only offers Edit Message for non-merge, local-only commits; the host
+				// re-validates both requirements here too, so a stale graph cannot get a merge
+				// commit, or one a remote already contains, rewritten through a direct amend either.
+				const headParents = await this.spawnGit(['rev-list', '--parents', '-n', '1', commitHash], repo, (stdout) => stdout.trim().split(/\s+/));
+				if (headParents.length > 2) return t('amendMergeCommit');
+
+				const headRemotes = await this.getRemotes(repo);
+				const headContainingRemotes = await this.getRemotesContainingCommit(repo, commitHash, headRemotes);
+				if (headContainingRemotes.length > 0) return t('amendPushedCommit', headContainingRemotes.join(', '));
+
+				const args = ['commit', '--amend', '--only'];
 				if (author !== null) args.push('--author=' + author);
 				args.push('-m', message);
 				if (getConfig().signCommits) {
@@ -1944,7 +1995,24 @@ export class DataSource extends Disposable {
 			const containingRemotes = await this.getRemotesContainingCommit(repo, commitHash, knownRemotes);
 			if (containingRemotes.length > 0) return t('amendPushedCommit', containingRemotes.join(', '));
 
-			const rebaseArgs = parents.length === 1 ? ['rebase', '-i', '--autostash', '--root'] : ['rebase', '-i', '--autostash', commitHash + '^'];
+			const rebaseArgs = parents.length === 1
+				? ['-c', 'rebase.abbreviateCommands=false', 'rebase', '-i', '--autostash', '--root']
+				: ['-c', 'rebase.abbreviateCommands=false', 'rebase', '-i', '--autostash', commitHash + '^'];
+			// Recreated commits are only signed when asked for explicitly: the rebase itself and
+			// the exec'd amend must both carry the sign flag, or a signature-bearing branch loses
+			// its signatures after a reword.
+			if (getConfig().signCommits) {
+				rebaseArgs.push('-S');
+			}
+
+			// An interactive rebase must never resume or clobber one that is already in progress:
+			// detect a live rebase-merge/rebase-apply directory first, and only run `rebase
+			// --abort` in the failure path below when it was our rebase that actually started.
+			const gitDirOutput = await this.spawnGit(['rev-parse', '--git-dir'], repo, (stdout) => stdout.trim());
+			const gitDir = path.isAbsolute(gitDirOutput) ? gitDirOutput : path.join(repo, gitDirOutput);
+			if (fs.existsSync(path.join(gitDir, 'rebase-merge')) || fs.existsSync(path.join(gitDir, 'rebase-apply'))) {
+				return t('amendRebaseInProgress');
+			}
 
 			// Editor scripts git invokes with the todo / commit-message file path appended as the last argument.
 			// For a message-only edit the todo marks the commit `reword` and GIT_EDITOR copies the new message
@@ -1971,20 +2039,28 @@ export class DataSource extends Disposable {
 				extraEnv.GG_AMEND_MESSAGE = messageFile;
 			}
 
+			// True from the moment `git rebase -i` is invoked: a rebase that starts and then fails
+			// (e.g. on a conflict) leaves the repository mid-rebase, which the abort below must
+			// undo — but a pre-existing rebase (raced past the check above, or spawn failing
+			// outright) must never be aborted by this feature.
+			let rebaseStarted = false;
 			try {
 				// The editor scripts and the message file are written here, inside the try whose
 				// finally unlinks them: a failed write (disk full, EPERM) must not leave the files
 				// already written behind in the temp directory.
 				fs.writeFileSync(seqEditorFile, author === null
 					? 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line.replace(/^pick/,"reword"):line);fs.writeFileSync(todo,text);'
-					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
+					: 'const fs=require("fs");const hash=process.argv[2];const todo=process.argv[process.argv.length-1];const amend="exec git commit --amend --only'
+						+ (getConfig().signCommits ? ' -S' : '')
+						+ ' --no-edit --author=\\"$(cat \\"$GG_AMEND_AUTHOR_FILE\\")\\" -F \\"$GG_AMEND_MESSAGE\\"";const text=fs.readFileSync(todo,"utf8").replace(/^pick ([0-9a-f]+)/gm,(line,abbrev)=>hash.startsWith(abbrev)?line+"\\n"+amend:line);fs.writeFileSync(todo,text);');
 				fs.writeFileSync(msgEditorFile, 'const fs=require("fs");fs.writeFileSync(process.argv[process.argv.length-1],fs.readFileSync(process.argv[2],"utf8"));');
 				fs.writeFileSync(messageFile, message);
 				if (author !== null) fs.writeFileSync(authorFile, author);
+				rebaseStarted = true;
 				return await this._spawnGit(rebaseArgs, repo, () => null, false, extraEnv);
 			} catch (errorMessage) {
 				// Restore the repository to the pre-rebase state (and the autostashed working tree)
-				await this._spawnGit(['rebase', '--abort'], repo, () => null, true);
+				if (rebaseStarted) await this._spawnGit(['rebase', '--abort'], repo, () => null, true);
 				return errorMessage as ErrorInfo;
 			} finally {
 				for (const file of [seqEditorFile, msgEditorFile, messageFile, authorFile]) fs.unlink(file, () => null);
@@ -2005,8 +2081,13 @@ export class DataSource extends Disposable {
 	 * @param location The location where the configuration value should be set.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public setConfigValue(repo: string, key: GitConfigKey, value: string, location: GitConfigLocation) {
-		return this.runGitCommand(['config', '--' + location, key, value], repo);
+	public async setConfigValue(repo: string, key: GitConfigKey, value: string, location: GitConfigLocation) {
+		const status = await this.runGitCommand(['config', '--' + location, key, value], repo);
+		if (status !== null) return status;
+		// The engine's warm repository handle froze .git/config at open time: drop it, or reads
+		// keep serving the pre-write config for the rest of the session (see addRemote).
+		this.closeRepository(repo);
+		return null;
 	}
 
 	/**
@@ -2016,8 +2097,12 @@ export class DataSource extends Disposable {
 	 * @param location The location where the configuration value should be unset.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public unsetConfigValue(repo: string, key: GitConfigKey, location: GitConfigLocation) {
-		return this.runGitCommand(['config', '--' + location, '--unset-all', key], repo);
+	public async unsetConfigValue(repo: string, key: GitConfigKey, location: GitConfigLocation) {
+		const status = await this.runGitCommand(['config', '--' + location, '--unset-all', key], repo);
+		if (status !== null) return status;
+		// See setConfigValue: the engine's cached config snapshot must not outlive the change.
+		this.closeRepository(repo);
+		return null;
 	}
 
 
@@ -2383,10 +2468,12 @@ export class DataSource extends Disposable {
 				cwd: repo,
 				env: Object.assign({}, process.env, this.askpassEnv)
 			});
-			let stderr = '';
-			cmd.stderr.on('data', (d: Buffer) => { stderr += d; });
+			// stderr is concatenated from raw chunks: joining strings per-chunk can split a
+			// multi-byte UTF-8 character across a chunk boundary and corrupt it.
+			const stderrChunks: Buffer[] = [];
+			cmd.stderr.on('data', (d: Buffer) => { stderrChunks.push(d); });
 			cmd.on('error', (error) => resolve(error.message));
-			cmd.on('close', (code) => resolve(code === 0 ? null : getErrorMessage(null, Buffer.alloc(0), stderr)));
+			cmd.on('close', (code) => resolve(code === 0 ? null : getErrorMessage(null, Buffer.alloc(0), Buffer.concat(stderrChunks).toString())));
 			cmd.stdin.on('error', () => { /* ignore EPIPE: the command already failed */ });
 			cmd.stdin.end(input);
 
@@ -2415,11 +2502,15 @@ export class DataSource extends Disposable {
 				cwd: repo,
 				env: Object.assign({}, process.env, this.askpassEnv)
 			});
-			let stdout = '', stderr = '';
-			cmd.stdout.on('data', (d: Buffer) => { stdout += d; });
-			cmd.stderr.on('data', (d: Buffer) => { stderr += d; });
+			// Both streams are concatenated from raw chunks: joining strings per-chunk can split
+			// a multi-byte UTF-8 character across a chunk boundary and corrupt it.
+			const stdoutChunks: Buffer[] = [], stderrChunks: Buffer[] = [];
+			cmd.stdout.on('data', (d: Buffer) => { stdoutChunks.push(d); });
+			cmd.stderr.on('data', (d: Buffer) => { stderrChunks.push(d); });
 			cmd.on('error', (error) => reject(error.message));
-			cmd.on('close', (code) => code === 0 ? resolve(resolveValue(stdout)) : reject(getErrorMessage(null, Buffer.from(stdout), stderr)));
+			cmd.on('close', (code) => code === 0
+				? resolve(resolveValue(Buffer.concat(stdoutChunks).toString()))
+				: reject(getErrorMessage(null, Buffer.concat(stdoutChunks), Buffer.concat(stderrChunks).toString())));
 			cmd.stdin.on('error', () => { /* ignore EPIPE: the command already failed */ });
 			cmd.stdin.end(input);
 
@@ -2494,6 +2585,11 @@ export class DataSource extends Disposable {
 			if (this.gitExecutable === null) {
 				return reject(unableToFindGitMsg());
 			}
+			// An abort that landed before this call must not spawn Git at all (the listener path
+			// below could only kill it after the fact).
+			if (signal !== undefined && signal.aborted) {
+				return reject('The operation was cancelled.');
+			}
 
 			// The command is logged with how long it took, once it has finished: that duration is
 			// what makes the opt-in session log analysable for performance (scripts/analyze-log.mjs).
@@ -2511,10 +2607,6 @@ export class DataSource extends Disposable {
 					child.kill();
 					reject('The operation was cancelled.');
 				};
-				if (signal.aborted) {
-					onAbort();
-					return;
-				}
 				signal.addEventListener('abort', onAbort);
 			}
 			resolveSpawnOutput(child).then((values) => {
@@ -2574,7 +2666,7 @@ function getErrorMessage(error: Error | null, stdoutBuffer: Buffer, stderr: stri
 	let stdout = stdoutBuffer.toString(), lines: string[];
 	if (stdout !== '' || stderr !== '') {
 		lines = (stderr + stdout).split(EOL_REGEX);
-		lines.pop();
+		if (lines[lines.length - 1] === '') lines.pop();
 	} else if (error) {
 		lines = error.message.split(EOL_REGEX);
 	} else {

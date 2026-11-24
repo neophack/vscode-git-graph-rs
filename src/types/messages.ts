@@ -410,6 +410,7 @@ export interface RequestFetchIntoLocalBranch extends RepoRequest {
 	readonly remoteBranch: string;
 	readonly localBranch: string;
 	readonly force: boolean;
+	readonly confirmed?: boolean;
 }
 export interface ResponseFetchIntoLocalBranch extends ResponseWithErrorInfo {
 	readonly command: 'fetchIntoLocalBranch';

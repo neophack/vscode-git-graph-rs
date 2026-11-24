@@ -91,8 +91,8 @@ export function createPullRequest(config: PullRequestConfig, sourceOwner: string
 
 	const urlFieldValues = [
 		config.hostRootUrl,
-		sourceOwner, sourceRepo, sourceBranch,
-		config.destOwner, config.destRepo, config.destProjectId, config.destBranch
+		sourceOwner, sourceRepo, encodeURIComponent(sourceBranch),
+		config.destOwner, config.destRepo, config.destProjectId, encodeURIComponent(config.destBranch)
 	];
 
 	const url = templateUrl.replace(/\$([1-8])/g, (_, index) => urlFieldValues[parseInt(index) - 1]);

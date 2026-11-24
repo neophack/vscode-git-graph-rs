@@ -616,9 +616,10 @@ describe('git-graph-rs.gerritPushRef', () => {
 		const amend = doubles.dataSource.commands[0];
 		assert.equal(amend[0], 'commit');
 		assert.equal(amend[1], '--amend');
-		assert.match(amend[3], /^Subject\n\nBody\n\nChange-Id: I[0-9a-f]{40}$/);
-		assert.equal(amend.length, 4); // no -S without signCommits
-		assert.equal(vscode.callsTo('showInformationMessage')[0].args[0], t('gerritAmendConfirm', amend[3].match(/Change-Id: (I[0-9a-f]{11})/)[1]));
+		assert.equal(amend[2], '--only'); // staged changes for a future commit must not be folded into the amend
+		assert.match(amend[4], /^Subject\n\nBody\n\nChange-Id: I[0-9a-f]{40}$/);
+		assert.equal(amend.length, 5); // no -S without signCommits
+		assert.equal(vscode.callsTo('showInformationMessage')[0].args[0], t('gerritAmendConfirm', amend[4].match(/Change-Id: (I[0-9a-f]{11})/)[1]));
 		assert.equal(vscode.callsTo('showInformationMessage')[1].args[0], t('gerritPushedWithUrl', 'https://gerrit.example/c/proj/+/1234'));
 		assert.equal(vscode.callsTo('env.openExternal')[0].args[0].toString(), 'https://gerrit.example/c/proj/+/1234');
 	});

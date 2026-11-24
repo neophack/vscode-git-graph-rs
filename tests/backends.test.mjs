@@ -1309,7 +1309,10 @@ describe('git semantics the fixtures do not cover', () => {
 		// not the true UTC instant (which would be 18:00 the same day).
 		const cell = a.find((c) => c.weekday === 1 && c.hour === 23);
 		assert.ok(cell !== undefined, `expected a Monday/23:00 cell, got: ${JSON.stringify(a)}`);
-		assert.equal(cell.count, 1);
+		// Not exactly 1: the fixture's other commits are dated "now", so every commit created in
+		// the same weekday/hour as this run (e.g. the suite running Monday 23:00-24:00 local) bins
+		// into the same cell. The parity assertion above is what pins the binning rules.
+		assert.ok(cell.count >= 1, `the Monday/23:00 cell must be non-empty, got ${cell.count}`);
 	});
 
 	it('agrees a type change is not a listed status', async () => {

@@ -567,7 +567,7 @@ function downloadFile(url: string, redirectsRemaining: number): Promise<Buffer> 
 				if (redirectsRemaining <= 0) {
 					reject('too many redirects');
 				} else {
-					const target = resolveUrl(response.headers.location, url);
+					const target = resolveUrl(url, response.headers.location);
 					if (/^https:/i.test(url) && !/^https:/i.test(target)) {
 						reject('the server redirected the download off HTTPS (to ' + target + ')');
 						return;
@@ -785,7 +785,7 @@ export class GerritDataSource {
 		try {
 			const existing = fs.existsSync(hookPath) ? fs.readFileSync(hookPath, 'utf8') : null;
 			if (existing === content) return { error: null, installed: false }; // an identical hook is already installed
-			if (!fs.existsSync(hooksDir)) fs.mkdirSync(hooksDir);
+			if (!fs.existsSync(hooksDir)) fs.mkdirSync(hooksDir, { recursive: true });
 			fs.writeFileSync(hookPath, content, { mode: 0o755 });
 			fs.chmodSync(hookPath, 0o755); // the mode above is only applied when the file is created
 		} catch (errorMessage) {

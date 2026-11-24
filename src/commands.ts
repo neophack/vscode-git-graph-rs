@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
+
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider, decodeDiffDocUri } from './diffDocProvider';
@@ -313,6 +314,10 @@ export class CommandManager extends Disposable {
 		}
 
 		const remote = getConfig().gerrit.remote;
+		if (!isSafeRefName(remote)) {
+			showErrorMessage(t('gerritInvalidRemote', remote));
+			return;
+		}
 		try {
 			// git push writes its report (with the change URL) to STDERR, not stdout — resolve
 			// from both streams, so the "Open Change" action is actually offered.
@@ -397,7 +402,7 @@ export class CommandManager extends Disposable {
 				if (action !== t('gerritAmendAndPushButton')) return { error: t('gerritAmendAborted'), changeId: null, amended: false };
 			}
 
-			const args = ['commit', '--amend', '-m', message.replace(/\s+$/, '') + '\n\nChange-Id: ' + changeId];
+			const args = ['commit', '--amend', '--only', '-m', message.replace(/\s+$/, '') + '\n\nChange-Id: ' + changeId];
 			if (getConfig().signCommits) args.push('-S');
 			const error = await this.dataSource.runGitCommand(args, repo);
 			return { error: error, changeId: changeId, amended: error === null };
@@ -413,7 +418,7 @@ export class CommandManager extends Disposable {
 	private async view(arg: any) {
 		let loadRepo: string | null = null;
 
-		if (typeof arg === 'object' && arg.rootUri) {
+		if (typeof arg === 'object' && arg !== null && arg.rootUri) {
 			// If command is run from the Visual Studio Code Source Control View, load the specific repo
 			const repoPath = getPathFromUri(arg.rootUri);
 			loadRepo = await this.repoManager.getKnownRepo(repoPath);

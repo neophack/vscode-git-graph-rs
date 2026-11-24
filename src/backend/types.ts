@@ -203,6 +203,8 @@ export interface LogOptions {
 	showUncommittedChanges?: boolean;
 	showUntrackedFiles?: boolean;
 	showCommitsOnlyReferencedByTags?: boolean;
+	/** Read the stash and splice its rows into the graph; the stashes are skipped when false. */
+	showStashes?: boolean;
 	/** Apply `.mailmap` to author names and emails; the engine declines this to the CLI. */
 	useMailmap?: boolean;
 }

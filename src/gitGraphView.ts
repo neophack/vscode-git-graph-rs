@@ -1220,10 +1220,14 @@ export class GitGraphView extends Disposable {
 				this.avatarManager.fetchAvatarImage(msg.email, msg.repo, msg.remote, msg.commits);
 				break;
 			case 'fetchIntoLocalBranch':
-				this.sendMessage({
-					command: 'fetchIntoLocalBranch',
-					error: await this.dataSource.fetchIntoLocalBranch(msg.repo, msg.remote, msg.remoteBranch, msg.localBranch, msg.force)
-				});
+				{
+					const fetchIntoBranchResult = await this.dataSource.fetchIntoLocalBranch(msg.repo, msg.remote, msg.remoteBranch, msg.localBranch, msg.force, msg.confirmed === true);
+					if (this.sendLossWarning(fetchIntoBranchResult, msg)) break;
+					this.sendMessage({
+						command: 'fetchIntoLocalBranch',
+						error: <ErrorInfo>fetchIntoBranchResult
+					});
+				}
 				break;
 			case 'countCommitsBefore':
 				this.sendMessage({

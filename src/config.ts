@@ -747,11 +747,12 @@ function mergeConfigObjects(base: { [key: string]: any }, user: { [key: string]:
 
 	let keys = Object.keys(base);
 	for (let i = 0; i < keys.length; i++) {
-		if (typeof base[keys[i]] === 'object') {
-			if (typeof user[keys[i]] === 'object') {
-				mergeConfigObjects(base[keys[i]], user[keys[i]]);
-			}
-		} else if (typeof user[keys[i]] === typeof base[keys[i]]) {
+		// `typeof null === 'object'`, so a null in either object would otherwise recurse into
+		// Object.keys(null) and throw, or (in the scalar branch below) clobber a default
+		// object with null — neither a settings value can be trusted not to contain.
+		if (typeof base[keys[i]] === 'object' && base[keys[i]] !== null && typeof user[keys[i]] === 'object' && user[keys[i]] !== null) {
+			mergeConfigObjects(base[keys[i]], user[keys[i]]);
+		} else if (typeof user[keys[i]] === typeof base[keys[i]] && user[keys[i]] !== null) {
 			base[keys[i]] = user[keys[i]];
 		}
 	}

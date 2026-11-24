@@ -38,6 +38,11 @@ export class StatusBarItem extends Disposable {
 				if (event.affectsConfiguration('git-graph-rs.showStatusBarItem')) {
 					this.refresh();
 				}
+				// The tooltip is localised: a language switch must re-translate it (the item is
+				// created once, so it keeps the constructor's language otherwise).
+				if (event.affectsConfiguration('git-graph-rs.interfaceLanguage')) {
+					this.statusBarItem.tooltip = t('viewGitGraphRs');
+				}
 			}),
 			statusBarItem
 		);

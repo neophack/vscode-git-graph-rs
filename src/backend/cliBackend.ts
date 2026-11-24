@@ -135,8 +135,12 @@ export class CliBackend implements GitBackend {
 			// The stashes are read once and shared: the log needs them first (their bases are walk
 			// tips, so a stash hanging off a commit that no branch/tag/remote reaches still
 			// renders — the engine adds the same tips, see graph.rs, keeping the backends in
-			// parity), and the splice below reuses the same list.
-			const stashesPromise = this.getStashes(repo).catch(() => [] as GitStash[]);
+			// parity), and the splice below reuses the same list. A disabled stash
+			// (`showStashes === false`) skips the read entirely: the empty list contributes no
+			// walk tips and no splice, which is the whole of what hiding them does.
+			const stashesPromise: Promise<GitStash[]> = options.showStashes === false
+				? Promise.resolve([])
+				: this.getStashes(repo).catch(() => [] as GitStash[]);
 			const logPromise = stashesPromise.then((stashes) => this.getLog(repo, options, stashes.map((stash) => stash.baseHash)));
 			const refsPromise = this.readRefs(repo, {
 				showRemoteBranches: options.showRemoteBranches ?? true,
@@ -370,6 +374,9 @@ export class CliBackend implements GitBackend {
 	 */
 	public async getLineCounts(repo: string, from: string | null, to: string, paths: ReadonlyArray<string>): Promise<{ [path: string]: GitLineCounts }> {
 		if (paths.length === 0) return {};
+		// The uncommitted sentinel (`*`) is not a revision: an empty `to` makes the diff below run
+		// against the working tree, which is exactly what the sentinel means (see compareCommits).
+		if (to === UNCOMMITTED) to = '';
 		let base = from;
 		if (base === null) {
 			// The commit's first parent — or the empty tree for a root commit, whose files then
@@ -579,8 +586,10 @@ export class CliBackend implements GitBackend {
 		repo: string,
 		hashes: ReadonlyArray<string>
 	): Promise<{ [hash: string]: GitCommitSummary }> {
+		// With no hashes, `git show` would fall back to HEAD and invent a summary for it.
+		if (hashes.length === 0) return {};
 		const out = await this.run(
-			['show', '--quiet', '--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B%x1e', ...hashes],
+			['-c', 'log.showSignature=false', 'show', '--quiet', '--format=%H%x1f%an%x1f%ae%x1f%at%x1f%B%x1e', ...hashes],
 			repo
 		);
 		const summaries: { [hash: string]: GitCommitSummary } = {};
@@ -612,7 +621,7 @@ export class CliBackend implements GitBackend {
 		// The unit separator (\x1f) is used instead of `|` so that hashes, author names and
 		// subjects containing `|` don't shift the fields.
 		const out = await this.run(
-			['log', '--all', '-E', '-i', `--grep=${query}`, '--format=%H%x1f%an%x1f%at%x1f%s', '--max-count=100'],
+			['-c', 'log.showSignature=false', 'log', '--all', '-E', '-i', `--grep=${query}`, '--format=%H%x1f%an%x1f%at%x1f%s', '--max-count=100'],
 			repo
 		);
 		const text = out.replace(/\n$/, '');
@@ -623,7 +632,9 @@ export class CliBackend implements GitBackend {
 				hash: parts[0],
 				author: parts[1],
 				date: parseInt(parts[2], 10),
-				message: parts.slice(3).join('|')
+				// Re-joined with the unit separator, not `|`: a subject containing \x1f splits
+				// into extra parts here, and joining them with anything else would corrupt it.
+				message: parts.slice(3).join('\x1f')
 			};
 		});
 	}
@@ -727,7 +738,8 @@ export class CliBackend implements GitBackend {
 					let inSubmoduleSection = false;
 					const section = /^\s*\[.*\]\s*$/,
 						submodule = /^\s*\[submodule "([^"]+)"\]\s*$/,
-						pathProp = /^\s*path\s+=\s+(.*)$/;
+						// Whitespace around the `=` is optional in git's config syntax (`path=x` is legal).
+						pathProp = /^\s*path\s*=\s*(.*)$/;
 
 					for (const line of lines) {
 						if (line.match(section) !== null) {
@@ -738,13 +750,17 @@ export class CliBackend implements GitBackend {
 						if (match === null) continue;
 
 						// A submodule that was never initialised has no repository below its path;
-						// resolving the path's root drops it, as `rev-parse` fails there.
+						// resolving the path's root drops it, as `rev-parse` fails there. When the
+						// path exists but holds no `.git`, `rev-parse` walks up and resolves to the
+						// parent repository itself — that root is dropped instead of listed, or the
+						// parent would be its own submodule.
 						try {
 							const root = await this.run(
 								['rev-parse', '--show-toplevel'],
 								path.join(repo, match[1].trim())
 							);
 							const normalised = path.normalize(root.trim());
+							if (path.resolve(normalised) === path.resolve(repo)) continue;
 							if (!submodules.includes(normalised)) submodules.push(normalised);
 						} catch {
 							/* not initialised (or no longer present): nothing to list */
