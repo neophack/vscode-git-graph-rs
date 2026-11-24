@@ -50,7 +50,12 @@ export class GitWriter {
 	 */
 	onRepositoryChanged(listener: RepositoryChangedListener): { dispose(): void } {
 		this.listeners.push(listener);
-		return { dispose: () => { this.listeners.splice(this.listeners.indexOf(listener), 1); } };
+		return {
+			dispose: () => {
+				const index = this.listeners.indexOf(listener);
+				if (index >= 0) this.listeners.splice(index, 1);
+			}
+		};
 	}
 
 	/**

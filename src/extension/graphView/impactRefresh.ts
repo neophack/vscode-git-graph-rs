@@ -17,6 +17,8 @@ export interface ImpactRefreshView {
 	lastLoadRequest(repo: string): RequestLoadCommits | null;
 	/** The page (without the synthetic uncommitted row) the newest delivered response carried. */
 	lastRenderedPage(repo: string): GitCommitData | null;
+	/** Record a re-annotated page as the newest delivered page so a following worktree row push preserves the updated refs and HEAD. */
+	updateRenderedPage?(repo: string, page: GitCommitData): void;
 	/** The Gerrit states the newest delivered response carried (NULL when it carried none). */
 	cachedGerritStates(repo: string): GerritChangeState[] | null;
 	/** Drop every cached commit page (a history-affecting write made them stale). */
@@ -162,7 +164,18 @@ async function refreshByAnnotation(deps: ImpactRefreshDeps, repo: string, msg: R
 			if (refs === undefined) return commit; // a hash the scan did not answer keeps its labels
 			return { ...commit, heads: [...refs.heads], tags: [...refs.tags], remotes: [...refs.remotes] };
 		});
-		deps.send(repoInfoOf(deps, msg, snapshot.branches, snapshot.branchHead, remoteNamesOf(snapshot)));
+		const updatedPage: GitCommitData = {
+			...page,
+			commits: reannotated,
+			head: annotation.head,
+			tags: [...snapshot.tagNames],
+			branches: [...snapshot.branches]
+		};
+		// Persist the re-annotated page before sending so any follow-up worktree push (e.g. after
+		// a checkout whose effects include both `refs` and `worktree`) builds on the new HEAD and
+		// ref labels instead of reverting to the pre-annotation page.
+		deps.view.updateRenderedPage?.(repo, updatedPage);
+		deps.send(repoInfoOf(deps, msg, snapshot.branches, snapshot.branchHead, remoteNamesOf(snapshot, msg.remotes)));
 		deps.send({
 			command: 'loadCommits',
 			refreshId: deps.refreshIds().loadCommits,
@@ -223,9 +236,9 @@ function repoInfoOf(deps: ImpactRefreshDeps, msg: RequestLoadCommits, branches: 
 	};
 }
 
-/** The remote NAMES of a ref snapshot: the unique first path segments of its remote refs, in order. */
-function remoteNamesOf(snapshot: Awaited<ReturnType<ImpactRefreshReads['getRefSnapshot']>>): string[] {
-	const names: string[] = [];
+/** The remote NAMES of a ref snapshot: preserve configured remotes (a refs-only write never removes remotes, and hidden/unfetched remotes are absent from `snapshot.refData.remotes`). */
+function remoteNamesOf(snapshot: Awaited<ReturnType<ImpactRefreshReads['getRefSnapshot']>>, configuredRemotes: ReadonlyArray<string>): string[] {
+	const names: string[] = [...configuredRemotes];
 	for (const ref of snapshot.refData.remotes) {
 		const separator = ref.name.indexOf('/');
 		const remote = separator > -1 ? ref.name.substring(0, separator) : ref.name;

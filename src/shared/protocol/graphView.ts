@@ -212,7 +212,7 @@ export type WriteEffect = 'refs' | 'head' | 'commits' | 'worktree' | 'stash' | '
  * keeps its full refresh for this one command.
  */
 export const WRITE_EFFECTS: { readonly [K in RequestCommand]: ReadonlyArray<WriteEffect> | null } = {
-	abortOperation: ['head', 'worktree'],
+	abortOperation: ['commits', 'refs', 'head', 'worktree'],
 	addRemote: ['config', 'refs', 'commits'],
 	addTag: ['refs'],
 	applyStash: ['worktree'],

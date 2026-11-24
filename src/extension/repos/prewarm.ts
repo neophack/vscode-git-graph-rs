@@ -261,7 +261,13 @@ export class PrewarmController {
 		const timer = this.deps.clock.setTimeout(() => {
 			this.closeTimers.delete(repo);
 			if (this.disposed) return; // dispose() owns the handles from here on
-			if (this.deps.liveView.currentRepo() === repo) return; // the view adopted the handle: it stays
+			if (this.deps.liveView.currentRepo() === repo) {
+				// The view adopted the handle: hand over ownership so a later dispose() after the
+				// user switches repositories will not close it, and a future cycle can re-evaluate.
+				this.handles.delete(repo);
+				this.readers.delete(repo);
+				return;
+			}
 			this.handles.delete(repo);
 			this.readers.delete(repo);
 			reader.closeRepository(repo);

@@ -95,7 +95,9 @@ export function continueOperation(params: OperationStepParams): WriteOp {
 
 /** Abort an in-progress merge, rebase, cherry-pick or revert. */
 export function abortOperation(params: OperationStepParams): WriteOp {
-	return { steps: single([params.type, '--abort']), effects: ['head', 'worktree'] };
+	// Aborting a rebase or multi-commit cherry-pick/revert drops replayed commits and restores
+	// the original branch tip, so cached commit pages must be invalidated and reloaded.
+	return { steps: single([params.type, '--abort']), effects: ['commits', 'refs', 'head', 'worktree'] };
 }
 
 /** A merge object is a commit hash when the action is on a commit, a ref name otherwise. */

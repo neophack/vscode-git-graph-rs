@@ -450,8 +450,17 @@ export class CommitLoader implements CommitLoaderPort {
 		await pushUncommittedRow(this.ctx, repo, msg, send);
 	}
 
+	/** Update the recorded rendered page after an in-place refs-only re-annotation (see impactRefresh.ts). */
+	public updateRenderedPage(repo: string, page: GitCommitData): void {
+		const record = this.lastLoads.get(repo);
+		if (record !== undefined) {
+			this.lastLoads.set(repo, { ...record, page: page });
+		}
+	}
+
 	/** Record the newest delivered page of a repository (the impact refresh's base). */
 	private noteLoadedPage(msg: RequestLoadCommits, page: GitCommitData, states: GerritChangeState[] | null): void {
+		this.noteViewHasCommits(page);
 		this.lastLoads.set(msg.repo, { msg: msg, page: page, states: states });
 	}
 

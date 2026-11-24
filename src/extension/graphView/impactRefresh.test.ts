@@ -293,12 +293,16 @@ describe('Impact refresh: the other effect classes', () => {
 		const combo = new Harness();
 		await combo.loaded();
 		combo.reads.uncommitted = 2;
+		combo.reads.annotation = { head: 'b', commits: [] };
 		await refreshAfterWrite(combo.deps(), '/repo', ['refs', 'worktree']);
-		// The annotate push, then the row update — no traversal anywhere
+		// The annotate push, then the row update — no traversal anywhere, and the row update
+		// preserves the re-annotated HEAD and ref labels instead of reverting to the stale page
 		expect(combo.reads.requests.filter((r) => r === 'getCommits')).toEqual([]);
 		expect(combo.loadCommitsPushes()).toHaveLength(2);
 		expect(combo.loadCommitsPushes()[0].uncommittedPending).toBe(true);
 		expect(combo.loadCommitsPushes()[1].uncommittedCount).toBe(2);
+		expect(combo.loadCommitsPushes()[1].head).toBe('b');
+		expect(combo.loadCommitsPushes()[1].commits[1].heads).toEqual(['main']);
 
 		const withConfig = new Harness();
 		await withConfig.loaded();

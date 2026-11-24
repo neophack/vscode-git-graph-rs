@@ -124,7 +124,9 @@ export class HostScheduler {
 		job.state = 'queued';
 		this.queue.push(job);
 		this.pump();
-		return startGate.then(() => task(job.controller.signal));
+		// A job abandoned after pump() opened its gate (before this microtask runs) must not
+		// invoke its task concurrently with the replacement job.
+		return startGate.then(() => job.state === 'settled' ? new Promise<T>(() => undefined) : task(job.controller.signal));
 	}
 
 	/** Abandon a job: sever its delivery, drop it from the queue, then fire its signal. */
