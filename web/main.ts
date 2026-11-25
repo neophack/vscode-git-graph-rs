@@ -1298,6 +1298,7 @@ class GitGraphView {
 			remotes: this.gitRemotes,
 			hideRemotes: repoState.hideRemotes,
 			stashes: this.gitStashes,
+			showStashes: getShowStashes(repoState.showStashes),
 			gerritFetchRefs: repoState.gerritFetchRefs,
 			gerritFetchLimit: repoState.gerritFetchLimit ?? null,
 			gerritStatusFilter: repoState.gerritStatusFilter,
@@ -2865,14 +2866,21 @@ class GitGraphView {
 	}
 
 	/**
+	 * Get the height of the sticky header rows (the main controls row + the Pinned row), excluding
+	 * normal-flow banners that scroll away with the table.
+	 */
+	public getStickyHeaderHeight() {
+		return this.controlsElem.clientHeight
+			+ (this.pinnedControlsElem !== null && this.pinnedControlsElem.style.display !== 'none' ? this.pinnedControlsElem.clientHeight : 0);
+	}
+
+	/**
 	 * Get the total height of the header rows (the main controls row + the Pinned row), plus the
 	 * Conflict Banner when it is visible: it sits in normal flow between the sticky header and the
 	 * commit table, so leaving it out lands every scroll-to-commit one banner short.
 	 */
 	public getHeaderHeight() {
-		return this.controlsElem.clientHeight
-			+ (this.pinnedControlsElem !== null && this.pinnedControlsElem.style.display !== 'none' ? this.pinnedControlsElem.clientHeight : 0)
-			+ this.conflictBanner.getHeight();
+		return this.getStickyHeaderHeight() + this.conflictBanner.getHeight();
 	}
 
 

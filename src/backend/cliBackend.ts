@@ -379,9 +379,14 @@ export class CliBackend implements GitBackend {
 		if (to === UNCOMMITTED) to = '';
 		let base = from;
 		if (base === null) {
-			// The commit's first parent — or the empty tree for a root commit, whose files then
-			// report as added rather than being unaccounted for.
-			base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => this.getEmptyTree(repo));
+			if (to === '') {
+				// Diffing the working tree against HEAD (or the empty tree on an unborn branch).
+				base = await this.run(['rev-parse', '--verify', 'HEAD'], repo).then((out) => out.trim(), () => this.getEmptyTree(repo));
+			} else {
+				// The commit's first parent — or the empty tree for a root commit, whose files then
+				// report as added rather than being unaccounted for.
+				base = await this.run(['rev-parse', '--verify', to + '^'], repo).then((out) => out.trim(), () => this.getEmptyTree(repo));
+			}
 		}
 
 		const counts = await this.numStatCounts(repo, base, to);
@@ -395,15 +400,18 @@ export class CliBackend implements GitBackend {
 
 	/**
 	 * The numstat counts of a whole diff, keyed by each file's new path. Cached for the last
-	 * (repo, base, to): the callers settle one commit's file list in batches, and a diff between
-	 * two fixed revisions cannot change under the cache.
+	 * (repo, base, to) when `to` is a fixed revision: the callers settle one commit's file list in
+	 * batches, and a diff between two fixed revisions cannot change under the cache. Working-tree
+	 * diffs (`to === ''`) are mutable and are never cached.
 	 */
 	private async numStatCounts(repo: string, base: string, to: string): Promise<{ [path: string]: GitLineCounts }> {
-		if (this.numStatCache !== null && this.numStatCache.repo === repo && this.numStatCache.base === base && this.numStatCache.to === to) {
+		if (to !== '' && this.numStatCache !== null && this.numStatCache.repo === repo && this.numStatCache.base === base && this.numStatCache.to === to) {
 			return this.numStatCache.counts;
 		}
 
-		const numStat = await this.run(['diff', '--numstat', '--find-renames', '-z', base, to], repo);
+		const args = ['diff', '--numstat', '--find-renames', '-z', base];
+		if (to !== '') args.push(to);
+		const numStat = await this.run(args, repo);
 		const counts: { [path: string]: GitLineCounts } = {};
 
 		const fields = numStat.split('\0');
@@ -423,7 +431,9 @@ export class CliBackend implements GitBackend {
 			i += parts[2] !== '' ? 1 : 3;
 		}
 
-		this.numStatCache = { repo, base, to, counts };
+		if (to !== '') {
+			this.numStatCache = { repo, base, to, counts };
+		}
 		return counts;
 	}
 
@@ -760,7 +770,12 @@ export class CliBackend implements GitBackend {
 								path.join(repo, match[1].trim())
 							);
 							const normalised = path.normalize(root.trim());
-							if (path.resolve(normalised) === path.resolve(repo)) continue;
+							const resolvedNormalised = path.resolve(normalised);
+							const resolvedRepo = path.resolve(repo);
+							const sameAsParent = process.platform === 'win32'
+								? resolvedNormalised.toLowerCase() === resolvedRepo.toLowerCase()
+								: resolvedNormalised === resolvedRepo;
+							if (sameAsParent) continue;
 							if (!submodules.includes(normalised)) submodules.push(normalised);
 						} catch {
 							/* not initialised (or no longer present): nothing to list */

@@ -743,7 +743,7 @@ export function getConfig(repo?: string) {
  * @param user An object specified by the user.
  */
 function mergeConfigObjects(base: { [key: string]: any }, user: { [key: string]: any }) {
-	if (typeof base !== typeof user) return;
+	if (typeof base !== typeof user || base === null || user === null) return;
 
 	let keys = Object.keys(base);
 	for (let i = 0; i < keys.length; i++) {

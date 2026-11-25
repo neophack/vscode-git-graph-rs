@@ -236,7 +236,7 @@ export async function bootView(total, options = {}) {
 		get: () => document.querySelectorAll('#commitTable tr.commit').length * ROW_HEIGHT,
 		configurable: true // tests may model the full height of a windowed list
 	});
-	Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT });
+	Object.defineProperty(viewElem, 'clientHeight', { get: () => VIEWPORT_HEIGHT, configurable: true });
 	// configurable so tests can simulate view widths (e.g. the narrow-window mobileAdaptation layout)
 	Object.defineProperty(viewElem, 'clientWidth', { get: () => 1200, configurable: true });
 

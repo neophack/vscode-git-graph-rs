@@ -501,6 +501,26 @@ describe('the Rust engine and the git CLI agree', () => {
 		assert.deepEqual(a['renamed.txt'], { additions: 1, deletions: 40 });
 	});
 
+	it('settles working-tree line counts for UNCOMMITTED (*) in CliBackend without stale caching', async () => {
+		const target = path.join(root, 'feature.txt');
+		const original = fs.readFileSync(target, 'utf8');
+		try {
+			fs.writeFileSync(target, original + 'extra-line-1\n');
+			const fromNull = await cli.getLineCounts(root, null, '*', ['feature.txt']);
+			assert.deepEqual(fromNull['feature.txt'], { additions: 1, deletions: 0 });
+
+			const fromCommit = await cli.getLineCounts(root, fixture.first, '*', ['feature.txt']);
+			assert.ok(fromCommit['feature.txt'] && fromCommit['feature.txt'].additions >= 1);
+
+			// Modifying the working tree again must not return a cached count.
+			fs.writeFileSync(target, original + 'extra-line-1\nextra-line-2\n');
+			const updated = await cli.getLineCounts(root, null, '*', ['feature.txt']);
+			assert.deepEqual(updated['feature.txt'], { additions: 2, deletions: 0 });
+		} finally {
+			fs.writeFileSync(target, original);
+		}
+	});
+
 	it('reports the same repository configuration', async () => {
 		const [a, b] = await Promise.all([rust.getConfig(root), cli.getConfig(root)]);
 		for (const key of ['userName', 'userEmail', 'pushDefault', 'diffTool', 'diffGuiTool']) {

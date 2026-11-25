@@ -167,4 +167,76 @@ describe('a configChanged message applies the settings live', () => {
 		const highlighted = h.document.querySelector('#commitTable tr.commit[data-id="5"]');
 		assert.ok((highlighted !== null && highlighted.classList.contains('cdvOpen')) || h.document.getElementById('cdv') !== null, 'clicking child span inside internalUrl opened the target commit');
 	});
+
+	it('sends the per-repository showStashes override in loadCommits', async () => {
+		const h = await bootView(20);
+		const config = clonedConfig(h);
+		config.showStashes = false;
+		const repo = Object.keys(h.window.initialState.repos)[0];
+		h.window.initialState.repos[repo].showStashes = 1; // BooleanOverride.Enabled
+
+		const requests = spyOnRequests(h);
+		h.dispatch({ command: 'configChanged', config: config });
+		await h.pump();
+
+		const loadCommits = requests.filter((m) => m.command === 'loadCommits');
+		assert.ok(loadCommits.length > 0, 'loadCommits was sent');
+		assert.equal(loadCommits[loadCommits.length - 1].showStashes, true, 'per-repo Enabled overrides global false');
+	});
+
+	it('mounts reflog row context menus on document.body so desktop z-index sits above #reflogWidget', async () => {
+		const h = await bootView(20);
+		h.document.getElementById('settingsBtn').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		h.document.getElementById('openReflogView').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		await h.pump();
+
+		h.dispatch({
+			command: 'reflog',
+			ref: 'HEAD',
+			entries: [{
+				hash: h.state.history[0].hash,
+				abbrevHash: h.state.history[0].hash.substring(0, 7),
+				selector: 'HEAD@{0}',
+				date: 1700000000,
+				message: 'commit: test reflog entry',
+				dangling: false
+			}],
+			moreAvailable: false,
+			error: null
+		});
+
+		const row = h.document.querySelector('#reflogContent .reflogRow');
+		assert.ok(row !== null, 'reflog row rendered');
+		row.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+
+		const menu = h.document.querySelector('ul.contextMenu');
+		assert.ok(menu !== null, 'context menu opened');
+		assert.strictEqual(menu.parentElement, h.document.body, 'context menu mounted on document.body (not trapped inside #view)');
+	});
+
+	it('does not overwrite persisted docked cdvHeight when resize fires on a hidden zero-height view', async () => {
+		const h = await bootView(20);
+		const dockedConfig = clonedConfig(h);
+		dockedConfig.commitDetailsView.location = 1; // CommitDetailsViewLocation.DockedToBottom
+		h.dispatch({ command: 'configChanged', config: dockedConfig });
+		await h.pump();
+
+		const repo = Object.keys(h.window.initialState.repos)[0];
+		h.window.initialState.repos[repo].cdvHeight = 320;
+		const row = h.rows()[0];
+		row.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+		await h.pump();
+
+		const cdv = h.document.getElementById('cdv');
+		assert.ok(cdv !== null && cdv.classList.contains('docked'), 'docked CDV is open');
+		const heightBefore = h.window.initialState.repos[repo].cdvHeight;
+		assert.ok(heightBefore > 100, 'initial cdvHeight is > 100');
+
+		// Simulate a hidden/collapsed webview resize where clientHeight drops to 0
+		Object.defineProperty(h.viewElem, 'clientHeight', { configurable: true, value: 0 });
+		h.window.dispatchEvent(new h.window.Event('resize'));
+		await new Promise((resolve) => setTimeout(resolve, 60));
+
+		assert.equal(h.window.initialState.repos[repo].cdvHeight, heightBefore, 'cdvHeight was not clobbered to 100');
+	});
 });

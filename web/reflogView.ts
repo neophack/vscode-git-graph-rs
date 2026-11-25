@@ -195,10 +195,12 @@ class ReflogView {
 				onClick: () => sendMessage({ command: 'copyToClipboard', type: 'Reflog Selector', data: selector })
 			}
 		]];
-		// Frame the menu on the view element (like every other caller): the context menu is
-		// position:fixed, so a frame whose bounding box does not start at the viewport origin
-		// (this widget is anchored to the right edge) would offset the menu by its left/top
-		contextMenu.show(actions, false, null, e, this.view.viewElem);
+		// Frame the menu on document.body rather than #view or this.widgetElem: #reflogWidget is a
+		// direct child of document.body (z-index: 31), whereas #view is position:fixed and creates
+		// its own stacking context at level 0 — mounting the menu inside #view traps its z-index: 35
+		// behind #reflogWidget on desktop. document.body covers the viewport origin (position:fixed;
+		// inset:0) and shares the root stacking context with #reflogWidget.
+		contextMenu.show(actions, false, null, e, document.body);
 		row.focus();
 	}
 }

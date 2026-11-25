@@ -51,7 +51,7 @@ function observeWindowSizeChanges(view: GitGraphView) {
 
 				const cdvElem = document.getElementById('cdv');
 
-				if (view.expandedCommit !== null && isCdvDocked(view) && cdvElem !== null) setCdvHeight(view, cdvElem, true);
+				if (viewHeight > 0 && window.innerHeight > 0 && view.expandedCommit !== null && isCdvDocked(view) && cdvElem !== null) setCdvHeight(view, cdvElem, true);
 
 			}
 
@@ -220,10 +220,11 @@ function observeFastScroller(view: GitGraphView) {
 	let hideTimer: number | null = null, dragging = false, grabOffset = 0;
 
 	const enabled = () => view.isMobileLayout() && view.viewElem.scrollHeight > MIN_PAGES * view.viewElem.clientHeight;
-	// The track runs from below the app bar to the bottom of the view
+	// The track runs from below the sticky app bar to the bottom of the view
 	const track = () => {
-		const top = view.viewElem.getBoundingClientRect().top + view.getHeaderHeight() + EDGE_GAP;
-		return { top: top, length: Math.max(1, view.viewElem.clientHeight - view.getHeaderHeight() - THUMB_HEIGHT - 2 * EDGE_GAP), max: Math.max(1, view.viewElem.scrollHeight - view.viewElem.clientHeight) };
+		const headerHeight = view.getStickyHeaderHeight();
+		const top = view.viewElem.getBoundingClientRect().top + headerHeight + EDGE_GAP;
+		return { top: top, length: Math.max(1, view.viewElem.clientHeight - headerHeight - THUMB_HEIGHT - 2 * EDGE_GAP), max: Math.max(1, view.viewElem.scrollHeight - view.viewElem.clientHeight) };
 	};
 	const place = () => {
 		const t = track();

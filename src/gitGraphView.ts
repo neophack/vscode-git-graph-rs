@@ -2627,7 +2627,7 @@ export class GitGraphView extends Disposable {
 			const cached = this.commitCache.get(key);
 			if (cached !== undefined) return cached;
 		}
-		const promise: Promise<GitCommitData> = this.dataSource.getCommits(msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, false, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs).then((commitData) => {
+		const promise: Promise<GitCommitData> = this.dataSource.getCommits(msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, false, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs, msg.showStashes).then((commitData) => {
 			if (commitData.error !== null && this.commitCache.get(key) === promise) {
 				// Don't cache error results (they may be transient): allow the next call to retry
 				this.commitCache.delete(key);
@@ -2646,7 +2646,7 @@ export class GitGraphView extends Disposable {
 	 * returns (the deferral flags included — a deferred response is a strictly smaller answer).
 	 */
 	private commitsCacheKey(msg: RequestLoadCommits, gerritRefs: ReadonlyArray<string> | null, deferUncommittedChanges: boolean, deferRemoteRefs: boolean): string {
-		return JSON.stringify([msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, gerritRefs, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs]);
+		return JSON.stringify([msg.repo, msg.branches, msg.authors, msg.maxCommits, msg.showTags, msg.showRemoteBranches, msg.includeCommitsMentionedByReflogs, msg.onlyFollowFirstParent, msg.commitOrdering, msg.remotes, msg.hideRemotes, msg.stashes, msg.showStashes, gerritRefs, msg.filterPath === undefined ? null : msg.filterPath, deferUncommittedChanges, deferRemoteRefs]);
 	}
 
 	/**

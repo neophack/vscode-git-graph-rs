@@ -578,7 +578,7 @@ export class DataSource extends Disposable {
 	/**
 	 * Get the commits in a repository.
 	 */
-	public getCommits(repo: string, branches: ReadonlyArray<string> | null, authors: ReadonlyArray<string> | null, maxCommits: number, showTags: boolean, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: ReadonlyArray<string>, hideRemotes: ReadonlyArray<string>, _stashes: ReadonlyArray<GitStash>, gerritRefs: ReadonlyArray<string> | null = null, gerritShowChangeRefs: boolean = false, filterPath: string | null = null, deferUncommittedChanges: boolean = false, deferRemoteRefs: boolean = false): Promise<GitCommitData> {
+	public getCommits(repo: string, branches: ReadonlyArray<string> | null, authors: ReadonlyArray<string> | null, maxCommits: number, showTags: boolean, showRemoteBranches: boolean, includeCommitsMentionedByReflogs: boolean, onlyFollowFirstParent: boolean, commitOrdering: CommitOrdering, remotes: ReadonlyArray<string>, hideRemotes: ReadonlyArray<string>, _stashes: ReadonlyArray<GitStash>, gerritRefs: ReadonlyArray<string> | null = null, gerritShowChangeRefs: boolean = false, filterPath: string | null = null, deferUncommittedChanges: boolean = false, deferRemoteRefs: boolean = false, showStashes?: boolean): Promise<GitCommitData> {
 		const config = getConfig();
 		// Branch names are received from the webview and passed to git log as bare arguments, so
 		// drop any that could be misinterpreted as git options (argument injection). Custom Branch
@@ -610,7 +610,7 @@ export class DataSource extends Disposable {
 			showUncommittedChanges: config.showUncommittedChanges,
 			showUntrackedFiles: config.showUntrackedFiles,
 			showCommitsOnlyReferencedByTags: config.showCommitsOnlyReferencedByTags,
-			showStashes: config.showStashes,
+			showStashes: showStashes !== undefined ? showStashes : config.showStashes,
 			useMailmap: config.useMailmap
 		}).then((data) => data as unknown as GitCommitData, (errorMessage) => <GitCommitData>{ commits: [], head: null, tags: [], moreCommitsAvailable: false, error: errorMessage });
 	}

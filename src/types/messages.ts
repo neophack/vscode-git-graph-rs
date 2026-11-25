@@ -433,6 +433,7 @@ export interface RequestLoadCommits extends RepoRequest {
 	readonly remotes: ReadonlyArray<string>;
 	readonly hideRemotes: ReadonlyArray<string>;
 	readonly stashes: ReadonlyArray<GitStash>;
+	readonly showStashes?: boolean;
 	readonly gerritFetchRefs: boolean; // false => the Gerrit integration is disabled for this repository
 	readonly gerritFetchLimit: number | null; // how many of the most recent Gerrit changes passing the status filter are DISPLAYED (NULL => the gerrit.fetchLimit Extension Setting)
 	readonly gerritStatusFilter: GerritStatusFilter; // which change statuses may appear in the graph

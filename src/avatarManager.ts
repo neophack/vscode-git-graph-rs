@@ -306,7 +306,11 @@ export class AvatarManager extends Disposable {
 			res.on('end', async () => {
 				if (res.headers['x-ratelimit-remaining'] === '0') {
 					// If the GitHub Api rate limit was reached, store the github timeout to prevent subsequent requests
-					this.githubTimeout = parseInt(<string>res.headers['x-ratelimit-reset']) * 1000;
+					if (/^\d+$/.test(<string>res.headers['x-ratelimit-reset'] ?? '')) {
+						this.githubTimeout = parseInt(<string>res.headers['x-ratelimit-reset']) * 1000;
+					} else {
+						this.githubTimeout = Math.max(Number.isFinite(this.githubTimeout) ? this.githubTimeout : 0, t + 600000);
+					}
 					this.logger.log('GitHub API Rate Limit Reached - Paused fetching from GitHub until the Rate Limit is reset');
 				}
 
@@ -332,7 +336,7 @@ export class AvatarManager extends Disposable {
 					// bounded 10-minute backoff — a 403 whose headers carry no reset time (e.g. a
 					// private repository) would otherwise re-queue on the stale, already-expired
 					// timeout and spin on the same response forever.
-					this.githubTimeout = Math.max(this.githubTimeout, t + 600000);
+					this.githubTimeout = Math.max(Number.isFinite(this.githubTimeout) ? this.githubTimeout : 0, t + 600000);
 					if (/^\d+$/.test(<string>res.headers['x-ratelimit-reset'] ?? '')) {
 						this.githubTimeout = Math.max(this.githubTimeout, parseInt(<string>res.headers['x-ratelimit-reset']) * 1000);
 					}
@@ -402,7 +406,11 @@ export class AvatarManager extends Disposable {
 			res.on('end', async () => {
 				if (res.headers['ratelimit-remaining'] === '0') {
 					// If the GitLab Api rate limit was reached, store the gitlab timeout to prevent subsequent requests
-					this.gitLabTimeout = parseInt(<string>res.headers['ratelimit-reset']) * 1000;
+					if (/^\d+$/.test(<string>res.headers['ratelimit-reset'] ?? '')) {
+						this.gitLabTimeout = parseInt(<string>res.headers['ratelimit-reset']) * 1000;
+					} else {
+						this.gitLabTimeout = Math.max(Number.isFinite(this.gitLabTimeout) ? this.gitLabTimeout : 0, t + 600000);
+					}
 					this.logger.log('GitLab API Rate Limit Reached - Paused fetching from GitLab until the Rate Limit is reset');
 				}
 
@@ -427,7 +435,7 @@ export class AvatarManager extends Disposable {
 					// Rate limited: wait for the announced reset, or at least a bounded 10-minute
 					// backoff — re-queueing on the stale, already-expired timeout would spin on
 					// the same 429 forever.
-					this.gitLabTimeout = Math.max(this.gitLabTimeout, t + 600000);
+					this.gitLabTimeout = Math.max(Number.isFinite(this.gitLabTimeout) ? this.gitLabTimeout : 0, t + 600000);
 					if (/^\d+$/.test(<string>res.headers['ratelimit-reset'] ?? '')) {
 						this.gitLabTimeout = Math.max(this.gitLabTimeout, parseInt(<string>res.headers['ratelimit-reset']) * 1000);
 					}
