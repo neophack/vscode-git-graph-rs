@@ -1938,7 +1938,7 @@ export class DataSource extends Disposable {
 	/**
 	 * Edit the commit message of any local commit that has not been pushed to a remote.
 	 *
-	 * HEAD is amended directly (`git commit --amend -m`); an earlier commit is reworded through an
+	 * HEAD is amended directly (`git commit --amend --only -m`); an earlier commit is reworded through an
 	 * automated `git rebase -i`: the sequence editor replaces the commit's `pick` line with `reword`
 	 * and the commit-message editor writes the new message, so no interactive terminal is needed and
 	 * the surrounding history is preserved verbatim. The rebase is aborted (restoring the previous
@@ -1973,6 +1973,8 @@ export class DataSource extends Disposable {
 				const headContainingRemotes = await this.getRemotesContainingCommit(repo, commitHash, headRemotes);
 				if (headContainingRemotes.length > 0) return t('amendPushedCommit', headContainingRemotes.join(', '));
 
+				// `--only` keeps the amend message/author-only: a bare `git commit --amend` folds the index's
+				// staged changes into the rewritten commit, silently consuming the user's uncommitted work.
 				const args = ['commit', '--amend', '--only'];
 				if (author !== null) args.push('--author=' + author);
 				args.push('-m', message);

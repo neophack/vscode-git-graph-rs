@@ -146,6 +146,25 @@ describe('editing the message of an earlier commit', () => {
 		assert.equal(commitCount(), 3);
 	});
 
+	it('amends the HEAD message without absorbing the staged changes', async () => {
+		// The regression the --only guards: a bare `git commit --amend` folds the index into the
+		// rewritten commit, silently consuming the user's staged work.
+		fs.appendFileSync(path.join(repoPath, 'file-2.txt'), 'staged but not committed\n');
+		git(['add', 'file-2.txt']);
+
+		const error = await dataSource.editCommitMessage(repoPath, hash('HEAD'), 'third, amended over staged work');
+
+		assert.equal(error, null, `the amend must succeed, got: ${error}`);
+		assert.equal(subject('HEAD'), 'third, amended over staged work');
+		// The staged change stayed staged and never entered the rewritten commit.
+		assert.equal(git(['status', '--porcelain']).trim(), 'M  file-2.txt');
+		assert.match(git(['diff', '--cached']), /staged but not committed/);
+		assert.doesNotMatch(git(['show', 'HEAD', '--', 'file-2.txt']), /staged but not committed/);
+
+		// Leave the fixture as the later tests expect it: clean.
+		git(['reset', '--quiet', '--hard', 'HEAD']);
+	});
+
 	it('keeps uncommitted changes across the reword (autostash)', async () => {
 		fs.writeFileSync(path.join(repoPath, 'uncommitted.txt'), 'work in progress\n');
 
