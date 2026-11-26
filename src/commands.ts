@@ -235,6 +235,22 @@ export class CommandManager extends Disposable {
 		const repo = await this.getRepoFromCommandArg(arg);
 		if (repo === null) return;
 
+		const remotes = await this.dataSource.gitOutput(['branch', '-r', '--no-color', '--contains=HEAD'], repo, (stdout) =>
+			stdout.split(/\r?\n/).map((line) => line.trim())
+				.map((line) => (line.indexOf(' -> ') !== -1 ? line.split(' -> ').pop()! : line))
+				.filter((line, index, lines) => line !== '' && lines.indexOf(line) === index)
+		).catch(() => [] as string[]);
+
+		const confirmMessage = remotes.length > 0
+			? t('amendLastCommitPushedConfirm', remotes[0])
+			: t('amendLastCommitConfirm');
+		const confirmed = await vscode.window.showWarningMessage(
+			confirmMessage,
+			{ modal: true },
+			t('amendLastCommitButton')
+		);
+		if (confirmed !== t('amendLastCommitButton')) return;
+
 		const errorInfo = await this.dataSource.amendLastCommit(repo);
 		if (errorInfo !== null) {
 			showErrorMessage(t('unableToAmendLastCommit', errorInfo));
@@ -630,7 +646,18 @@ export class CommandManager extends Disposable {
 	/**
 	 * The method run when the `git-graph-rs.endAllWorkspaceCodeReviews` command is invoked.
 	 */
-	private endAllWorkspaceCodeReviews() {
+	private async endAllWorkspaceCodeReviews() {
+		const codeReviews = this.extensionState.getCodeReviews();
+		if (Object.keys(codeReviews).length === 0) {
+			showErrorMessage(t('noCodeReviewsInProgress'));
+			return;
+		}
+		const confirmed = await vscode.window.showWarningMessage(
+			t('endAllCodeReviewsConfirm'),
+			{ modal: true },
+			t('endAllCodeReviewsButton')
+		);
+		if (confirmed !== t('endAllCodeReviewsButton')) return;
 		this.extensionState.endAllWorkspaceCodeReviews();
 		showInformationMessage(t('endedAllCodeReviews'));
 	}

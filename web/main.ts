@@ -3575,6 +3575,16 @@ function getDataLossRisk(msg: GG.RequestMessage): string | null {
 			return strings.riskDropStash;
 		case 'resetFileToRevision':
 			return formatStr(strings.riskResetFile, escapeHtml(msg.filePath));
+		case 'worktreeRemove':
+			return msg.force ? formatStr(strings.riskWorktreeRemoveForce, escapeHtml(msg.path)) : null;
+		case 'createBranch':
+			return msg.force ? formatStr(strings.riskCreateBranchForce, escapeHtml(msg.branchName)) : null;
+		case 'addTag':
+			return msg.force ? formatStr(strings.riskAddTagForce, escapeHtml(msg.tagName)) : null;
+		case 'deleteTag':
+			return msg.deleteOnRemote !== null ? formatStr(strings.riskDeleteTagRemote, escapeHtml(msg.tagName), escapeHtml(msg.deleteOnRemote)) : null;
+		case 'abortOperation':
+			return strings.riskAbortOperation;
 		default:
 			return null;
 	}

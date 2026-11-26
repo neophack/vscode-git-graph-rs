@@ -341,7 +341,12 @@ describe('code review commands', () => {
 		doubles.dataSource.subjects[hashA] = 'Subject A';
 	});
 
-	it('endAllWorkspaceCodeReviews ends them all', async () => {
+	it('endAllWorkspaceCodeReviews confirms before ending all code reviews', async () => {
+		vscode.responses.showWarningMessage = [undefined, t('endAllCodeReviewsButton')];
+		vscode.runCommand('git-graph-rs.endAllWorkspaceCodeReviews');
+		await flush();
+		assert.equal(doubles.extensionState.endedAll, 0);
+
 		vscode.runCommand('git-graph-rs.endAllWorkspaceCodeReviews');
 		await flush();
 		assert.equal(doubles.extensionState.endedAll, 1);
@@ -515,12 +520,21 @@ describe('git-graph-rs.openFile', () => {
 describe('repository resolution for Source Control commands', () => {
 	beforeEach(() => { doubles.repoManager.repos['/ws/a'] = { name: null }; });
 
-	it('amendLastCommit uses the argument repository, the active editor, or the only repository', async () => {
+	it('amendLastCommit confirms (warning if HEAD is pushed) and resolves the repository', async () => {
 		const amended = [];
 		doubles.dataSource.amendLastCommit = async (repo) => { amended.push(repo); return null; };
+		vscode.responses.showWarningMessage = [
+			t('amendLastCommitButton'),
+			t('amendLastCommitButton'),
+			t('amendLastCommitButton'),
+			t('amendLastCommitButton'),
+			t('amendLastCommitButton'),
+			undefined
+		];
 
 		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a') });
 		await flush();
+		assert.equal(vscode.callsTo('showWarningMessage')[0].args[0], t('amendLastCommitConfirm'));
 		assert.equal(lastInfo(), t('amendedLastCommit', 'a'));
 
 		doubles.repoManager.repos['/ws/b'] = { name: null };
@@ -547,6 +561,13 @@ describe('repository resolution for Source Control commands', () => {
 		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a') });
 		await flush();
 		assert.equal(lastError(), t('unableToAmendLastCommit', 'nothing staged'));
+
+		// When HEAD is already pushed to a remote, surface the pushed-history warning and honour cancel
+		doubles.dataSource.gitOutputs.set('branch -r --no-color --contains=HEAD', '  origin/main\n');
+		doubles.dataSource.amendLastCommit = async () => { throw new Error('must not run'); };
+		vscode.runCommand('git-graph-rs.amendLastCommit', { rootUri: vscode.Uri.file('/ws/a') });
+		await flush();
+		assert.equal(vscode.callsTo('showWarningMessage').at(-1).args[0], t('amendLastCommitPushedConfirm', 'origin/main'));
 	});
 
 	it('does nothing when no repository is known', async () => {

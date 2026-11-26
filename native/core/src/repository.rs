@@ -262,13 +262,13 @@ impl RepoManager {
     /// Get the open handle for `path`, opening it if this is the first request for it.
     pub fn get(&self, path: impl AsRef<Path>) -> Result<Arc<Repo>> {
         let key = path.as_ref().to_path_buf();
-        if let Some(repo) = self.repos.lock().unwrap().get(&key) {
+        if let Some(repo) = self.repos.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
             return Ok(Arc::clone(repo));
         }
         // Opening happens outside the lock: it touches the disk, and a slow open of one repository
         // must not block requests for the others.
         let repo = Arc::new(Repo::discover(&key)?);
-        let mut repos = self.repos.lock().unwrap();
+        let mut repos = self.repos.lock().unwrap_or_else(|e| e.into_inner());
         // Another thread may have opened it while we were; keep whichever handle landed first so
         // that callers never hold two handles to the same repository.
         Ok(Arc::clone(repos.entry(key).or_insert(repo)))
@@ -276,16 +276,25 @@ impl RepoManager {
 
     /// Drop the handle for `path` (e.g. because the folder was removed from the workspace).
     pub fn close(&self, path: impl AsRef<Path>) {
-        self.repos.lock().unwrap().remove(path.as_ref());
+        self.repos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(path.as_ref());
     }
 
     /// Drop every handle.
     pub fn close_all(&self) {
-        self.repos.lock().unwrap().clear();
+        self.repos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     pub fn open_count(&self) -> usize {
-        self.repos.lock().unwrap().len()
+        self.repos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 }
 

@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { BinaryCompareView } from './binaryCompareView';
+import { standardiseCspSource } from './gitGraphView';
 import { DataSource } from './dataSource';
 import { HexDiffSession } from './hexDiff';
 import { t } from './i18n';
@@ -232,7 +233,7 @@ export class CommitComparisonView extends Disposable {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(this.panel.webview.cspSource)} 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <style>
 	body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground); margin: 0; padding: 0 2px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; box-sizing: border-box; }
 	#header { padding: 2px 0px 2px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; }
@@ -392,7 +393,10 @@ export class CommitComparisonView extends Disposable {
 	})();
 
 	/* ---------- Statistics header ---------- */
-	const filesChangedTemplate = '${t('compareFilesChanged', '{0}')}';
+	const filesChangedTemplate = ${encodeJsonForInlineScript(JSON.stringify(t('compareFilesChanged', '{0}')))};
+	const oneFileChangedLabel = ${encodeJsonForInlineScript(JSON.stringify(t('compareOneFileChanged')))};
+	const statsAdditionsTemplate = ${encodeJsonForInlineScript(JSON.stringify(t('compareStatsAdditions', '{0}')))};
+	const statsDeletionsTemplate = ${encodeJsonForInlineScript(JSON.stringify(t('compareStatsDeletions', '{0}')))};
 	function renderStats() {
 		if (changes.length === 0) return;
 		let totalAdditions = 0, totalDeletions = 0;
@@ -401,9 +405,9 @@ export class CommitComparisonView extends Disposable {
 			if (file.deletions !== null) totalDeletions += file.deletions;
 		}
 		document.getElementById('filesChangedLabel').innerHTML =
-			(changes.length === 1 ? '${t('compareOneFileChanged')}' : filesChangedTemplate.replace('{0}', String(changes.length))) +
-			(totalAdditions > 0 ? '${t('compareStatsAdditions', '{0}')}'.replace('{0}', String(totalAdditions)) : '') +
-			(totalDeletions > 0 ? '${t('compareStatsDeletions', '{0}')}'.replace('{0}', String(totalDeletions)) : '');
+			(changes.length === 1 ? oneFileChangedLabel : filesChangedTemplate.replace('{0}', String(changes.length))) +
+			(totalAdditions > 0 ? statsAdditionsTemplate.replace('{0}', String(totalAdditions)) : '') +
+			(totalDeletions > 0 ? statsDeletionsTemplate.replace('{0}', String(totalDeletions)) : '');
 	}
 	renderStats();
 

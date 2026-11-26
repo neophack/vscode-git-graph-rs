@@ -1256,14 +1256,7 @@ export class DataSource extends Disposable {
 		}
 		let status = await this.runGitCommand(['tag', '-d', tagName], repo);
 
-		const remotes = await this.getRemotes(repo);
-		for (const remote of remotes) {
-			if (remote !== deleteOnRemote) {
-				await this._spawnGit(['update-ref', '-d', 'refs/remotes/' + remote + '/tags/' + tagName], repo, () => {}, true);
-			}
-		}
-
-		if (status !== null && status.includes('not found')) return null;
+		if (status !== null && status.includes('not found') && deleteOnRemote !== null) return null;
 		return status;
 	}
 
@@ -2024,10 +2017,11 @@ export class DataSource extends Disposable {
 			// todo text would let a name containing `$` or a backtick be interpreted by the exec shell. The
 			// author takes the same file route as the message (a `"` in it would break out of the exec line's
 			// quoting) and is read through a command substitution, whose result is never re-parsed for quotes.
-			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${Date.now()}.js`);
-			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${Date.now()}.js`);
-			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${Date.now()}.txt`);
-			const authorFile = path.join(os.tmpdir(), `gg-amend-author-${Date.now()}.txt`);
+			const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+			const seqEditorFile = path.join(os.tmpdir(), `gg-amend-seq-${uniqueSuffix}.js`);
+			const msgEditorFile = path.join(os.tmpdir(), `gg-amend-msg-${uniqueSuffix}.js`);
+			const messageFile = path.join(os.tmpdir(), `gg-amend-message-${uniqueSuffix}.txt`);
+			const authorFile = path.join(os.tmpdir(), `gg-amend-author-${uniqueSuffix}.txt`);
 			const node = `"${process.execPath}"`;
 			const extraEnv: { [key: string]: string } = {
 				GIT_SEQUENCE_EDITOR: `${node} "${seqEditorFile}" ${commitHash}`,

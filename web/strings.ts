@@ -81,6 +81,12 @@ const STRINGS_EN = {
 	riskDropCommit: 'Dropping this commit rewrites the history of the current branch without it. The dropped commit is only recoverable via the reflog.',
 	riskDropStash: 'Dropping this stash <b>permanently removes the stashed changes</b>. If they have not been applied elsewhere, they cannot be recovered.',
 	riskResetFile: 'Resetting <b>{0}</b> will <b>permanently discard any uncommitted changes</b> made to this file in the working tree.',
+	riskWorktreeRemoveForce: 'Force removing the worktree at <b>{0}</b> will <b>permanently delete all uncommitted changes and untracked files</b> in that worktree. Deleted files cannot be recovered.',
+	riskCreateBranchForce: 'Force replacing the existing branch <b>{0}</b> moves it to a different commit. Commits only reachable from the old branch tip will become unreachable and may be pruned by Git.',
+	riskAddTagForce: 'Force replacing the existing tag <b>{0}</b> overwrites it permanently (including any annotation or signature). Tags have no reflog and cannot be recovered.',
+	riskDeleteTagRemote: 'Deleting the tag <b>{0}</b> on remote <b>{1}</b> removes it from the remote repository for all collaborators.',
+	riskAbortOperation: 'Aborting the in-progress operation will <b>discard all conflict resolution edits</b> you have made in the working tree so far.',
+	worktreePathEmptyError: 'Worktree path cannot be empty.',
 
 	/* Context menus - commits */
 	menuCheckoutBranch: 'Checkout Branch',
@@ -990,6 +996,12 @@ const STRINGS_ZH_CN: WebviewStrings = {
 	riskDropCommit: '丢弃此提交会在不包含它的情况下重写当前分支的历史。被丢弃的提交只能通过 reflog 找回。',
 	riskDropStash: '丢弃此储藏将<b>永久移除其中保存的更改</b>。如果这些更改未在其他地方应用，将无法恢复。',
 	riskResetFile: '重置 <b>{0}</b> 将<b>永久丢弃该文件在工作区中所有未提交的更改</b>。',
+	riskWorktreeRemoveForce: '强制移除位于 <b>{0}</b> 的工作树将<b>永久删除该工作树中所有未提交的更改和未跟踪文件</b>，且无法恢复。',
+	riskCreateBranchForce: '强制替换现有分支 <b>{0}</b> 会将其移动到新的提交。仅在原分支顶端可达的提交将变为不可达，可能被 Git 垃圾回收清除。',
+	riskAddTagForce: '强制替换现有标签 <b>{0}</b> 会永久覆盖原标签（包括附注内容与签名）。标签没有 reflog，覆盖后无法恢复。',
+	riskDeleteTagRemote: '在远程 <b>{1}</b> 上删除标签 <b>{0}</b> 会将其从远程仓库中移除，影响所有协作者。',
+	riskAbortOperation: '中止正在进行的操作将<b>丢弃你在工作区中已手动解决的所有冲突修改</b>。',
+	worktreePathEmptyError: '工作树路径不能为空。',
 
 	/* Context menus - commits */
 	menuCheckoutBranch: '检出分支',

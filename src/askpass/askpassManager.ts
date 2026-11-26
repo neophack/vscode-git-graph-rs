@@ -47,8 +47,12 @@ export class AskpassManager extends Disposable {
 		} catch (err) {
 			this.enabled = false;
 		}
-		fs.chmod(path.join(__dirname, 'askpass.sh'), '755', () => { });
-		fs.chmod(path.join(__dirname, 'askpass-empty.sh'), '755', () => { });
+		try {
+			fs.chmodSync(path.join(__dirname, 'askpass.sh'), '755');
+		} catch (_) { }
+		try {
+			fs.chmodSync(path.join(__dirname, 'askpass-empty.sh'), '755');
+		} catch (_) { }
 
 		this.registerDisposable(
 			// Close the Askpass Server

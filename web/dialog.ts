@@ -319,8 +319,8 @@ class Dialog {
 			validateRefInput();
 		}
 
-		if (inputs.length > 0 && (inputs[0].type === DialogInputType.Text || inputs[0].type === DialogInputType.TextRef)) {
-			// If the first input is a text field, set focus to it.
+		if (inputs.length > 0 && (inputs[0].type === DialogInputType.Text || inputs[0].type === DialogInputType.TextRef || inputs[0].type === DialogInputType.Textarea)) {
+			// If the first input is a text or textarea field, set focus to it.
 			(<HTMLInputElement>document.getElementById('dialogInput0')).focus();
 		}
 	}
@@ -374,6 +374,7 @@ class Dialog {
 	 */
 	public showError(message: string, reason: GG.ErrorInfo, actionName: string | null, actioned: (() => void) | null) {
 		this.show(DialogType.Message, '<span class="dialogAlert">' + SVG_ICONS.alert + strings.dialogErrorPrefix + message + '</span>' + (reason !== null ? '<br><span class="messageContent errorContent">' + escapeHtml(reason).split('\n').join('<br>') + '</span>' : ''), actionName, strings.dialogDismiss, () => {
+			if (this.elem === null) return;
 			this.close();
 			if (actioned !== null) actioned();
 		}, null, null);
@@ -391,6 +392,7 @@ class Dialog {
 			'<br><span class="messageContent">' + riskHtml + '</span>' +
 			'<div class="dataLossMascot"><img src="' + DATA_LOSS_WARNING_IMAGE + '" alt="' + escapeHtml(strings.dataLossDialogTitle) + '"><div class="dataLossMascotCaption">' + escapeHtml(strings.dataLossMascotCaption) + '</div></div>',
 			strings.dataLossContinue, strings.dialogCancel, () => {
+				if (this.elem === null) return;
 				this.close();
 				actioned();
 			}, null, null);

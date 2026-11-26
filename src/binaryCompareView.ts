@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BinaryComparePost, binaryCompareCss, binaryCompareScript, createHexSession, isImageChange, respondCopyToClipboard, respondHexInfo, respondImageData, respondHexRows, wireHexSession } from './binaryCompare';
 import { DataSource } from './dataSource';
+import { standardiseCspSource } from './gitGraphView';
 import { t } from './i18n';
 import { GitFileChange } from './types';
 import { UNCOMMITTED, abbrevCommit } from './utils/git';
@@ -99,7 +100,7 @@ export class BinaryCompareView extends Disposable {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${standardiseCspSource(this.panel.webview.cspSource)} 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <style>
 	body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 	#header { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.35)); flex-shrink: 0; }

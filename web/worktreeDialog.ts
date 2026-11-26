@@ -143,6 +143,10 @@ class WorktreeDialog {
 			{ type: DialogInputType.Text, name: strings.worktreeNewBranchLabel, default: '', placeholder: strings.worktreeNewBranchPlaceholder, info: strings.worktreeNewBranchInfo }
 		], strings.worktreeAddTitle, (values) => {
 			const path = (<string>values[0]).trim(), startPoint = <string>values[1], newBranch = (<string>values[2]).trim();
+			if (path === '') {
+				dialog.showError(strings.worktreeAddTitle, strings.worktreePathEmptyError, null, null);
+				return;
+			}
 			runAction({
 				command: 'worktreeAdd',
 				repo: view.currentRepo,

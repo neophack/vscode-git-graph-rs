@@ -26,7 +26,8 @@ import { EventEmitter } from './utils/event';
  * @param context The context of the extension.
  */
 export async function activate(context: vscode.ExtensionContext) {
-	const logger = new Logger(path.join(context.globalStoragePath, 'git-graph-rs.log'));
+	const storagePath = (context as { globalStorageUri?: vscode.Uri }).globalStorageUri?.fsPath ?? context.globalStoragePath;
+	const logger = new Logger(path.join(storagePath, 'git-graph-rs.log'));
 	logger.setEnabled(getConfig().enableLog);
 	logger.log('Starting Git Graph ...');
 

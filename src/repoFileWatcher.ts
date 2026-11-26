@@ -1,6 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { Logger } from './logger';
-import { getPathFromUri } from './utils/paths';
+import { getPathFromStr, getPathFromUri } from './utils/paths';
 
 const FILE_CHANGE_REGEX = /(^\.git\/(config|index|packed-refs|HEAD|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
 
@@ -24,6 +26,7 @@ export class RepoFileWatcher {
 	private readonly repoChangeCallback: (commitsAffected: boolean) => void;
 	private readonly repoConfigChangeCallback: (() => void) | null;
 	private repo: string | null = null;
+	private externalGitDir: string | null = null;
 	private fsWatcher: vscode.FileSystemWatcher | null = null;
 	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
 	private refreshTimeout: NodeJS.Timeout | null = null;
@@ -66,13 +69,16 @@ export class RepoFileWatcher {
 		}
 
 		this.repo = repo;
+		this.externalGitDir = resolveExternalGitDir(repo);
 		// Create a File System Watcher for all events within the specified repository
 		this.fsWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '**'));
 		this.fsWatcher.onDidCreate(uri => this.refresh(uri));
 		this.fsWatcher.onDidChange(uri => this.refresh(uri));
 		this.fsWatcher.onDidDelete(uri => this.refresh(uri));
 
-		this.fsWatcherGit = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '.git/**'));
+		this.fsWatcherGit = this.externalGitDir !== null
+			? vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.externalGitDir, '**'))
+			: vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '.git/**'));
 		this.fsWatcherGit.onDidCreate(uri => this.refresh(uri));
 		this.fsWatcherGit.onDidChange(uri => this.refresh(uri));
 		this.fsWatcherGit.onDidDelete(uri => this.refresh(uri));
@@ -142,7 +148,15 @@ export class RepoFileWatcher {
 	 */
 	private refresh(uri: vscode.Uri) {
 		if (this.repo === null) return;
-		const relativePath = getPathFromUri(uri).replace(this.repo + '/', '');
+		const fullPath = getPathFromUri(uri);
+		let relativePath: string;
+		if (this.externalGitDir !== null && pathStartsWith(fullPath, this.externalGitDir + '/')) {
+			relativePath = '.git/' + fullPath.substring(this.externalGitDir.length + 1);
+		} else if (pathStartsWith(fullPath, this.repo + '/')) {
+			relativePath = fullPath.substring(this.repo.length + 1);
+		} else {
+			relativePath = fullPath;
+		}
 		if (relativePath === '.git/config') {
 			// Config modifications must invalidate caches even while muted (Git actions run by the
 			// Git Graph View itself may change the config), otherwise stale data could be served
@@ -190,4 +204,29 @@ export class RepoFileWatcher {
 			this.repoChangeCallback(commitsAffected);
 		}, delay);
 	}
+}
+
+/**
+ * Resolve the real git directory when `<repo>/.git` is a gitdir pointer file (linked worktree or submodule).
+ * Returns the normalised POSIX-style path, or NULL for normal `.git` directories.
+ */
+function resolveExternalGitDir(repo: string): string | null {
+	try {
+		const dotGitPath = path.join(repo, '.git');
+		if (!fs.statSync(dotGitPath).isFile()) return null;
+		const content = fs.readFileSync(dotGitPath, 'utf8');
+		const match = content.match(/^gitdir:\s*(.+)$/m);
+		if (match === null) return null;
+		const rawTarget = match[1].trim();
+		const resolved = path.isAbsolute(rawTarget) ? rawTarget : path.resolve(repo, rawTarget);
+		return getPathFromStr(resolved);
+	} catch (_) {
+		return null;
+	}
+}
+
+function pathStartsWith(fullPath: string, prefix: string): boolean {
+	return process.platform === 'win32'
+		? fullPath.toLowerCase().startsWith(prefix.toLowerCase())
+		: fullPath.startsWith(prefix);
 }

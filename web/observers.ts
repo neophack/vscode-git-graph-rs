@@ -588,6 +588,12 @@ function observeKeyboardEvents(view: GitGraphView) {
 
 		} else if (e.key && (e.ctrlKey || e.metaKey) && !e.altKey) {
 
+			// Do not hijack shortcuts while typing in an input, textarea, or select (e.g. Find Widget or Settings inputs)
+			const activeElem = document.activeElement;
+			if (activeElem !== null && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA' || activeElem.tagName === 'SELECT')) {
+				return;
+			}
+
 			// AltGr is reported as Ctrl+Alt on Windows: a Ctrl+Alt keypress is a character
 			// AltGr produces, never a shortcut, so ignore it here (a real shortcut never needs Alt).
 

@@ -856,8 +856,10 @@ export class GitGraphView extends Disposable {
 	 * @returns TRUE when a warning was forwarded and the action must not report a result.
 	 */
 	private sendLossWarning(result: ErrorInfo | LossWarning | ReadonlyArray<ErrorInfo | LossWarning>, request: RequestMessage): boolean {
-		const warning = Array.isArray(result) ? result[0] : result;
-		if (warning === null || typeof warning !== 'object' || !('message' in warning)) return false;
+		const isLossWarning = (item: unknown): item is LossWarning =>
+			item !== null && item !== undefined && typeof item === 'object' && 'message' in item;
+		const warning = Array.isArray(result) ? result.find(isLossWarning) : (isLossWarning(result) ? result : undefined);
+		if (warning === undefined) return false;
 		this.sendMessage({ command: 'lossWarning', message: warning.message, retry: { ...request, confirmed: true } as RequestMessage });
 		return true;
 	}
