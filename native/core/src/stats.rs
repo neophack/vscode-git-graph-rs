@@ -9,16 +9,21 @@
 
 use std::collections::HashMap;
 
-use crate::error::{Error, ErrorKind, Result, ResultExt};
+use crate::error::{ErrorKind, Result, ResultExt};
 use crate::log::{all_tips, stash_tip};
 use crate::repository::Repo;
 use crate::types::{GitActivityCell, GitAuthorStat};
 
-/// `all_tips` plus the stash tip (if any), deduplicated - the same merge `search_history`
-/// performs, duplicated here rather than factored out so this module cannot change that
-/// already-tested walk's behaviour.
-fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
-    let mut tips = all_tips(repo, true, true)?;
+/// `all_tips` plus the stash tip (if any), deduplicated, with a repository that has no
+/// branches/tags/HEAD returning just the stash tip (or empty) - what `git shortlog --all`
+/// and `git log --all` walk.
+fn all_tips_with_stash_or_empty(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
+    let mut tips = match all_tips(repo, true, true) {
+        Ok(tips) => tips,
+        // `all_tips`'s "The repository has no commits" is an empty answer here, not an error.
+        Err(error) if error.kind == ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
     if let Some(stash) = stash_tip(repo) {
         if !tips.contains(&stash) {
             tips.push(stash);
@@ -27,27 +32,12 @@ fn all_tips_with_stash(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
     Ok(tips)
 }
 
-/// `all_tips_with_stash`, with a repository that has no commits counting nothing - what
-/// `git shortlog --all` and `git log --all` print for one, rather than a failure.
-fn all_tips_with_stash_or_empty(repo: &Repo) -> Result<Vec<gix::ObjectId>> {
-    match all_tips_with_stash(repo) {
-        Ok(tips) => Ok(tips),
-        // `all_tips`'s "The repository has no commits" is an empty answer here, not an error.
-        Err(error) if error.kind == ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(error),
-    }
-}
-
 /// Commit counts per author, across all refs, merge commits excluded - what
 /// `git shortlog -sne --all --no-merges` aggregates into, `.mailmap` applied as shortlog applies it.
 pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
     // The history git counts runs through the replacement objects the engine cannot apply
     // (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let tips = all_tips_with_stash_or_empty(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);
@@ -108,11 +98,7 @@ pub fn author_stats(repo: &Repo) -> Result<Vec<GitAuthorStat>> {
 pub fn activity_heatmap(repo: &Repo) -> Result<Vec<GitActivityCell>> {
     // The same replacement-objects refusal and the same empty-repository answer as
     // [`author_stats`], which shares this walk.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let tips = all_tips_with_stash_or_empty(repo)?;
     let git = repo.borrow();
     let shallow = crate::repository::Shallow::of(&git);

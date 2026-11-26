@@ -516,8 +516,10 @@ export class GitGraphView extends Disposable {
 				const view = GitGraphView.currentPanel;
 
 				if (view !== undefined) {
-					// The live view's own tab, or the only Git Graph tab there is (which then must be it)
-					if (tab === liveTab || numGitGraphTabs <= 1) continue;
+					// The live view's own tab, or the only Git Graph tab there is (which then must be it).
+					// If `liveTab` has not yet been captured (panel became hidden before the first check),
+					// also spare the active tab in the live panel's viewColumn so we never close the live view.
+					if (tab === liveTab || numGitGraphTabs <= 1 || (liveTab === null && group.viewColumn === view.panel.viewColumn)) continue;
 					// Another live view already exists elsewhere: the dead tab was only a duplicate.
 					// Close it — the live view stays where it is, nothing is reopened in its place.
 					logger.log('Closing a duplicate Git Graph tab left behind by an Extension Host restart');

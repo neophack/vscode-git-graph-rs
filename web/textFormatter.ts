@@ -565,24 +565,6 @@ function isUrlElem(elem: Element) {
 	return elem.closest('.' + CLASS_EXTERNAL_URL) !== null || elem.closest('.' + CLASS_INTERNAL_URL) !== null;
 }
 
-/**
- * Is an element an external URL (or inside one).
- * @param elem The element to check.
- * @returns TRUE => The element is (inside) an external URL, FALSE => The element isn't an external URL
- */
-function isExternalUrlElem(elem: Element) {
-	return elem.closest('.' + CLASS_EXTERNAL_URL) !== null;
-}
-
-/**
- * Is an element an internal URL (or inside one).
- * @param elem The element to check.
- * @returns TRUE => The element is (inside) an internal URL, FALSE => The element isn't an internal URL
- */
-function isInternalUrlElem(elem: Element) {
-	return elem.closest('.' + CLASS_INTERNAL_URL) !== null;
-}
-
 
 /* Issue Linking Methods */
 

@@ -58,10 +58,6 @@ class ConflictBanner {
 		abortBtn.addEventListener('click', () => this.abortOperation());
 	}
 
-	public isVisible() {
-		return this.type !== null;
-	}
-
 	/**
 	 * The height the banner currently occupies (0 while hidden): it sits in normal flow between
 	 * the sticky header row and the commit table, so `getHeaderHeight` must add it or every

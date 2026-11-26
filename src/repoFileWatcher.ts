@@ -27,8 +27,10 @@ export class RepoFileWatcher {
 	private readonly repoConfigChangeCallback: (() => void) | null;
 	private repo: string | null = null;
 	private externalGitDir: string | null = null;
+	private commonGitDir: string | null = null;
 	private fsWatcher: vscode.FileSystemWatcher | null = null;
 	private fsWatcherGit: vscode.FileSystemWatcher | null = null;
+	private fsWatcherCommonGit: vscode.FileSystemWatcher | null = null;
 	private refreshTimeout: NodeJS.Timeout | null = null;
 	private pendingCommitsAffected: boolean = false;
 	/**
@@ -70,6 +72,7 @@ export class RepoFileWatcher {
 
 		this.repo = repo;
 		this.externalGitDir = resolveExternalGitDir(repo);
+		this.commonGitDir = this.externalGitDir !== null ? resolveCommonGitDir(this.externalGitDir) : null;
 		// Create a File System Watcher for all events within the specified repository
 		this.fsWatcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(repo, '**'));
 		this.fsWatcher.onDidCreate(uri => this.refresh(uri));
@@ -82,6 +85,13 @@ export class RepoFileWatcher {
 		this.fsWatcherGit.onDidCreate(uri => this.refresh(uri));
 		this.fsWatcherGit.onDidChange(uri => this.refresh(uri));
 		this.fsWatcherGit.onDidDelete(uri => this.refresh(uri));
+
+		if (this.commonGitDir !== null) {
+			this.fsWatcherCommonGit = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.commonGitDir, '**'));
+			this.fsWatcherCommonGit.onDidCreate(uri => this.refresh(uri));
+			this.fsWatcherCommonGit.onDidChange(uri => this.refresh(uri));
+			this.fsWatcherCommonGit.onDidDelete(uri => this.refresh(uri));
+		}
 
 		this.logger.log('Started watching repo: ' + repo);
 	}
@@ -107,6 +117,12 @@ export class RepoFileWatcher {
 			this.fsWatcherGit.dispose();
 			this.fsWatcherGit = null;
 		}
+		if (this.fsWatcherCommonGit !== null) {
+			this.fsWatcherCommonGit.dispose();
+			this.fsWatcherCommonGit = null;
+		}
+		this.externalGitDir = null;
+		this.commonGitDir = null;
 		if (this.refreshTimeout !== null) {
 			// If a timeout is active, clear it
 			clearTimeout(this.refreshTimeout);
@@ -152,6 +168,11 @@ export class RepoFileWatcher {
 		let relativePath: string;
 		if (this.externalGitDir !== null && pathStartsWith(fullPath, this.externalGitDir + '/')) {
 			relativePath = '.git/' + fullPath.substring(this.externalGitDir.length + 1);
+		} else if (this.commonGitDir !== null && pathStartsWith(fullPath, this.commonGitDir + '/')) {
+			const commonRel = fullPath.substring(this.commonGitDir.length + 1);
+			// Only shared metadata lives in commondir; per-worktree files like HEAD/index belong to the main worktree.
+			if (commonRel !== 'config' && commonRel !== 'packed-refs' && !commonRel.startsWith('refs/')) return;
+			relativePath = '.git/' + commonRel;
 		} else if (pathStartsWith(fullPath, this.repo + '/')) {
 			relativePath = fullPath.substring(this.repo.length + 1);
 		} else {
@@ -220,6 +241,22 @@ function resolveExternalGitDir(repo: string): string | null {
 		const rawTarget = match[1].trim();
 		const resolved = path.isAbsolute(rawTarget) ? rawTarget : path.resolve(repo, rawTarget);
 		return getPathFromStr(resolved);
+	} catch (_) {
+		return null;
+	}
+}
+
+function resolveCommonGitDir(externalGitDir: string): string | null {
+	try {
+		const commonDirPath = path.join(externalGitDir, 'commondir');
+		if (!fs.statSync(commonDirPath).isFile()) return null;
+		const rawTarget = fs.readFileSync(commonDirPath, 'utf8').trim();
+		if (rawTarget === '') return null;
+		const resolved = getPathFromStr(path.isAbsolute(rawTarget) ? rawTarget : path.resolve(externalGitDir, rawTarget));
+		const same = process.platform === 'win32'
+			? resolved.toLowerCase() === externalGitDir.toLowerCase()
+			: resolved === externalGitDir;
+		return same ? null : resolved;
 	} catch (_) {
 		return null;
 	}

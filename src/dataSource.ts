@@ -1954,18 +1954,25 @@ export class DataSource extends Disposable {
 
 		try {
 			const headCommit = await this.spawnGit(['rev-parse', 'HEAD'], repo, (stdout) => stdout.trim());
+			const isHead = headCommit === commitHash;
 
-			if (headCommit === commitHash) {
-				// The view only offers Edit Message for non-merge, local-only commits; the host
-				// re-validates both requirements here too, so a stale graph cannot get a merge
-				// commit, or one a remote already contains, rewritten through a direct amend either.
-				const headParents = await this.spawnGit(['rev-list', '--parents', '-n', '1', commitHash], repo, (stdout) => stdout.trim().split(/\s+/));
-				if (headParents.length > 2) return t('amendMergeCommit');
+			if (!isHead) {
+				// The commit must be part of the current branch's history for the rebase to reach it
+				const isAncestor = await this._spawnGit(['merge-base', '--is-ancestor', commitHash, 'HEAD'], repo, () => true).then(() => true, () => false);
+				if (!isAncestor) return t('amendNotAncestor');
+			}
 
-				const headRemotes = await this.getRemotes(repo);
-				const headContainingRemotes = await this.getRemotesContainingCommit(repo, commitHash, headRemotes);
-				if (headContainingRemotes.length > 0) return t('amendPushedCommit', headContainingRemotes.join(', '));
+			// The view only offers Edit Message for non-merge, local-only commits; the host
+			// re-validates both requirements for HEAD and ancestor commits alike.
+			const parents = await this.spawnGit(['rev-list', '--parents', '-n', '1', commitHash], repo, (stdout) => stdout.trim().split(/\s+/));
+			if (parents.length > 2) return t('amendMergeCommit');
 
+			// Editing a commit any remote already contains would rewrite published history
+			const knownRemotes = await this.getRemotes(repo);
+			const containingRemotes = await this.getRemotesContainingCommit(repo, commitHash, knownRemotes);
+			if (containingRemotes.length > 0) return t('amendPushedCommit', containingRemotes.join(', '));
+
+			if (isHead) {
 				// `--only` keeps the amend message/author-only: a bare `git commit --amend` folds the index's
 				// staged changes into the rewritten commit, silently consuming the user's uncommitted work.
 				const args = ['commit', '--amend', '--only'];
@@ -1976,19 +1983,6 @@ export class DataSource extends Disposable {
 				}
 				return this.runGitCommand(args, repo);
 			}
-
-			// The commit must be part of the current branch's history for the rebase to reach it
-			const isAncestor = await this._spawnGit(['merge-base', '--is-ancestor', commitHash, 'HEAD'], repo, () => true).then(() => true, () => false);
-			if (!isAncestor) return t('amendNotAncestor');
-
-			// Merge commits cannot be reworded by a linear `pick`/`reword` todo
-			const parents = await this.spawnGit(['rev-list', '--parents', '-n', '1', commitHash], repo, (stdout) => stdout.trim().split(/\s+/));
-			if (parents.length > 2) return t('amendMergeCommit');
-
-			// Editing a commit any remote already contains would rewrite published history
-			const knownRemotes = await this.getRemotes(repo);
-			const containingRemotes = await this.getRemotesContainingCommit(repo, commitHash, knownRemotes);
-			if (containingRemotes.length > 0) return t('amendPushedCommit', containingRemotes.join(', '));
 
 			const rebaseArgs = parents.length === 1
 				? ['-c', 'rebase.abbreviateCommands=false', 'rebase', '-i', '--autostash', '--root']

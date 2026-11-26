@@ -98,6 +98,16 @@ impl Repo {
             .unwrap_or(false)
     }
 
+    /// Return `ErrorKind::Unsupported` if the repository carries replacement objects (`git replace`).
+    pub fn reject_replace_refs(&self) -> Result<()> {
+        if self.uses_replace_refs() {
+            return Err(Error::unsupported(
+                "The engine does not apply replacement objects (git replace)",
+            ));
+        }
+        Ok(())
+    }
+
     /// The worktree root (what `git rev-parse --show-toplevel` prints), or the git directory when
     /// the repository is bare.
     pub fn root(&self) -> &Path {
@@ -262,7 +272,12 @@ impl RepoManager {
     /// Get the open handle for `path`, opening it if this is the first request for it.
     pub fn get(&self, path: impl AsRef<Path>) -> Result<Arc<Repo>> {
         let key = path.as_ref().to_path_buf();
-        if let Some(repo) = self.repos.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        if let Some(repo) = self
+            .repos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&key)
+        {
             return Ok(Arc::clone(repo));
         }
         // Opening happens outside the lock: it touches the disk, and a slow open of one repository
@@ -284,17 +299,11 @@ impl RepoManager {
 
     /// Drop every handle.
     pub fn close_all(&self) {
-        self.repos
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        self.repos.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     pub fn open_count(&self) -> usize {
-        self.repos
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.repos.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 

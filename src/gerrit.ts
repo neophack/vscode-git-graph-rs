@@ -618,13 +618,22 @@ export class GerritDataSource {
 	private async withTimeout<T>(run: (signal?: AbortLike) => Promise<T>, fallback: T): Promise<T> {
 		if (this.remoteTimeoutMs <= 0) return run();
 		const controller = createAbortController();
-		const timer = setTimeout(() => controller.abort(), this.remoteTimeoutMs);
+		let timer: NodeJS.Timeout | undefined;
 		try {
-			return await run(controller.signal);
-		} catch {
-			return fallback;
+			return await Promise.race([
+				run(controller.signal).then(
+					(result) => (controller.signal.aborted ? fallback : result),
+					() => fallback
+				),
+				new Promise<T>((resolve) => {
+					timer = setTimeout(() => {
+						controller.abort();
+						resolve(fallback);
+					}, this.remoteTimeoutMs);
+				})
+			]);
 		} finally {
-			clearTimeout(timer);
+			if (timer !== undefined) clearTimeout(timer);
 		}
 	}
 

@@ -26,11 +26,7 @@ const RENAME_SIMILARITY: f32 = 0.5;
 pub fn diff_revisions(repo: &Repo, from: &str, to: &str) -> Result<Vec<GitFileChange>> {
     // The diff git reports for these revisions runs through the replacement objects the engine
     // cannot apply (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     if to.is_empty() || to == UNCOMMITTED {
         return diff_against_worktree(repo, from);
     }
@@ -67,11 +63,7 @@ pub fn new_path_of_renamed_file(
 /// repository shows its files as added rather than showing nothing at all.
 pub fn diff_commit(repo: &Repo, hash: &str) -> Result<Vec<GitFileChange>> {
     // The same replacement-objects refusal as [`diff_revisions`], whose commit reads this serves.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
@@ -271,11 +263,7 @@ pub fn line_counts(
     // The blobs these counts read are the replaced objects' originals under `git replace`, which
     // would disagree with the file list the CLI backend serves for the same commit (see
     // `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     if paths.is_empty() {
         return Ok(BTreeMap::new());
     }

@@ -75,11 +75,7 @@ const CONTEXT_LINES: u32 = 3;
 pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFile> {
     // The file git shows for this request runs through the replacement objects the engine cannot
     // apply (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let tree = git
@@ -101,11 +97,7 @@ pub fn commit_file(repo: &Repo, hash: &str, file_path: &str) -> Result<CommitFil
 /// an added or deleted file reads: not an error, just nothing to show there.
 pub fn commit_file_bytes(repo: &Repo, hash: &str, file_path: &str) -> Result<Option<Vec<u8>>> {
     // The same replacement-objects refusal as [`commit_file`], which reads the same file.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let id = repo.resolve_commit(hash)?;
     let git = repo.borrow();
     let tree = git
@@ -144,12 +136,17 @@ pub fn working_tree_file(repo: &Repo, file_path: &str) -> Result<CommitFile> {
 /// instead of read.
 fn working_tree_path(repo: &Repo, file_path: &str) -> Result<std::path::PathBuf> {
     let root = repo.root();
-    let joined = root.join(file_path);
-    let escapes = !joined.starts_with(root)
-        || joined
-            .components()
-            .any(|component| matches!(component, std::path::Component::ParentDir));
-    if escapes {
+    let rel = std::path::Path::new(file_path);
+    let has_unsafe_component = rel.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    });
+    let joined = root.join(rel);
+    if has_unsafe_component || !joined.starts_with(root) {
         return Err(Error::git(format!(
             "'{file_path}' escapes the working tree"
         )));
@@ -221,12 +218,7 @@ pub fn index_file_bytes(repo: &Repo, file_path: &str) -> Result<Option<Vec<u8>>>
 /// rename (both the old and the new path match), a root commit is compared against the empty
 /// tree, and a file the commit did not touch yields empty output rather than an error.
 pub fn commit_file_diff(repo: &Repo, hash: &str, file_path: &str) -> Result<String> {
-    // The same replacement-objects refusal as [`commit_file`]: git diffs the replaced objects.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    // `diff::diff_commit` enforces the replacement-objects refusal (`reject_replace_refs`).
     // The tree diff already knows how the commit touched every path, including renames, so the
     // change record for this file is looked up rather than re-derived. A path that was renamed
     // *away* and recreated in the same commit matches two records — the rename (old side) and

@@ -99,10 +99,11 @@ pub fn walk(repo: &Repo, tips: &[ObjectId], options: &WalkOptions) -> Result<Vec
         // An author-date page's window is cut by AUTHOR date, not committer date: gix's
         // traversal ranks by commit time only, so its cut could drop exactly the commits the
         // author-date ordering would surface (a rebase or import whose committer date is new but
-        // whose author date is old sinks below the cut, and vice versa). The window is instead
-        // collected in git's `--author-date-order` directly.
-        records = walk_author_date_window(&git, tips, window, options.first_parent_only)?;
-    } else {
+        // whose author date is old sinks below the cut, and vice versa). The walk collects
+        // directly in git's `--author-date-order`, so it already yields the final ordered page.
+        return walk_author_date_window(&git, tips, options.limit, options.first_parent_only);
+    }
+    {
         let mut platform =
             git.rev_walk(tips.iter().copied())
                 .sorting(gix::revision::walk::Sorting::ByCommitTime(
@@ -265,16 +266,13 @@ fn walk_author_date_window(
 
     let shallow_ref = &shallow;
     let mut records: Vec<CommitRecord> = Vec::new();
-    let mut shown: HashSet<ObjectId> = HashSet::new();
     while records.len() < window {
         let Some((_, _, id)) = ready.pop() else {
             break;
         };
-        if shown.contains(&id) || !dates.contains_key(&id) {
+        if dates.remove(&id).is_none() {
             continue;
         }
-        dates.remove(&id);
-        shown.insert(id);
         // The full object is read only now, for the record — the count pass read headers only.
         let commit = match git.find_commit(id) {
             Ok(commit) => commit,
@@ -793,11 +791,7 @@ pub fn search_history(repo: &Repo, query: &str) -> Result<Vec<GitHistoryMatch>> 
         .map_err(|e| Error::invalid_argument(format!("Invalid search query: {e}")))?;
     // The history git searches runs through the replacement objects the engine cannot apply
     // (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
 
     // A repository with no refs at all has nothing to search; git's `--all` simply matches nothing.
     let mut tips = all_tips(repo, true, true).unwrap_or_default();
@@ -888,11 +882,7 @@ pub fn count_commits_before(
 ) -> Result<u64> {
     // The counts the view jumps by run over the replacement objects the engine cannot apply
     // (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     if include_reflogs {
         return Err(Error::unsupported(
             "Commits mentioned by reflogs are not counted by the engine",
@@ -970,11 +960,7 @@ pub fn count_commits_before(
 pub fn authors(repo: &Repo) -> Result<Vec<GitAuthor>> {
     // The authors git aggregates run through the replacement objects the engine cannot apply
     // (see `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let git = repo.borrow();
     let head = git
         .head_id()

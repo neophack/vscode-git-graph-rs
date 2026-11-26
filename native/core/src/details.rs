@@ -20,11 +20,7 @@ use crate::types::{
 pub fn commit_details(repo: &Repo, hash: &str) -> Result<GitCommitDetails> {
     // A replaced commit's parents and tree are the replacement's in git; see
     // `Repo::uses_replace_refs` for why the engine cannot show them.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let mut details = commit_details_base(repo, hash)?;
     details.file_changes = diff::diff_commit(repo, hash)?;
     Ok(details)
@@ -152,11 +148,7 @@ fn unverified_signature() -> GitSignature {
 pub fn commit_bodies(repo: &Repo, hashes: &[String]) -> Result<BTreeMap<String, String>> {
     // The bodies git shows run through the replacement objects the engine cannot apply (see
     // `Repo::uses_replace_refs`).
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let git = repo.borrow();
     let mut bodies = BTreeMap::new();
     for hash in hashes {
@@ -178,11 +170,7 @@ pub fn commit_bodies(repo: &Repo, hashes: &[String]) -> Result<BTreeMap<String, 
 /// `git log --format=%s` output (trimmed, runs of whitespace collapsed to one space).
 pub fn commit_subject(repo: &Repo, hash: &str) -> Result<String> {
     // The same replacement-objects refusal as [`commit_details`], whose subject this serves.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let git = repo.borrow();
     let id = crate::repository::resolve_commit_in(&git, hash)?;
     let commit = git.find_commit(id).git_ctx("Could not read the commit")?;
@@ -199,11 +187,7 @@ pub fn commit_summaries(
     hashes: &[String],
 ) -> Result<BTreeMap<String, GitCommitSummary>> {
     // The same replacement-objects refusal as [`commit_details`], whose commits these summarise.
-    if repo.uses_replace_refs() {
-        return Err(Error::unsupported(
-            "The engine does not apply replacement objects (git replace)",
-        ));
-    }
+    repo.reject_replace_refs()?;
     let git = repo.borrow();
     let mut summaries = BTreeMap::new();
     for hash in hashes {
